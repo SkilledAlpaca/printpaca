@@ -55,7 +55,7 @@
   ];
   let statusFilter = $state<StatusFilter>("all");
   // Free-text filter composing (AND) with statusFilter; same look as ClientsTab's search-input, registered as
-  // "invoices-filter" so App.svelte's "/" shortcut can focus it.
+  // "invoices-filter" so App.svelte's Ctrl+K (⌘K on macOS) shortcut can focus it.
   let filterText = $state("");
 
   const filterActive = $derived(statusFilter !== "all" || filterText.trim() !== "");

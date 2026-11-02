@@ -35,16 +35,16 @@ test("a three-part order: drop, price, save, restore, print, convert", async ({ 
 
   await page.locator('.drop input[type="file"]').setInputFiles(FILES);
   for (const name of ["bracket", "lid", "spacers"]) {
-    await expect(page.getByRole("button", { name: `Edit ${name}`, exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: new RegExp(`^Edit ${name} ×`) })).toBeVisible();
   }
   await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(3);
 
   const weight = page.getByLabel(/Model weight/);
-  await page.getByRole("button", { name: "Edit bracket", exact: true }).click();
+  await page.getByRole("button", { name: /^Edit bracket ×/ }).click();
   await expect(weight).toHaveValue("10");
-  await page.getByRole("button", { name: "Edit lid", exact: true }).click();
+  await page.getByRole("button", { name: /^Edit lid ×/ }).click();
   await expect(weight).toHaveValue("20");
-  await page.getByRole("button", { name: "Edit spacers", exact: true }).click();
+  await page.getByRole("button", { name: /^Edit spacers ×/ }).click();
   await expect(weight).toHaveValue("5");
 
   await page.getByLabel("Set a selling price").check();
@@ -53,7 +53,7 @@ test("a three-part order: drop, price, save, restore, print, convert", async ({ 
 
   await page.getByLabel(/^Quantity/).fill("20");
   await page.getByLabel(/Sale price override/).fill("0.75");
-  await page.getByRole("button", { name: "Edit bracket", exact: true }).click();
+  await page.getByRole("button", { name: /^Edit bracket ×/ }).click();
   await page.getByLabel(/^Quantity/).fill("4");
 
   const orderTable = page.locator(".parts-table tbody tr");
@@ -87,7 +87,7 @@ test("a three-part order: drop, price, save, restore, print, convert", async ({ 
   await historyRow(page, label).getByRole("button", { name: /^Open "/ }).click();
   await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(3);
   await expect(page.getByLabel(/^Quantity/)).toHaveValue("4");
-  await page.getByRole("button", { name: "Edit spacers", exact: true }).click();
+  await page.getByRole("button", { name: /^Edit spacers ×/ }).click();
   await expect(page.getByLabel(/^Quantity/)).toHaveValue("20");
   await expect(page.getByLabel(/Sale price override/)).toHaveValue("0.75");
 
@@ -114,12 +114,12 @@ test("a three-part order: drop, price, save, restore, print, convert", async ({ 
 
   // Compute failure: Create invoice stays disabled (never a Shipping-only invoice).
   await page.route("**/api/quote/compute", (route) => route.fulfill({ status: 500, body: "{}" }));
-  await row.getByRole("button", { name: `Convert "${label}" to invoice` }).click();
+  await row.getByRole("button", { name: `Convert to invoice: "${label}"` }).click();
   await expect(page.getByText("Couldn't price this order's parts")).toBeVisible();
   await expect(page.getByRole("button", { name: /^Create invoice/ })).toBeDisabled();
   await page.getByRole("button", { name: "Cancel" }).click();
   await page.unroute("**/api/quote/compute");
-  await row.getByRole("button", { name: `Convert "${label}" to invoice` }).click();
+  await row.getByRole("button", { name: `Convert to invoice: "${label}"` }).click();
   const create = page.getByRole("button", { name: /^Create invoice/ });
   await expect(create).toBeEnabled();
   await expect(create).toContainText(usd(total));
@@ -152,7 +152,7 @@ test("a single-part quote keeps the compact editor and an Add part action", asyn
   await page.getByRole("button", { name: "Add part" }).click();
   await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(2);
   await page.getByRole("button", { name: "Remove Part 2" }).click();
-  await page.getByRole("button", { name: "Confirm remove Part 2" }).click();
+  await page.getByRole("button", { name: "Remove? Part 2" }).click();
   await expect(page.getByRole("button", { name: "Add part" })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(0);
 });

@@ -34,8 +34,11 @@
     type PaymentForm,
   } from "../lib/invoiceForm";
   import { todayInTimezone } from "../lib/invoiceStatus";
+  import { money } from "../lib/format";
   import InvoiceList from "./invoices/InvoiceList.svelte";
   import InvoiceDetail from "./invoices/InvoiceDetail.svelte";
+  import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
+  import { focusAfterRowRemoval, focusRowOrHeading, keySelector, neighborId, refocusIfLost } from "./a11yFocus";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 
@@ -177,7 +180,10 @@
   // of the id. A hashchange from this component's own setDetailHash()/backToList() is a no-op, so it never
   // double-fetches.
   function syncDetailFromHash() {
-    syncDetail(location.hash, INVOICES_HASH, detailId, view === "detail", (id) => openDetail(id, { silent: true }), closeDetailView);
+    syncDetail(location.hash, INVOICES_HASH, detailId, view === "detail", (id) => openDetail(id, { silent: true }), () => {
+      closeDetailView();
+      void focusRowOrHeading(openerId);
+    });
   }
 
   type View = "list" | "detail";
@@ -220,6 +226,7 @@
   // Shared reset for landing on a new unsaved draft (openNew() and openDuplicate()), so they can't drift on
   // which confirm/error state is cleared.
   function resetToNewComposer() {
+    openerId = null;
     view = "detail";
     detailId = null;
     detail = null;
@@ -253,8 +260,12 @@
   // abandoned record or rewrite the hash.
   let openSeq = 0;
 
+  // The row that opened the detail view, so "Back to list" can return focus to it (WCAG 2.4.3).
+  let openerId: string | null = null;
+
   async function openDetail(id: string, opts?: { silent?: boolean }) {
     const seq = ++openSeq;
+    openerId = id;
     view = "detail";
     detailId = id;
     detail = null;
@@ -311,9 +322,10 @@
     };
   });
 
-  function backToList() {
+  function backToList(focusId: string | null = openerId) {
     closeDetailView();
     if (location.hash !== INVOICES_HASH) location.hash = INVOICES_HASH; // pushes a history entry
+    void focusRowOrHeading(focusId);
   }
 
   function addLine() {
@@ -328,9 +340,12 @@
   function removeLine(i: number) {
     form.lines = form.lines.filter((_, idx) => idx !== i);
     confirmingLineRemove = null;
+    // The confirmed row is gone: focus the line that took its place, else Add line.
+    void focusAfterRowRemoval("remove-line", i, form.lines.length, "add-line");
   }
 
   async function save() {
+    if (saving) return;
     saving = true;
     formErrors = [];
     try {
@@ -341,14 +356,18 @@
       form = formFromInvoice(result);
       setDetailHash(result.id); // a freshly-created draft becomes addressable the moment it exists
       await refresh();
+      announce(`Invoice ${result.number} saved.`);
     } catch (err) {
       formErrors = [err instanceof Error ? err.message : "Couldn't save invoice."];
+      announce("Couldn't save the invoice. See the errors above the form.", "assertive");
     } finally {
       saving = false;
     }
   }
 
   let statusSaving = false;
+  // Past-tense phrase for the status line after a successful change.
+  const STATUS_DONE: Record<InvoiceStatus, string> = { draft: "set to draft", sent: "marked sent", paid: "marked paid", canceled: "canceled" };
   async function changeStatus(status: InvoiceStatus) {
     if (!detail || statusSaving) return;
     statusSaving = true;
@@ -361,11 +380,15 @@
       paymentForm = defaultPaymentForm(updated.balanceCents, cfg.invoicing.paymentMethods[0] ?? "", todayInTimezone(cfg.timezone));
       confirmingCancel = false;
       confirmingMarkSent = false;
+      statusActionMessage = `Invoice ${updated.number} ${STATUS_DONE[status]}.`;
+      // The pressed button is replaced by the next status's actions; keep focus in the action row.
+      void refocusIfLost(".status-actions button");
       await refresh();
     } catch (err) {
       statusActionFailed = true;
       confirmingCancel = false;
       statusActionMessage = err instanceof Error ? err.message : "Couldn't update status.";
+      void refocusIfLost(".status-actions button");
     } finally {
       statusSaving = false;
     }
@@ -402,10 +425,13 @@
   async function confirmDeleteInvoice() {
     if (!detail || deletingInvoice) return;
     deletingInvoice = true;
+    const { id, number } = detail;
+    const next = neighborId(invoices.map((x) => x.id), id);
     try {
-      await deleteInvoice(detail.id);
+      await deleteInvoice(id);
       await refresh();
-      backToList();
+      backToList(next);
+      announce(`Invoice ${number} deleted.`);
     } catch (err) {
       statusActionFailed = true;
       statusActionMessage = err instanceof Error ? err.message : "Couldn't delete invoice.";
@@ -416,7 +442,7 @@
   }
 
   async function sendInvoiceEmailAction() {
-    if (!detail) return;
+    if (!detail || emailing) return;
     emailing = true;
     statusActionMessage = "";
     statusActionFailed = false;
@@ -471,13 +497,14 @@
   }
 
   async function addPaymentSubmit() {
-    if (!detail) return;
+    if (!detail || paymentSaving) return;
     paymentSaving = true;
     paymentErrors = [];
+    const amountCents = toCents(paymentForm.amount);
     try {
       const updated = await addPayment(detail.id, {
         paidDate: paymentForm.paidDate,
-        amountCents: toCents(paymentForm.amount),
+        amountCents,
         method: paymentForm.method,
         note: paymentForm.note,
         reference: paymentForm.reference,
@@ -485,11 +512,13 @@
       detail = updated;
       form = formFromInvoice(updated);
       paymentForm = defaultPaymentForm(updated.balanceCents, cfg.invoicing.paymentMethods[0] ?? "", todayInTimezone(cfg.timezone));
+      announce(`Payment of ${money(amountCents, cfg)} recorded. Balance ${money(updated.balanceCents, cfg)}.`);
       // The list view's paidCents/balanceCents/status are now stale; the next list load refetches (same
       // tolerance as save()).
       await refresh();
     } catch (err) {
       paymentErrors = [err instanceof Error ? err.message : "Couldn't record payment."];
+      announce("Couldn't record the payment. See the errors in the Payments section.", "assertive");
     } finally {
       paymentSaving = false;
     }
@@ -504,12 +533,18 @@
   async function confirmDeletePayment(paymentId: string) {
     if (!detail) return;
     paymentErrors = [];
+    const next = neighborId(detail.payments.map((p) => p.id), paymentId);
     try {
       const updated = await deletePayment(detail.id, paymentId);
       detail = updated;
       form = formFromInvoice(updated);
       paymentForm = defaultPaymentForm(updated.balanceCents, cfg.invoicing.paymentMethods[0] ?? "", todayInTimezone(cfg.timezone));
       confirmingPaymentDelete = null;
+      announce(`Payment deleted. Balance ${money(updated.balanceCents, cfg)}.`);
+      // The deleted row is gone: focus the next payment's Delete button, else the previous, else the date field.
+      void focusAfterUpdate(
+        () => (next ? document.querySelector<HTMLElement>(keySelector(`delete-payment-${next}`)) : null) ?? document.querySelector<HTMLElement>(".payments-card input"),
+      );
       await refresh();
     } catch (err) {
       paymentErrors = [err instanceof Error ? err.message : "Couldn't delete payment."];

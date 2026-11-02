@@ -6,6 +6,7 @@
   import { appConfig } from "../../lib/state.svelte";
   import { demoLocal } from "../../lib/demoLocal.svelte";
   import { extractRealMultiUser } from "../../lib/attribution";
+  import { confirmFocus, keySelector } from "../a11yFocus";
 
   // Same visibility rule as AttributionLine.svelte (single-user mode and the demo's user-mode toggle hide
   // attribution), reimplemented inline: a payment has no separate updated_by (createdBy and updatedBy are
@@ -45,9 +46,11 @@
 <div class="subcard payments-card">
   <h3>Payments</h3>
   {#if paymentErrors.length > 0}
-    <ul class="errors" role="alert">
-      {#each paymentErrors as e (e)}<li>{e}</li>{/each}
-    </ul>
+    <div role="alert">
+      <ul class="errors">
+        {#each paymentErrors as e (e)}<li>{e}</li>{/each}
+      </ul>
+    </div>
   {/if}
   {#if detail.payments.length > 0}
     <div class="table-scroll">
@@ -70,12 +73,13 @@
               {#if showAttribution}<td class="hint">{p.createdBy || "-"}</td>{/if}
               <td>
                 {#if confirmingPaymentDelete === p.id}
-                  <button type="button" class="danger quiet" aria-label={`Confirm delete payment of ${money(p.amountCents, cfg)}`} onclick={() => onConfirmDeletePayment(p.id)}>Delete?</button>
+                  <button type="button" class="danger quiet" aria-label={`Delete? payment of ${money(p.amountCents, cfg)}`} onclick={() => onConfirmDeletePayment(p.id)} use:confirmFocus={{ restore: keySelector(`delete-payment-${p.id}`), cancel: onCancelDeletePaymentConfirm }}>Delete?</button>
                   <button type="button" class="quiet" onclick={onCancelDeletePaymentConfirm}>Cancel</button>
                 {:else}
                   <button
                     type="button"
                     class="quiet"
+                    data-focus-key={`delete-payment-${p.id}`}
                     aria-label={`Delete payment of ${money(p.amountCents, cfg)} on ${formatDate(p.paidDate)}`}
                     onclick={() => onAskDeletePayment(p.id)}
                   >Delete</button>
@@ -124,7 +128,7 @@
       </label>
     </div>
     <div class="form-actions">
-      <button type="button" class="primary" onclick={onAddPayment} disabled={paymentSaving}>
+      <button type="button" class="primary" onclick={onAddPayment} aria-disabled={paymentSaving}>
         {paymentSaving ? "Recording…" : "Record payment"}
       </button>
     </div>

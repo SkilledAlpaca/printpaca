@@ -79,7 +79,7 @@
 </script>
 
 <div class="head-row">
-  <h1>Invoices</h1>
+  <h1 tabindex="-1">Invoices</h1>
   <button type="button" class="primary" onclick={onNew}>New invoice</button>
 </div>
 
@@ -136,7 +136,7 @@
           {#each filteredInvoices as inv (inv.id)}
             <tr class="clickable-row" onclick={() => onOpenDetail(inv.id)}>
               <td class="nowrap">
-                <button type="button" class="open-btn" onclick={(e) => { e.stopPropagation(); onOpenDetail(inv.id); }}>{inv.number}</button>
+                <button type="button" class="open-btn" data-row-id={inv.id} onclick={(e) => { e.stopPropagation(); onOpenDetail(inv.id); }}>{inv.number}</button>
               </td>
               <td>{inv.clientName}</td>
               <td class="nowrap">{inv.issueDate ? formatDate(inv.issueDate) : "-"}</td>

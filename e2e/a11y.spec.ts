@@ -26,23 +26,25 @@ async function settle(page: Page): Promise<void> {
   await page.evaluate(() => document.fonts.ready);
 }
 
-async function runAxe(page: Page, label: string): Promise<void> {
+/** Runs axe and returns one line per violation rule, so a page's failures from every combination can be reported
+ * together. */
+async function runAxe(page: Page, label: string): Promise<string[]> {
   const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
-  const summary = results.violations.map(
-    (v) => `${v.id} (${v.impact}): ${v.nodes.length} node(s), e.g. ${v.nodes[0]?.target.join(" ")} :: ${v.nodes[0]?.failureSummary?.split("\n")[1] ?? ""}`,
+  return results.violations.map(
+    (v) => `${label}: ${v.id} (${v.impact}), ${v.nodes.length} node(s), e.g. ${v.nodes[0]?.target.join(" ")}`,
   );
-  expect(summary, `axe violations on ${label}`).toEqual([]);
 }
 
 /** Scans the page already on screen in all four scheme and viewport combinations, then checks reflow at 320 px.
- * `prepare` re-establishes any transient state (an open menu, typed input) that a resize would reset. */
+ * Every problem is collected before asserting, so one run lists everything wrong on the page. */
 async function scanAll(page: Page, name: string): Promise<void> {
+  const problems: string[] = [];
   for (const vp of VIEWPORTS) {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     for (const scheme of SCHEMES) {
       await page.emulateMedia({ colorScheme: scheme });
       await settle(page);
-      await runAxe(page, `${name} [${scheme}, ${vp.name}]`);
+      problems.push(...(await runAxe(page, `${name} [${scheme}, ${vp.name}]`)));
     }
   }
   await page.emulateMedia({ colorScheme: "light" });
@@ -52,8 +54,11 @@ async function scanAll(page: Page, name: string): Promise<void> {
     scroll: document.documentElement.scrollWidth,
     client: document.documentElement.clientWidth,
   }));
-  expect(overflow.scroll, `${name}: horizontal page scroll at 320 px (scrollWidth ${overflow.scroll})`).toBeLessThanOrEqual(overflow.client);
+  if (overflow.scroll > overflow.client) {
+    problems.push(`${name} [320 px]: horizontal page scroll (scrollWidth ${overflow.scroll} > ${overflow.client})`);
+  }
   await page.setViewportSize({ width: 1280, height: 900 });
+  expect(problems, `a11y problems on ${name}`).toEqual([]);
 }
 
 let originalConfig: Record<string, unknown> & { materials: Array<{ name: string; public?: boolean }> };
@@ -118,7 +123,7 @@ test.beforeAll(async ({ request }) => {
     .toBe(true);
 
   const order = await request.post("/api/public/item-order", {
-    headers: { "X-Forwarded-For": "203.0.113.10" },
+    headers: { "X-Forwarded-For": `203.0.113.${100 + Math.floor(Math.random() * 100)}` },
     data: { itemId, optionName: "", quantity: 1, name: "Gate Visitor", email: "visitor@example.com", note: "" },
   });
   expect(order.ok()).toBeTruthy();
@@ -266,21 +271,24 @@ test.describe("admin detail views", () => {
   test("invoice detail", async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto(`/admin/#/invoices#${invoiceId}`);
-    await expect(page.locator("main h1")).toHaveCount(1);
+    await expect(page.locator("main h1, main h2").first()).toBeVisible();
+    expect.soft(await page.locator("main h1").count(), "a detail view has exactly one h1").toBe(1);
     await scanAll(page, "admin invoice detail");
   });
 
   test("client detail", async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto(`/admin/#/clients#${clientId}`);
-    await expect(page.locator("main h1")).toHaveCount(1);
+    await expect(page.locator("main h1, main h2").first()).toBeVisible();
+    expect.soft(await page.locator("main h1").count(), "a detail view has exactly one h1").toBe(1);
     await scanAll(page, "admin client detail");
   });
 
   test("request detail", async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto(`/admin/#/requests#${requestId}`);
-    await expect(page.locator("main h1")).toHaveCount(1);
+    await expect(page.locator("main h1, main h2").first()).toBeVisible();
+    expect.soft(await page.locator("main h1").count(), "a detail view has exactly one h1").toBe(1);
     await scanAll(page, "admin request detail");
   });
 
@@ -288,13 +296,15 @@ test.describe("admin detail views", () => {
     test.setTimeout(120_000);
     await page.goto("/admin/#/items");
     await page.locator("main").getByRole("button", { name: new RegExp(ITEM_NAME) }).first().click();
-    await expect(page.locator("main h1")).toHaveCount(1);
+    await expect(page.locator("main h1, main h2").first()).toBeVisible();
+    expect.soft(await page.locator("main h1").count(), "a detail view has exactly one h1").toBe(1);
     await scanAll(page, "admin item detail");
   });
 
   test("a delete confirm keeps focus on a control inside the page", async ({ page }) => {
     await page.goto(`/admin/#/clients#${clientId}`);
-    await expect(page.locator("main h1")).toHaveCount(1);
+    await expect(page.locator("main h1, main h2").first()).toBeVisible();
+    expect.soft(await page.locator("main h1").count(), "a detail view has exactly one h1").toBe(1);
     await page.getByRole("button", { name: /^Delete client/ }).click();
     // The trigger is replaced by the confirm and cancel buttons; focus must land on one of them, not <body>.
     await expect(page.locator("main :focus")).toHaveCount(1);

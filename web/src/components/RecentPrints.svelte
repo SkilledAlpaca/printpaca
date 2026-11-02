@@ -201,7 +201,18 @@
   {#if status === "ok"}
     <label class="field field-inline recent">
       <span>Recent print (from Moonraker)</span>
-      <select bind:value={selectedId} disabled={applying} onchange={(e) => pick(e.currentTarget.value)}>
+      <select
+        bind:value={selectedId}
+        aria-disabled={applying}
+        onchange={(e) => {
+          // A pick is applying: keep the select focusable (aria-disabled, not disabled) but ignore changes.
+          if (applying) {
+            e.currentTarget.value = selectedId;
+            return;
+          }
+          pick(e.currentTarget.value);
+        }}
+      >
         <option value="">Pick a completed print…</option>
         {#each jobs as j (j.job_id)}
           <option value={j.job_id}>{j.filename} · {whenFinished(j)} · {filamentLabel(j)} · {durationLabel(j)}</option>

@@ -20,7 +20,7 @@ test("an employee's Access email and the admin's Access email survive a round tr
   await page.getByLabel("Multi-user mode").check();
   await page.getByLabel("Your Cloudflare Access email", { exact: true }).fill(ADMIN_EMAIL);
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  await expect(page.getByText("Settings saved.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Add employee" })).toBeVisible();
 
   const usersCard = page.locator("#section-users");

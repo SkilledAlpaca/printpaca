@@ -19,7 +19,7 @@ test("disabling a tab in Settings hides it from the nav and its hash falls back 
 
   await filamentCheckbox.uncheck();
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  await expect(page.getByText("Settings saved.")).toBeVisible();
   await expect(navButtons(page, "Filament")).toHaveCount(0);
 
   // Same-document navigation: a hash naming the disabled Filament tab is rewritten to the tab on screen.
@@ -42,7 +42,7 @@ test("disabling a tab in Settings hides it from the nav and its hash falls back 
   await expect(filamentCheckbox).not.toBeChecked();
   await filamentCheckbox.check();
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  await expect(page.getByText("Settings saved.")).toBeVisible();
   await expect(navButtons(page, "Filament")).toHaveCount(1);
 
   await page.goto("/admin/#/filament");

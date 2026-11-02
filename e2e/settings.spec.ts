@@ -18,7 +18,7 @@ test("saving Settings hot-applies: /api/config serves the new value with no rest
 
   await page.getByLabel("Symbol").fill("€");
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  await expect(page.getByText("Settings saved.")).toBeVisible();
 
   // Poll: "Save changes" reaching count 0 marks the save starting, and /api/config settles to the new
   // value a beat later.
@@ -50,7 +50,7 @@ test("an invalid marginPct is rejected with a path-scoped error; a valid one sav
   await page.getByLabel("Symbol").fill("$");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(marginError).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  await expect(page.getByText("Settings saved.")).toBeVisible();
   // Poll: the button relabel marks the save starting, not finishing.
   await expect.poll(async () => await configSymbol(page)).toBe("$");
 });
@@ -64,7 +64,7 @@ test("a checked lostOnFailure hardware entry persists across reload and via GET 
   await page.getByLabel("Hardware 1 unit cost").fill("1.00");
   await page.getByLabel("Hardware 1 lost on failed prints").check();
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  await expect(page.getByText("Settings saved.")).toBeVisible();
 
   await page.reload();
   await gotoSettings(page);
@@ -78,7 +78,7 @@ test("a checked lostOnFailure hardware entry persists across reload and via GET 
   // Cleanup: remove the hardware catalog entry.
   await page.getByRole("button", { name: "Remove hardware e2e persist magnet" }).click();
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  await expect(page.getByText("Settings saved.")).toBeVisible();
 });
 
 // timezone and the customer shipping charge are new top-level and pricing keys: both must survive a real save
@@ -88,7 +88,7 @@ test("time zone and default shipping charge persist through a save and are resto
   await page.getByLabel("Time zone").fill("America/New_York");
   await page.getByLabel("Default shipping charge").fill("6.5");
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  await expect(page.getByText("Settings saved.")).toBeVisible();
 
   const read = async () => {
     const body = (await (await page.request.get("/admin/api/config")).json()) as {
@@ -102,7 +102,7 @@ test("time zone and default shipping charge persist through a save and are resto
   await page.getByLabel("Time zone").fill("UTC");
   await page.getByLabel("Default shipping charge").fill("0");
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  await expect(page.getByText("Settings saved.")).toBeVisible();
   await expect.poll(read).toEqual(["UTC", 0]);
 });
 

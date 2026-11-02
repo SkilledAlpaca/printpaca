@@ -7,7 +7,7 @@ import { fillCanonicalQuote, gotoSettings, historyRow, navButton, readMoney } fr
 
 async function saveSettingsChanges(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  await expect(page.getByText("Settings saved.")).toBeVisible();
 }
 
 // The last-visited tab is restored on a hash-less load, so use the nav button, not page.goto("/admin/").

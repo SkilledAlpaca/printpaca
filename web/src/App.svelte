@@ -800,6 +800,8 @@
   </div>
 </aside>
 
+<!-- tabindex 0 on the Guide only: its scroll container has no focusable content, so keyboard users could not scroll it (WCAG 2.1.1). -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <main class="app-main" id="main" tabindex={tab === "guide" ? 0 : -1} inert={drawerOpen && !isDesktop} aria-label={TABS[tab].label} bind:this={mainEl}>
   {#if accessWatch.revoked}
     <!-- Global 403 handling: a permission that worked just answered 403 (accessWatch.svelte.ts), most

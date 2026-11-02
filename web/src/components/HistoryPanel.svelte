@@ -13,6 +13,7 @@
   import { listClients, createClient, type Client } from "../lib/clientsApi";
   import CardHelp from "./CardHelp.svelte";
   import { TILE_HELP } from "../lib/guideContent";
+  import { stickyInset } from "../lib/stickyInset";
 
   let {
     cfg,
@@ -375,7 +376,7 @@
     <p class="banner-warn space-above" role="alert">Couldn't load saved quotes. The server couldn't be reached.</p>
   {/if}
 
-  <div class="saverow" class:dirty={floating}>
+  <div class="saverow" class:dirty={floating} use:stickyInset={{ edge: "bottom", active: floating }}>
     <div class="save-field">
       <label for="history-label">Label for this quote</label>
       <input
@@ -428,7 +429,7 @@
 
   <ul class="plain-list space-above">
     {#if loading}
-      <li class="empty-state">Loading…</li>
+      <li class="empty-state"><span role="status">Loading…</span></li>
     {:else}
       {#each recentQuotes as q (q.id)}
         <li class:active-row={loadedId === q.id}>

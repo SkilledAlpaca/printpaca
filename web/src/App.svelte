@@ -819,7 +819,7 @@
       <button onclick={refreshConfig}>Retry</button>
     </div>
   {:else if !config}
-    <p>Loading…</p>
+    <p role="status">Loading…</p>
   {:else if !hasTabAccess(tab, configUser)}
     <!-- Direct hash navigation (or a stale last-visited tab) onto a tab this identity isn't granted gets
          a "no access" note: not a blank page, and never a silent redirect (a disabled tab gets that,
@@ -1031,10 +1031,15 @@
   /* 1280px, not the viewport: past roughly this width a card becomes a band with its contents stranded at
    * one end (summary stats, list names, a drop zone's one line). The Guide already capped its measure for
    * this reason; this applies the cap to every tab. Below ~1500px viewports nothing changes. */
-  /* Sticky bars (header, quote summary bar, save bar) can cover a focused field in the scroll container;
-   * the padding keeps the field clear of them (WCAG 2.4.11). */
-  main { scroll-padding-block: 5rem; }
-  :global(html) { scroll-padding-top: var(--demo-banner-h, 0px); }
+  /* Sticky bars can cover a focused field in the scroll container (WCAG 2.4.11). The Settings jump nav (top),
+   * the Settings save bar and the quote history save row (bottom) publish their measured heights through the
+   * stickyInset action as --sticky-top-h and --sticky-bottom-h; the demo banner publishes --demo-banner-h
+   * below 900px. The scroller is main at >=900px and the window below that, so both get the same padding. */
+  main,
+  :global(html) {
+    scroll-padding-top: calc(var(--demo-banner-h, 0px) + var(--sticky-top-h, 0px) + 1rem);
+    scroll-padding-bottom: calc(var(--sticky-bottom-h, 0px) + 1rem);
+  }
   main { max-width: 1280px; margin: 0 auto; padding: 1rem clamp(1rem, 2vw, 2rem); }
   /* theme.css's global :focus-visible outline draws outside the element (outline-offset: 2px); #app clips
    * overflow, so on <main> (the skip-link target and scroll container) it gets cut into a stray partial

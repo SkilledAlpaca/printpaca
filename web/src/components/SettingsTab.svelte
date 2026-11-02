@@ -15,6 +15,7 @@
   import LabeledNumber from "./LabeledNumber.svelte";
   import LabeledText from "./LabeledText.svelte";
   import { focusAfterUpdate } from "../lib/a11y.svelte";
+  import { stickyInset } from "../lib/stickyInset";
   import { focusAfterRowRemoval, keySelector } from "./a11yFocus";
 
   // Server-asserted demoMode from appConfig (as in IntegrationsSettings.svelte), used to disable the
@@ -146,7 +147,7 @@
       {@const builtinFeeScheduleKeys = new Set(Object.keys(builtin.feeSchedules))}
       {@const warnings = settingsWarnings(form)}
 
-      <nav class="jump-nav" aria-label="Settings sections">
+      <nav class="jump-nav" aria-label="Settings sections" use:stickyInset={{ edge: "top" }}>
         {#each JUMP_SECTIONS as s (s.id)}
           <button
             type="button"

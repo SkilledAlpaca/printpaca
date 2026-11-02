@@ -14,13 +14,20 @@ updates:
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
+    ignore:
+      # TypeScript 7 is the native port; take it deliberately, not via an automatic major bump.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # @types/node must track the runtime in .nvmrc, so majors are bumped with it.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     groups:
-      actions-minor-patch:
-        update-types: [minor, patch]
+      github-actions:
+        patterns: ["*"]
   - package-ecosystem: docker
     directory: /
     schedule:

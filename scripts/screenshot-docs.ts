@@ -4,7 +4,7 @@
 //
 // Usage: node --experimental-strip-types scripts/screenshot-docs.ts
 // (Node >=23.6 also runs it without the flag; the shebang passes it for the
-// pinned Node 22.)
+// pinned Node 26.)
 //
 // Like scripts/e2e-server.sh: build web/dist, swap it into server/embedded/dist
 // (go:embed needs it at build time), go build a throwaway binary, then restore

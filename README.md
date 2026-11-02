@@ -124,7 +124,7 @@ The front door, the shop, and `/api/public/*` are anonymous and carry no admin c
 
 ## Development
 
-You need Node 22 (pinned in `.nvmrc` and `package.json`) and Go 1.26.10 or later (the floor in `server/go.mod`).
+You need Node 26 (pinned in `.nvmrc` and `package.json`) and Go 1.26.10 or later (the floor in `server/go.mod`).
 
 ```bash
 npm install                 # installs the web workspace

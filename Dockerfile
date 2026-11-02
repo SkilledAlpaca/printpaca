@@ -4,11 +4,11 @@
 
 # --- web build (vitest runs here too: fail the image on red tests) ---
 # Pinned by digest so rebuilding a commit months apart yields the same image.
-# To update: `docker buildx imagetools inspect node:22-alpine`, check the Node
+# To update: `docker buildx imagetools inspect node:26-alpine`, check the Node
 # floor (CONTRIBUTING.md, package.json engines), replace the digest, and
 # re-run the full test gate. Base refs are fully qualified (docker.io/library/)
 # so resolution is identical on builders without unqualified-search registries.
-FROM --platform=$BUILDPLATFORM docker.io/library/node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS webbuild
+FROM --platform=$BUILDPLATFORM docker.io/library/node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS webbuild
 WORKDIR /src
 COPY package.json package-lock.json tsconfig.base.json vitest.config.ts ./
 COPY web/package.json web/

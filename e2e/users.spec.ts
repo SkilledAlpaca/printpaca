@@ -41,7 +41,9 @@ test("admin turns on multi-user mode and creates an employee with distinct grant
 
   await page.getByLabel("Multi-user mode").check();
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  // Not the Save button vanishing: while the PUT is in flight its label is "Saving…", which also matches
+  // count 0. "Settings saved." renders only after the server has accepted the change.
+  await expect(page.getByText("Settings saved.")).toBeVisible();
 
   // The Users card unlocks once the persisted multiUser flip lands, not on the draft checkbox.
   await expect(page.getByRole("heading", { name: "Add employee" })).toBeVisible();
@@ -151,7 +153,9 @@ test("cleanup: admin deletes the employee and turns multi-user mode back off", a
 
   await page.getByLabel("Multi-user mode").uncheck();
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0);
+  // Not the Save button vanishing: while the PUT is in flight its label is "Saving…", which also matches
+  // count 0. "Settings saved." renders only after the server has accepted the change.
+  await expect(page.getByText("Settings saved.")).toBeVisible();
 
   // Single-user mode's login screen has no username field (as auth.spec.ts assumes).
   await logOut(page);

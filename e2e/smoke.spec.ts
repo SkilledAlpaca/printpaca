@@ -26,7 +26,7 @@ test("clearing a field shows a scoped warning and blanks the computed total", as
   // A fresh, untouched field never shows its warning even though Model weight starts empty. Wait for
   // the input to be visible first, so the assertion doesn't pass trivially before hydration.
   await expect(page.getByLabel(/Model weight/)).toBeVisible();
-  const weightWarning = page.locator("label", { hasText: /Model weight/ }).locator(".warn-text");
+  const weightWarning = page.locator(".field", { has: page.getByLabel(/Model weight/) }).locator(".warn-text");
   await expect(weightWarning).not.toBeVisible();
 
   await page.getByLabel(/Model weight/).fill("50");

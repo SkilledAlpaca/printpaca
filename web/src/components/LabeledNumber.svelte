@@ -28,19 +28,23 @@
   const uid = $props.id();
   const warnId = `${uid}-warn`;
   const helpId = `${uid}-help`;
+  const hintId = `${uid}-hint`;
+  const inputId = `${uid}-input`;
 
   let touched = $state(false);
   const describedBy = $derived(
-    [help ? helpId : "", warn !== "" && touched ? warnId : ""].filter(Boolean).join(" ") || undefined,
+    [help ? helpId : "", hint ? hintId : "", warn !== "" && touched ? warnId : ""].filter(Boolean).join(" ") || undefined,
   );
   function markTouched() {
     touched = true;
   }
 </script>
 
-<label class="field">
-  <span>{label}{suffix ? ` (${suffix})` : ""}</span>
+<!-- Only the label text is the field name; help, hint, and warning are described, not named (WCAG 1.3.1, 4.1.2). -->
+<div class="field">
+  <label for={inputId}>{label}{suffix ? ` (${suffix})` : ""}</label>
   <input
+    id={inputId}
     type="number"
     bind:value
     {min}
@@ -58,6 +62,6 @@
     aria-describedby={describedBy}
   />
   {#if help}<small id={helpId} class="field-hint">{help}</small>{/if}
-  {#if hint}<small class="field-hint">{hint}</small>{/if}
+  {#if hint}<small id={hintId} class="field-hint">{hint}</small>{/if}
   {#if warn !== "" && touched}<small id={warnId} class="warn-text">{warn}</small>{/if}
-</label>
+</div>

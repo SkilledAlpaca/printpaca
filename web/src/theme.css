@@ -6,7 +6,7 @@
   --surface: #fffbef;
   --surface-2: #f6e8c4;
   --text: #43281f;
-  --muted: #915e43;
+  --muted: #85563c;
   --accent: #e06020;
   --accent-contrast: #2b1710;
   /* Accent-hued text color: --accent itself only clears ~3.5:1 against --surface (fine for the non-text
@@ -15,6 +15,11 @@
    * enforced ratio. */
   --accent-text: #9c4212;
   --border: #e6d3a8;
+  /* Borders of data-entry controls (inputs, selects, textareas, checkboxes, drop zones): >=3:1 on --bg,
+   * --surface and --surface-2 (WCAG 1.4.11). --border stays for decorative card and table rules. */
+  --control-border: #977650;
+  /* Keyboard focus ring: >=3:1 on all three surfaces (WCAG 1.4.11, 2.4.7). */
+  --focus-ring: #9c4212;
   --danger: #b5361f;
   --warn: #8f5d17;
   --ok: #4f6b3a;
@@ -83,6 +88,8 @@
      * for text) so both schemes go through the same var name. */
     --accent-text: #f1b750;
     --border: #3a3a3a;
+    --control-border: #7a7a7a;
+    --focus-ring: #f1b750;
     --danger: #e07a5f;
     --warn: #d9b45c;
     --ok: #9ab87f;
@@ -103,6 +110,8 @@
    * text) so both schemes go through the same var name. */
   --accent-text: #f1b750;
   --border: #3a3a3a;
+  --control-border: #7a7a7a;
+  --focus-ring: #f1b750;
   --danger: #e07a5f;
   --warn: #d9b45c;
   --ok: #9ab87f;
@@ -141,8 +150,19 @@ input, select, button, textarea {
   border-radius: calc(var(--radius) / 2);
   padding: 0.4rem 0.6rem;
 }
+input, select, textarea { border-color: var(--control-border); }
+::placeholder { color: var(--muted); opacity: 1; }
+/* Honor the OS "reduce motion" setting for every transition and animation (WCAG 2.3.3 advisory, 2.2.2). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 /* Boxy controls draw the focus ring just INSIDE their own border box: the outward ring protrudes 4px per
@@ -163,6 +183,12 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="
 select,
 button {
   min-height: 44px;
+}
+/* Accent-filled controls: the ring would be accent-on-accent (1:1), so it takes the fill's contrast color. */
+button.primary:focus-visible,
+.chips button.active:focus-visible {
+  outline-color: var(--accent-contrast);
+  outline-offset: -4px;
 }
 button.primary {
   background: var(--accent);

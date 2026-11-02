@@ -21,6 +21,9 @@
   import Icon from "./Icon.svelte";
   import LabeledNumber from "./LabeledNumber.svelte";
   import AttributionLine from "./AttributionLine.svelte";
+  import DetailTitle from "./DetailTitle.svelte";
+  import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
+  import { confirmFocus, focusAfterRowRemoval, focusRowOrHeading, keySelector, neighborId } from "./a11yFocus";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 
@@ -76,6 +79,7 @@
     try {
       await updateItem(it.id, itemToInput(it, { public: !it.public }));
       await refresh();
+      announce(it.public ? `${it.name} is now hidden from the gallery.` : `${it.name} is now public.`);
     } catch (err) {
       checkbox.checked = it.public;
       listActionError = err instanceof Error ? err.message : "Couldn't update item.";
@@ -100,6 +104,10 @@
       await updateItem(a.id, itemToInput(a, { sortOrder: aNext }));
       await updateItem(b.id, itemToInput(b, { sortOrder: bNext }));
       await refresh();
+      const pos = items.findIndex((x) => x.id === a.id) + 1;
+      announce(`${a.name} moved to position ${pos} of ${items.length}.`);
+      // Reordering moves the focused button's row in the DOM, which can drop focus; put it back.
+      await focusAfterUpdate(keySelector(`${j < i ? "up" : "down"}-${a.id}`));
     } catch (err) {
       listActionError = err instanceof Error ? err.message : "Couldn't reorder items.";
       // The first PUT may have committed before the second failed, leaving sortOrder values changed; reload
@@ -230,6 +238,7 @@
       listActionError = "Can't add a new item: the item list couldn't be loaded. Reload the page and try again.";
       return;
     }
+    openerId = null;
     view = "detail";
     detailId = null;
     detail = null;
@@ -240,9 +249,13 @@
     imageError = null;
   }
 
+  // The row that opened the detail view, so "Back to list" can return focus to it (WCAG 2.4.3).
+  let openerId: string | null = null;
+
   function openDetail(id: string) {
     const found = items.find((it) => it.id === id);
     if (!found) return;
+    openerId = id;
     view = "detail";
     detailId = found.id;
     detail = found;
@@ -264,16 +277,18 @@
     };
   });
 
-  function backToList() {
+  function backToList(focusId: string | null = openerId) {
     view = "list";
     detailId = null;
     detail = null;
     formErrors = [];
     confirmingDelete = false;
     imageError = null;
+    void focusRowOrHeading(focusId);
   }
 
   async function save() {
+    if (saving || !dirty) return;
     const nullFieldErrors = validateForm(form);
     if (nullFieldErrors.length > 0) {
       formErrors = nullFieldErrors;
@@ -289,8 +304,10 @@
       form = formFromItem(result);
       formBaseline = formFromItem(result); // saved state is the new clean baseline
       await refresh();
+      announce(`${result.name} saved.`);
     } catch (err) {
       formErrors = [err instanceof Error ? err.message : "Couldn't save item."];
+      announce("Couldn't save the item. See the errors above the form.", "assertive");
     } finally {
       saving = false;
     }
@@ -304,10 +321,13 @@
   }
   async function confirmDeleteItem() {
     if (!detail) return;
+    const { id, name } = detail;
+    const next = neighborId(items.map((x) => x.id), id);
     try {
-      await deleteItem(detail.id);
+      await deleteItem(id);
       await refresh();
-      backToList();
+      backToList(next);
+      announce(`${name} deleted.`);
     } catch (err) {
       formErrors = [err instanceof Error ? err.message : "Couldn't delete item."];
       confirmingDelete = false;
@@ -319,6 +339,8 @@
   }
   function removeOption(i: number) {
     form.options = form.options.filter((_, idx) => idx !== i);
+    // The removed row held focus; move to the next option's Remove button, else Add option.
+    void focusAfterRowRemoval("remove-option", i, form.options.length, "add-option");
   }
 
   // Image upload needs a real item id, so it is disabled until the item has been saved once.
@@ -326,7 +348,7 @@
     const input = e.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     input.value = ""; // allow re-selecting the same file after a failed upload
-    if (!file || detailId === null) return;
+    if (!file || detailId === null || uploadingImage) return;
     imageError = null;
     uploadingImage = true;
     try {
@@ -334,6 +356,7 @@
       const updated = await uploadItemImage(detailId, blob);
       detail = updated;
       await refresh();
+      announce("Photo uploaded.");
     } catch (err) {
       imageError = err instanceof Error ? err.message : "Couldn't upload image.";
     } finally {
@@ -345,7 +368,7 @@
 <div class="page">
   {#if view === "list"}
     <div class="head-row">
-      <h1>Items</h1>
+      <h1 tabindex="-1">Items</h1>
       <button type="button" class="primary" onclick={openNew} disabled={unavailable}>Add item</button>
     </div>
 
@@ -363,7 +386,7 @@
         {:else}
           {#each items as it, i (it.id)}
             <li class="item-row">
-              <button type="button" class="row-open" onclick={() => openDetail(it.id)}>
+              <button type="button" class="row-open" data-row-id={it.id} onclick={() => openDetail(it.id)}>
                 {#if it.imageFile}
                   <img class="thumb" src={"item-images/" + it.imageFile} alt="" />
                 {:else}
@@ -378,13 +401,14 @@
                 <span>Public<span class="visually-hidden"> ({it.name})</span></span>
               </label>
               <div class="reorder">
-                <button type="button" aria-label={`Move ${it.name} up`} disabled={reordering || i === 0} onclick={() => moveUp(i)}>
+                <button type="button" aria-label={`Move ${it.name} up`} aria-disabled={reordering || i === 0} data-focus-key={`up-${it.id}`} onclick={() => moveUp(i)}>
                   <Icon path={mdiArrowUp} size={16} />
                 </button>
                 <button
                   type="button"
                   aria-label={`Move ${it.name} down`}
-                  disabled={reordering || i === items.length - 1}
+                  aria-disabled={reordering || i === items.length - 1}
+                  data-focus-key={`down-${it.id}`}
                   onclick={() => moveDown(i)}
                 >
                   <Icon path={mdiArrowDown} size={16} />
@@ -403,13 +427,15 @@
     </div>
 
     <div class="card">
-      <h2>{detail ? detail.name : "Add item"}</h2>
+      <DetailTitle>{detail ? detail.name : "Add item"}</DetailTitle>
       {#if detail}<AttributionLine createdBy={detail.createdBy} updatedBy={detail.updatedBy} />{/if}
 
       {#if formErrors.length > 0}
-        <ul class="errors" role="alert">
-          {#each formErrors as e (e)}<li>{e}</li>{/each}
-        </ul>
+        <div role="alert">
+          <ul class="errors">
+            {#each formErrors as e (e)}<li>{e}</li>{/each}
+          </ul>
+        </div>
       {/if}
 
       <div class="field-rows">
@@ -477,10 +503,10 @@
               bind:value={opt.delta}
               warn={deltaWarn}
             />
-            <button type="button" aria-label={`Remove option ${i + 1}`} onclick={() => removeOption(i)}>Remove</button>
+            <button type="button" aria-label={`Remove option ${i + 1}`} data-focus-key={`remove-option-${i}`} onclick={() => removeOption(i)}>Remove</button>
           </div>
         {/each}
-        <button type="button" onclick={addOption}>Add option</button>
+        <button type="button" data-focus-key="add-option" onclick={addOption}>Add option</button>
       </div>
 
       <div class="subcard">
@@ -491,25 +517,25 @@
         {#if detailId === null}
           <p class="hint">Save the item first to add a photo.</p>
         {:else}
-          <input type="file" aria-label="Upload photo" accept="image/jpeg,image/png,image/webp" onchange={handleFileChange} disabled={uploadingImage} />
-          {#if uploadingImage}<p class="status-line">Uploading…</p>{/if}
+          <input type="file" aria-label="Upload photo" accept="image/jpeg,image/png,image/webp" onchange={handleFileChange} aria-disabled={uploadingImage} />
+          <p class="status-line" role="status">{uploadingImage ? "Uploading…" : ""}</p>
           {#if imageError}<p class="banner-warn" role="alert">{imageError}</p>{/if}
         {/if}
       </div>
 
       <div class="form-actions">
-        <button type="button" class="primary" onclick={save} disabled={saving || !dirty}>{saving ? "Saving…" : "Save"}</button>
+        <button type="button" class="primary" onclick={save} aria-disabled={saving || !dirty}>{saving ? "Saving…" : "Save"}</button>
       </div>
 
       {#if detail}
         <div class="subcard">
           {#if confirmingDelete}
             <div class="form-actions delete-actions">
-              <button type="button" class="danger" onclick={confirmDeleteItem}>Delete item?</button>
+              <button type="button" class="danger" onclick={confirmDeleteItem} use:confirmFocus={{ restore: keySelector("delete-item"), cancel: cancelDelete }}>Delete item?</button>
               <button type="button" onclick={cancelDelete}>Cancel</button>
             </div>
           {:else}
-            <button type="button" onclick={askDelete}>Delete item</button>
+            <button type="button" data-focus-key="delete-item" onclick={askDelete}>Delete item</button>
           {/if}
         </div>
       {/if}
@@ -545,13 +571,15 @@
     padding: 0.3rem 0;
     text-align: left;
     cursor: pointer;
+    flex-wrap: wrap;
   }
   .row-open:hover { background: var(--surface-2); }
   .thumb { width: 48px; height: 48px; border-radius: var(--radius); object-fit: cover; flex-shrink: 0; background: var(--surface-2); }
   .thumb-empty { border: 1px dashed var(--border); }
   .i-name { flex: 1 1 8rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
   .i-price { font-variant-numeric: tabular-nums; min-width: 5rem; }
-  .i-stock { color: var(--muted); font-size: var(--text-sm); min-width: 8rem; }
+  .i-stock { color: var(--muted); font-size: var(--text-sm); min-width: 0; flex: 0 1 8rem; }
+  input[type="file"] { max-width: 100%; }
   .i-public { min-height: 0; flex-shrink: 0; }
   .reorder { display: flex; gap: 0.2rem; flex-shrink: 0; }
 

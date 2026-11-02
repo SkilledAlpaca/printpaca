@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorSummary from "./ErrorSummary.svelte";
   import { canLeave, escapeBelongsToField } from "../lib/unsavedGuard";
   import { unsavedForm } from "../lib/unsavedForm.svelte";
   import { onMount } from "svelte";
@@ -23,7 +24,7 @@
   import BackfillStatus from "./BackfillStatus.svelte";
   import DetailTitle from "./DetailTitle.svelte";
   import { announce } from "../lib/a11y.svelte";
-  import { confirmFocus, focusRowOrHeading, keySelector, neighborId } from "./a11yFocus";
+  import { confirmFocus, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "./a11yFocus";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 
@@ -86,8 +87,11 @@
     loadingMore = true;
     const result = await listClients({ limit: INITIAL_PAGE_LIMIT, offset: clients.length });
     if (result !== null) {
+      const firstNew = result.items[0];
       clients = [...clients, ...result.items];
       total = result.total;
+      // The button that was focused goes away when this page exhausts the list: land on the first new row.
+      if (firstNew) void refocusIfLost(rowSelector(firstNew.id));
     }
     loadingMore = false;
   }
@@ -439,7 +443,7 @@
     <div class="card">
       <ul class="plain-list">
         {#if loading}
-          <li class="empty-state">Loading clients…</li>
+          <li class="empty-state"><span role="status">Loading clients…</span></li>
         {:else}
           {#each filteredClients as c (c.id)}
             <li class="client-row">
@@ -465,7 +469,7 @@
 
     <div class="card">
       {#if detailLoading}
-        <p>Loading…</p>
+        <p role="status">Loading…</p>
       {:else}
       <DetailTitle>{detail ? detail.name : detailError ? "Client" : "Add client"}</DetailTitle>
       {#if detail}<AttributionLine createdBy={detail.createdBy} updatedBy={detail.updatedBy} />{/if}
@@ -473,13 +477,7 @@
       {#if detailError}
         <p class="banner-warn" role="alert">{detailError}</p>
       {:else}
-        {#if formErrors.length > 0}
-          <div role="alert">
-            <ul class="errors">
-              {#each formErrors as e (e)}<li>{e}</li>{/each}
-            </ul>
-          </div>
-        {/if}
+        <ErrorSummary errors={formErrors} />
         <div class="field-rows">
           <label class="field">
             <span>Name</span>

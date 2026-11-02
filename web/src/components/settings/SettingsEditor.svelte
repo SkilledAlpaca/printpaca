@@ -12,6 +12,10 @@
   import { appConfig } from "../../lib/state.svelte";
   import { settingsDirty } from "../../lib/settingsDirty.svelte";
   import { announce } from "../../lib/a11y.svelte";
+  import { stickyInset } from "../../lib/stickyInset";
+  import ErrorSummary from "../ErrorSummary.svelte";
+  import { findFieldByLabel, errorLabel, type ErrorTarget } from "../../lib/fieldErrors";
+  import { fieldLabel, hasFieldLabel } from "../../lib/format";
   import { refocusIfLost } from "../a11yFocus";
 
   // Reusable form-editing shell for SettingsTab and every tab that embeds a settings card (ElectricityTab,
@@ -126,11 +130,22 @@
     announce("Changes discarded.");
     void refocusIfLost("[data-settings-status]");
   }
+
+  // A save error names a config path ("pricing.marginPct: ..."). Link it to its field when the path has a field
+  // label, else to the first control of the card that holds it (errorSection), so the summary always leads somewhere.
+  function resolveSettingsError(message: string): ErrorTarget | null {
+    const path = errorLabel(message);
+    const named = path && hasFieldLabel(path) ? findFieldByLabel(fieldLabel(path)) : null;
+    if (named) return { el: named, field: true };
+    const card = document.getElementById(`section-${errorSection(message)}`);
+    const first = card?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea, button");
+    return first ? { el: first, field: false } : null;
+  }
 </script>
 
 <div class="settings-editor">
   {#if loading}
-    <p>Loading…</p>
+    <p role="status">Loading…</p>
   {:else if loadFailed}
     <div class="card banner-error">
       <p>Couldn't load settings from the server. Check that printpaca's backend is running.</p>
@@ -148,13 +163,9 @@
     <p class="hint" role="status" tabindex="-1" data-settings-status>{dirty ? "" : savedNotice}</p>
 
     {#if dirty || errors.length > 0}
-      <div class="save-bar">
+      <div class="save-bar" use:stickyInset={{ edge: "bottom" }}>
         {#if errors.length > 0}
-          <div role="alert">
-            <ul class="errors">
-              {#each errors as e (e)}<li>{e}</li>{/each}
-            </ul>
-          </div>
+          <ErrorSummary {errors} resolve={resolveSettingsError} />
         {/if}
         <div class="save-actions">
           <button type="button" onclick={() => { if (!saving) discard(); }} disabled={!dirty} aria-disabled={saving} aria-busy={saving}>Discard changes</button>
@@ -183,5 +194,5 @@
   }
   .save-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
   /* The save bar's flex gap already spaces the error list; theme's .errors bottom margin would double it. */
-  .save-bar .errors { margin-bottom: 0; }
+  .save-bar :global(.errors) { margin-bottom: 0; }
 </style>

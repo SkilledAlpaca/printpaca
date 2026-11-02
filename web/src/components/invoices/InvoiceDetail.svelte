@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorSummary from "../ErrorSummary.svelte";
   import type { EffectiveConfig } from "../../lib/engine/index";
   import { money, formatDate } from "../../lib/format";
   import { bpToPct, type Invoice, type InvoiceStatus } from "../../lib/invoicesApi";
@@ -133,7 +134,7 @@
 </div>
 
 {#if detailLoading}
-  <p>Loading…</p>
+  <p role="status">Loading…</p>
 {:else if detailError}
   <p class="banner-warn" role="alert">{detailError}</p>
 {:else}
@@ -142,13 +143,7 @@
     {#if detail}<AttributionLine createdBy={detail.createdBy} updatedBy={detail.updatedBy} />{/if}
     {#if provenance}<p class="hint">Created from a saved quote.</p>{/if}
 
-    {#if formErrors.length > 0}
-      <div role="alert">
-        <ul class="errors">
-          {#each formErrors as e (e)}<li>{e}</li>{/each}
-        </ul>
-      </div>
-    {/if}
+    <ErrorSummary errors={formErrors} />
 
     {#if detail === null || detail.status === "draft"}
       <div class="field-rows">

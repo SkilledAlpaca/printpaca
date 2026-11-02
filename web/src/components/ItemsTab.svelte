@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorSummary from "./ErrorSummary.svelte";
   import { canLeave } from "../lib/unsavedGuard";
   import { unsavedForm } from "../lib/unsavedForm.svelte";
   import { onMount } from "svelte";
@@ -382,7 +383,7 @@
     <div class="card">
       <ul class="plain-list">
         {#if loading}
-          <li class="empty-state">Loading…</li>
+          <li class="empty-state"><span role="status">Loading…</span></li>
         {:else}
           {#each items as it, i (it.id)}
             <li class="item-row">
@@ -430,13 +431,7 @@
       <DetailTitle>{detail ? detail.name : "Add item"}</DetailTitle>
       {#if detail}<AttributionLine createdBy={detail.createdBy} updatedBy={detail.updatedBy} />{/if}
 
-      {#if formErrors.length > 0}
-        <div role="alert">
-          <ul class="errors">
-            {#each formErrors as e (e)}<li>{e}</li>{/each}
-          </ul>
-        </div>
-      {/if}
+      <ErrorSummary errors={formErrors} />
 
       <div class="field-rows">
         <label class="field">

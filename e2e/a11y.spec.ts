@@ -18,8 +18,8 @@ const VIEWPORTS = [
 const ITEM_NAME = "A11y Gate Planter";
 const CLIENT_NAME = "A11y Gate Client";
 
-test.describe.configure({ mode: "serial" });
-
+// Not serial: a failing page must not skip the rest, so one run lists every violation. The seed data is created
+// in beforeAll and removed in afterAll, which Playwright re-runs around the worker it restarts after a failure.
 /** Waits for the page to settle: network idle plus fonts, so contrast is computed on final styles. */
 async function settle(page: Page): Promise<void> {
   await page.waitForLoadState("networkidle");

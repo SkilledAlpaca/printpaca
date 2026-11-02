@@ -37,8 +37,14 @@
     <button
       type="button"
       class="card item-card"
-      disabled={outOfStock(item)}
-      onclick={() => onselect(item)}
+      class:sold-out={outOfStock(item)}
+      data-item-id={item.id}
+      aria-disabled={outOfStock(item) ? "true" : undefined}
+      onclick={() => {
+        // aria-disabled, not disabled: a sold-out card stays in the Tab order, so keyboard users learn it
+        // exists and is out of stock (WCAG 2.1.1, 1.3.1).
+        if (!outOfStock(item)) onselect(item);
+      }}
     >
       {#if item.imageUrl}
         <img class="thumb" src={item.imageUrl} alt="" loading="lazy" decoding="async" />
@@ -52,7 +58,7 @@
              rendered "from$9.00". -->
         {#if hasPositiveDelta(item)}<span class="from">from&nbsp;</span>{/if}{formatMoney(item.priceCents, currency)}
       </p>
-      <span class="pill stock-badge">{stockLabel(item)}</span>
+      <span class="pill stock-badge" class:sold-out-badge={outOfStock(item)}>{stockLabel(item)}</span>
     </button>
   {/each}
   {#if oncustomestimate}
@@ -110,6 +116,11 @@
   .from { font-weight: 400; color: var(--muted); }
 
   .stock-badge { align-self: flex-start; color: var(--muted); }
+  /* Sold out: muted card with a full-contrast "Out of stock" badge instead of opacity (opacity would drop text
+   * below 4.5:1). */
+  .sold-out { cursor: default; background: var(--surface-2); }
+  .sold-out .i-name, .sold-out .i-price { color: var(--muted); }
+  .sold-out-badge { color: var(--text); border-color: var(--text); }
 
   /* Dashed accent border and tinted background mark an action tile, not a listing; same size as .item-card */
   .cta-card {

@@ -132,6 +132,24 @@
     dragging = false;
   }
 
+  // Keyboard and single-pointer alternatives to drag-to-rotate (WCAG 2.1.1, 2.5.7).
+  const KEY_STEP = 0.15;
+  const BUTTON_STEP = 0.4;
+  function resetView() {
+    yaw = DEFAULT_YAW;
+    pitch = DEFAULT_PITCH;
+  }
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === "ArrowLeft") yaw -= KEY_STEP;
+    else if (e.key === "ArrowRight") yaw += KEY_STEP;
+    else if (e.key === "ArrowUp") pitch = Math.max(-MAX_PITCH, pitch - KEY_STEP);
+    else if (e.key === "ArrowDown") pitch = Math.min(MAX_PITCH, pitch + KEY_STEP);
+    else if (e.key === "Home") resetView();
+    else return;
+    e.preventDefault();
+  }
+
   onMount(() => {
     if (wrapEl) {
       resizeObserver = new ResizeObserver((entries) => {
@@ -148,21 +166,38 @@
 </script>
 
 <!-- role="img"/aria-label live on this wrapper, not the pointer-handling <canvas>: a static role there
-     trips a11y_no_interactive_element_to_noninteractive_role. Decorative, so no keyboard equivalent for
-     dragging. -->
-<div class="model-preview" role="img" aria-label={`3D preview of ${fileName}`} bind:this={wrapEl}>
-  <canvas
-    bind:this={canvasEl}
-    onpointerdown={onPointerDown}
-    onpointermove={onPointerMove}
-    onpointerup={onPointerUp}
-    onpointercancel={onPointerUp}
-  ></canvas>
+     trips a11y_no_interactive_element_to_noninteractive_role. The wrapper is focusable and takes arrow keys
+     (Home resets); the buttons below do the same without a keyboard or a drag (WCAG 2.1.1, 2.5.7). -->
+<div class="preview-block">
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+  <div
+    class="model-preview"
+    role="img"
+    tabindex="0"
+    aria-label={`3D preview of ${fileName}. Use the arrow keys or the buttons below to rotate.`}
+    bind:this={wrapEl}
+    onkeydown={onKeyDown}
+  >
+    <canvas
+      bind:this={canvasEl}
+      onpointerdown={onPointerDown}
+      onpointermove={onPointerMove}
+      onpointerup={onPointerUp}
+      onpointercancel={onPointerUp}
+    ></canvas>
+  </div>
+  <div class="rotate-controls" role="group" aria-label="Rotate preview">
+    <button type="button" class="quiet" onclick={() => (yaw -= BUTTON_STEP)}>Rotate left</button>
+    <button type="button" class="quiet" onclick={() => (yaw += BUTTON_STEP)}>Rotate right</button>
+    <button type="button" class="quiet" onclick={resetView}>Reset view</button>
+  </div>
 </div>
 
 <style>
   /* Fits the drop-zone column: full width up to a cap, always square so the fit math's single viewport size
    * matches the drawing. Must match MAX_CSS_SIZE in the script. */
+  .preview-block { display: flex; flex-direction: column; gap: var(--space-2); }
+  .rotate-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
   .model-preview {
     width: 100%;
     max-width: 320px;
@@ -172,8 +207,8 @@
     display: block;
     width: 100%;
     aspect-ratio: 1;
-    /* Stops the browser's touch scroll/pinch from competing with drag-to-rotate. */
-    touch-action: none;
+    /* A vertical swipe that starts on the canvas still scrolls the page (WCAG 2.5.7 alternative above). */
+    touch-action: pan-y;
     cursor: grab;
     border-radius: var(--radius);
     background: transparent;

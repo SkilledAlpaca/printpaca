@@ -44,6 +44,9 @@
   import SettingsEditor from "./settings/SettingsEditor.svelte";
   import PublicQuotesSettings from "./settings/PublicQuotesSettings.svelte";
   import LoadMoreRow from "./LoadMoreRow.svelte";
+  import DetailTitle from "./DetailTitle.svelte";
+  import { announce } from "../lib/a11y.svelte";
+  import { confirmFocus, focusRowOrHeading, keySelector, neighborId, refocusIfLost } from "./a11yFocus";
 
   let {
     cfg,
@@ -114,10 +117,13 @@
   function askDeleteAllNew() {
     confirmingDeleteAllNew = true;
   }
+  // Which row opened the detail view, so "Back to list" can return focus to it (WCAG 2.4.3).
+  let openerId: string | null = null;
   function cancelDeleteAllNew() {
     confirmingDeleteAllNew = false;
   }
   async function removeAllNew() {
+    if (bulkDeleting) return;
     confirmingDeleteAllNew = false;
     bulkDeleting = true;
     try {
@@ -126,9 +132,12 @@
       bulkStatus = count === 1 ? "Deleted 1 new request." : `Deleted ${count} new requests.`;
       await refresh();
       await refreshUnread();
+      // The confirm pair and possibly the whole button group are gone; land on the list heading.
+      void refocusIfLost(keySelector("delete-all-new") + ", .page h1");
     } catch (err) {
       bulkFailed = true;
       bulkStatus = err instanceof Error ? `Couldn't delete new requests: ${err.message}` : "Couldn't delete new requests.";
+      void refocusIfLost(keySelector("delete-all-new") + ", .page h1");
     } finally {
       bulkDeleting = false;
     }
@@ -194,7 +203,10 @@
   // of the id. A hashchange from this component's own setDetailHash()/backToList() is a no-op, so it never
   // double-fetches.
   function syncDetailFromHash() {
-    syncDetail(location.hash, REQUESTS_HASH, detail?.id ?? null, view === "detail", (id) => openDetail(id, { silent: true }), closeDetailView);
+    syncDetail(location.hash, REQUESTS_HASH, detail?.id ?? null, view === "detail", (id) => openDetail(id, { silent: true }), () => {
+      closeDetailView();
+      void focusRowOrHeading(openerId);
+    });
   }
 
   type View = "list" | "detail";
@@ -328,6 +340,7 @@
 
   async function openDetail(id: string, opts?: { silent?: boolean }) {
     const seq = ++openSeq;
+    openerId = id;
     view = "detail";
     detail = null;
     detailLoading = true;
@@ -369,9 +382,10 @@
     }
   }
 
-  function backToList() {
+  function backToList(focusId: string | null = openerId) {
     closeDetailView();
     if (location.hash !== REQUESTS_HASH) location.hash = REQUESTS_HASH; // pushes a history entry
+    void focusRowOrHeading(focusId);
   }
 
   // Actions
@@ -383,6 +397,9 @@
     actionError = null;
     try {
       detail = await finalizeRequest(detail.id);
+      announce("Request finalized.");
+      // The Finalize button is gone now; keep focus in the action row.
+      void refocusIfLost(".status-actions button");
       await refresh();
       await refreshUnread();
     } catch (err) {
@@ -412,7 +429,7 @@
   }
 
   async function convertToInvoice() {
-    if (!detail) return;
+    if (!detail || converting) return;
     convertError = null;
     converting = true;
     try {
@@ -447,13 +464,17 @@
     removing = true;
     confirmingDelete = false;
     actionError = null;
+    const { id, name } = detail;
+    const next = neighborId(requests.map((x) => x.id), id);
     try {
-      await deleteRequest(detail.id);
+      await deleteRequest(id);
       await refresh();
       await refreshUnread();
-      backToList();
+      backToList(next);
+      announce(`Request from ${name} deleted.`);
     } catch (err) {
       actionError = err instanceof Error ? err.message : "Couldn't delete this request.";
+      void refocusIfLost(keySelector("delete-request"));
     } finally {
       removing = false;
     }
@@ -478,7 +499,7 @@
 <div class="page">
   {#if view === "list"}
     <div class="head-row">
-      <h1>Requests</h1>
+      <h1 tabindex="-1">Requests</h1>
       {#if hasNewRequests}
         <div class="head-actions">
           {#if confirmingDeleteAllNew}
@@ -486,13 +507,14 @@
               type="button"
               class="danger"
               onclick={removeAllNew}
-              disabled={bulkDeleting}
-              aria-label="Confirm delete all new requests. Also deletes their stored files."
+              aria-disabled={bulkDeleting}
+              aria-label="Delete all new? Also deletes their stored files."
+              use:confirmFocus={{ restore: keySelector("delete-all-new"), cancel: cancelDeleteAllNew }}
             >{bulkDeleting ? "Deleting…" : "Delete all new?"}</button>
-            <button type="button" onclick={cancelDeleteAllNew} disabled={bulkDeleting} aria-label="Cancel deleting all new requests">Cancel</button>
+            <button type="button" onclick={cancelDeleteAllNew} aria-label="Cancel deleting all new requests">Cancel</button>
             <span class="advisory-text">Also deletes their stored files.</span>
           {:else}
-            <button type="button" onclick={askDeleteAllNew} aria-label="Delete all new requests">Delete all new</button>
+            <button type="button" data-focus-key="delete-all-new" onclick={askDeleteAllNew} aria-label="Delete all new requests">Delete all new</button>
           {/if}
         </div>
       {/if}
@@ -525,7 +547,7 @@
         {:else}
           {#each requests as r (r.id)}
             <li>
-              <button type="button" class="row-link" onclick={() => openDetail(r.id)}>
+              <button type="button" class="row-link" data-row-id={r.id} onclick={() => openDetail(r.id)}>
                 <StatusBadge status={r.status} />
                 <!-- Name and its optional pills share one grid cell (.r-who): as siblings of the metadata
                      spans they were extra tracks and pushed later columns out of line with rows that
@@ -558,7 +580,7 @@
     </SettingsEditor>
   {:else}
     <div class="head-row">
-      <button type="button" class="quiet back-link" onclick={backToList}><Icon path={mdiArrowLeft} /> Back to list</button>
+      <button type="button" class="quiet back-link" onclick={() => backToList()}><Icon path={mdiArrowLeft} /> Back to list</button>
       {#if detail}<StatusBadge status={detail.status} />{/if}
     </div>
 
@@ -568,7 +590,7 @@
       <p class="banner-warn" role="alert">{detailError}</p>
     {:else if detail}
       <div class="card">
-        <h2>{detail.kind === "item" ? `Order from ${detail.name}` : `Estimate request from ${detail.name}`}</h2>
+        <DetailTitle>{detail.kind === "item" ? `Order from ${detail.name}` : `Estimate request from ${detail.name}`}</DetailTitle>
         <AttributionLine updatedBy={detail.updatedBy} />
 
         <div class="readonly-grid">
@@ -677,7 +699,7 @@
         </p>
         <div class="status-actions">
           {#if detail.status === "viewed"}
-            <button type="button" class="primary" title="Mark this request as handled" disabled={finalizing} onclick={finalize}>Finalize</button>
+            <button type="button" class="primary" title="Mark this request as handled" aria-disabled={finalizing} onclick={finalize}>Finalize</button>
           {/if}
           {#if detail.kind !== "item"}
             <button type="button" onclick={openInQuoteTab}>Open in new quote</button>
@@ -686,7 +708,7 @@
             type="button"
             class={detail.status === "viewed" ? "" : "primary"}
             onclick={convertToInvoice}
-            disabled={converting}
+            aria-disabled={converting}
           >
             {converting ? "Converting…" : "Convert to invoice"}
           </button>
@@ -695,12 +717,13 @@
               type="button"
               class="danger"
               onclick={remove}
-              aria-label="Confirm delete this request. Also deletes the stored file."
+              aria-label="Delete? Also deletes the stored file."
+              use:confirmFocus={{ restore: keySelector("delete-request"), cancel: cancelDelete }}
             >Delete?</button>
             <button type="button" onclick={cancelDelete} aria-label="Cancel deleting this request">Cancel</button>
             <span class="advisory-text">Also deletes the stored file.</span>
           {:else}
-            <button type="button" onclick={askDelete} aria-label="Delete this request">Delete</button>
+            <button type="button" data-focus-key="delete-request" onclick={askDelete} aria-label="Delete this request">Delete</button>
           {/if}
         </div>
       </div>

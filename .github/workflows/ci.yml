@@ -23,7 +23,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with: { go-version-file: server/go.mod } # test the declared floor, not a floated patch
+        with: { go-version-file: server/go.mod, cache-dependency-path: server/go.sum } # test the declared floor, not a floated patch
       - run: npm ci
       - run: npx vitest run
       - run: npm run check -w web

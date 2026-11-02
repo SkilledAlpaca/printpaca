@@ -25,7 +25,7 @@
   aria-controls={noteId}
   aria-label={`About ${title}`}
   onclick={toggle}
->?</button>
+><span aria-hidden="true">?</span></button>
 
 <!-- Always rendered (hidden, not removed) so a tile's aria-describedby={noteId} always resolves, even
      before first open. -->

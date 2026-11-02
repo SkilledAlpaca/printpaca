@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { announce } from "../lib/a11y.svelte";
   import logoUrl from "../assets/alpaca-logo.svg";
   import { DEFAULT_FETCH_TIMEOUT_MS } from "../lib/fetchTimeouts";
 
@@ -15,7 +16,7 @@
   // $state, not a plain `let`: the autofocus effect reads usernameInput reactively and must re-run when
   // bind:this assigns it, which happens only after multiUser flips true and the {#if multiUser} block mounts.
   let usernameInput: HTMLInputElement | undefined = $state();
-  let passwordInput: HTMLInputElement | undefined;
+  let passwordInput: HTMLInputElement | undefined = $state();
   // True once GET /api/demo (server/auth.go's handleDemo, unauthenticated: the one signal reachable before a
   // session) confirms DEMO_MODE=1. Left false on a failed fetch or ordinary instance.
   let demoMode = $state(false);
@@ -30,8 +31,15 @@
   // answer). Once the /api/demo response confirms multi-user mode, focus moves to Username as it mounts
   // (fires once in practice).
   onMount(() => passwordInput?.focus());
+  // The session-expired notice appears with the screen; announce it once instead of relying on a live
+  // region that is inserted already populated (WCAG 4.1.3).
+  onMount(() => {
+    if (notice) announce(notice);
+  });
+  // Skipped when the visitor has already started typing a password: moving focus then would send the rest
+  // of the password into the visible Username field (WCAG 2.4.3).
   $effect(() => {
-    if (multiUser) usernameInput?.focus();
+    if (multiUser && password === "" && document.activeElement === passwordInput) usernameInput?.focus();
   });
 
   onMount(async () => {
@@ -52,7 +60,13 @@
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
-    if (submitting || password === "") return;
+    if (submitting) return;
+    if (password === "") {
+      // The button stays enabled so an empty submit gets feedback instead of nothing (WCAG 3.3.1, 3.3.3).
+      error = "Enter your password.";
+      passwordInput?.focus();
+      return;
+    }
     submitting = true;
     error = "";
     try {
@@ -87,7 +101,7 @@
   }
 </script>
 
-<div class="login-shell">
+<main class="login-shell">
   <form class="card login-card" onsubmit={submit}>
     <img class="logo" src={logoUrl} alt="" />
     <h1>printpaca</h1>
@@ -95,7 +109,7 @@
       <!-- Set only for the mid-session-401 case (App passes accessWatch.sessionExpired). A plain
            informational note, not `.warn-text`, which is reserved for the submit-time error that can show
            at the same time and must read as more urgent. -->
-      <p class="banner-muted session-notice" role="status">{notice}</p>
+      <p class="banner-muted session-notice">{notice}</p>
     {/if}
     {#if demoMode}
       <p class="banner-muted demo-notice">
@@ -109,23 +123,39 @@
       {/if}
     {/if}
     {#if multiUser}
-      <label class="field">
-        <span>Username</span>
-        <input bind:value={username} autocomplete="username" placeholder="Leave empty to sign in as the admin" bind:this={usernameInput} />
-      </label>
+      <div class="field">
+        <label for="login-username">Username</label>
+        <input
+          id="login-username"
+          bind:value={username}
+          autocomplete="username"
+          aria-describedby={error ? "username-hint login-error" : "username-hint"}
+          aria-invalid={error ? "true" : undefined}
+          bind:this={usernameInput}
+        />
+        <small class="field-hint" id="username-hint">Leave empty to sign in as the admin.</small>
+      </div>
     {/if}
     <label class="field">
       <span>Password</span>
-      <input type="password" bind:value={password} autocomplete="current-password" required bind:this={passwordInput} />
+      <input
+        type="password"
+        bind:value={password}
+        autocomplete="current-password"
+        aria-describedby={error ? "login-error" : undefined}
+        aria-invalid={error ? "true" : undefined}
+        bind:this={passwordInput}
+      />
     </label>
-    {#if error}
-      <p class="warn-text" role="alert">{error}</p>
-    {/if}
-    <button type="submit" class="primary" disabled={submitting || password === ""}>
+    <!-- Persistent container: an alert inserted already populated is announced unreliably. -->
+    <div role="alert">
+      {#if error}<p class="warn-text" id="login-error">{error}</p>{/if}
+    </div>
+    <button type="submit" class="primary" aria-disabled={submitting ? "true" : undefined}>
       {submitting ? "Signing in…" : "Sign in"}
     </button>
   </form>
-</div>
+</main>
 
 <style>
   .login-shell {

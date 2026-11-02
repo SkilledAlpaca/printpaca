@@ -1,5 +1,6 @@
 <script lang="ts">
   import FrontDoor from "./FrontDoor.svelte";
+  import LiveAnnouncer from "../components/LiveAnnouncer.svelte";
   import PublicQuotePage from "./PublicQuotePage.svelte";
   import { publicViewFor } from "./publicRoute";
 
@@ -7,6 +8,8 @@
   // is a full page load (links between them are plain anchors), so there is no client-side router.
   const view = publicViewFor(location.pathname);
 </script>
+
+<LiveAnnouncer />
 
 {#if view === "order"}
   <PublicQuotePage />

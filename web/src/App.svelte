@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
   import {
     mdiViewDashboard,
@@ -45,6 +45,9 @@
   import { unreadRequests, refreshUnread } from "./lib/requestsBadge.svelte";
   import { fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab } from "./lib/navFilter";
   import { splitHash } from "./lib/hashRoute";
+  import { focusAfterUpdate } from "./lib/a11y.svelte";
+  import { pageTitle as pageTitleState } from "./lib/pageTitle.svelte";
+  import LiveAnnouncer from "./components/LiveAnnouncer.svelte";
   import Icon from "./components/Icon.svelte";
   import logoUrl from "./assets/alpaca-logo.svg";
   import QuoteTab from "./components/QuoteTab.svelte";
@@ -221,6 +224,11 @@
 
   // href="#main" is kept for semantics (a real fragment link), but following it would set location.hash =
   // "#main" and clobber the tab router. Handle activation here: move focus, leave the URL.
+  async function focusMain() {
+    await tick();
+    mainEl?.focus({ preventScroll: true });
+  }
+
   function skipToMain(e: MouseEvent) {
     e.preventDefault();
     mainEl?.focus({ preventScroll: true });
@@ -241,13 +249,11 @@
     persistTab(t);
     resetMainScroll();
     if (location.hash !== TABS[t].hash) location.hash = TABS[t].hash; // pushes a history entry, enabling back/forward
-    // Selecting a destination from the drawer closes it (closeDrawer is a no-op when shut). It returns focus
-    // to the hamburger, but the next line re-focuses mainEl; the last focus() wins, landing focus on the new
-    // tab's content.
-    closeDrawer();
-    // <main> never unmounts between tabs, so focus it immediately: moves keyboard and screen-reader focus to
-    // the new page, like the skip link.
-    mainEl?.focus({ preventScroll: true });
+    // Selecting a destination from the drawer closes it (closeDrawer is a no-op when shut). <main> is inert
+    // while the drawer is open, so focus it only after the flush; outside the drawer it takes focus now.
+    // Either way keyboard and screen-reader focus lands on the new page, like the skip link.
+    closeDrawer(false);
+    void focusMain();
   }
 
   // Syncs `tab` on hashchange (back/forward, manual URL edits); added and removed like the afterprint
@@ -270,7 +276,11 @@
       resetMainScroll();
       // Only when this hashchange switches onto invoices/requests/clients (about to mount fresh); see
       // routePendingOpen for why it stays off while already on the tab.
-      if (changingTab) routePendingOpen(t, location.hash);
+      if (changingTab) {
+        routePendingOpen(t, location.hash);
+        // Back/forward and in-app hash links skip activate(), so move focus here too (WCAG 2.4.3).
+        void focusMain();
+      }
     } else {
       // Bogus hash, or one naming a tab disabled by now (config is loaded by the time a hashchange fires):
       // rewrite the address bar to the tab actually showing. replaceState, so no spurious history entry and
@@ -334,16 +344,17 @@
   let drawerOpen = $state(false);
   let asideEl: HTMLElement | undefined = $state();
   let hamburgerEl: HTMLButtonElement | undefined = $state();
+  // Focus moves only after Svelte flushes the DOM: while closed the <aside> is inert (focus() is ignored), and
+  // once open the <header> and <main> go inert, so focusing the hamburger or <main> early would be dropped
+  // (WCAG 2.4.3).
   function openDrawer() {
     drawerOpen = true;
-    // asideEl's children are always in the DOM (only the CSS transform moves the drawer), so the focus target
-    // exists when this runs; no tick() needed.
-    asideEl?.querySelector<HTMLElement>("button, a[href]")?.focus();
+    void focusAfterUpdate(() => asideEl?.querySelector<HTMLElement>("button, a[href]"));
   }
-  function closeDrawer() {
+  function closeDrawer(returnFocus = true) {
     if (!drawerOpen) return;
     drawerOpen = false;
-    hamburgerEl?.focus();
+    if (returnFocus) void focusAfterUpdate(() => hamburgerEl);
   }
   function toggleDrawer() {
     if (drawerOpen) closeDrawer();
@@ -351,7 +362,7 @@
   }
 
   $effect(() => {
-    if (isDesktop) untrack(closeDrawer);
+    if (isDesktop) untrack(() => closeDrawer(false));
   });
 
   // Escape only while the drawer is open, via an $effect whose cleanup removes the listener, instead of one
@@ -449,16 +460,16 @@
 
   // Ctrl+S/Cmd+S (no Shift/Alt) is scoped to the Quote tab: it triggers HistoryPanel's primary save action
   // and always preventDefaults, even in the label input; the action no-ops when saving isn't possible
-  // (saveRowDisabled). "/" focuses the tab's own list filter (#quotes-filter, #clients-filter or
-  // #invoices-filter); with none rendered it is a silent no-op. Ignored while focus is in a text field,
-  // select or contenteditable, or any modifier is held.
+  // (saveRowDisabled). Ctrl+K/Cmd+K focuses the tab's own list filter (#quotes-filter, #clients-filter or
+  // #invoices-filter); with none rendered it is a silent no-op. It needs a modifier (WCAG 2.1.4: no bare
+  // character-key shortcut) and is ignored while focus is in a text field, select or contenteditable.
   function handleGlobalKeydown(e: KeyboardEvent) {
     if (tab === "quote" && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
       e.preventDefault();
       quoteActions.save?.();
       return;
     }
-    if (e.key !== "/" || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    if (e.key.toLowerCase() !== "k" || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
     const filterId =
       tab === "quotes" ? "quotes-filter" : tab === "clients" ? "clients-filter" : tab === "invoices" ? "invoices-filter" : null;
     if (!filterId) return;
@@ -535,10 +546,39 @@
     .includes("MAC");
   const shortcutMod = isMac ? "Cmd" : "Ctrl";
 
+  // Demo banner height -> --demo-banner-h, so html's scroll-padding-top keeps a focused field from sitting
+  // behind the sticky banner when the window scrolls (below 900px; at >=900px the banner is its own grid
+  // row outside <main>). WCAG 2.4.11.
+  let demoBannerEl: HTMLElement | undefined = $state();
+  $effect(() => {
+    const el = demoBannerEl;
+    if (!el) return;
+    const apply = () => document.documentElement.style.setProperty("--demo-banner-h", isDesktop ? "0px" : `${el.offsetHeight}px`);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.removeProperty("--demo-banner-h");
+    };
+  });
+
   // Empty when Moonraker/Fluidd isn't configured (fluiddUrl returns "" for a null config or no fluiddUrl);
   // the sidebar link renders only when non-empty.
   const fluiddHref = $derived(fluiddUrl(config));
+
+  // Page title (WCAG 2.4.2): the login screen, else the active tab; a detail view prepends its record name
+  // (lib/pageTitle.svelte.ts). The detail view clears it when it closes.
+  const pageTitle = $derived(
+    loginRequired || accessWatch.sessionExpired ? "Sign in" : pageTitleState.record ? `${pageTitleState.record} · ${TABS[tab].label}` : TABS[tab].label,
+  );
 </script>
+
+<svelte:head>
+  <title>{pageTitle} · printpaca</title>
+</svelte:head>
+
+<LiveAnnouncer />
 
 <svelte:window onhashchange={syncTabFromHash} onafterprint={clearPrintJob} onkeydown={handleGlobalKeydown} />
 
@@ -555,11 +595,12 @@
     class:active={tab === id}
     aria-current={tab === id ? "page" : undefined}
     title={collapsed ? TABS[id].label : undefined}
-    aria-label={collapsed ? TABS[id].label : undefined}
     onclick={() => activate(id)}
   >
     <Icon path={TABS[id].icon} />
-    <span class="label">{TABS[id].label}</span>
+    <!-- Collapsed: the label is visually hidden, not replaced by an aria-label, so the unread count below
+         stays part of the button's name (WCAG 1.3.1, 2.5.3). -->
+    <span class="label" class:visually-hidden={collapsed}>{TABS[id].label}</span>
     {#if id === "requests" && unreadRequests.count > 0}
       <span class="unread-pill">{unreadRequests.count}<span class="visually-hidden"> unread requests</span></span>
     {/if}
@@ -569,11 +610,17 @@
 {#snippet sectionedNav(collapsed: boolean)}
   {#each navSections as section, i (i)}
     {#if section.label && !collapsed}
-      <div class="section-label nav-section-label">{section.label}</div>
+      <div role="group" aria-labelledby="nav-sec-{i}" class="nav-group">
+        <div class="section-label nav-section-label" id="nav-sec-{i}">{section.label}</div>
+        {#each section.items as id (id)}
+          {@render navButton(id, collapsed)}
+        {/each}
+      </div>
+    {:else}
+      {#each section.items as id (id)}
+        {@render navButton(id, collapsed)}
+      {/each}
     {/if}
-    {#each section.items as id (id)}
-      {@render navButton(id, collapsed)}
-    {/each}
   {/each}
 {/snippet}
 
@@ -586,8 +633,8 @@
   <!-- Shell-level, rendered once here instead of inside each per-tab branch of <main>. The server already
        rejects every write in demo mode (server/auth.go's demoWriteGuard); this banner only sets
        expectations and gates no nav item or button. -->
-  <p class="banner-muted demo-banner" role="status" inert={drawerOpen && !isDesktop} onwheel={forwardWheelToMain}>
-    Read-only demo. Changes are disabled and nothing is saved.
+  <div class="banner-muted demo-banner" inert={drawerOpen && !isDesktop} onwheel={forwardWheelToMain} bind:this={demoBannerEl}>
+    <span role="status">Read-only demo. Changes are disabled and nothing is saved.</span>
     <!-- Cosmetic per-browser display prefs only (demoLocal.svelte.ts): nothing reaches the server and
          neither select gates any nav item or button. -->
     <span class="demo-controls">
@@ -627,7 +674,7 @@
         <option value="multi">User mode: multi</option>
       </select>
     </span>
-  </p>
+  </div>
 {/if}
 
 <header inert={drawerOpen && !isDesktop}>
@@ -639,7 +686,7 @@
     class="hamburger"
     aria-expanded={drawerOpen}
     aria-controls="app-drawer"
-    aria-label={drawerOpen ? "Close menu" : "Open menu"}
+    aria-label={`${drawerOpen ? "Close" : "Open"} menu${unreadRequests.count > 0 ? `, ${unreadRequests.count} unread requests` : ""}`}
     bind:this={hamburgerEl}
     onclick={toggleDrawer}
   >
@@ -656,7 +703,7 @@
 {#if drawerOpen}
   <!-- Dismiss backdrop: in the DOM only while open, behind the drawer's z-index but above everything
        else, including the sticky demo banner. -->
-  <button type="button" class="drawer-backdrop" aria-label="Close menu" onclick={closeDrawer}></button>
+  <button type="button" class="drawer-backdrop" aria-label="Close menu" onclick={() => closeDrawer()}></button>
 {/if}
 
 <aside
@@ -682,10 +729,10 @@
         rel="noopener noreferrer"
         title={navCollapsed ? "Fluidd (opens in a new tab)" : undefined}
         aria-label="Fluidd (opens in a new tab)"
-        onclick={closeDrawer}
+        onclick={() => closeDrawer(false)}
       >
         <Icon path={mdiOpenInNew} />
-        <span class="label">Fluidd</span>
+        <span class="label" class:visually-hidden={navCollapsed}>Fluidd</span>
       </a>
     {/if}
   </nav>
@@ -719,10 +766,10 @@
       {/if}
       <div class="version-line">{versionLabel}</div>
       <!-- {shortcutMod}+S does something only on the New quote tab (handleGlobalKeydown gates it on tab
-           === "quote"); advertising it elsewhere trained users to press a no-op. The "/" filter works only on
+           === "quote"); advertising it elsewhere trained users to press a no-op. The Ctrl/Cmd+K filter works only on
            the Quotes, Clients, and Invoices lists, so it is listed only there. -->
       {#if ["quotes", "clients", "invoices"].includes(tab) || tab === "quote"}
-        <div class="shortcuts-line">Shortcuts: {["quotes", "clients", "invoices"].includes(tab) ? "/ filter" : ""}{tab === "quote" ? `${shortcutMod}+S save` : ""}</div>
+        <div class="shortcuts-line">Shortcuts: {["quotes", "clients", "invoices"].includes(tab) ? `${shortcutMod}+K filter` : ""}{tab === "quote" ? `${shortcutMod}+S save` : ""}</div>
       {/if}
     {:else}
       {#if !disabledTabs.has("guide")}
@@ -753,7 +800,9 @@
   </div>
 </aside>
 
-<main class="app-main" id="main" tabindex="-1" inert={drawerOpen && !isDesktop} aria-label={TABS[tab].label} bind:this={mainEl}>
+<!-- tabindex 0 on the Guide only: its scroll container has no focusable content, so keyboard users could not scroll it (WCAG 2.1.1). -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<main class="app-main" id="main" tabindex={tab === "guide" ? 0 : -1} inert={drawerOpen && !isDesktop} aria-label={TABS[tab].label} bind:this={mainEl}>
   {#if accessWatch.revoked}
     <!-- Global 403 handling: a permission that worked just answered 403 (accessWatch.svelte.ts), most
          likely because an admin revoked a grant or turned multi-user mode off mid-session. Reloading
@@ -933,6 +982,7 @@
   }
 
   .side-nav { display: flex; flex-direction: column; gap: 0.15rem; margin-top: 0.5rem; overflow-y: auto; }
+  .nav-group { display: flex; flex-direction: column; gap: 0.15rem; }
   .side-nav button, .side-nav a.nav-external { width: 100%; }
   /* Fluidd's external link: same box model and spacing as the nav buttons (shares their
    * border-left/padding/gap rules), plus a text-decoration reset since it is an <a>. */
@@ -981,6 +1031,10 @@
   /* 1280px, not the viewport: past roughly this width a card becomes a band with its contents stranded at
    * one end (summary stats, list names, a drop zone's one line). The Guide already capped its measure for
    * this reason; this applies the cap to every tab. Below ~1500px viewports nothing changes. */
+  /* Sticky bars (header, quote summary bar, save bar) can cover a focused field in the scroll container;
+   * the padding keeps the field clear of them (WCAG 2.4.11). */
+  main { scroll-padding-block: 5rem; }
+  :global(html) { scroll-padding-top: var(--demo-banner-h, 0px); }
   main { max-width: 1280px; margin: 0 auto; padding: 1rem clamp(1rem, 2vw, 2rem); }
   /* theme.css's global :focus-visible outline draws outside the element (outline-offset: 2px); #app clips
    * overflow, so on <main> (the skip-link target and scroll container) it gets cut into a stray partial
@@ -1168,7 +1222,6 @@
      * internally when it outgrows the viewport, keeping the footer below it reachable; nothing is added
      * here. */
     .sidebar.collapsed .side-nav button, .sidebar.collapsed .side-nav a.nav-external { justify-content: center; padding: 0.4rem; }
-    .sidebar.collapsed .label { display: none; }
     /* The scrolling region: everything taller than the viewport (the tab's content, then the page footer)
      * scrolls inside <main> instead of the page, which keeps the sidebar pinned. width: 100% matters: main
      * is a grid item with auto inline margins, which override the default stretch and shrink-wrap it to its

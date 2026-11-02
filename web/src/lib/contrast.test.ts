@@ -217,6 +217,22 @@ describe.each([
     ).toBeGreaterThanOrEqual(3.0);
   });
 
+  // Muted text lands on --surface-2 in active rows and hovered table rows (WCAG 1.4.3).
+  it("--muted clears 4.5:1 against --surface-2 (active and hovered rows)", () => {
+    expect(contrastRatio(token(tokens, "muted", schemeName), token(tokens, "surface-2", schemeName))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  // Data-entry control borders and the focus ring are non-text UI (WCAG 1.4.11): 3:1 on every surface.
+  for (const nonText of ["control-border", "focus-ring"]) {
+    for (const surfaceName of ["bg", "surface", "surface-2"]) {
+      it(`--${nonText} clears 3:1 against --${surfaceName}`, () => {
+        expect(
+          contrastRatio(token(tokens, nonText, schemeName), token(tokens, surfaceName, schemeName)),
+        ).toBeGreaterThanOrEqual(3.0);
+      });
+    }
+  }
+
   for (const { fileLabel, className, textToken, mixPercent } of BADGE_VARIANTS) {
     it(`${fileLabel} ${className} text clears 4.5:1 on its color-mix background`, () => {
       // Reproduces the component's `color-mix(in srgb, ...)`, which interpolates gamma-encoded sRGB

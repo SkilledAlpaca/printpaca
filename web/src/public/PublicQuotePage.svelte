@@ -35,7 +35,9 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
+  import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
+  import { visitor } from "./visitor.svelte";
   import {
     formatMoney,
     parseGcodeStream,
@@ -138,7 +140,32 @@
   function dismissItemOrderConfirmation() {
     itemOrderConfirmation = null;
     clearConfirmation(ITEM_ORDER_CONFIRMATION_KEY);
+    // The Back button that held focus is about to unmount (WCAG 2.4.3).
+    void focusAfterUpdate("#gallery-heading");
   }
+
+  // Focus management for the gallery <-> item panel swap (WCAG 2.4.3): opening a card focuses the panel's
+  // heading (ItemOrderPanel does that itself on mount); going back refocuses the card that was opened, or the
+  // gallery heading when that card is gone.
+  let lastSelectedId: string | null = null;
+  function openItem(item: PublicItem) {
+    lastSelectedId = item.id;
+    orderItem = item;
+  }
+  function closeItem() {
+    orderItem = null;
+    const id = lastSelectedId;
+    void focusAfterUpdate(() => {
+      const card = id === null ? null : document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(id)}"]`);
+      return card ?? document.getElementById("gallery-heading");
+    });
+  }
+
+  // Confirmation headings take focus after a successful submit: the form (and the focused submit button) is
+  // replaced, so focus would otherwise drop to <body> and nothing would be announced (WCAG 2.4.3, 4.1.3).
+  let quoteConfirmationHeading: HTMLElement | undefined = $state();
+  let itemConfirmationHeading: HTMLElement | undefined = $state();
+  let estimateFormHeading: HTMLElement | undefined = $state();
 
   // Mirror server/public.go's bounds on weightG/timeSeconds so a manual entry the server would reject is
   // flagged first.
@@ -152,9 +179,10 @@
   // Falls back to PLA's density while no material is chosen, so an early file drop still shows an estimate.
   const density = $derived(densityOrFallback(cfg?.materials.find((m) => m.name === materialName)?.density));
   let quantity = $state<number | null>(1);
-  let name = $state("");
-  let email = $state("");
   let note = $state("");
+  // Name and email live in the shared visitor store (see visitor.svelte.ts) so they carry over to an item order.
+  const name = $derived(visitor.name);
+  const email = $derived(visitor.email);
   // Set only when a typed quantity exceeded MAX_QUOTE_QUANTITY and was clamped. Cleared on the next edit (the
   // input's oninput), not by the effect, which would clear it in the same reactive pass that set it.
   let quantityClampNotice = $state("");
@@ -289,6 +317,10 @@
   $effect(() => {
     preview.update(previewInput);
   });
+
+  const gcodeIsProblem = $derived(
+    gcodeStatus === "not-found" || gcodeStatus === "invalid-profile" || gcodeStatus === "incomplete" || gcodeStatus === "error",
+  );
 
   const printTimeLabel = $derived.by(() => {
     if (timeSeconds === null) return "";
@@ -505,21 +537,23 @@
   // actual reason.
   const noteBudget = $derived(noteByteBudget(modelFileNote));
 
-  const formErrors = $derived.by(() => {
-    const errors: string[] = [];
+  // Errors for the three text fields are shown inline (aria-invalid + aria-describedby, WCAG 3.3.1); the rest
+  // go to the summary list. Computed live, but shown only after the first submit attempt.
+  const fieldErrors = $derived.by(() => {
+    const out: { name?: string; email?: string; note?: string; other: string[] } = { other: [] };
+    const errors = out.other;
     // Measured in bytes (utf8ByteLength) to match server/public.go's len() caps; a .length check lets
     // multi-byte text pass and 422 server-side. The copy names the limit as characters, never "bytes".
-    if (name.trim() === "") errors.push("Name is required.");
-    else if (utf8ByteLength(name) > NAME_MAX_BYTES) errors.push(`Name must be ${NAME_MAX_BYTES} characters or fewer.`);
-    if (email.trim() === "") errors.push("Email is required.");
-    else if (utf8ByteLength(email) > EMAIL_MAX_BYTES) errors.push(`Email must be ${EMAIL_MAX_BYTES} characters or fewer.`);
-    else if (!email.includes("@")) errors.push("Enter a valid email address.");
+    if (name.trim() === "") out.name = "Name is required.";
+    else if (utf8ByteLength(name) > NAME_MAX_BYTES) out.name = `Name must be ${NAME_MAX_BYTES} characters or fewer.`;
+    if (email.trim() === "") out.email = "Email is required.";
+    else if (utf8ByteLength(email) > EMAIL_MAX_BYTES) out.email = `Email must be ${EMAIL_MAX_BYTES} characters or fewer.`;
+    else if (!email.includes("@")) out.email = "Enter a valid email address.";
     if (utf8ByteLength(note.trim()) > noteBudget) {
-      errors.push(
+      out.note =
         modelFileNote.length > 0
           ? `Note is too long. Attaching a model file uses part of the limit; shorten your note to about ${noteBudget} characters.`
-          : `Note is too long. Keep it under ${NOTE_MAX_BYTES} characters.`,
-      );
+          : `Note is too long. Keep it under ${NOTE_MAX_BYTES} characters.`;
     }
     if (materialName === "") errors.push("Choose a material.");
     if (quantity === null || !Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUOTE_QUANTITY) {
@@ -542,23 +576,45 @@
         errors.push("Print time must be 30 days or less.");
       }
     }
-    return errors;
+    return out;
   });
+  const formErrorCount = $derived(
+    (fieldErrors.name ? 1 : 0) + (fieldErrors.email ? 1 : 0) + (fieldErrors.note ? 1 : 0) + fieldErrors.other.length,
+  );
+  // Flipped by the first submit attempt, so a visitor isn't told "Name is required." before they've tried.
+  let showErrors = $state(false);
+  const nameError = $derived(showErrors ? fieldErrors.name : undefined);
+  const emailError = $derived(showErrors ? fieldErrors.email : undefined);
+  const noteError = $derived(showErrors ? fieldErrors.note : undefined);
 
   async function submit() {
+    // aria-disabled (not disabled) while in flight, so the focused button keeps focus (WCAG 2.4.3).
+    if (submitting) return;
     submitErrors = [];
     rateLimited = false;
-    if (formErrors.length > 0) {
-      submitErrors = formErrors;
+    // Validation runs first, even while the price is still resolving, so name and email problems surface
+    // right away (WCAG 3.3.1).
+    if (formErrorCount > 0) {
+      showErrors = true;
+      submitErrors = fieldErrors.other;
+      await tick();
+      document.querySelector<HTMLElement>("form [aria-invalid='true']")?.focus();
       return;
     }
-    // Gated on a resolved preview: the button is already disabled otherwise, but a form submit (Enter in a
-    // text field) must not fire before the server has priced the request; there is no local price to fall
-    // back on.
+    // Gated on a resolved preview: a form submit (Enter in a text field) must not fire before the server has
+    // priced the request; there is no local price to fall back on.
     if (weightG === null || timeSeconds === null || quantity === null) return;
-    if (previewState.status !== "resolved") return;
+    if (previewState.status !== "resolved") {
+      submitErrors = [
+        previewState.status === "error"
+          ? "The estimate has a problem. Fix it above, then request again."
+          : "The estimate is still updating. Try again in a moment.",
+      ];
+      return;
+    }
 
     submitting = true;
+    announce("Sending your request. Large files can take a few minutes.");
     const body = new FormData();
     body.set("name", name.trim());
     body.set("email", email.trim());
@@ -585,6 +641,9 @@
       };
       fileStoredCaveat = caveat;
       saveConfirmation(QUOTE_CONFIRMATION_KEY, submitted);
+      showErrors = false;
+      announce("Your estimate request was sent.");
+      await focusAfterUpdate(() => quoteConfirmationHeading);
       return;
     }
     if (result.status === 429) {
@@ -594,6 +653,16 @@
     submitErrors = result.errors;
   }
 
+  // Page title (WCAG 2.4.2): tracks the state the visitor is in, so a title list or history entry says whether
+  // this is the form or the confirmation.
+  const pageTitle = $derived.by(() => {
+    const biz = cfg?.branding.businessName;
+    if (view === "quote" && submitted) return biz ? `Request received · ${biz}` : "Request received";
+    if (itemOrderConfirmation) return biz ? `Order received · ${biz}` : "Order received";
+    if (orderItem) return biz ? `${orderItem.name} · ${biz}` : orderItem.name;
+    return biz ? `${biz} — get an estimate` : "Get an estimate";
+  });
+
   /** Dismisses the custom-estimate confirmation and resets the form for a new request; the only way back
    * once `submitted` is set (it survives reloads via sessionStorage). */
   function dismissQuoteConfirmation() {
@@ -602,17 +671,19 @@
     clearConfirmation(QUOTE_CONFIRMATION_KEY);
     materialName = "";
     quantity = 1;
-    name = "";
-    email = "";
+    // Name and email stay: the visitor just typed them and may well send another request (WCAG 3.3.7).
     note = "";
+    showErrors = false;
     clearFile();
+    // The button that held focus unmounts with the confirmation (WCAG 2.4.3).
+    void focusAfterUpdate(() => estimateFormHeading);
   }
 </script>
 
 <svelte:window ondragover={preventWindowDrop} ondrop={preventWindowDrop} />
 
 <svelte:head>
-  <title>{cfg?.branding.businessName ? `${cfg.branding.businessName} — get an estimate` : "Get an estimate"}</title>
+  <title>{pageTitle}</title>
 </svelte:head>
 
 <main class="page">
@@ -629,7 +700,7 @@
       <h1>{cfg.branding.businessName || "printpaca"}</h1>
     </header>
     {#if cfg.demoMode}
-      <p class="banner-muted demo-banner" role="status">
+      <p class="banner-muted demo-banner">
         Demo mode: this walks through the real customer flow, but your request isn't submitted.
       </p>
     {/if}
@@ -659,7 +730,7 @@
         <div class="panel">
           <button type="button" class="quiet back" onclick={dismissItemOrderConfirmation}>&larr; Back to gallery</button>
           <div class="card confirmation">
-            <p class="section-label">Order received</p>
+            <h2 class="section-label" tabindex="-1" bind:this={itemConfirmationHeading}>Order received</h2>
             <p class="price">{formatMoney(itemOrderConfirmation.priceCents, cfg.currency)}</p>
             <p class="ref">Reference: {itemOrderConfirmation.id}</p>
             <p class="order-summary">
@@ -674,19 +745,22 @@
           <ItemOrderPanel
             item={orderItem}
             currency={cfg.currency}
-            onback={() => (orderItem = null)}
+            onback={closeItem}
             onordered={(confirmation) => {
               orderItem = null;
               itemOrderConfirmation = confirmation;
               saveConfirmation(ITEM_ORDER_CONFIRMATION_KEY, confirmation);
+              announce("Your order was placed.");
+              void focusAfterUpdate(() => itemConfirmationHeading);
             }}
           />
         {/key}
       {:else}
+        <h2 id="gallery-heading" tabindex="-1" class="view-heading">Items</h2>
         <ItemGallery
           items={items ?? []}
           currency={cfg.currency}
-          onselect={(item) => (orderItem = item)}
+          onselect={openItem}
           oncustomestimate={cfg.materials.length > 0 ? () => (view = "quote") : undefined}
         />
       {/if}
@@ -694,25 +768,33 @@
       <p class="muted center">No materials are currently offered.</p>
     {:else if submitted}
       <div class="card confirmation">
-        <p class="section-label">Request received</p>
+        <h2 class="section-label" tabindex="-1" bind:this={quoteConfirmationHeading}>Request received</h2>
         <p class="price">{formatMoney(submitted.priceCents, cfg.currency)}</p>
         <p class="ref">Reference: {submitted.id}</p>
         <p class="order-summary">{submitted.quantity} &times; {submitted.material}</p>
         <p>We'll follow up at {submitted.email}.</p>
-        {#if fileStoredCaveat}<p class="advisory-text" role="status">{fileStoredCaveat}</p>{/if}
+        {#if fileStoredCaveat}<p class="advisory-text">{fileStoredCaveat}</p>{/if}
         <button type="button" class="quiet" onclick={dismissQuoteConfirmation}>Request another estimate</button>
       </div>
     {:else}
+      <!-- novalidate: the page validates itself and shows the messages inline, instead of the browser's
+           transient bubble, which is announced inconsistently and disappears (WCAG 3.3.1). -->
       <form
         class="card"
+        novalidate
         onsubmit={(e) => {
           e.preventDefault();
           void submit();
         }}
       >
+        <h2 class="view-heading" tabindex="-1" bind:this={estimateFormHeading}>Custom estimate</h2>
         <label class="field">
           <span>Material</span>
-          <select bind:value={materialName} required>
+          <select
+            bind:value={materialName}
+            required
+            aria-invalid={showErrors && materialName === "" ? "true" : undefined}
+          >
             <option value="" disabled>Choose a material</option>
             {#each cfg.materials as m (m.name)}<option value={m.name}>{m.name}</option>{/each}
           </select>
@@ -728,15 +810,18 @@
             bind:value={quantity}
             oninput={() => (quantityClampNotice = "")}
             required
+            aria-describedby="quote-qty-notice"
           />
-          {#if quantityClampNotice}<p class="clamp-notice" role="status">{quantityClampNotice}</p>{/if}
         </label>
+        <!-- Outside the <label> so the notice isn't part of the field's name, and always mounted so the
+             live region announces its text changes (WCAG 1.3.1, 4.1.3). -->
+        <p class="clamp-notice" id="quote-qty-notice" role="status">{quantityClampNotice}</p>
 
         <div
           class="card drop"
           class:dragging
           role="group"
-          aria-label="G-code drop zone"
+          aria-label="Model file"
           ondragover={(e) => {
             e.preventDefault();
             dragging = true;
@@ -745,29 +830,29 @@
           ondrop={onDrop}
         >
           <label for="public-gcode-file">
-            <strong>Drop a .gcode, .stl, or .3mf file</strong> (or click or press Enter to choose one). Optional. A sliced
-            file fills in weight and print time; an unsliced STL or 3MF estimates weight from its
-            shape, so you still enter print time. No file? Enter both below.
+            <strong id="drop-lead">Drop a .gcode, .stl, or .3mf file</strong>
+            <span id="drop-help">
+              (or click or press Enter to choose one). Optional. A sliced file fills in weight and print time; an
+              unsliced STL or 3MF estimates weight from its shape, so you still enter print time. No file? Enter
+              both below.
+            </span>
           </label>
+          <!-- The name is the short lead-in; the long explanation is the description (WCAG 2.4.6). -->
           <input
             id="public-gcode-file"
             type="file"
             accept=".gcode,.gco,.g,.nc,text/*,.stl,.3mf"
             onchange={onPick}
             class="visually-hidden"
+            aria-labelledby="drop-lead"
+            aria-describedby="drop-help"
           />
-          <p
-            class="status {gcodeStatus}"
-            role={gcodeStatus === "not-found" ||
-            gcodeStatus === "invalid-profile" ||
-            gcodeStatus === "incomplete" ||
-            gcodeStatus === "error"
-              ? "alert"
-              : "status"}
-          >{busy ? `Parsing ${fileName}…` : gcodeMessage}</p>
-          {#if modelAttachmentAdvisory}
-            <p class="advisory-text" role="status">{modelAttachmentAdvisory}</p>
-          {/if}
+          <!-- Two persistent regions, text swapped in: a live region whose role changes (or that is inserted
+               already populated) is announced unreliably (WCAG 4.1.3). Progress and success are polite;
+               problems are assertive. -->
+          <p class="status {gcodeStatus}" aria-live="polite">{gcodeIsProblem && !busy ? "" : busy ? `Parsing ${fileName}…` : gcodeMessage}</p>
+          <p class="status {gcodeStatus}" role="alert">{gcodeIsProblem && !busy ? gcodeMessage : ""}</p>
+          <p class="advisory-text" role="status">{modelAttachmentAdvisory}</p>
         </div>
 
         {#if previewTriangles.length > 0}
@@ -804,11 +889,11 @@
         {:else if modelSource?.kind === "estimate"}
           <div class="manual-entry">
             {#if weightG !== null}<p class="parsed-meta">Estimated weight: {weightG} g</p>{/if}
-            <label class="field">
-              <span>Solidity (%)</span>
-              <input type="number" min="5" max="100" step="1" bind:value={solidityInput} />
-              <small class="field-hint">How solid the print is. 100% is fully solid; most prints are 15 to 25%.</small>
-            </label>
+            <div class="field">
+              <label for="quote-solidity">Solidity (%)</label>
+              <input id="quote-solidity" type="number" min="5" max="100" step="1" bind:value={solidityInput} aria-describedby="quote-solidity-hint" />
+              <small class="field-hint" id="quote-solidity-hint">How solid the print is. 100% is fully solid; most prints are 15 to 25%.</small>
+            </div>
             <div class="field">
               <span>Print time</span>
               <div class="time-pair" role="group" aria-label="Print time">
@@ -846,56 +931,93 @@
           </div>
         {/if}
 
-        <label class="field">
-          <span>Name</span>
-          <input type="text" bind:value={name} maxlength={NAME_MAX_BYTES} required />
-        </label>
-        <label class="field">
-          <span>Email</span>
-          <input type="email" bind:value={email} maxlength={EMAIL_MAX_BYTES} required />
-        </label>
-        <label class="field">
-          <span>Note (optional)</span>
-          <textarea bind:value={note} maxlength={NOTE_MAX_BYTES} rows="3"></textarea>
-        </label>
+        <div class="field">
+          <label for="quote-name">Name</label>
+          <input
+            id="quote-name"
+            type="text"
+            autocomplete="name"
+            bind:value={visitor.name}
+            maxlength={NAME_MAX_BYTES}
+            required
+            aria-invalid={nameError ? "true" : undefined}
+            aria-describedby={nameError ? "quote-name-err" : undefined}
+          />
+          {#if nameError}<small class="warn-text" id="quote-name-err">{nameError}</small>{/if}
+        </div>
+        <div class="field">
+          <label for="quote-email">Email</label>
+          <input
+            id="quote-email"
+            type="email"
+            autocomplete="email"
+            inputmode="email"
+            bind:value={visitor.email}
+            maxlength={EMAIL_MAX_BYTES}
+            required
+            aria-invalid={emailError ? "true" : undefined}
+            aria-describedby={emailError ? "quote-email-err" : undefined}
+          />
+          {#if emailError}<small class="warn-text" id="quote-email-err">{emailError}</small>{/if}
+        </div>
+        <div class="field">
+          <label for="quote-note">Note (optional)</label>
+          <textarea
+            id="quote-note"
+            bind:value={note}
+            maxlength={NOTE_MAX_BYTES}
+            rows="3"
+            aria-invalid={noteError ? "true" : undefined}
+            aria-describedby={noteError ? "quote-note-err" : undefined}
+          ></textarea>
+          {#if noteError}<small class="warn-text" id="quote-note-err">{noteError}</small>{/if}
+        </div>
 
-        <div class="card estimate">
-          <p class="section-label">Estimated price</p>
-          {#if previewState.status === "resolved"}
-            <p class="price">
-              {formatMoney(previewState.priceCents, cfg.currency)}
-              {#if quantity !== null && quantity > 1}
-                {@const unitCents = perUnitCents(previewState.priceCents, quantity)}
-                {#if unitCents !== null}
-                  <span class="per-unit"> &middot; {formatMoney(unitCents, cfg.currency)} each</span>
+        <div class="card estimate" role="group" aria-labelledby="estimate-label">
+          <h2 class="section-label" id="estimate-label">Estimated price</h2>
+          <!-- One persistent live region whose content changes, announced as a whole, so the settled price
+               is spoken (WCAG 4.1.3). "Updating" is aria-hidden: it would chatter on every keystroke. -->
+          <div aria-live="polite" aria-atomic="true">
+            {#if previewState.status === "resolved"}
+              <p class="price">
+                {formatMoney(previewState.priceCents, cfg.currency)}
+                {#if quantity !== null && quantity > 1}
+                  {@const unitCents = perUnitCents(previewState.priceCents, quantity)}
+                  {#if unitCents !== null}
+                    <span class="per-unit"> &middot; {formatMoney(unitCents, cfg.currency)} each</span>
+                  {/if}
                 {/if}
-              {/if}
-            </p>
-            <p class="meta">
-              {printTimeLabel} print time{#if previewState.shippingCents > 0}
-                · + {formatMoney(previewState.shippingCents, cfg.currency)} shipping{/if}
-            </p>
-          {:else if previewState.status === "pending"}
-            <!-- Quiet, not alarming: covers both the ~350ms debounce wait and the round trip, so it shows
-                 for most of a keystroke's lifetime (one state in quotePreview.ts). -->
-            <p class="muted" role="status">Updating estimate…</p>
-          {:else if previewState.status === "error"}
-            {#each previewState.errors as e (e)}<p class="warn-text" role="alert">{e}</p>{/each}
-          {:else}
-            <p class="muted">Choose a material and add a weight and print time to see a price.</p>
+              </p>
+              <p class="meta">
+                {printTimeLabel} print time{#if previewState.shippingCents > 0}
+                  · + {formatMoney(previewState.shippingCents, cfg.currency)} shipping{/if}
+              </p>
+            {:else if previewState.status === "pending"}
+              <!-- Quiet, not alarming: covers both the ~350ms debounce wait and the round trip, so it shows
+                   for most of a keystroke's lifetime (one state in quotePreview.ts). -->
+              <p class="muted" aria-hidden="true">Updating estimate…</p>
+            {:else if previewState.status === "error"}
+              {#each previewState.errors as e (e)}<p class="warn-text">{e}</p>{/each}
+            {:else}
+              <p class="muted">Choose a material and add a weight and print time to see a price.</p>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Persistent alert container (text swapped in), with a plain list inside: role="alert" on a <ul>
+             would remove its list semantics (WCAG 1.3.1, 4.1.3). -->
+        <div role="alert">
+          {#if rateLimited}
+            <p class="warn-text">Too many requests from this network. Try again in an hour.</p>
+          {/if}
+          {#if submitErrors.length > 0}
+            <ul class="error-list">
+              {#each submitErrors as e (e)}<li class="warn-text">{e}</li>{/each}
+            </ul>
           {/if}
         </div>
 
-        {#if rateLimited}
-          <p class="warn-text" role="alert">Too many requests from this network. Try again in an hour.</p>
-        {/if}
-        {#if submitErrors.length > 0}
-          <div role="alert">
-            {#each submitErrors as e (e)}<p class="warn-text">{e}</p>{/each}
-          </div>
-        {/if}
-
-        <button type="submit" class="primary" disabled={submitting || previewState.status !== "resolved"}>
+        <button type="submit" class="primary" class:busy={submitting} aria-disabled={submitting ? "true" : undefined}>
           {submitting ? "Submitting…" : "Request an estimate"}
         </button>
       </form>
@@ -970,13 +1092,13 @@
   }
 
   .drop {
-    border: 2px dashed var(--border);
+    border: 2px dashed var(--control-border);
     text-align: center;
     min-height: 44px;
     padding: var(--space-3);
   }
   .drop:focus-within {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
   .drop.dragging {
@@ -1060,5 +1182,14 @@
   .shop-footer a { color: inherit; }
 
   .clamp-notice { color: var(--warn); font-size: var(--text-sm); margin: 0.3rem 0 0; }
+  /* The persistent live regions render empty most of the time; drop their margins then so they take no room. */
+  .clamp-notice:empty, .status:empty, .advisory-text:empty { margin: 0; min-height: 0; }
+  .error-list { list-style: none; margin: 0; padding: 0; }
+  .error-list li { margin: 0.2rem 0; }
+  .view-heading { margin: 0; }
+  /* Long unbroken strings (an email in "We'll follow up at ...", a reference id) must wrap at 320px. */
+  .confirmation p, .shop-footer { overflow-wrap: anywhere; }
+  /* In flight: aria-disabled keeps focus on the button, so the busy look is visual only. */
+  button.busy { opacity: 0.6; cursor: progress; }
   .per-unit { color: var(--muted); font-weight: 400; }
 </style>

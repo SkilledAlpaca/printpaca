@@ -30,22 +30,24 @@
       </select>
     </label>
   </div>
-  <label class="field field-textarea">
-    <span>Intro text</span>
+  <div class="field field-textarea">
+    <label for="public-intro-text">Intro text</label>
     <!-- No maxlength attribute: the limit is in BYTES (server/config.go's publicIntroTextMaxBytes) and
          HTML maxlength counts UTF-16 units, undercounting multi-byte scripts. The byte counter and
          warning below measure as the server does. -->
     <textarea
+      id="public-intro-text"
       rows="5"
       bind:value={form.publicQuotes.introText}
       class:warn={warnFor(warnings, "publicQuotes.introText") !== ""}
       aria-invalid={warnFor(warnings, "publicQuotes.introText") !== ""}
+      aria-describedby={warnFor(warnings, "publicQuotes.introText") !== "" ? "public-intro-count public-intro-warn" : "public-intro-count"}
     ></textarea>
-    <small class="field-hint">{introTextBytes} / {PUBLIC_INTRO_TEXT_MAX_BYTES} bytes</small>
+    <small id="public-intro-count" class="field-hint">{introTextBytes} / {PUBLIC_INTRO_TEXT_MAX_BYTES} bytes</small>
     {#if warnFor(warnings, "publicQuotes.introText") !== ""}
-      <small class="warn-text">{warnFor(warnings, "publicQuotes.introText")}</small>
+      <small id="public-intro-warn" class="warn-text">{warnFor(warnings, "publicQuotes.introText")}</small>
     {/if}
-  </label>
+  </div>
 
   <h3 class="section-label">Front door and shop</h3>
   <p class="hint">What your server's main address shows to customers. Changes apply without a restart.</p>

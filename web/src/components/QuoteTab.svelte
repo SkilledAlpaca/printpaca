@@ -21,6 +21,7 @@
   import CardHelp from "./CardHelp.svelte";
   import { helpState, setAllHelp } from "../lib/help.svelte";
   import { TILE_HELP, TILE_IDS, type TileId } from "../lib/guideContent";
+  import { focusAfterRowRemoval } from "./a11yFocus";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 
@@ -220,6 +221,7 @@
   }
   function removeHardwareRow(index: number) {
     part.hardware = part.hardware.filter((_, i) => i !== index);
+    void focusAfterRowRemoval("remove-hardware-row", index, part.hardware.length, "add-hardware-row");
   }
   // Per-row extended cost (unitCost x qtyPerUnit), display only, so the card shows a live number without a
   // round trip; the authoritative amount is the server's breakdown line. "-" for a blank qty or a stale name.
@@ -430,10 +432,10 @@
                 />
               </label>
               <span class="hardware-extended">{hardwareRowExtended(hw)}</span>
-              <button type="button" aria-label={`Remove hardware row ${i + 1}`} onclick={() => removeHardwareRow(i)}>Remove</button>
+              <button type="button" aria-label={`Remove hardware row ${i + 1}`} data-focus-key={`remove-hardware-row-${i}`} onclick={() => removeHardwareRow(i)}>Remove</button>
             </div>
           {/each}
-          <button type="button" onclick={addHardwareRow}>Add hardware</button>
+          <button type="button" data-focus-key="add-hardware-row" onclick={addHardwareRow}>Add hardware</button>
         </div>
       {/if}
     </div>

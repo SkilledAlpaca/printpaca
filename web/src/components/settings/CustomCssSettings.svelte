@@ -17,23 +17,25 @@
     (print only, never the on-screen admin UI). Target <code>#print-view.invoice</code>,
     <code>#print-view.quote</code>, or theme tokens such as <code>--accent</code> to restyle one surface.
   </p>
-  <label class="field field-textarea">
-    <span>CSS</span>
+  <div class="field field-textarea">
+    <label for="custom-css">CSS</label>
     <!-- No maxlength attribute: the limit is in BYTES (server/config.go's customCssMaxBytes) and HTML
          maxlength counts UTF-16 units, undercounting multi-byte scripts. The byte counter and warning
          below measure as the server does (same as PublicQuotesSettings' intro text). -->
     <textarea
+      id="custom-css"
       rows="10"
       class="mono"
       bind:value={form.customCss}
       class:warn={warnFor(warnings, "customCss") !== ""}
       aria-invalid={warnFor(warnings, "customCss") !== ""}
+      aria-describedby={warnFor(warnings, "customCss") !== "" ? "custom-css-count custom-css-warn" : "custom-css-count"}
     ></textarea>
-    <small class="field-hint">{customCssBytes} / {CUSTOM_CSS_MAX_BYTES} bytes</small>
+    <small id="custom-css-count" class="field-hint">{customCssBytes} / {CUSTOM_CSS_MAX_BYTES} bytes</small>
     {#if warnFor(warnings, "customCss") !== ""}
-      <small class="warn-text">{warnFor(warnings, "customCss")}</small>
+      <small id="custom-css-warn" class="warn-text">{warnFor(warnings, "customCss")}</small>
     {/if}
-  </label>
+  </div>
 </div>
 
 <style>

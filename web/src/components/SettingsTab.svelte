@@ -14,6 +14,8 @@
   import AccountCard from "./settings/AccountCard.svelte";
   import LabeledNumber from "./LabeledNumber.svelte";
   import LabeledText from "./LabeledText.svelte";
+  import { focusAfterUpdate } from "../lib/a11y.svelte";
+  import { focusAfterRowRemoval, keySelector } from "./a11yFocus";
 
   // Server-asserted demoMode from appConfig (as in IntegrationsSettings.svelte), used to disable the
   // Diagnostics export button in a read-only demo; the server blocks the request anyway (GET
@@ -104,6 +106,7 @@
     const next = { ...form.feeSchedules };
     delete next[key];
     form.feeSchedules = next;
+    void focusAfterUpdate(keySelector("add-fee-schedule"));
   }
   function addFixedCharge(form: ServerConfig, key: string) {
     const fs = form.feeSchedules[key];
@@ -114,6 +117,7 @@
     const fs = form.feeSchedules[key];
     if (!fs) return;
     fs.fixed = fs.fixed.filter((_, i) => i !== index);
+    void focusAfterRowRemoval(`remove-fixed-${key}`, index, fs.fixed.length, `add-fixed-${key}`);
   }
   function addPercentCharge(form: ServerConfig, key: string) {
     const fs = form.feeSchedules[key];
@@ -124,6 +128,7 @@
     const fs = form.feeSchedules[key];
     if (!fs) return;
     fs.percent = fs.percent.filter((_, i) => i !== index);
+    void focusAfterRowRemoval(`remove-percent-${key}`, index, fs.percent.length, `add-percent-${key}`);
   }
 </script>
 
@@ -250,15 +255,23 @@
         <h2>Time zone</h2>
         <p class="hint">Decides which month a payment, a quote, and "today" belong to on the Dashboard, when an invoice is overdue, and the date a marked-paid payment gets. Stored timestamps stay UTC.</p>
         <div class="field-rows">
-          <label class="field">
-            <span>Time zone</span>
-            <input list="timezone-options" bind:value={form.timezone} placeholder="UTC" autocomplete="off" />
+          <div class="field">
+            <label for="timezone-input">Time zone</label>
+            <input
+              id="timezone-input"
+              list="timezone-options"
+              bind:value={form.timezone}
+              placeholder="UTC"
+              autocomplete="off"
+              aria-invalid={warnFor(warnings, "timezone") !== ""}
+              aria-describedby={warnFor(warnings, "timezone") ? "timezone-hint timezone-warn" : "timezone-hint"}
+            />
             <datalist id="timezone-options">
               {#each timezoneOptions as tz (tz)}<option value={tz}></option>{/each}
             </datalist>
-            <small class="field-hint">An IANA name, such as UTC or America/New_York.</small>
-            {#if warnFor(warnings, "timezone")}<small class="warn-text">{warnFor(warnings, "timezone")}</small>{/if}
-          </label>
+            <small id="timezone-hint" class="field-hint">An IANA name, such as UTC or America/New_York.</small>
+            {#if warnFor(warnings, "timezone")}<small id="timezone-warn" class="warn-text">{warnFor(warnings, "timezone")}</small>{/if}
+          </div>
         </div>
       </div>
 
@@ -291,10 +304,10 @@
                   <span>Label</span>
                   <input aria-label={`${key} fixed charge ${i + 1} label`} bind:value={charge.label} />
                 </label>
-                <button type="button" aria-label={`Remove ${key} fixed charge ${i + 1}`} onclick={() => removeFixedCharge(form, key, i)}>Remove</button>
+                <button type="button" aria-label={`Remove ${key} fixed charge ${i + 1}`} data-focus-key={`remove-fixed-${key}-${i}`} onclick={() => removeFixedCharge(form, key, i)}>Remove</button>
               </div>
             {/each}
-            <button type="button" onclick={() => addFixedCharge(form, key)}>Add fixed charge</button>
+            <button type="button" data-focus-key={`add-fixed-${key}`} onclick={() => addFixedCharge(form, key)}>Add fixed charge</button>
 
             <h4 class="section-label">Percent charges</h4>
             {#each fs.percent as charge, i (i)}
@@ -310,13 +323,13 @@
                   <span>Label</span>
                   <input aria-label={`${key} percent charge ${i + 1} label`} bind:value={charge.label} />
                 </label>
-                <button type="button" aria-label={`Remove ${key} percent charge ${i + 1}`} onclick={() => removePercentCharge(form, key, i)}>Remove</button>
+                <button type="button" aria-label={`Remove ${key} percent charge ${i + 1}`} data-focus-key={`remove-percent-${key}-${i}`} onclick={() => removePercentCharge(form, key, i)}>Remove</button>
               </div>
             {/each}
-            <button type="button" onclick={() => addPercentCharge(form, key)}>Add percent charge</button>
+            <button type="button" data-focus-key={`add-percent-${key}`} onclick={() => addPercentCharge(form, key)}>Add percent charge</button>
           </div>
         {/each}
-        <button type="button" onclick={() => addFeeSchedule(form)}>Add fee schedule</button>
+        <button type="button" data-focus-key="add-fee-schedule" onclick={() => addFeeSchedule(form)}>Add fee schedule</button>
       </div>
 
       <HardwareSettings {form} {hasError} />
@@ -370,7 +383,8 @@
       <div id="section-features" class="card roomy" class:danger-border={hasError("ui")}>
         <h2>Features</h2>
         <p class="hint">Hide tabs you don't use from navigation. Data is kept and comes back when you re-enable a tab.</p>
-        <div class="feature-grid">
+        <fieldset class="feature-grid">
+          <legend>Show these tabs</legend>
           {#each FEATURE_TABS as t (t.id)}
             <label class="toggle">
               <input
@@ -381,7 +395,7 @@
               <span>{t.label}</span>
             </label>
           {/each}
-        </div>
+        </fieldset>
         {#if !isTabEnabled(form, "requests") && form.materials.some((m) => m.public)}
           <p class="banner-warn" role="alert">
             If you use the public estimate page, submissions keep arriving unseen until you turn Requests back on.
@@ -466,6 +480,7 @@
     #section-currency,
     #section-pricing,
     #section-fee-schedules,
+    #section-timezone,
     #section-hardware,
     #section-defaults,
     #section-quote,
@@ -489,7 +504,11 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
     gap: 0.3rem 0.8rem;
+    border: 0;
+    padding: 0;
+    margin: 0;
   }
+  .feature-grid legend { grid-column: 1 / -1; padding: 0; font-weight: 600; margin-bottom: 0.2rem; }
 
   /* theme .toggle has no margin of its own; this one follows a .field-rows block and needs the same gap as
    * other stacked blocks in a card. */

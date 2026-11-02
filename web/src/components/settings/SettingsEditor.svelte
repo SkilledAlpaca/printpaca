@@ -11,6 +11,8 @@
   import { loadConfig } from "../../lib/api";
   import { appConfig } from "../../lib/state.svelte";
   import { settingsDirty } from "../../lib/settingsDirty.svelte";
+  import { announce } from "../../lib/a11y.svelte";
+  import { refocusIfLost } from "../a11yFocus";
 
   // Reusable form-editing shell for SettingsTab and every tab that embeds a settings card (ElectricityTab,
   // FilamentTab, PrintersTab, ...). Only one instance is mounted at a time (tabs unmount on switch), so there
@@ -87,7 +89,7 @@
   onMount(refresh);
 
   async function save() {
-    if (!form) return;
+    if (!form || saving) return;
     saving = true;
     savedNotice = "";
     // $state.snapshot, not cloneConfig: form is a $state deep proxy and structuredClone throws DataCloneError
@@ -99,6 +101,8 @@
       original = snapshot;
       errors = [];
       savedNotice = "Settings saved.";
+      // The save bar unmounts now that the form is clean; keep focus on the saved notice (WCAG 2.4.3).
+      void refocusIfLost("[data-settings-status]");
       // Refresh appConfig so every mounted tab sees what /api/config now serves (the server applies a saved
       // config immediately). Deliberately not applyConfig(fresh): that seeds QuoteTab's form once, on first
       // load (the `seeded` guard in state.svelte.ts), and would clobber what the user has mid-typed. A failed
@@ -109,6 +113,7 @@
       }
     } else {
       errors = result.errors;
+      announce("Couldn't save settings. See the errors in the save bar.", "assertive");
     }
   }
 
@@ -117,6 +122,9 @@
     // Same proxy caveat as save(): snapshot first; it is already detached from `original`.
     form = $state.snapshot(original) as ServerConfig;
     errors = [];
+    savedNotice = "";
+    announce("Changes discarded.");
+    void refocusIfLost("[data-settings-status]");
   }
 </script>
 
@@ -137,18 +145,20 @@
 
     {@render children({ form, builtin, original, hasError })}
 
-    <p class="hint" role="status">{dirty ? "" : savedNotice}</p>
+    <p class="hint" role="status" tabindex="-1" data-settings-status>{dirty ? "" : savedNotice}</p>
 
     {#if dirty || errors.length > 0}
       <div class="save-bar">
         {#if errors.length > 0}
-          <ul class="errors" role="alert">
-            {#each errors as e (e)}<li>{e}</li>{/each}
-          </ul>
+          <div role="alert">
+            <ul class="errors">
+              {#each errors as e (e)}<li>{e}</li>{/each}
+            </ul>
+          </div>
         {/if}
         <div class="save-actions">
-          <button type="button" onclick={discard} disabled={!dirty || saving}>Discard changes</button>
-          <button type="button" class="primary" onclick={save} disabled={saving}>{saving ? "Saving…" : "Save changes"}</button>
+          <button type="button" onclick={() => { if (!saving) discard(); }} disabled={!dirty} aria-disabled={saving}>Discard changes</button>
+          <button type="button" class="primary" onclick={save} aria-disabled={saving}>{saving ? "Saving…" : "Save changes"}</button>
         </div>
       </div>
     {/if}

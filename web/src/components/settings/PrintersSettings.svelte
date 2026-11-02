@@ -3,6 +3,7 @@
   import { settingsWarnings } from "../../lib/settingsRules";
   import { warnFor } from "../../lib/format";
   import { rowProblems, warnId } from "../../lib/rowIssues";
+  import { focusAfterRowRemoval } from "../a11yFocus";
 
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 
@@ -19,6 +20,7 @@
   }
   function removePrinter(index: number) {
     form.printers = form.printers.filter((_, i) => i !== index);
+    void focusAfterRowRemoval("remove-printer", index, form.printers.length, "add-printer");
   }
 </script>
 
@@ -28,7 +30,7 @@
   <div class="table-scroll">
     <table>
       <thead>
-        <tr><th>ID</th><th>Name</th><th>Power (W)</th><th>Purchase cost</th><th>Lifespan (h)</th><th>Filament ⌀ (mm)</th><th></th></tr>
+        <tr><th>ID</th><th>Name</th><th>Power (W)</th><th>Purchase cost</th><th>Lifespan (h)</th><th>Filament ⌀ (mm)</th><th><span class="visually-hidden">Actions</span></th></tr>
       </thead>
       <tbody>
         {#each form.printers as p, i (i)}
@@ -65,6 +67,7 @@
               <button
                 type="button"
                 aria-label={`Remove printer ${p.name || p.id}`}
+                data-focus-key={`remove-printer-${i}`}
                 disabled={form.printers.length <= 1}
                 onclick={() => removePrinter(i)}
               >Remove</button>
@@ -77,7 +80,7 @@
   {#each rowIssues as issue (issue.field)}
     <small id={warnId(issue.field)} class="warn-text">Row {issue.row}: {issue.message}</small>
   {/each}
-  <button type="button" onclick={addPrinter}>Add printer</button>
+  <button type="button" data-focus-key="add-printer" onclick={addPrinter}>Add printer</button>
 </div>
 
 <style>

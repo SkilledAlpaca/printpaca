@@ -19,6 +19,7 @@
   let testFailed = $state(false);
 
   async function sendTestEmail() {
+    if (testing) return;
     testing = true;
     testStatus = "";
     testFailed = false;
@@ -86,7 +87,7 @@
     />
   </div>
   <div class="test-row">
-    <button type="button" onclick={sendTestEmail} disabled={form.smtp.host === "" || testing}>
+    <button type="button" onclick={sendTestEmail} disabled={form.smtp.host === ""} aria-disabled={testing}>
       {testing ? "Sending…" : "Send test email"}
     </button>
     <span class="hint">Tests the saved settings, not unsaved changes above.</span>

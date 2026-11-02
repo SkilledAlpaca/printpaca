@@ -92,6 +92,7 @@
   let testResult = $state<Partial<Record<Kind, { ok: boolean; detail: string }>>>({});
 
   async function runTest(kind: "spoolman" | "moonraker", url: string) {
+    if (testing[kind]) return;
     testing[kind] = true;
     testResult[kind] = undefined;
     try {
@@ -146,7 +147,8 @@
           <button
             type="button"
             onclick={() => runTest(kind, form.integrationsUrls[row.field])}
-            disabled={demoMode || locked(row.kind) || form.integrationsUrls[row.field] === "" || testing[kind]}
+            disabled={demoMode || locked(row.kind) || form.integrationsUrls[row.field] === ""}
+            aria-disabled={testing[kind] === true}
           >
             {testing[kind] ? "Testing…" : "Test"}
           </button>

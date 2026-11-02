@@ -2,6 +2,8 @@
   import { MAX_ORDER_PARTS, MAX_PART_LABEL_CHARS, type EffectiveConfig, type OrderBreakdown } from "../lib/engine/index";
   import { quote, addPart, duplicatePart, removePart, setActivePart, partLabel, type PartForm } from "../lib/state.svelte";
   import { money } from "../lib/format";
+  import { focusAfterUpdate } from "../lib/a11y.svelte";
+  import { confirmFocus, keySelector, neighborId, rowSelector } from "./a11yFocus";
 
   let { cfg, order }: { cfg: EffectiveConfig; order: OrderBreakdown } = $props();
 
@@ -9,10 +11,12 @@
   const full = $derived(quote.parts.length >= MAX_ORDER_PARTS);
 
   function add() {
+    if (full) return;
     const part = addPart(cfg);
     setActivePart(part.id);
   }
   function duplicate(id: string) {
+    if (full) return;
     const copy = duplicatePart(id);
     if (copy) setActivePart(copy.id);
   }
@@ -32,7 +36,11 @@
   let confirmingRemove = $state<string | null>(null);
   function confirmRemove(id: string) {
     confirmingRemove = null;
+    const next = neighborId(quote.parts.map((p) => p.id), id);
     removePart(id);
+    // The confirmed row is gone: focus the next part, else the previous; with one part left the list
+    // collapses to the Add part button.
+    void focusAfterUpdate(() => (next ? document.querySelector<HTMLElement>(rowSelector(next)) : null) ?? document.querySelector<HTMLElement>(keySelector("add-part")));
   }
   const labelInputId = $props.id();
 </script>
@@ -41,7 +49,7 @@
   {#if multi}
     <div class="head-row">
       <h2>Parts</h2>
-      <button type="button" onclick={add} disabled={full}>Add part</button>
+      <button type="button" data-focus-key="add-part" onclick={add} aria-disabled={full}>Add part</button>
     </div>
     <ul class="plain-list part-rows">
       {#each quote.parts as part, i (part.id)}
@@ -50,19 +58,20 @@
             type="button"
             class="quiet linkish part-select"
             aria-pressed={part.id === quote.activePartId}
-            aria-label={`Edit ${partLabel(part, i)}`}
+            data-row-id={part.id}
             onclick={() => setActivePart(part.id)}
           >
+            <span class="visually-hidden">Edit </span>
             <span class="part-name">{partLabel(part, i)}</span>
             <span class="part-meta">× {qty(part)}</span>
           </button>
           <span class="part-total">{lineTotal(i)}</span>
-          <button type="button" class="quiet" aria-label={`Duplicate ${partLabel(part, i)}`} onclick={() => duplicate(part.id)} disabled={full}>Duplicate</button>
+          <button type="button" class="quiet" aria-label={`Duplicate ${partLabel(part, i)}`} onclick={() => duplicate(part.id)} aria-disabled={full}>Duplicate</button>
           {#if confirmingRemove === part.id}
-            <button type="button" class="quiet danger" aria-label={`Confirm remove ${partLabel(part, i)}`} onclick={() => confirmRemove(part.id)}>Remove?</button>
-            <button type="button" class="quiet" aria-label={`Keep ${partLabel(part, i)}`} onclick={() => (confirmingRemove = null)}>Cancel</button>
+            <button type="button" class="quiet danger" aria-label={`Remove? ${partLabel(part, i)}`} onclick={() => confirmRemove(part.id)} use:confirmFocus={{ restore: keySelector(`remove-part-${part.id}`), cancel: () => (confirmingRemove = null) }}>Remove?</button>
+            <button type="button" class="quiet" aria-label={`Cancel removing ${partLabel(part, i)}`} onclick={() => (confirmingRemove = null)}>Cancel</button>
           {:else}
-            <button type="button" class="quiet" aria-label={`Remove ${partLabel(part, i)}`} onclick={() => (confirmingRemove = part.id)}>Remove</button>
+            <button type="button" class="quiet" data-focus-key={`remove-part-${part.id}`} aria-label={`Remove ${partLabel(part, i)}`} onclick={() => (confirmingRemove = part.id)}>Remove</button>
           {/if}
         </li>
       {/each}

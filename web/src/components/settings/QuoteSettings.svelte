@@ -45,25 +45,25 @@
   <div class="field-rows">
     <label class="field">
       <span>Business name</span>
-      <input bind:value={form.quote.businessName} />
+      <input bind:value={form.quote.businessName} autocomplete="organization" />
     </label>
-    <label class="field">
-      <span>Logo URL</span>
-      <input bind:value={form.quote.logoUrl} />
+    <div class="field">
+      <label for="quote-logo-url">Logo URL</label>
+      <input id="quote-logo-url" bind:value={form.quote.logoUrl} aria-describedby={logoLoadFailed ? "quote-logo-hint" : undefined} />
       {#if logoLoadFailed}
-        <p class="advisory-text logo-hint">
+        <p id="quote-logo-hint" class="advisory-text logo-hint">
           This logo URL couldn't be loaded, so it won't appear on printed quotes or invoices. Use a direct link to a
           PNG, JPG, or SVG image.
         </p>
       {/if}
-    </label>
+    </div>
     <label class="field">
       <span>Email</span>
-      <input type="email" bind:value={form.quote.email} />
+      <input type="email" bind:value={form.quote.email} autocomplete="email" />
     </label>
     <label class="field">
       <span>Phone</span>
-      <input bind:value={form.quote.phone} />
+      <input type="tel" bind:value={form.quote.phone} autocomplete="tel" />
     </label>
     <label class="field">
       <span>Tax ID</span>
@@ -76,37 +76,41 @@
   </div>
   <label class="field field-textarea">
     <span>Address</span>
-    <textarea rows="3" bind:value={form.quote.address}></textarea>
+    <textarea rows="3" bind:value={form.quote.address} autocomplete="street-address"></textarea>
   </label>
-  <label class="field field-textarea">
-    <span>Payment instructions</span>
+  <div class="field field-textarea">
+    <label for="quote-payment-instructions">Payment instructions</label>
     <!-- Byte cap mirroring server/config.go's quotePaymentInstructionsMaxBytes (bytes, not characters;
          see PublicQuotesSettings.svelte). -->
     <textarea
+      id="quote-payment-instructions"
       rows="5"
       bind:value={form.quote.paymentInstructions}
       class:warn={warnFor(warnings, "quote.paymentInstructions") !== ""}
       aria-invalid={warnFor(warnings, "quote.paymentInstructions") !== ""}
+      aria-describedby={warnFor(warnings, "quote.paymentInstructions") !== "" ? "quote-payment-count quote-payment-warn" : "quote-payment-count"}
     ></textarea>
-    <small class="field-hint">{paymentInstructionsBytes} / {QUOTE_PAYMENT_INSTRUCTIONS_MAX_BYTES} bytes</small>
+    <small id="quote-payment-count" class="field-hint">{paymentInstructionsBytes} / {QUOTE_PAYMENT_INSTRUCTIONS_MAX_BYTES} bytes</small>
     {#if warnFor(warnings, "quote.paymentInstructions") !== ""}
-      <small class="warn-text">{warnFor(warnings, "quote.paymentInstructions")}</small>
+      <small id="quote-payment-warn" class="warn-text">{warnFor(warnings, "quote.paymentInstructions")}</small>
     {/if}
-  </label>
-  <label class="field field-textarea">
-    <span>Terms text</span>
+  </div>
+  <div class="field field-textarea">
+    <label for="quote-terms-text">Terms text</label>
     <!-- Byte cap mirroring server/config.go's quoteTermsTextMaxBytes. -->
     <textarea
+      id="quote-terms-text"
       rows="5"
       bind:value={form.quote.termsText}
       class:warn={warnFor(warnings, "quote.termsText") !== ""}
       aria-invalid={warnFor(warnings, "quote.termsText") !== ""}
+      aria-describedby={warnFor(warnings, "quote.termsText") !== "" ? "quote-terms-count quote-terms-warn" : "quote-terms-count"}
     ></textarea>
-    <small class="field-hint">{termsTextBytes} / {QUOTE_TERMS_TEXT_MAX_BYTES} bytes</small>
+    <small id="quote-terms-count" class="field-hint">{termsTextBytes} / {QUOTE_TERMS_TEXT_MAX_BYTES} bytes</small>
     {#if warnFor(warnings, "quote.termsText") !== ""}
-      <small class="warn-text">{warnFor(warnings, "quote.termsText")}</small>
+      <small id="quote-terms-warn" class="warn-text">{warnFor(warnings, "quote.termsText")}</small>
     {/if}
-  </label>
+  </div>
 </div>
 
 <style>

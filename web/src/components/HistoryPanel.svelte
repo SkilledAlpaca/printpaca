@@ -154,6 +154,7 @@
   }
 
   async function save() {
+    if (saving) return;
     // Set before the settledBreakdown() await so the save row stays disabled for the whole wait, and a second
     // Ctrl+S/click can't fire a second save.
     saving = true;
@@ -209,7 +210,7 @@
    * delete the row). An explicit selection change, including "No client", wins over the old link; an
    * untouched link survives even if /api/clients never loaded. */
   async function update() {
-    if (!loadedId) return;
+    if (!loadedId || saving) return;
     // See save(): set before the settledBreakdown() await so the row stays disabled for the whole wait.
     saving = true;
     try {
@@ -375,22 +376,27 @@
   {/if}
 
   <div class="saverow" class:dirty={floating}>
-    <label class="visually-hidden" for="history-label">Label for this quote</label>
-    <input
-      id="history-label"
-      placeholder={`Label, for example "Benchy for Sam"`}
-      bind:value={label}
-      onkeydown={handleLabelKeydown}
-    />
-    <label class="visually-hidden" for="history-client">Client for this quote</label>
-    <input
-      id="history-client"
-      list="history-client-options"
-      placeholder="Client (type to search or add)"
-      value={quoteClient.name}
-      oninput={handleClientInput}
-      onfocus={ensureClientsLoaded}
-    />
+    <div class="save-field">
+      <label for="history-label">Label for this quote</label>
+      <input
+        id="history-label"
+        placeholder={`for example "Benchy for Sam"`}
+        bind:value={label}
+        onkeydown={handleLabelKeydown}
+      />
+    </div>
+    <div class="save-field">
+      <label for="history-client">Client for this quote</label>
+      <input
+        id="history-client"
+        list="history-client-options"
+        placeholder="Type to search or add"
+        autocomplete="off"
+        value={quoteClient.name}
+        oninput={handleClientInput}
+        onfocus={ensureClientsLoaded}
+      />
+    </div>
     <datalist id="history-client-options">
       {#each clients ?? [] as c (c.id)}<option value={c.name}></option>{/each}
     </datalist>
@@ -402,12 +408,12 @@
     {/if}
     {#if floating}<span class="unsaved-badge">Unsaved changes</span>{/if}
     {#if loadedId}
-      <button class="primary" onclick={update} disabled={saveRowDisabled()}>
+      <button class="primary" onclick={update} disabled={!saving && saveRowDisabled()} aria-disabled={saving}>
         {saving ? "Saving…" : `Update "${loadedQuote?.label ?? ""}"`}
       </button>
-      <button type="button" onclick={save} disabled={saveRowDisabled()}>Save as new</button>
+      <button type="button" onclick={save} disabled={!saving && saveRowDisabled()} aria-disabled={saving}>Save as new</button>
     {:else}
-      <button class="primary" onclick={save} disabled={saveRowDisabled()}>
+      <button class="primary" onclick={save} disabled={!saving && saveRowDisabled()} aria-disabled={saving}>
         {saving ? "Saving…" : "Save quote"}
       </button>
     {/if}
@@ -452,11 +458,14 @@
    * of forcing horizontal scroll; the input's intrinsic min-width can't shrink enough around 380px, and
    * min-width: 0 lets it shrink before a wrap is needed. */
   .saverow { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.6rem; }
-  .saverow input { flex: 1; min-width: 0; }
+  .saverow input { width: 100%; min-width: 0; }
+  .save-field { flex: 1 1 12rem; display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+  .save-field label { font-size: var(--text-sm); }
+  .saverow > button { align-self: flex-end; }
   /* Below 480px the label and client inputs each take a full line so their placeholders stay readable, and
    * the save buttons share the next line. */
   @media (max-width: 480px) {
-    .saverow input { flex: 1 1 100%; }
+    .save-field { flex: 1 1 100%; }
     .saverow button { flex: 1 1 auto; }
   }
 

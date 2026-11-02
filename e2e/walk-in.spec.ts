@@ -34,7 +34,7 @@ test("walk-in name persists through save, restore, and convert", async ({ page }
   await page.goto("/admin/#/quotes");
   const row = quotesRow(page, label);
   await expect(row).toBeVisible();
-  await row.getByRole("button", { name: `Convert "${label}" to invoice` }).click();
+  await row.getByRole("button", { name: `Convert to invoice: "${label}"` }).click();
   await expect(page.getByLabel("Client for this invoice")).toHaveText(new RegExp(customer));
   await page.getByRole("button", { name: /^Create invoice/ }).click();
   await expect(page).toHaveURL(/#\/invoices/);

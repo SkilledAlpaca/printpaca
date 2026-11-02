@@ -63,7 +63,7 @@ test("canceling an invoice that has payments shows the server's message until th
 
   // Removing the payment unblocks the cancel.
   await page.getByRole("button", { name: /^Delete payment of \$10\.00/ }).click();
-  await page.getByRole("button", { name: /^Confirm delete payment of \$10\.00/}).click();
+  await page.getByRole("button", { name: /^Delete\? payment of \$10\.00/}).click();
   await expect(page.getByText(/No payments recorded yet/)).toBeVisible();
   await page.getByRole("button", { name: "Cancel invoice" }).click();
   await page.getByRole("button", { name: "Cancel invoice?" }).click();

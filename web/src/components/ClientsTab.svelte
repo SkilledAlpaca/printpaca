@@ -21,6 +21,9 @@
   import AttributionLine from "./AttributionLine.svelte";
   import LoadMoreRow from "./LoadMoreRow.svelte";
   import BackfillStatus from "./BackfillStatus.svelte";
+  import DetailTitle from "./DetailTitle.svelte";
+  import { announce } from "../lib/a11y.svelte";
+  import { confirmFocus, focusRowOrHeading, keySelector, neighborId } from "./a11yFocus";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 
@@ -180,6 +183,7 @@
   }
 
   function openNew() {
+    openerId = null;
     view = "detail";
     detailId = null;
     detail = null;
@@ -223,8 +227,12 @@
   // Looks the id up in the loaded `clients` first; on a miss, backfills via ensureFullyLoaded and
   // re-looks-up, so a client past the first page still resolves. `silent`: a genuinely nonexistent id falls
   // back to the list quietly instead of an error banner over an empty detail.
+  // The row that opened the detail view, so "Back to list" can return focus to it (WCAG 2.4.3).
+  let openerId: string | null = null;
+
   async function openDetail(id: string, opts?: { silent?: boolean }) {
     const seq = ++openSeq;
+    openerId = id;
     const found = clients.find((c) => c.id === id);
     if (found) {
       applyDetail(found);
@@ -274,16 +282,20 @@
     };
   });
 
-  function backToList() {
+  function backToList(focusId: string | null = openerId) {
     closeDetailView();
     if (location.hash !== CLIENTS_HASH) location.hash = CLIENTS_HASH; // pushes a history entry
+    void focusRowOrHeading(focusId);
   }
 
   // Reacts to hash changes while mounted: back/forward between detail and list (or two ids), or a manual edit
   // of the id. A hashchange from this component's own setDetailHash()/backToList() is a no-op (the id matches
   // or the hash is bare).
   function syncDetailFromHash() {
-    syncDetail(location.hash, CLIENTS_HASH, detailId, view === "detail", (id) => openDetail(id, { silent: true }), closeDetailView);
+    syncDetail(location.hash, CLIENTS_HASH, detailId, view === "detail", (id) => openDetail(id, { silent: true }), () => {
+      closeDetailView();
+      void focusRowOrHeading(openerId);
+    });
   }
 
   // Escape closes an open detail view like "Back to list", but cancels an armed two-click delete first.
@@ -316,6 +328,7 @@
   });
 
   async function save() {
+    if (saving || !dirty) return;
     saving = true;
     formErrors = [];
     try {
@@ -326,8 +339,10 @@
       formBaseline = formFromClient(result); // saved state is the new clean baseline
       setDetailHash(result.id); // a freshly-created client becomes addressable the moment it exists
       await refresh();
+      announce(`${result.name || "Client"} saved.`);
     } catch (err) {
       formErrors = [err instanceof Error ? err.message : "Couldn't save client."];
+      announce("Couldn't save the client. See the errors above the form.", "assertive");
     } finally {
       saving = false;
     }
@@ -343,10 +358,13 @@
   async function confirmDeleteClient() {
     if (!detail || deleting) return;
     deleting = true;
+    const { id, name } = detail;
+    const next = neighborId(clients.map((x) => x.id), id);
     try {
-      await deleteClient(detail.id);
+      await deleteClient(id);
       await refresh();
-      backToList();
+      backToList(next);
+      announce(`${name || "Client"} deleted.`);
     } catch (err) {
       formErrors = [err instanceof Error ? err.message : "Couldn't delete client."];
       confirmingDelete = false;
@@ -404,7 +422,7 @@
 <div class="page">
   {#if view === "list"}
     <div class="head-row">
-      <h1>Clients</h1>
+      <h1 tabindex="-1">Clients</h1>
       <button type="button" class="primary" onclick={openNew}>Add client</button>
     </div>
 
@@ -425,7 +443,7 @@
         {:else}
           {#each filteredClients as c (c.id)}
             <li class="client-row">
-              <button type="button" class="row-open" onclick={() => openDetail(c.id)}>
+              <button type="button" class="row-open" data-row-id={c.id} onclick={() => openDetail(c.id)}>
                 <span class="c-name">{c.name}</span>
                 <span class="c-contact">{[c.email, c.phone].filter(Boolean).join(" · ")}</span>
                 {#if c.notes}<span class="c-notes">{c.notes}</span>{/if}
@@ -449,45 +467,47 @@
       {#if detailLoading}
         <p>Loading…</p>
       {:else}
-      <h2>{detail ? detail.name : detailError ? "Client" : "Add client"}</h2>
+      <DetailTitle>{detail ? detail.name : detailError ? "Client" : "Add client"}</DetailTitle>
       {#if detail}<AttributionLine createdBy={detail.createdBy} updatedBy={detail.updatedBy} />{/if}
 
       {#if detailError}
         <p class="banner-warn" role="alert">{detailError}</p>
       {:else}
         {#if formErrors.length > 0}
-          <ul class="errors" role="alert">
-            {#each formErrors as e (e)}<li>{e}</li>{/each}
-          </ul>
+          <div role="alert">
+            <ul class="errors">
+              {#each formErrors as e (e)}<li>{e}</li>{/each}
+            </ul>
+          </div>
         {/if}
         <div class="field-rows">
           <label class="field">
             <span>Name</span>
-            <input bind:value={form.name} />
+            <input bind:value={form.name} autocomplete="name" />
           </label>
           <label class="field">
             <span>Email</span>
-            <input type="email" bind:value={form.email} />
+            <input type="email" bind:value={form.email} autocomplete="email" />
           </label>
           <label class="field">
             <span>Phone</span>
-            <input type="tel" bind:value={form.phone} />
+            <input type="tel" bind:value={form.phone} autocomplete="tel" />
           </label>
         </div>
         <label class="field">
           <span>Billing address</span>
-          <textarea rows="3" bind:value={form.billingAddress}></textarea>
+          <textarea rows="3" bind:value={form.billingAddress} autocomplete="street-address"></textarea>
         </label>
         <label class="field">
           <span>Shipping address</span>
-          <textarea rows="3" bind:value={form.shippingAddress}></textarea>
+          <textarea rows="3" bind:value={form.shippingAddress} autocomplete="street-address"></textarea>
         </label>
         <label class="field">
           <span>Notes</span>
           <textarea rows="3" bind:value={form.notes}></textarea>
         </label>
         <div class="form-actions">
-          <button type="button" class="primary" onclick={save} disabled={saving || !dirty}>{saving ? "Saving…" : "Save"}</button>
+          <button type="button" class="primary" onclick={save} aria-disabled={saving || !dirty}>{saving ? "Saving…" : "Save"}</button>
         </div>
 
         {#if detail}
@@ -547,11 +567,11 @@
                 Invoices keep their own copy of this client's details. Saved quotes keep the name but lose the link.
               </p>
               <div class="form-actions">
-                <button type="button" class="danger" disabled={deleting} onclick={confirmDeleteClient}>Delete client?</button>
+                <button type="button" class="danger" aria-disabled={deleting} onclick={confirmDeleteClient} use:confirmFocus={{ restore: keySelector("delete-client"), cancel: cancelDelete }}>Delete client?</button>
                 <button type="button" onclick={cancelDelete}>Cancel</button>
               </div>
             {:else}
-              <button type="button" onclick={askDelete}>Delete client</button>
+              <button type="button" data-focus-key="delete-client" onclick={askDelete}>Delete client</button>
             {/if}
           </div>
         {/if}

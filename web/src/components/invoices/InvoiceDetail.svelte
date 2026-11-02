@@ -21,6 +21,9 @@
   import StatusBadge from "../StatusBadge.svelte";
   import PaymentsPanel from "./PaymentsPanel.svelte";
   import AttributionLine from "../AttributionLine.svelte";
+  import DetailTitle from "../DetailTitle.svelte";
+  import ScrollRegion from "../ScrollRegion.svelte";
+  import { confirmFocus, keySelector } from "../a11yFocus";
 
   let {
     cfg,
@@ -135,14 +138,16 @@
   <p class="banner-warn" role="alert">{detailError}</p>
 {:else}
   <div class="card">
-    <h2>{detail ? `Invoice ${detail.number}` : "New invoice"}</h2>
+    <DetailTitle>{detail ? `Invoice ${detail.number}` : "New invoice"}</DetailTitle>
     {#if detail}<AttributionLine createdBy={detail.createdBy} updatedBy={detail.updatedBy} />{/if}
     {#if provenance}<p class="hint">Created from a saved quote.</p>{/if}
 
     {#if formErrors.length > 0}
-      <ul class="errors" role="alert">
-        {#each formErrors as e (e)}<li>{e}</li>{/each}
-      </ul>
+      <div role="alert">
+        <ul class="errors">
+          {#each formErrors as e (e)}<li>{e}</li>{/each}
+        </ul>
+      </div>
     {/if}
 
     {#if detail === null || detail.status === "draft"}
@@ -226,7 +231,7 @@
                     <label class="toggle">
                       <input
                         type="checkbox"
-                        aria-label={`Line ${i + 1} is shipping`}
+                        aria-label={`Shipping (not taxed), line ${i + 1}`}
                         checked={line.kind === "shipping"}
                         onchange={(e) => (line.kind = e.currentTarget.checked ? "shipping" : "item")}
                       />
@@ -240,10 +245,10 @@
                 <td class="num">{money(previewTotals.lineAmounts[i] ?? 0, cfg)}</td>
                 <td>
                   {#if confirmingLineRemove === i}
-                    <button type="button" class="danger quiet" aria-label={`Confirm remove line ${i + 1}`} onclick={() => onRemoveLine(i)}>Remove?</button>
-                    <button type="button" class="quiet" aria-label={`Cancel removing line ${i + 1}`} onclick={onCancelRemoveLine}>Cancel</button>
+                    <button type="button" class="danger quiet" aria-label={`Remove?, line ${i + 1}`} onclick={() => onRemoveLine(i)} use:confirmFocus={{ restore: keySelector(`remove-line-${i}`), cancel: onCancelRemoveLine }}>Remove?</button>
+                    <button type="button" class="quiet" aria-label={`Cancel, keep line ${i + 1}`} onclick={onCancelRemoveLine}>Cancel</button>
                   {:else}
-                    <button type="button" class="quiet" aria-label={`Remove line ${i + 1}`} onclick={() => onAskRemoveLine(i)}>Remove</button>
+                    <button type="button" class="quiet" aria-label={`Remove line ${i + 1}`} data-focus-key={`remove-line-${i}`} onclick={() => onAskRemoveLine(i)}>Remove</button>
                   {/if}
                 </td>
               </tr>
@@ -253,7 +258,7 @@
           </tbody>
         </table>
       </div>
-      <button type="button" onclick={onAddLine}>Add line</button>
+      <button type="button" data-focus-key="add-line" onclick={onAddLine}>Add line</button>
 
       <div class="totals">
         <div><span>Subtotal</span><span>{money(previewTotals.subtotalCents, cfg)}</span></div>
@@ -262,7 +267,7 @@
       </div>
 
       <div class="form-actions">
-        <button type="button" class="primary" onclick={onSave} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+        <button type="button" class="primary" onclick={onSave} aria-disabled={saving}>{saving ? "Saving…" : "Save"}</button>
       </div>
     {:else if detail}
       <div class="readonly-grid">
@@ -275,7 +280,7 @@
       {#if detail.clientShippingAddress}<p class="address"><span class="lbl">Shipping</span> {detail.clientShippingAddress}</p>{/if}
       {#if detail.notes}<p class="notes"><span class="lbl">Notes</span> {detail.notes}</p>{/if}
 
-      <div class="table-scroll">
+      <ScrollRegion label="Invoice lines">
         <table>
           <thead>
             <tr><th>Description</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Discount</th><th class="num">Amount</th></tr>
@@ -292,7 +297,7 @@
             {/each}
           </tbody>
         </table>
-      </div>
+      </ScrollRegion>
       <div class="totals">
         <div><span>Subtotal</span><span>{money(detail.subtotalCents, cfg)}</span></div>
         <div><span>Tax</span><span>{money(detail.taxCents, cfg)}</span></div>
@@ -302,7 +307,7 @@
       {#if detail.sends.length > 0}
         <div class="subcard delivery-card">
           <h3>Delivery</h3>
-          <div class="table-scroll">
+          <ScrollRegion label="Delivery history">
             <table>
               <thead>
                 <tr><th>Date</th><th>Channel</th><th>Recipient</th></tr>
@@ -317,7 +322,7 @@
                 {/each}
               </tbody>
             </table>
-          </div>
+          </ScrollRegion>
         </div>
       {/if}
 
@@ -345,24 +350,24 @@
       <div class="status-actions">
         {#if detail.status === "draft"}
           {#if confirmingMarkSent}
-            <button type="button" class="danger" onclick={() => onChangeStatus("sent")}>Mark an empty invoice as sent?</button>
+            <button type="button" class="danger" onclick={() => onChangeStatus("sent")} use:confirmFocus={{ restore: keySelector("mark-sent"), cancel: onCancelMarkSent }}>Mark an empty invoice as sent?</button>
             <button type="button" onclick={onCancelMarkSent}>Cancel</button>
           {:else}
-            <button type="button" onclick={onMarkSentClick}>Mark sent</button>
+            <button type="button" data-focus-key="mark-sent" onclick={onMarkSentClick}>Mark sent</button>
           {/if}
           {#if confirmingDelete}
-            <button type="button" class="danger" onclick={onConfirmDeleteInvoice}>Delete?</button>
+            <button type="button" class="danger" onclick={onConfirmDeleteInvoice} use:confirmFocus={{ restore: keySelector("delete-invoice"), cancel: onCancelDeleteConfirm }}>Delete?</button>
             <button type="button" onclick={onCancelDeleteConfirm}>Cancel</button>
           {:else}
-            <button type="button" onclick={onAskDelete}>Delete</button>
+            <button type="button" data-focus-key="delete-invoice" onclick={onAskDelete}>Delete</button>
           {/if}
         {:else if detail.status === "sent"}
           <button type="button" onclick={() => onChangeStatus("paid")}>Mark paid</button>
           {#if confirmingCancel}
-            <button type="button" class="danger" onclick={() => onChangeStatus("canceled")}>Cancel invoice?</button>
+            <button type="button" class="danger" onclick={() => onChangeStatus("canceled")} use:confirmFocus={{ restore: keySelector("cancel-invoice"), cancel: onCancelCancel }}>Cancel invoice?</button>
             <button type="button" onclick={onCancelCancel}>Keep invoice</button>
           {:else}
-            <button type="button" onclick={onAskCancel}>Cancel invoice</button>
+            <button type="button" data-focus-key="cancel-invoice" onclick={onAskCancel}>Cancel invoice</button>
           {/if}
           <button type="button" onclick={() => onDuplicate(detail)}>Duplicate</button>
         {:else if detail.status === "paid"}
@@ -376,8 +381,9 @@
         <button
           type="button"
           onclick={onSendEmail}
-          disabled={emailReason !== null || emailing}
-          aria-label={emailReason ? `Email invoice ${detail.number} to client (unavailable)` : undefined}
+          disabled={emailReason !== null}
+          aria-disabled={emailing}
+          aria-label={emailReason ? "Email to client (unavailable)" : undefined}
           aria-describedby={emailReason ? "email-disabled-reason" : undefined}
         >
           {emailing ? "Sending…" : "Email to client"}

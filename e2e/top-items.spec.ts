@@ -54,7 +54,7 @@ test("a finalized gallery order is listed in Top items and survives deleting the
   await navButton(page, "Requests").click();
   await page.locator(".plain-list li", { hasText: BUYER_NAME }).getByRole("button").first().click();
   await page.getByRole("button", { name: "Delete this request" }).click();
-  await page.getByRole("button", { name: "Confirm delete this request. Also deletes the stored file." }).click();
+  await page.getByRole("button", { name: "Delete? Also deletes the stored file." }).click();
   await expect(page.locator(".plain-list li", { hasText: BUYER_NAME })).toHaveCount(0);
 
   await openDashboard();

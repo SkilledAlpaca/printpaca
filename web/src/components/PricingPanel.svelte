@@ -97,7 +97,10 @@
       Priced by {p.strategy === "margin" ? "margin on price" : "markup on cost"}{overridden ? ", price overridden" : ""}
     </p>
 
-    <dl class="pricing-out measure-cap" class:invalid={!p.valid}>
+    {#if !p.valid}
+      <p class="warn-text" id="pricing-invalid">Pricing is incomplete. Fix the flagged fields above.</p>
+    {/if}
+    <dl class="pricing-out measure-cap" class:invalid={!p.valid} aria-describedby={!p.valid ? "pricing-invalid" : undefined}>
       {#if multi}
         <div><dt>Recommended items total</dt><dd>{p.valid ? money(recommendedItems, cfg) : "-"}</dd></div>
         {#if overridden}
@@ -133,7 +136,6 @@
   .pricing-out .sub dt { color: var(--muted); padding-left: 0.8rem; }
   .pricing-out .net { font-weight: 700; font-size: 1.05rem; }
   .pricing-out .net.loss dd { color: var(--danger); }
-  .pricing-out.invalid { opacity: 0.6; }
   .pricing-out.invalid .net { border-left: 2px solid var(--danger); padding-left: 0.5rem; }
   dl div dt { margin: 0; } dl div dd { margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
 </style>

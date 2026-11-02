@@ -34,11 +34,12 @@
     </div>
     <ul class="legend">
       {#each segments as seg (seg.id)}
-        <li><span class="chip" data-id={seg.id}></span>{seg.label}</li>
+        <li><span class="chip" data-id={seg.id}></span>{seg.label} {seg.percent.toFixed(0)}%</li>
       {/each}
     </ul>
   {/if}
   <table class="measure-cap">
+    <caption class="visually-hidden">Cost breakdown{breakdown.quantity > 1 ? " per unit" : ""}</caption>
     <tbody>
       {#each breakdown.perUnit as line (line.id)}
         {@const invalid = line.warnings.some((w) => w.severity === "error")}

@@ -198,6 +198,19 @@ button.primary {
 }
 button { cursor: pointer; }
 button:disabled { opacity: 0.5; cursor: default; }
+/* In-flight and temporarily unavailable controls use aria-disabled instead of disabled so a focused control keeps
+ * focus (WCAG 2.4.3). They look disabled but keep the focus ring and every hover rule untouched; the click
+ * handlers carry an early-return guard. aria-busy adds a progress cursor and a slow pulse (the global
+ * reduced-motion rule flattens the animation). */
+button[aria-disabled="true"],
+input[aria-disabled="true"],
+select[aria-disabled="true"],
+a[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+button[aria-disabled="true"][aria-busy="true"],
+input[aria-disabled="true"][aria-busy="true"],
+select[aria-disabled="true"][aria-busy="true"],
+a[aria-disabled="true"][aria-busy="true"] { cursor: progress; animation: busy-pulse 1.2s ease-in-out infinite; }
+@keyframes busy-pulse { 50% { opacity: 0.8; } }
 
 /* Dense secondary controls (table row actions, jump nav, HistoryPanel's save-row buttons) share one hover
  * (--surface-2 fill) and nothing else. No underline: every quiet control's hover is identical. */

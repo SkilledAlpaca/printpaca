@@ -203,7 +203,7 @@
       <span>Recent print (from Moonraker)</span>
       <select
         bind:value={selectedId}
-        aria-disabled={applying}
+        aria-disabled={applying} aria-busy={applying}
         onchange={(e) => {
           // A pick is applying: keep the select focusable (aria-disabled, not disabled) but ignore changes.
           if (applying) {

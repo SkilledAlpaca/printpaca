@@ -276,7 +276,7 @@
                     type="email"
                     class="email-input"
                     value={u.email}
-                    aria-disabled={rowSaving[u.id]}
+                    aria-disabled={rowSaving[u.id]} aria-busy={rowSaving[u.id]}
                     aria-label={`Cloudflare Access email for ${u.username}`}
                     placeholder="Not set"
                     onchange={(e) => changeEmail(u, e.currentTarget)}
@@ -290,7 +290,7 @@
                         <input
                           type="checkbox"
                           checked={u.permissions.includes(key)}
-                          aria-disabled={rowSaving[u.id]}
+                          aria-disabled={rowSaving[u.id]} aria-busy={rowSaving[u.id]}
                           onchange={(e) => togglePermission(u, key, e.currentTarget.checked, e.currentTarget)}
                         />
                         <span>{GRANTABLE_TAB_LABELS[key]}<span class="visually-hidden"> for {u.username}</span></span>
@@ -302,7 +302,7 @@
                   <input
                     type="checkbox"
                     checked={u.disabled}
-                    aria-disabled={rowSaving[u.id]}
+                    aria-disabled={rowSaving[u.id]} aria-busy={rowSaving[u.id]}
                     aria-label={`Disable ${u.username}`}
                     onchange={(e) => toggleDisabled(u, e.currentTarget)}
                   />
@@ -315,7 +315,7 @@
                           <span class="visually-hidden">{`New password for ${u.username}`}</span>
                           <input type="password" bind:value={resetValue} placeholder="New password" minlength={8} required autocomplete="new-password" use:focusOnMount />
                         </label>
-                        <button type="submit" aria-disabled={resetSubmitting}>{resetSubmitting ? "Saving…" : "Save"}</button>
+                        <button type="submit" aria-disabled={resetSubmitting} aria-busy={resetSubmitting}>{resetSubmitting ? "Saving…" : "Save"}</button>
                         <button type="button" onclick={cancelReset}>Cancel</button>
                       </form>
                       {#if resetError}<p class="warn-text" role="alert">{resetError}</p>{/if}
@@ -373,7 +373,7 @@
           {/each}
         </fieldset>
         {#if addError}<p class="warn-text" role="alert">{addError}</p>{/if}
-        <button type="submit" class="primary" aria-disabled={adding}>{adding ? "Adding…" : "Add employee"}</button>
+        <button type="submit" class="primary" aria-disabled={adding} aria-busy={adding}>{adding ? "Adding…" : "Add employee"}</button>
       </form>
     </div>
   {/if}

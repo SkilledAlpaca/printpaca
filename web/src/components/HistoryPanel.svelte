@@ -408,12 +408,12 @@
     {/if}
     {#if floating}<span class="unsaved-badge">Unsaved changes</span>{/if}
     {#if loadedId}
-      <button class="primary" onclick={update} disabled={!saving && saveRowDisabled()} aria-disabled={saving}>
+      <button class="primary" onclick={update} disabled={!saving && saveRowDisabled()} aria-disabled={saving} aria-busy={saving}>
         {saving ? "Saving…" : `Update "${loadedQuote?.label ?? ""}"`}
       </button>
-      <button type="button" onclick={save} disabled={!saving && saveRowDisabled()} aria-disabled={saving}>Save as new</button>
+      <button type="button" onclick={save} disabled={!saving && saveRowDisabled()} aria-disabled={saving} aria-busy={saving}>Save as new</button>
     {:else}
-      <button class="primary" onclick={save} disabled={!saving && saveRowDisabled()} aria-disabled={saving}>
+      <button class="primary" onclick={save} disabled={!saving && saveRowDisabled()} aria-disabled={saving} aria-busy={saving}>
         {saving ? "Saving…" : "Save quote"}
       </button>
     {/if}

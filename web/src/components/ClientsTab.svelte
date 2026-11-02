@@ -567,7 +567,7 @@
                 Invoices keep their own copy of this client's details. Saved quotes keep the name but lose the link.
               </p>
               <div class="form-actions">
-                <button type="button" class="danger" aria-disabled={deleting} onclick={confirmDeleteClient} use:confirmFocus={{ restore: keySelector("delete-client"), cancel: cancelDelete }}>Delete client?</button>
+                <button type="button" class="danger" aria-disabled={deleting} aria-busy={deleting} onclick={confirmDeleteClient} use:confirmFocus={{ restore: keySelector("delete-client"), cancel: cancelDelete }}>Delete client?</button>
                 <button type="button" onclick={cancelDelete}>Cancel</button>
               </div>
             {:else}

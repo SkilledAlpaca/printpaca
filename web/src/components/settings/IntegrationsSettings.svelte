@@ -148,7 +148,7 @@
             type="button"
             onclick={() => runTest(kind, form.integrationsUrls[row.field])}
             disabled={demoMode || locked(row.kind) || form.integrationsUrls[row.field] === ""}
-            aria-disabled={testing[kind] === true}
+            aria-disabled={testing[kind] === true} aria-busy={testing[kind] === true}
           >
             {testing[kind] ? "Testing…" : "Test"}
           </button>

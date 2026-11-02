@@ -157,8 +157,8 @@
           </div>
         {/if}
         <div class="save-actions">
-          <button type="button" onclick={() => { if (!saving) discard(); }} disabled={!dirty} aria-disabled={saving}>Discard changes</button>
-          <button type="button" class="primary" onclick={save} aria-disabled={saving}>{saving ? "Saving…" : "Save changes"}</button>
+          <button type="button" onclick={() => { if (!saving) discard(); }} disabled={!dirty} aria-disabled={saving} aria-busy={saving}>Discard changes</button>
+          <button type="button" class="primary" onclick={save} aria-disabled={saving} aria-busy={saving}>{saving ? "Saving…" : "Save changes"}</button>
         </div>
       </div>
     {/if}

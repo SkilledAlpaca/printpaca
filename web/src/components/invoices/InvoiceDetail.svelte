@@ -267,7 +267,7 @@
       </div>
 
       <div class="form-actions">
-        <button type="button" class="primary" onclick={onSave} aria-disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+        <button type="button" class="primary" onclick={onSave} aria-disabled={saving} aria-busy={saving}>{saving ? "Saving…" : "Save"}</button>
       </div>
     {:else if detail}
       <div class="readonly-grid">
@@ -382,7 +382,7 @@
           type="button"
           onclick={onSendEmail}
           disabled={emailReason !== null}
-          aria-disabled={emailing}
+          aria-disabled={emailing} aria-busy={emailing}
           aria-label={emailReason ? "Email to client (unavailable)" : undefined}
           aria-describedby={emailReason ? "email-disabled-reason" : undefined}
         >

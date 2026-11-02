@@ -128,7 +128,7 @@
       </label>
     </div>
     <div class="form-actions">
-      <button type="button" class="primary" onclick={onAddPayment} aria-disabled={paymentSaving}>
+      <button type="button" class="primary" onclick={onAddPayment} aria-disabled={paymentSaving} aria-busy={paymentSaving}>
         {paymentSaving ? "Recording…" : "Record payment"}
       </button>
     </div>

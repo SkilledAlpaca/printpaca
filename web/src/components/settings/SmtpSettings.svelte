@@ -87,7 +87,7 @@
     />
   </div>
   <div class="test-row">
-    <button type="button" onclick={sendTestEmail} disabled={form.smtp.host === ""} aria-disabled={testing}>
+    <button type="button" onclick={sendTestEmail} disabled={form.smtp.host === ""} aria-disabled={testing} aria-busy={testing}>
       {testing ? "Sending…" : "Send test email"}
     </button>
     <span class="hint">Tests the saved settings, not unsaved changes above.</span>

@@ -38,7 +38,10 @@
       </tbody>
       <tfoot class="order-total">
         <tr>
-          <th colspan="3">Order total</th>
+          <!-- One footer cell per body column (the label spans Part and Quantity), so the column-hiding rules
+               below apply to the footer by position instead of leaving a stray extra column on a phone. -->
+          <th colspan="2">Order total</th>
+          <th></th>
           <th class="num">{order.parts.every((p) => p.breakdown.valid) ? money(order.batchTotal, cfg) : "-"}</th>
           {#if order.pricing}
             <th></th>
@@ -60,6 +63,7 @@
     .parts-table tbody td:nth-child(3) { display: none; }
     .parts-table.priced thead th:nth-child(4),
     .parts-table.priced tbody td:nth-child(4),
-    .parts-table.priced tfoot th:nth-child(2) { display: none; }
+    .parts-table.priced tfoot th:nth-child(3) { display: none; }
+    .parts-table tfoot th:nth-child(2) { display: none; }
   }
 </style>

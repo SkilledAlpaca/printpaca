@@ -90,9 +90,12 @@
   .head-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
   .head-row h2 { margin: 0; }
   .add-part { align-self: flex-start; }
-  .part-rows li { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0; }
+  /* Wraps so the total and the Duplicate/Remove buttons drop to a second line when a phone (or a wide system
+   * font) leaves no room, instead of pushing the row past the viewport. */
+  .part-rows li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; padding: 0.2rem 0; }
   .part-rows li.active-row { font-weight: 600; }
-  .part-select { flex: 1 1 auto; display: flex; gap: 0.6rem; text-align: left; }
+  .part-select { flex: 1 1 8rem; min-width: 0; display: flex; gap: 0.6rem; text-align: left; }
+  .part-name { min-width: 0; overflow-wrap: anywhere; }
   .part-meta { color: var(--muted); }
   .part-total { font-variant-numeric: tabular-nums; min-width: 5rem; text-align: right; }
   .part-name-field { max-width: 24rem; }

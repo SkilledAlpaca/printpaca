@@ -1,0 +1,282 @@
+# printpaca configuration. Copy this file into the directory you mount at
+# /config (owned by 65532:65532; see docs/getting-started.md) as config.yaml:
+#   docker run -p 127.0.0.1:8080:8080 -v ./config:/config skilledalpaca/printpaca:latest
+#
+# Every commented-out example mirrors server/defaults.yaml, plus a few fields
+# whose default is Go's zero value or that have no default at all (materials'
+# `public`, quote's `logoUrl`, and the hardware: block). Update both files
+# together, or these examples drift from reality.
+#
+# The Settings page can also write this file: it stores sparse overrides, keeps
+# the previous file as config.yaml.bak, drops comments, and applies changes
+# immediately with no restart.
+#
+# Everything here is optional; omitted values keep the built-in default.
+# Scalars and maps (feeSchedules, presets) merge by key. ARRAYS (materials,
+# printers, hardware) REPLACE the default list: if you define any, define all
+# you want. hardware has no default list, so omitting it means no add-on
+# catalog. An empty or comments-only file is valid, and a second YAML document
+# (`---`) is rejected. Each of materials, printers, hardware, presets, and
+# feeSchedules accepts at most 200 entries.
+#
+# Ports and secrets are environment variables, not settings here; see
+# docs/configuration.md#environment-variables. The integration URLs
+# (SPOOLMAN_URL, MOONRAKER_URL, FLUIDD_URL) can be set there or under
+# integrationsUrls below; the environment variable wins.
+
+# ---------------------------------------------------------------------------
+# timezone: IANA time zone name (for example America/New_York). Decides the
+# calendar day and month the Dashboard, overdue checks, and auto-dated
+# payments use. Timestamps are stored in UTC either way. Default UTC.
+# ---------------------------------------------------------------------------
+# timezone: UTC
+
+# ---------------------------------------------------------------------------
+# currency: display formatting only; does not affect stored/computed values.
+# ---------------------------------------------------------------------------
+# currency:
+#   symbol: "$"          # prefix shown on every money value in the UI
+#   decimals: 2           # 0-4 decimal places for display (money is always
+#                          # computed in integer cents internally)
+#   code: ""              # optional ISO 4217 code such as "USD" (3 uppercase letters); only used
+#                          # to put the amount in the PayPal.me link (invoicing.paypalMe)
+
+# ---------------------------------------------------------------------------
+# pricing: how unit cost becomes a sale price, and money-out lines.
+# ---------------------------------------------------------------------------
+# pricing:
+#   strategy: margin            # "margin" | "markup"
+#   marginPct: 30                # pre-tax price = unitCost / (1 - marginPct/100), then grossed up by taxRatePct; 0-99.9 (see docs/formulas.md)
+#   markupMultiplier: 2.5        # markup strategy: price = unitCost * markupMultiplier; must be 0-1000
+#   taxRatePct: 0                 # price-INCLUSIVE (VAT-style) tax %; 0 hides the line.
+#                                  # A recommended price is the pre-tax price × (1 + tax%/100);
+#                                  # netProfit subtracts the tax contained in the
+#                                  # price: price × qty × tax% ÷ (100 + tax%).
+#   defaultShippingCharge: 0      # what you bill the CUSTOMER for shipping: shown beside the
+#                                  # price on the public quote page, the starting shipping charge
+#                                  # on a new quote, and the Shipping line on a converted request.
+#                                  # 0 shows no shipping.
+#   defaultShippingCost: 0        # postage + packaging YOU pay per order (an expense),
+#                                  # separate from the shipping charge you bill the customer
+#   defaultFeeSchedule: none      # key into feeSchedules below, or "none"
+#   laborPerUnit: false           # false: prep labor is a per-batch cost amortized
+#                                  # across quantity. true: prep labor is charged per unit.
+
+# ---------------------------------------------------------------------------
+# feeSchedules: named marketplace/platform fee structures. Maps deep-merge:
+# adding a schedule with the same key as a default overlays only the fields
+# you set; every other schedule (and every other field of that one) survives.
+# ---------------------------------------------------------------------------
+# feeSchedules:
+#   etsy-us:
+#     source: "https://www.etsy.com/legal/fees (as of 2026-01)"  # provenance note, served on /admin/api/config
+#     fixed:                       # flat per-order charges
+#       - { amount: 0.20, label: Listing }
+#       - { amount: 0.25, label: Payment processing (fixed) }
+#     percent:                     # percentage-of-revenue charges
+#       - { pct: 6.5, base: revenue, label: Transaction }
+#       - { pct: 3.0, base: revenue, label: Payment processing }
+
+# ---------------------------------------------------------------------------
+# materials: filament/resin profiles. Setting this key replaces the default
+# list, so include every material you want. density is g/cm^3, pricePerKg is
+# per kilogram. wastePct (0-100) adds that percentage on top of model weight
+# for purge, supports, and failed starts. public (default false) opts a
+# material into the public quote page.
+# ---------------------------------------------------------------------------
+# materials:
+#   - { id: pla,   name: PLA,   density: 1.24, pricePerKg: 20.00, wastePct: 0, public: false }
+#   - { id: petg,  name: PETG,  density: 1.27, pricePerKg: 22.00, wastePct: 0, public: false }
+#   - { id: abs,   name: ABS,   density: 1.04, pricePerKg: 18.00, wastePct: 0, public: false }
+#   - { id: tpu,   name: TPU,   density: 1.21, pricePerKg: 30.00, wastePct: 0, public: false }
+#   - { id: resin, name: Resin, density: 1.15, pricePerKg: 35.00, wastePct: 0, public: false }
+
+# ---------------------------------------------------------------------------
+# printers: machine profiles used for depreciation and electricity math.
+# arrays replace the default list wholesale if set at all.
+# ---------------------------------------------------------------------------
+# printers:
+#   - id: generic
+#     name: Generic FDM
+#     watts: 250                    # power draw while printing
+#     purchaseCost: 400             # amortized over lifespanHours as depreciation
+#     lifespanHours: 4000           # 0/unset disables depreciation
+#     filamentDiameterMm: 1.75      # used to derive weight from G-code length when
+#                                    # the slicer only reports filament length, not weight
+
+# ---------------------------------------------------------------------------
+# hardware: reusable catalog of physical add-ons (magnets, earring findings,
+# inserts) attachable to a quote as a per-unit cost line. Setting this key
+# replaces the list; an empty or omitted list is normal.
+# ---------------------------------------------------------------------------
+# hardware:
+#   - { name: "6x2mm neodymium magnet", unitCost: 0.15, lostOnFailure: true }
+#   - { name: "earring hook (stainless steel)", unitCost: 0.08, lostOnFailure: false }
+#   # lostOnFailure: true means the piece is consumed during the print itself
+#   # (a magnet placed mid-print), so a failed print wastes it and its cost
+#   # joins the failure-rate buffer. false means it is attached afterward.
+
+# ---------------------------------------------------------------------------
+# energy: electricity rate used for the electricity cost line.
+# ---------------------------------------------------------------------------
+# energy:
+#   mode: flat                      # "flat" | "tou" (time-of-use)
+#   flatRate: 0.15                  # currency per kWh, used when mode: flat
+#   tou:
+#     peakRate: 0.30                 # currency per kWh during peak hours
+#     offPeakRate: 0.10              # currency per kWh during off-peak hours
+#     defaultOffPeakFrac: 0.7        # default fraction of a print assumed off-peak;
+#                                     # effective rate = offPeakFrac*offPeakRate + (1-offPeakFrac)*peakRate
+
+# ---------------------------------------------------------------------------
+# presets: named bundles of failure rate / labor / overhead assumptions,
+# selectable as one-click chips in the UI. Maps deep-merge by key: overriding
+# one field of one preset leaves its siblings, and every other preset, intact.
+# ---------------------------------------------------------------------------
+# presets:
+#   hobby:       { failureRatePct: 3, prepMinutes: 0, laborRate: 0,  monthlyFixed: 0,   monthlyHours: 50 }
+#   side-hustle: { failureRatePct: 5, prepMinutes: 5, laborRate: 12, monthlyFixed: 0,   monthlyHours: 100 }
+#   small-shop:  { failureRatePct: 8, prepMinutes: 8, laborRate: 18, monthlyFixed: 250, monthlyHours: 120 }
+#   # failureRatePct: 0-90; buffer = consumables x p / (1 - p) with p = rate/100 (material + electricity + depreciation)
+#   #                  plus any lost-on-failure hardware; see docs/formulas.md
+#   # prepMinutes:    per-batch prep time; laborRate: currency/hour for that time
+#   # monthlyFixed:   rent/subscription-style overhead; monthlyHours: hours/month it's
+#   #                  spread across (0/unset disables the overhead line)
+
+# ---------------------------------------------------------------------------
+# defaults: which preset/printer/material/quantity are pre-selected on load.
+# Must reference keys that exist in presets/printers/materials above.
+# ---------------------------------------------------------------------------
+# defaults:
+#   preset: side-hustle
+#   printer: generic
+#   material: pla
+#   failureRatePct: 5              # starting value shown in the advanced failure-rate field
+#   quantity: 1
+
+# ---------------------------------------------------------------------------
+# quote: business identity stamped onto printed and exported quotes and
+# invoices. All optional; blank strings are omitted. businessName and logoUrl
+# are also served unauthenticated to visitors of the public quote page.
+# ---------------------------------------------------------------------------
+# quote:
+#   businessName: ""               # also shown on the front door and shop, unauthenticated
+#   logoUrl: ""                    # shown on printed quotes; any URL or path your browser can load
+#                                   # (also shown on the front door and shop, unauthenticated)
+#   address: ""                    # multiline; shown under the business name on printed quotes/invoices
+#   email: ""
+#   phone: ""
+#   taxId: ""
+#   paymentInstructions: ""       # max 2000 bytes (also sent in quote/invoice emails)
+#   termsText: ""                 # max 2000 bytes (also sent in quote/invoice emails)
+#   validDays: 14                  # "this quote is valid for N days" note
+
+# ---------------------------------------------------------------------------
+# invoicing: invoice numbering and defaults, plus the payment method list.
+# The number prefix, tax rate, and payment methods are also editable from
+# the Settings page.
+# ---------------------------------------------------------------------------
+# invoicing:
+#   numberPrefix: "INV"             # 1-10 letters/digits; prefixes every invoice number (for example, INV-2026-0042)
+#   salesTaxPct: 0                  # default US sales tax %, 0-30; stored to 2 decimals
+#                                     # (basis points); extra decimals are rounded, not
+#                                     # rejected; overridable per invoice
+#   dueDays: 30                     # default days from issue date to due date, 0-365
+#   paymentMethods: ["Cash", "Bank transfer", "PayPal", "Other"]  # 1-20 entries, each 1-50 bytes
+#   paypalMe: ""                    # PayPal.me handle such as "yourshop" (1-20 letters/digits, no URL); when set,
+#                                     # invoices with a balance show a pay link and QR code
+
+# ---------------------------------------------------------------------------
+# publicQuotes: the shop's estimate form at /order (on PORT, and on
+# PUBLIC_PORT when set). printer and preset choose which owner-configured printer/preset
+# every visitor estimate uses; the visitor never picks either. Both must
+# name entries that exist above. The page header also shows quote.businessName
+# and quote.logoUrl (see the quote: section above), unauthenticated. There
+# is no separate setting for them here. introText (max 500 bytes) is shown on
+# the public page.
+# ---------------------------------------------------------------------------
+# publicQuotes:
+#   printer: generic
+#   preset: side-hustle
+#   introText: ""
+
+# ---------------------------------------------------------------------------
+# customCss: your own CSS, served verbatim and NEVER sanitized, because it's CSS
+# you wrote for your own instance. Max 32 KiB. Applies on two surfaces:
+#   - the front door and shop, at GET /custom.css, loaded after the page's
+#     own stylesheets on screen: override theme tokens like --accent, or
+#     target any selector on those pages.
+#   - printed quotes and invoices, at GET /admin/custom.css, loaded with
+#     media="print" only: it never touches
+#     the on-screen admin UI. Target #print-view.quote for printed quotes,
+#     #print-view.invoice for printed invoices, or both at once via
+#     #print-view.
+# ---------------------------------------------------------------------------
+# customCss: |
+#   :root { --accent: #2f6fed; }
+#   .cta-heading { color: var(--accent); }
+#   #print-view.invoice .total-due { color: var(--accent); }
+
+# ---------------------------------------------------------------------------
+# smtp: outgoing email: a notification for each new public submission, and
+# quotes or invoices sent to clients. Leave host empty to disable both;
+# validated only when host is set. The password is never stored here; set the
+# SMTP_PASSWORD environment variable.
+# ---------------------------------------------------------------------------
+# smtp:
+#   host: ""              # for example, smtp.example.com; empty disables notification
+#   port: 587
+#   username: ""
+#   from: ""               # must contain @
+#   to: ""                 # must contain @
+#   requireTLS: false      # true = fail the send instead of going plaintext
+#                          # when the server doesn't advertise STARTTLS
+
+# ---------------------------------------------------------------------------
+# ui: which nav tabs are hidden. Decluttering only: API routes and the tab's
+# data stay reachable.
+# ---------------------------------------------------------------------------
+# ui:
+#   disabledTabs: []   # any of: quotes, requests, invoices, items, clients,
+#                       # dashboard, filament, electricity, printers, guide.
+#                       # "quote" and "settings" can't be listed here; the
+#                       # app always shows both.
+
+# ---------------------------------------------------------------------------
+# users: employee accounts with per-tab access, instead of one shared
+# ADMIN_PASSWORD identity. Accounts live in the database; manage them from the
+# Settings page's Users card once multiUser is on. The server refuses to start
+# with multiUser: true and authentication disabled. See
+# docs/configuration.md#users.
+# ---------------------------------------------------------------------------
+# users:
+#   multiUser: false
+#   accessAdminEmail: ""   # multi-user mode with Cloudflare Access: the email
+#                          # that signs in as the admin. Employees sign in with
+#                          # the email set on their user. See
+#                          # docs/cloudflare-tunnel.md.
+
+# ---------------------------------------------------------------------------
+# integrationsUrls: alternative to the SPOOLMAN_URL, MOONRAKER_URL, and
+# FLUIDD_URL environment variables, for operators without container
+# environment access. The environment variable wins when both are set. Unlike
+# other sections, a change here applies only after a container restart.
+# ---------------------------------------------------------------------------
+# integrationsUrls:
+#   spoolmanUrl: ""    # for example, http://spoolman.local:7912
+#   moonrakerUrl: ""   # for example, http://printer.local:7125
+#   fluiddUrl: ""      # for example, http://printer.local
+
+# ---------------------------------------------------------------------------
+# site: what the main port (PORT) serves at its root. The admin app always
+# lives under /admin/. shopOnMainPort: false makes / redirect to /admin/ and
+# the public routes (/order, /api/public/*) return 404 on PORT; PUBLIC_PORT is
+# unaffected. staffLink shows the Staff sign-in button on the front door on
+# PORT. adminUrl is the Staff sign-in target on the PUBLIC_PORT front door (an
+# absolute http or https URL); empty hides the button there. A change applies
+# without a restart.
+# ---------------------------------------------------------------------------
+# site:
+#   shopOnMainPort: true
+#   staffLink: true
+#   adminUrl: ""     # for example, https://admin.example.com/admin/

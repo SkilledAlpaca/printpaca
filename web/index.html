@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/alpaca-logo.svg">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#e06020">
+    <title>printpaca - 3D print cost & quote calculator</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+    <!-- Operator CSS (customCss, served by server/static.go here too). Placed after the entry script: Vite
+         hoists its own links into <head> but leaves this one as authored, so it wins the cascade.
+         media="print" limits it to printed output (#print-view.quote/.invoice), not the admin UI. -->
+    <link rel="stylesheet" href="custom.css" media="print" />
+  </body>
+</html>

@@ -1,0 +1,1063 @@
+<script lang="ts">
+  import { onMount, tick } from "svelte";
+  import type { EffectiveConfig } from "../lib/engine/index";
+  import { type SavedQuote } from "../lib/api";
+  import {
+    listQuotes,
+    createQuote,
+    updateQuote,
+    deleteQuote,
+    toSavedQuote,
+    orderForQuote,
+    type ServerQuote,
+    type QuoteInput,
+  } from "../lib/quotesApi";
+  import { toOrderInputs, toFormState, parseFormState, engineOptions, pendingOpen } from "../lib/state.svelte";
+  import { buildQuotesFile, parseQuotesFile, sortQuotes, type QuoteSortOrder } from "../lib/quotesFile";
+  import { formatSavedAt, quoteRowStats } from "../lib/quoteRow";
+  import { money } from "../lib/format";
+  import { createInvoice, listInvoices } from "../lib/invoicesApi";
+  import { listClients, createClient, updateClient, type Client } from "../lib/clientsApi";
+  import { quoteHasPrice, convertTaxBp, convertPreview, extractQuantity, convertClientName, isMultiPart } from "../lib/convertQuote";
+  import {
+    applyTransition,
+    displayStatus,
+    TRANSITION_LABELS,
+    TRANSITION_HINTS,
+    STATUS_MARKED_MESSAGE,
+    type QuoteStatus,
+  } from "../lib/quoteStatus";
+  import { buildQuoteSendPayload, sendQuoteEmail } from "../lib/sendApi";
+  import { sendWithEnteredEmail, type CreatedClients } from "../lib/walkInSend";
+  import { clientEmailFor, emailDisabledReason, needsEmailEntry, validEntryEmail, canManageClientsFor } from "../lib/quoteEmail";
+  import type { ConfigUser } from "../lib/permissions";
+  import { computeMenuAnchor } from "../lib/menuAnchor";
+  import type { OrderBreakdown } from "../lib/engine/index";
+  import { INITIAL_PAGE_LIMIT } from "../lib/pagination";
+  import { createBackfillController } from "../lib/backfillController.svelte";
+  import StatusBadge from "./StatusBadge.svelte";
+  import AttributionLine from "./AttributionLine.svelte";
+  import LoadMoreRow from "./LoadMoreRow.svelte";
+  import BackfillStatus from "./BackfillStatus.svelte";
+
+  let { cfg, user = null }: { cfg: EffectiveConfig; user?: ConfigUser | null } = $props();
+  const canManageClients = $derived(canManageClientsFor(user));
+
+  // The full quote list with filter, sort, export/import, convert, duplicate and delete. `quotes` holds the
+  // raw server shape because status-only mutations re-PUT the quote with inputs/options/formState echoed back
+  // unchanged (the server recomputes outputs), which needs the exact stored bytes; toSavedQuote's `inputs` is
+  // the form snapshot, not that engine bag. `mappedQuotes` derives the SavedQuote shape for display, filter,
+  // sort and read.
+  let quotes = $state<ServerQuote[]>([]);
+  const mappedQuotes = $derived(quotes.map(toSavedQuote));
+  // Set once from a null listQuotes() (load failure); a muted note, not a blocking error, like ClientsTab.
+  let quotesUnavailable = $state(false);
+  let loading = $state(true);
+
+  // Server pagination (server/pagination.go's opt-in ?limit=&offset=): `quotes` holds the loaded window and
+  // `total` is the pre-slice count (X-Total-Count).
+  let total = $state(0);
+  const fullyLoaded = $derived(quotes.length >= total);
+  let loadingMore = $state(false);
+
+  let filterText = $state("");
+  // Session-only: never persisted, applied after filtering for display, and never reorders `quotes`.
+  let sortOrder = $state<QuoteSortOrder>("newest");
+  // The filter appears only once the list is long enough to need it.
+  const showFilter = $derived(quotes.length > 5);
+  const filteredQuotes = $derived(
+    filterText.trim() === ""
+      ? mappedQuotes
+      : mappedQuotes.filter((q) => q.label.toLowerCase().includes(filterText.trim().toLowerCase())),
+  );
+  const sortedQuotes = $derived(sortQuotes(filteredQuotes, sortOrder));
+
+  // The label filter must never run over a partially-loaded list: with text in the box and the list not fully
+  // loaded, backfill every remaining row first (shared latch, see backfillController.svelte.ts). Re-runs per
+  // keystroke via the $effect; ensureReady is a no-op once fullyLoaded, backfilling, failed or blank.
+  const backfill = createBackfillController<ServerQuote>({
+    getItems: () => quotes,
+    getTotal: () => total,
+    fetchPage: (page) => listQuotes(page),
+    setItems: (items) => {
+      quotes = items;
+      total = items.length;
+    },
+  });
+  $effect(() => {
+    backfill.ensureReady(filterText);
+  });
+
+  async function loadMore() {
+    loadingMore = true;
+    const result = await listQuotes({ limit: INITIAL_PAGE_LIMIT, offset: quotes.length });
+    if (result !== null) {
+      quotes = [...quotes, ...result.items];
+      total = result.total;
+    }
+    loadingMore = false;
+  }
+
+  // This surface's own action-status live region, separate from HistoryPanel's: the two never render
+  // together, but each needs its own .action-status hook so e2e/history.spec.ts can select the surface that
+  // owns the action.
+  let actionStatus = $state("");
+  let actionFailed = $state(false);
+
+  // Row awaiting a second click to delete (null = none). Declared with the other state because openConvert()
+  // and duplicate() also clear it: starting a convert or duplicate dismisses a pending delete confirmation on
+  // another row.
+  let confirmingId = $state<string | null>(null);
+
+  // Row overflow menu, at most one open: Email quote, Duplicate, the non-primary status transition and Delete
+  // live here; Open in editor, the primary transition and Convert to invoice stay inline. Closed by an
+  // outside click (data-row-menu), any scroll or Escape (Escape first cancels an armed delete confirmation).
+  // Positioned with position: fixed from a captured viewport rect (menuAnchor), not absolute: .table-scroll
+  // (overflow-x: auto) computes overflow-y to auto too, so an absolute dropdown near the table's bottom would
+  // be clipped. No ancestor sets transform/filter/will-change/contain, so nothing traps the fixed panel.
+  let menuOpenId = $state<string | null>(null);
+  // top is set when the panel opens downward; bottom when flipped upward near the viewport bottom. Exactly
+  // one is present, matched by the template.
+  let menuAnchor = $state<{ top?: number; bottom?: number; right: number } | null>(null);
+  // The button that opened the menu, so closeMenu() returns focus to it instead of a hidden element.
+  let menuToggleEl: HTMLElement | null = null;
+  // Close-on-scroll must ignore scroll events queued before the menu opened (a scroll bringing the toggle
+  // into view is delivered after toggleMenu ran). Armed one rAF after opening: scroll events fire before rAF
+  // callbacks within a frame, so the stale one is swallowed.
+  let menuScrollArmed = false;
+
+  // Rough worst-case panel size (~5 buttons plus the email-reason line), used only to decide whether to flip
+  // upward or nudge from the right edge. Overestimating flips a little early; underestimating would clip at a
+  // viewport edge.
+  const MENU_ESTIMATED_HEIGHT = 260;
+  const MENU_ESTIMATED_WIDTH = 200;
+  const MENU_VIEWPORT_MARGIN = 8;
+
+  async function toggleMenu(id: string, toggleEl: HTMLElement) {
+    if (menuOpenId === id) {
+      closeMenu();
+      return;
+    }
+    const rect = toggleEl.getBoundingClientRect();
+    // clientWidth (not window.innerWidth) excludes the scrollbar gutter, so the right offset lines up with
+    // the rendered viewport.
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = window.innerHeight;
+
+    menuAnchor = computeMenuAnchor(
+      rect,
+      { width: viewportWidth, height: viewportHeight },
+      { estimatedHeight: MENU_ESTIMATED_HEIGHT, estimatedWidth: MENU_ESTIMATED_WIDTH, margin: MENU_VIEWPORT_MARGIN },
+    );
+    menuOpenId = id;
+    menuToggleEl = toggleEl;
+    menuScrollArmed = false;
+    requestAnimationFrame(() => {
+      menuScrollArmed = true;
+    });
+
+    // Focus the first enabled item once the panel has rendered (tick() flushes the state writes above).
+    await tick();
+    const firstItem = document.querySelector<HTMLElement>(`[data-row-menu="${id}"] .menu-group .menu-item:not([disabled])`);
+    firstItem?.focus();
+  }
+  function closeMenu() {
+    const toggle = menuToggleEl;
+    menuOpenId = null;
+    menuAnchor = null;
+    menuToggleEl = null;
+    toggle?.focus();
+  }
+  function handleWindowPointerDown(e: PointerEvent) {
+    if (menuOpenId === null) return;
+    if (e.target instanceof Element && e.target.closest(`[data-row-menu="${menuOpenId}"]`)) return;
+    closeMenu();
+  }
+  function handleWindowScroll() {
+    if (!menuScrollArmed) return;
+    closeMenu();
+  }
+  function handleWindowKeydown(e: KeyboardEvent) {
+    if (e.key !== "Escape") return;
+    if (menuOpenId === null) return;
+    // Scoped to the open menu: confirmingId and menuOpenId are independent (toggleMenu/closeMenu never touch
+    // confirmingId), so a confirmation armed in a menu since dismissed by an outside click must not intercept
+    // Escape meant for another open menu. The confirm button exists only in the open panel.
+    if (confirmingId !== null && confirmingId === menuOpenId) {
+      cancelDelete();
+      return;
+    }
+    closeMenu();
+  }
+
+  // Client list shared by every row's convert picker: loaded lazily on first open. A failed load degrades to
+  // walk-in-only rather than blocking conversion.
+  let clients = $state<Client[] | null>(null);
+  let clientsLoaded = $state(false);
+  let clientsPromise: Promise<Client[] | null> | null = null;
+  async function ensureClientsLoaded(): Promise<void> {
+    clientsPromise ??= listClients();
+    clients = await clientsPromise;
+    clientsLoaded = true;
+  }
+
+  // Invoice numbers, loaded with the quotes list, so a row's invoicedAs (an invoice id) shows "Invoiced
+  // <number>" without a per-row fetch. A row whose id isn't in the map (load failed, invoice deleted) falls
+  // back to a plain "Invoiced" badge.
+  let invoiceNumberById = $state<Map<string, string>>(new Map());
+  function invoicedLabel(invoiceId: string): string {
+    const number = invoiceNumberById.get(invoiceId);
+    return number ? `Invoiced ${number}` : "Invoiced";
+  }
+
+  onMount(async () => {
+    // Not awaited: the ledger's "Email quote" disabled-reason needs every row's linked-client email up front,
+    // unlike the convert picker which loads clients when a convert opens. It runs alongside the
+    // quotes/invoices fetch.
+    ensureClientsLoaded();
+    // The primary list fetches its first page of 100; the invoice-number lookup stays full-fetch (no page
+    // argument) since it only resolves invoicedAs to a number for loaded quotes.
+    const [list, invoices] = await Promise.all([listQuotes({ limit: INITIAL_PAGE_LIMIT, offset: 0 }), listInvoices()]);
+    if (list === null) {
+      quotesUnavailable = true;
+    } else {
+      quotes = list.items;
+      total = list.total;
+    }
+    invoiceNumberById = new Map((invoices ?? []).map((inv) => [inv.id, inv.number]));
+    loading = false;
+  });
+
+  /** Restores a saved quote into the Quote tab's form like HistoryPanel's "Load", then switches tabs.
+   * HistoryPanel owns the restore (allowlisted copy onto `form`, printer/material/fee-schedule fallbacks);
+   * this hands off the id via pendingOpen (tab: "quote") so that logic isn't forked. */
+  function openInEditor(q: SavedQuote) {
+    pendingOpen.current = { tab: "quote", id: q.id };
+    location.hash = "#/quote";
+  }
+
+  function openInvoiced(q: SavedQuote) {
+    if (!q.invoicedAs) return;
+    pendingOpen.current = { tab: "invoices", id: q.invoicedAs };
+    location.hash = "#/invoices";
+  }
+
+  // Transitions offered per row: draft gets Mark sent and Mark accepted; sent gets Mark accepted and Mark
+  // declined; accepted/declined get none. Keyed on stored status, not the derived "expired", since
+  // acceptance/decline beats expiry (quoteStatus.ts).
+  const TRANSITIONS: Record<QuoteStatus, QuoteStatus[]> = {
+    draft: ["sent", "accepted"],
+    sent: ["accepted", "declined"],
+    accepted: [],
+    declined: [],
+  };
+  function transitionsFor(q: SavedQuote): QuoteStatus[] {
+    return TRANSITIONS[q.status];
+  }
+  // The row keeps only the most relevant transition inline; TRANSITIONS lists options most relevant first, so
+  // this is where the array is sliced.
+  function primaryTransition(q: SavedQuote): QuoteStatus | null {
+    return transitionsFor(q)[0] ?? null;
+  }
+  function overflowTransitions(q: SavedQuote): QuoteStatus[] {
+    return transitionsFor(q).slice(1);
+  }
+
+  /** Everything client-writable in a raw server quote as a QuoteInput ready to PUT: the common start for
+   * every re-PUT, echoing inputs/options/formState unchanged unless overridden. */
+  function inputFromRaw(raw: ServerQuote): QuoteInput {
+    return {
+      label: raw.label,
+      clientId: raw.clientId ?? undefined,
+      clientName: raw.clientName,
+      project: raw.project,
+      reference: raw.reference,
+      status: raw.status,
+      statusLog: raw.statusLog,
+      invoicedAs: raw.invoicedAs ?? undefined,
+      inputs: raw.inputs,
+      options: raw.options,
+      formState: raw.formState,
+    };
+  }
+
+  async function markStatus(q: SavedQuote, status: QuoteStatus) {
+    closeMenu();
+    const idx = quotes.findIndex((x) => x.id === q.id);
+    const raw = idx === -1 ? undefined : quotes[idx];
+    if (!raw) return;
+    const withStatus = applyTransition(raw, status, new Date().toISOString());
+    try {
+      const updated = await updateQuote(raw.id, inputFromRaw(withStatus));
+      const next = [...quotes];
+      next[idx] = updated;
+      quotes = next;
+      actionFailed = false;
+      actionStatus = `"${q.label}" ${STATUS_MARKED_MESSAGE[status]}.`;
+    } catch (err) {
+      actionFailed = true;
+      actionStatus =
+        err instanceof Error
+          ? `Couldn't update "${q.label}": ${err.message}`
+          : `Couldn't update "${q.label}".`;
+    }
+  }
+
+  let emailingId = $state<string | null>(null);
+
+  // Inline email entry for a quote with no deliverable address: the asked row, its draft address and error.
+  let emailEntryFor = $state<string | null>(null);
+  let emailDraft = $state("");
+  let emailEntryError = $state("");
+
+  function openEmailEntry(q: SavedQuote) {
+    closeMenu();
+    confirmingId = null;
+    convertFor = null;
+    emailEntryFor = q.id;
+    emailDraft = "";
+    emailEntryError = "";
+  }
+
+  function cancelEmailEntry() {
+    emailEntryFor = null;
+  }
+
+  async function submitEmailEntry(q: SavedQuote) {
+    const email = validEntryEmail(emailDraft);
+    if (!email) {
+      emailEntryError = "Enter a valid email address.";
+      return;
+    }
+    emailEntryError = "";
+    await emailQuote(q, email);
+  }
+
+  const createdClients: CreatedClients = new Map();
+
+  async function linkQuoteToClient(quoteId: string, client: Client): Promise<void> {
+    const i = quotes.findIndex((x) => x.id === quoteId);
+    const rawQ = i === -1 ? undefined : quotes[i];
+    if (!rawQ) return;
+    const relinked = await updateQuote(rawQ.id, { ...inputFromRaw(rawQ), clientId: client.id, clientName: client.name });
+    const nextQ = [...quotes];
+    nextQ[i] = relinked;
+    quotes = nextQ;
+  }
+
+  async function emailQuote(q: SavedQuote, entered?: string) {
+    closeMenu();
+    let email = entered ?? clientEmailFor(q, clients);
+    if (!email) return;
+    emailingId = q.id;
+    try {
+      // A multi-part order's per-part prices come from the server's answer for the quote's stored inputs.
+      const rawForOrder = quotes.find((x) => x.id === q.id);
+      let orderAnswer: OrderBreakdown | null = null;
+      if (isMultiPart(q)) {
+        const checked = rawForOrder ? await checkedOrderForQuote(q, rawForOrder) : { error: ORDER_PRICE_FAILED };
+        if ("error" in checked) {
+          actionFailed = true;
+          actionStatus = `Couldn't email "${q.label}": ${checked.error}`;
+          return;
+        }
+        orderAnswer = checked.order;
+      }
+      const payload = buildQuoteSendPayload(q, orderAnswer);
+      if (!payload) {
+        actionFailed = true;
+        actionStatus = `Couldn't email "${q.label}": no price set on this quote.`;
+        return;
+      }
+      const sendIt = () => sendQuoteEmail(payload, email);
+      const result =
+        entered === undefined
+          ? await sendIt()
+          : await sendWithEnteredEmail({
+              quote: q,
+              email,
+              clients: clients ?? [],
+              created: createdClients,
+              deps: {
+                createClient,
+                updateClient,
+                linkQuote: linkQuoteToClient,
+                send: sendIt,
+                onClients: (list) => (clients = list),
+              },
+            });
+      if (entered !== undefined) emailEntryFor = null;
+      if (!result.ok) {
+        actionFailed = true;
+        actionStatus = `Couldn't email "${q.label}": ${result.error}`;
+        return;
+      }
+
+      const idx = quotes.findIndex((x) => x.id === q.id);
+      const raw = idx === -1 ? undefined : quotes[idx];
+      if (!raw) {
+        actionFailed = false;
+        actionStatus = `Emailed "${q.label}" to ${email}.`;
+        return;
+      }
+      // Guarded so re-emailing never downgrades a later status (like the invoice send endpoint): an
+      // accepted/declined quote keeps its status, and with nothing changed no PUT is issued (the email goes
+      // out unrecorded). A draft/sent quote records the send and recipient via the "Mark sent" transition
+      // shape.
+      if (raw.status === "accepted" || raw.status === "declined") {
+        actionFailed = false;
+        actionStatus = `Emailed "${q.label}" to ${email}. (Status unchanged: already ${raw.status}.)`;
+        return;
+      }
+      const withStatus = applyTransition(raw, "sent", result.data.sentAt, email);
+      const updated = await updateQuote(raw.id, inputFromRaw(withStatus));
+      const next = [...quotes];
+      next[idx] = updated;
+      quotes = next;
+      actionFailed = false;
+      actionStatus = `Emailed "${q.label}" to ${email}.`;
+    } catch (err) {
+      actionFailed = true;
+      actionStatus = err instanceof Error ? err.message : "Couldn't reach the server.";
+    } finally {
+      emailingId = null;
+    }
+  }
+
+  // Convert flow: like HistoryPanel's former convert row (an inline client picker; the invoice is created
+  // only on confirm), plus recording the quote's acceptance with the invoice link.
+  let convertFor = $state<string | null>(null);
+  let clientChoice = $state("");
+  let converting = $state(false);
+  // The server's per-part prices for the quote being converted (multi-part only); null while loading or for a
+  // one-part quote.
+  let convertOrder = $state<OrderBreakdown | null>(null);
+  let convertOrderError = $state("");
+
+  const ORDER_PRICE_FAILED = "Couldn't price this order's parts. Try again.";
+  const PRICES_CHANGED = "Prices changed since this quote was saved. Open it in the editor and save it again.";
+
+  /** The server's per-part prices for a stored multi-part quote, or an error message. The answer is
+   * recomputed from stored inputs; if its item revenue no longer equals the saved price (a server pricing
+   * change since), the lines wouldn't add up to the quoted total, so refuse. */
+  async function checkedOrderForQuote(
+    q: SavedQuote,
+    raw: ServerQuote,
+  ): Promise<{ order: OrderBreakdown } | { error: string }> {
+    const answer = await orderForQuote(raw);
+    if (answer === null) return { error: ORDER_PRICE_FAILED };
+    if (answer.itemRevenue !== q.resolvedPrice) return { error: PRICES_CHANGED };
+    return { order: answer };
+  }
+
+  async function openConvert(q: SavedQuote) {
+    confirmingId = null;
+    closeMenu();
+    emailEntryFor = null;
+    convertFor = q.id;
+    clientChoice = "";
+    convertOrder = null;
+    convertOrderError = "";
+    const id = q.id;
+    if (isMultiPart(q)) {
+      const raw = quotes.find((x) => x.id === q.id);
+      const checked = raw ? await checkedOrderForQuote(q, raw) : { error: ORDER_PRICE_FAILED };
+      if (convertFor !== id) return;
+      convertOrder = "order" in checked ? checked.order : null;
+      convertOrderError = "error" in checked ? checked.error : "";
+    }
+    await ensureClientsLoaded();
+    // Another row's "Convert to invoice" (or Cancel) may have run while this load was in flight; apply the
+    // preselect only if this row is still the open one.
+    if (convertFor !== id) return;
+    if (q.clientId && clients?.some((c) => c.id === q.clientId)) {
+      clientChoice = q.clientId;
+    }
+  }
+
+  function cancelConvert() {
+    convertFor = null;
+  }
+
+  /** The status update for a raw quote converted to an invoice: `accepted` with a log entry unless already
+   * accepted ("Invoice again" adds no duplicate entry). Mirrors convertQuote.ts's applyConvertStatus,
+   * which works on the mapped SavedQuote and can't be reused on the raw server quote. */
+  function acceptedTransition(raw: ServerQuote, at: string): ServerQuote {
+    return raw.status === "accepted" ? raw : applyTransition(raw, "accepted", at);
+  }
+
+  async function convertToInvoice(q: SavedQuote) {
+    if (isMultiPart(q) && convertOrder === null) return;
+    converting = true;
+    try {
+      const chosen = clients?.find((c) => c.id === clientChoice);
+      const preview = convertPreview(q, cfg.invoicing.salesTaxPct, convertOrder);
+      const invoice = await createInvoice({
+        clientId: chosen?.id ?? "",
+        clientName: convertClientName(chosen?.name, q),
+        lines: preview.lines,
+        taxBp: convertTaxBp(q) ?? undefined,
+      });
+      invoiceNumberById = new Map(invoiceNumberById).set(invoice.id, invoice.number);
+
+      const idx = quotes.findIndex((x) => x.id === q.id);
+      const raw = idx === -1 ? undefined : quotes[idx];
+      if (raw) {
+        // Status (accepted, with a log entry unless already accepted) and the invoicedAs link land in the
+        // same PUT, so a reader never sees the link without the acceptance.
+        const withStatus = acceptedTransition(raw, new Date().toISOString());
+        try {
+          const updated = await updateQuote(raw.id, { ...inputFromRaw(withStatus), invoicedAs: invoice.id });
+          const next = [...quotes];
+          next[idx] = updated;
+          quotes = next;
+          actionFailed = false;
+          actionStatus = `Converted "${q.label}" to invoice ${invoice.number}.`;
+        } catch (err) {
+          actionFailed = true;
+          actionStatus = `Converted "${q.label}" to invoice ${invoice.number}, but couldn't save the invoice link on this quote${
+            err instanceof Error ? `: ${err.message}` : "."
+          }`;
+        }
+      } else {
+        // The quote vanished (deleted in another tab or session between opening the picker and confirming):
+        // the invoice still exists, with no quote to link back to.
+        actionFailed = false;
+        actionStatus = `Converted "${q.label}" to invoice ${invoice.number}.`;
+      }
+
+      pendingOpen.current = { tab: "invoices", id: invoice.id };
+      location.hash = "#/invoices";
+      convertFor = null;
+    } catch (err) {
+      actionFailed = true;
+      actionStatus =
+        err instanceof Error ? `Couldn't convert "${q.label}": ${err.message}` : `Couldn't convert "${q.label}" to an invoice.`;
+    } finally {
+      converting = false;
+    }
+  }
+
+  async function duplicate(q: SavedQuote) {
+    confirmingId = null;
+    closeMenu();
+    const raw = quotes.find((x) => x.id === q.id);
+    if (!raw) return;
+    try {
+      const label = `Copy of ${raw.label}`;
+      const created = await createQuote({
+        ...inputFromRaw(raw),
+        label,
+        status: "draft",
+        statusLog: [],
+        invoicedAs: undefined,
+      });
+      quotes = [created, ...quotes];
+      total += 1; // a new quote now exists server-side too, so the loaded window still equals total up to it
+      actionFailed = false;
+      actionStatus = `Duplicated "${q.label}" as "${created.label}".`;
+    } catch (err) {
+      actionFailed = true;
+      actionStatus = err instanceof Error ? `Couldn't duplicate "${q.label}": ${err.message}` : `Couldn't duplicate "${q.label}".`;
+    }
+  }
+
+  function askDelete(id: string) {
+    confirmingId = id;
+  }
+  function cancelDelete() {
+    confirmingId = null;
+  }
+  async function remove(q: SavedQuote) {
+    confirmingId = null;
+    closeMenu();
+    try {
+      await deleteQuote(q.id);
+      quotes = quotes.filter((x) => x.id !== q.id);
+      total = Math.max(0, total - 1);
+      actionFailed = false;
+      actionStatus = `Deleted "${q.label}".`;
+    } catch (err) {
+      actionFailed = true;
+      actionStatus = err instanceof Error ? `Couldn't delete "${q.label}": ${err.message}` : `Couldn't delete "${q.label}".`;
+    }
+  }
+
+  // The hidden file input, clicked imperatively by the visible "Import" button.
+  let fileInput: HTMLInputElement;
+
+  /** Exports every saved quote, not just the loaded window: the file is the user's backup, so a
+   * partially-loaded list (`quotes.length < total`) is backfilled first via the controller's runNow()
+   * (bypassing the filter latch), showing the "Loading the rest of the list…" status/failure banner. A
+   * failed backfill writes no file; the banner is the only feedback. */
+  async function exportQuotes() {
+    if (!fullyLoaded) {
+      await backfill.runNow();
+      if (backfill.backfillFailed) return;
+    }
+    const payload = buildQuotesFile(mappedQuotes);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `printpaca-quotes-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // Import creates quotes one request at a time; the button stays disabled meanwhile so a second click can't
+  // import the same file twice.
+  let importing = $state(false);
+
+  async function handleImportFile(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file || importing) return;
+    importing = true;
+    try {
+      const result = parseQuotesFile(await file.text());
+      if (!result) {
+        actionFailed = true;
+        actionStatus = `Couldn't import "${file.name}": not a valid quotes file.`;
+        return;
+      }
+      const { quotes: imported, skipped } = result;
+
+      // An imported entry's `.inputs` is the editor's form snapshot with no engine bag, so the bag is rebuilt
+      // via toOrderInputs(cfg, formState) rather than mutating the live editor state. Each import is its own POST;
+      // one failing entry (e.g. a malformed snapshot) is counted with the parser's `skipped`, not fatal to
+      // the batch.
+      let created = 0;
+      let failed = 0;
+      const landed: ServerQuote[] = [];
+      for (const q of imported) {
+        try {
+          const migrated = parseFormState(q.inputs, cfg);
+          if (!migrated) throw new Error("unusable saved data");
+          const formState = toFormState(migrated);
+          const rec = await createQuote({
+            label: q.label,
+            clientId: q.clientId,
+            clientName: q.clientName ?? "",
+            project: q.project ?? "",
+            reference: q.reference ?? "",
+            status: q.status,
+            statusLog: q.statusLog,
+            invoicedAs: undefined,
+            inputs: toOrderInputs(cfg, migrated),
+            options: engineOptions(cfg),
+            formState,
+          });
+          landed.push(rec);
+          created++;
+        } catch {
+          failed++;
+        }
+      }
+      quotes = [...landed, ...quotes];
+      total += landed.length; // each landed quote now exists server-side too
+
+      const totalSkipped = skipped + failed;
+      actionFailed = failed > 0;
+      actionStatus = `Imported ${created} quote${created === 1 ? "" : "s"}${totalSkipped > 0 ? ` (${totalSkipped} skipped)` : ""}.`;
+    } catch {
+      actionFailed = true;
+      actionStatus = `Couldn't import "${file.name}": not a valid quotes file.`;
+    } finally {
+      importing = false;
+      input.value = "";
+    }
+  }
+</script>
+
+<!-- onscrollcapture: a scroll on .table-scroll itself (a nested container) must be caught; scroll events don't
+     bubble, only the capture phase reaches an ancestor listener. -->
+<svelte:window onpointerdown={handleWindowPointerDown} onkeydown={handleWindowKeydown} onscrollcapture={handleWindowScroll} />
+
+<div class="page">
+  <div class="head-row">
+    <h1>Quotes</h1>
+    <div class="head-actions">
+      <button type="button" class="primary" onclick={() => (location.hash = "#/quote")}>New quote</button>
+      <button type="button" class="quiet" onclick={exportQuotes} disabled={quotes.length === 0 || backfill.backfilling}>
+        Export
+      </button>
+      <button type="button" class="quiet" onclick={() => fileInput.click()} disabled={importing}>{importing ? "Importing…" : "Import"}</button>
+      <input
+        bind:this={fileInput}
+        type="file"
+        accept=".json,application/json"
+        class="visually-hidden"
+        tabindex="-1"
+        onchange={handleImportFile}
+      />
+    </div>
+  </div>
+
+  <p class="lede">
+    Track each saved quote from draft to sent to accepted, convert quotes to invoices,
+    or delete the ones you no longer need.
+  </p>
+
+  {#if quotesUnavailable}
+    <p class="banner-warn" role="alert">Couldn't load saved quotes. The server couldn't be reached.</p>
+  {/if}
+
+  <!-- action-status carries no styles: it is the stable hook e2e/history.spec.ts selects for this
+       surface's actions (convert, duplicate, delete, import, status transitions), separate from
+       HistoryPanel's live region (only one is mounted at a time). -->
+  <p
+    class="status-line action-status"
+    class:collapsed={actionStatus === ""}
+    role={actionFailed ? "alert" : "status"}
+    aria-live={actionFailed ? "assertive" : "polite"}
+  >
+    {actionStatus}
+  </p>
+
+  {#if showFilter}
+    <div class="filter-row">
+      <input
+        id="quotes-filter"
+        class="filter-input"
+        placeholder="Filter by label"
+        aria-label="Filter by label"
+        bind:value={filterText}
+      />
+      <select aria-label="Sort saved quotes" bind:value={sortOrder}>
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="price-desc">Price high to low</option>
+        <option value="price-asc">Price low to high</option>
+        <option value="label">Label A to Z</option>
+        <option value="status">Status</option>
+      </select>
+    </div>
+  {/if}
+
+  <BackfillStatus backfilling={backfill.backfilling} backfillFailed={backfill.backfillFailed} verb="filter" />
+
+  {#if cfg.smtp.host === ""}
+    <p class="banner-muted">
+      Email isn't configured, so quotes can't be emailed from here. <a href="#/settings">Set it up in Settings.</a>
+    </p>
+  {/if}
+
+  <div class="card">
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Label</th>
+            <th>Client</th>
+            <th class="num">Price</th>
+            <th>Status</th>
+            <th>Saved</th>
+            <th><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#if loading}
+            <tr><td colspan="6" class="empty-state">Loading…</td></tr>
+          {:else}
+            {#each sortedQuotes as q (q.id)}
+              {@const stats = quoteRowStats(q)}
+              {@const qty = extractQuantity(q.inputs)}
+              {@const status = displayStatus(q, cfg.quote.validDays, Date.now())}
+              {@const emailReason = emailDisabledReason(q, cfg.smtp.host, clientsLoaded, clients, canManageClients)}
+              {@const primaryT = primaryTransition(q)}
+              <tr>
+                <td>
+                  <button type="button" class="quiet linkish" onclick={() => openInEditor(q)}>{q.label}</button>
+                  {#if isMultiPart(q)}<span class="parts-badge">{q.partCount} parts</span>{/if}
+                  <AttributionLine createdBy={q.createdBy} updatedBy={q.updatedBy} />
+                </td>
+                <td>{q.clientName ?? "-"}</td>
+                <td class="num">
+                  {#if stats.priceCents !== null}
+                    <div class="price-batch">{money(stats.priceCents * qty, cfg)}</div>
+                    {#if qty > 1}
+                      <div class="price-unit">{money(stats.priceCents, cfg)}&nbsp;each</div>
+                    {/if}
+                  {:else}
+                    <span class="cost-only">cost only</span>
+                  {/if}
+                </td>
+                <td><StatusBadge status={status} /></td>
+                <td class="nowrap">{formatSavedAt(q.savedAt)}</td>
+                <td>
+                  <div class="row-actions">
+                    <button type="button" class="quiet" onclick={() => openInEditor(q)}>Open in editor</button>
+                    {#if primaryT}
+                      <button
+                        type="button"
+                        class="quiet"
+                        onclick={() => markStatus(q, primaryT)}
+                        title={TRANSITION_HINTS[primaryT]}
+                      >{TRANSITION_LABELS[primaryT]}</button>
+                    {/if}
+                    {#if q.invoicedAs}
+                      <button type="button" class="pill invoiced-badge" onclick={() => openInvoiced(q)}>
+                        {invoicedLabel(q.invoicedAs)}
+                      </button>
+                    {/if}
+                    <button
+                      type="button"
+                      class="quiet"
+                      onclick={() => openConvert(q)}
+                      aria-label={q.invoicedAs ? `Invoice "${q.label}" again` : `Convert "${q.label}" to invoice`}
+                      disabled={convertFor === q.id}
+                    >
+                      {q.invoicedAs ? "Invoice again" : "Convert to invoice"}
+                    </button>
+
+                    <!-- Overflow menu: the non-primary status transition, Email quote, Duplicate and
+                         Delete, kept in the DOM (not lazily mounted) so aria-expanded/haspopup stay wired
+                         to one stable toggle. data-row-menu is the row's outside-click boundary for
+                         handleWindowPointerDown. -->
+                    <div class="row-menu" data-row-menu={q.id}>
+                      <button
+                        type="button"
+                        class="quiet menu-toggle"
+                        aria-haspopup="true"
+                        aria-expanded={menuOpenId === q.id}
+                        aria-label={`More actions for "${q.label}"`}
+                        onclick={(e) => toggleMenu(q.id, e.currentTarget)}
+                      >⋯</button>
+                      {#if menuOpenId === q.id && menuAnchor}
+                        <div
+                          class="menu-panel"
+                          style={`${menuAnchor.top !== undefined ? `top:${menuAnchor.top}px;` : `bottom:${menuAnchor.bottom}px;`}right:${menuAnchor.right}px;`}
+                        >
+                          <!-- A labeled group of buttons, not an ARIA menu: role="menu"/"menuitem" would
+                               claim arrow-key roving this panel doesn't implement. The email-reason note
+                               below is a sibling, not a child: it describes, not acts. -->
+                          <div class="menu-group" role="group" aria-label={`More actions for "${q.label}"`}>
+                            {#each overflowTransitions(q) as t (t)}
+                              <button
+                                type="button"
+                                class="quiet menu-item"
+                                onclick={() => markStatus(q, t)}
+                                title={TRANSITION_HINTS[t]}
+                              >{TRANSITION_LABELS[t]}</button>
+                            {/each}
+                            {#if needsEmailEntry(emailReason)}
+                              <button
+                                type="button"
+                                class="quiet menu-item"
+                                onclick={() => openEmailEntry(q)}
+                                aria-label={`Email "${q.label}" to client (add email)`}
+                              >Email quote…</button>
+                            {:else if emailReason}
+                              <button
+                                type="button"
+                                class="quiet menu-item"
+                                disabled
+                                aria-label={`Email "${q.label}" to client (unavailable)`}
+                                title={emailReason === "unconfigured" ? "Email isn't configured. See the notice above the table." : undefined}
+                                aria-describedby={emailReason === "unconfigured" ? undefined : `email-reason-${q.id}`}
+                              >Email quote</button>
+                            {:else}
+                              <button
+                                type="button"
+                                class="quiet menu-item"
+                                onclick={() => emailQuote(q)}
+                                aria-label={`Email "${q.label}" to client`}
+                                disabled={emailingId === q.id}
+                              >
+                                {emailingId === q.id ? "Emailing…" : "Email quote"}
+                              </button>
+                            {/if}
+                            <button type="button" class="quiet menu-item" onclick={() => duplicate(q)} aria-label={`Duplicate "${q.label}"`}>
+                              Duplicate
+                            </button>
+                            {#if confirmingId === q.id}
+                              <button type="button" class="quiet danger menu-item confirm-delete" onclick={() => remove(q)} aria-label={`Confirm delete "${q.label}"`}>Delete?</button>
+                              <button type="button" class="quiet menu-item cancel-delete" onclick={cancelDelete} aria-label={`Cancel deleting "${q.label}"`}>Cancel</button>
+                            {:else}
+                              <button type="button" class="quiet menu-item" onclick={() => askDelete(q.id)} aria-label={`Delete "${q.label}"`}>Delete</button>
+                            {/if}
+                          </div>
+                          {#if emailReason && emailReason !== "unconfigured" && !needsEmailEntry(emailReason)}
+                            <span id={`email-reason-${q.id}`} class="convert-note-plain">
+                              {#if emailReason === "loading"}
+                                Loading client info…
+                              {:else if emailReason === "no-price"}
+                                No price set on this quote.
+                              {:else if emailReason === "clients-unavailable"}
+                                Client list unavailable; try again.
+                              {:else}
+                                Needs Clients access to add an email.
+                              {/if}
+                            </span>
+                          {/if}
+                        </div>
+                      {/if}
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              {#if emailEntryFor === q.id}
+                <tr class="convert-tr">
+                  <td colspan="6">
+                    <form class="convert-row" onsubmit={(e) => { e.preventDefault(); submitEmailEntry(q); }}>
+                      <label class="visually-hidden" for={`email-entry-${q.id}`}>Client email for this quote</label>
+                      <input
+                        id={`email-entry-${q.id}`}
+                        type="email"
+                        placeholder="Client email"
+                        bind:value={emailDraft}
+                        aria-describedby={emailEntryError ? `email-entry-error-${q.id}` : undefined}
+                      />
+                      <span class="convert-note-plain">
+                        {q.clientId ? "Saved to the linked client." : "Creates a client from the quote's client name."}
+                      </span>
+                      {#if emailEntryError}<span id={`email-entry-error-${q.id}`} class="advisory-text" role="alert">{emailEntryError}</span>{/if}
+                      <button class="primary" type="submit" disabled={emailingId === q.id}>{emailingId === q.id ? "Sending…" : "Send"}</button>
+                      <button type="button" onclick={cancelEmailEntry} disabled={emailingId === q.id}>Cancel</button>
+                    </form>
+                  </td>
+                </tr>
+              {/if}
+              {#if convertFor === q.id}
+                <tr class="convert-tr">
+                  <td colspan="6">
+                    {#if !quoteHasPrice(q)}
+                      <div class="convert-row">
+                        <span id={`no-price-note-${q.id}`} class="convert-note-plain">
+                          No selling price on this quote. Open it in the editor and set a price first.
+                        </span>
+                        <button class="primary" disabled aria-describedby={`no-price-note-${q.id}`}>Create invoice</button>
+                        <button onclick={cancelConvert}>Cancel</button>
+                      </div>
+                    {:else}
+                      {@const preview = convertPreview(q, cfg.invoicing.salesTaxPct, convertOrder)}
+                      <div class="convert-row">
+                        <label class="visually-hidden" for={`convert-client-${q.id}`}>Client for this invoice</label>
+                        <select id={`convert-client-${q.id}`} bind:value={clientChoice}>
+                          <option value="">Walk-in (no client)</option>
+                          {#each clients ?? [] as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
+                        </select>
+                        {#if clientsLoaded && clients === null}
+                          <span class="advisory-text">Client list unavailable; converting as walk-in.</span>
+                        {/if}
+                        {#if convertOrderError}
+                          <span class="advisory-text" role="alert">{convertOrderError}</span>
+                        {/if}
+                        {#if convertTaxBp(q) === 0}
+                          <span class="convert-note-plain">Tax was included in the quoted price; the invoice adds none.</span>
+                        {/if}
+                        <button class="primary" onclick={() => convertToInvoice(q)} disabled={converting || preview.lines.length === 0 || (isMultiPart(q) && convertOrder === null)}>
+                          {converting ? "Creating…" : `Create invoice · ${money(preview.totalCents, cfg)}`}
+                        </button>
+                        <button onclick={cancelConvert} disabled={converting}>Cancel</button>
+                      </div>
+                    {/if}
+                  </td>
+                </tr>
+              {/if}
+            {:else}
+              <tr>
+                <td colspan="6" class="empty-state">
+                  {quotes.length === 0
+                    ? "No saved quotes yet. Save one from the New quote page."
+                    : "No quotes match the filter. Clear it to see all saved quotes."}
+                </td>
+              </tr>
+            {/each}
+          {/if}
+        </tbody>
+      </table>
+    </div>
+    {#if !loading && filterText.trim() === ""}
+      <LoadMoreRow shown={quotes.length} {total} {loadingMore} onLoadMore={loadMore} />
+    {/if}
+  </div>
+</div>
+
+<style>
+  .parts-badge { margin-left: 0.4rem; color: var(--muted); font-size: var(--text-sm); }
+  .head-row h1 { margin: 0; }
+  .head-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
+  .lede { color: var(--muted); font-size: var(--text-sm); margin: 0; }
+
+  /* .status-line's app-wide min-height reserves room against layout shift, but before any action sets
+   * actionStatus that plus .page's flex gap left a dead band above the table. Collapsed only while
+   * actionStatus is empty (the live region stays mounted, so its role/aria-live never toggle); once a
+   * message is set it reverts to the reserved layout. */
+  .action-status.collapsed { min-height: 0; margin-top: calc(var(--space-6) * -1); margin-bottom: calc(var(--space-6) * -1); }
+
+  .filter-row { display: flex; gap: 0.5rem; }
+  .filter-input { flex: 1; }
+
+  .linkish {
+    border: none; background: none; color: var(--accent-text); padding: 0; text-align: left;
+    font-size: var(--text-base); font-weight: 600;
+  }
+  .linkish:hover { color: var(--accent-text); text-decoration: underline; }
+
+  .cost-only { color: var(--muted); }
+  /* Batch total is the primary figure; the per-unit line is secondary (muted, smaller), the same size step
+   * BreakdownTable/HistoryPanel use for a subordinate money line. */
+  .price-batch { font-variant-numeric: tabular-nums; }
+  .price-unit { color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+  .nowrap { white-space: nowrap; }
+  td.empty-state { text-align: center; }
+
+  /* nowrap with each control keeping its words together: wrapping made this cell's min-content one button
+   * wide, so auto table layout gave it barely more and the overflow toggle dropped to a second line on
+   * nearly every row. Holding the cluster on one line makes the cell ask for its real width; the wrapping
+   * label/client columns give up the difference. .table-scroll is the escape hatch. */
+  .row-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 0.4rem; }
+  .row-actions > button, .row-actions .menu-toggle { white-space: nowrap; }
+  .confirm-delete { white-space: nowrap; }
+  .cancel-delete { white-space: nowrap; }
+
+  /* Overflow menu: .row-menu is only the outside-click boundary. .menu-panel is position: fixed, placed
+   * from the toggle's viewport rect at open time (menuAnchor; bottom when flipped upward), not absolute:
+   * .table-scroll's computed overflow-y: auto would clip it (e.g. a one-row table). */
+  .menu-toggle {
+    min-width: var(--tap-sm);
+    font-weight: 700;
+    letter-spacing: 1px;
+  }
+  .menu-panel {
+    position: fixed;
+    z-index: 5;
+    min-width: 11rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.3rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) / 2);
+    box-shadow: var(--shadow);
+  }
+  /* The labeled button group only; the email-reason note (a sibling) stacks below via .menu-panel's gap. */
+  .menu-group { display: flex; flex-direction: column; gap: 0.1rem; }
+  .menu-item { display: block; width: 100%; text-align: left; white-space: nowrap; }
+
+  /* .pill (theme) covers border, radius, font-size and padding; kept locally (like HistoryPanel's former
+   * invoiced-badge): the tap-sm min-height (it's a button) and the borderless, muted-to-text hover that
+   * marks it clickable. */
+  .invoiced-badge {
+    min-height: var(--tap-sm);
+    background: none;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .invoiced-badge:hover { color: var(--text); }
+
+  .convert-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.3rem 0;
+  }
+  .convert-row select { flex: 1; min-width: 140px; }
+  .convert-note-plain { font-size: var(--text-sm); color: var(--muted); }
+</style>

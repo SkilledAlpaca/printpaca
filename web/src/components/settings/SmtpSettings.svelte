@@ -1,0 +1,102 @@
+<script lang="ts">
+  import type { ServerConfig } from "../../lib/settings";
+  import { settingsWarnings } from "../../lib/settingsRules";
+  import { warnFor } from "../../lib/format";
+  import { testSmtp } from "../../lib/sendApi";
+  import LabeledNumber from "../LabeledNumber.svelte";
+  import LabeledText from "../LabeledText.svelte";
+
+  let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
+
+  const warnings = $derived(settingsWarnings(form));
+
+  // Send test email: fires against the server's currently saved config (POST /api/smtp/test reads the running
+  // ConfigStore, not unsaved edits), one-shot fire-and-report like the invoice and quote send actions.
+  // ok/error shows verbatim in the status line for either outcome (unconfigured HTTP failure or inner send
+  // failure).
+  let testing = $state(false);
+  let testStatus = $state("");
+  let testFailed = $state(false);
+
+  async function sendTestEmail() {
+    testing = true;
+    testStatus = "";
+    testFailed = false;
+    try {
+      const result = await testSmtp();
+      if (!result.ok) {
+        testFailed = true;
+        testStatus = result.error;
+        return;
+      }
+      if (result.data.ok) {
+        testFailed = false;
+        testStatus = "Test email sent.";
+      } else {
+        testFailed = true;
+        testStatus = result.data.error;
+      }
+    } catch (err) {
+      testFailed = true;
+      testStatus = err instanceof Error ? err.message : "Couldn't reach the server.";
+    } finally {
+      testing = false;
+    }
+  }
+</script>
+
+<div id="section-smtp" class="card roomy" class:danger-border={hasError("smtp")}>
+  <h2>Email</h2>
+  <p class="hint">Notifies you of each new estimate request and sends quotes and invoices to clients from the
+    Quotes and Invoices pages. Leave host empty to disable both. The password is read from the SMTP_PASSWORD
+    environment variable and never stored in config.yaml.</p>
+  {#if form.smtp.host === ""}
+    <p class="hint">The other fields are checked once you enter a host.</p>
+  {/if}
+  <div class="field-rows">
+    <label class="field">
+      <span>Host</span>
+      <input bind:value={form.smtp.host} placeholder="smtp.example.com" />
+    </label>
+    <!-- min/max mirror server/config.go's validate(): smtp.port out of range [1,65535]. -->
+    <LabeledNumber
+      label="Port"
+      min={1}
+      max={65535}
+      step={1}
+      bind:value={form.smtp.port}
+      warn={warnFor(warnings, "smtp.port")}
+    />
+    <label class="field">
+      <span>Username</span>
+      <input bind:value={form.smtp.username} />
+    </label>
+    <LabeledText
+      label="From address"
+      type="email"
+      bind:value={form.smtp.from}
+      warn={warnFor(warnings, "smtp.from")}
+    />
+    <LabeledText
+      label="Notification address"
+      hint="Where new request notifications go."
+      type="email"
+      bind:value={form.smtp.to}
+      warn={warnFor(warnings, "smtp.to")}
+    />
+  </div>
+  <div class="test-row">
+    <button type="button" onclick={sendTestEmail} disabled={form.smtp.host === "" || testing}>
+      {testing ? "Sending…" : "Send test email"}
+    </button>
+    <span class="hint">Tests the saved settings, not unsaved changes above.</span>
+  </div>
+  <p class="status-line" role={testFailed ? "alert" : "status"} aria-live={testFailed ? "assertive" : "polite"}>
+    {testStatus}
+  </p>
+</div>
+
+<style>
+  .test-row { display: flex; align-items: center; gap: 0.6rem; margin-top: var(--space-2); }
+  .test-row .hint { margin: 0; }
+</style>

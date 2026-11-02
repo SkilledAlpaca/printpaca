@@ -1,0 +1,5 @@
+# Normalize line endings: LF in the repo and working tree.
+# Guarantees every text file checks out and diffs consistently regardless
+# of the host OS or editor, so CRLF never sneaks in and breaks bash scripts.
+* text=auto eol=lf
+*.png binary

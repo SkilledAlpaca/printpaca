@@ -1,0 +1,79 @@
+# Read-only demo of printpaca, seeded with fake data. See docs/demo.md for
+# what the demo does, how to run it, and how to serve it through a
+# Cloudflare Tunnel.
+#
+# Run it directly:
+#
+#   mkdir -p ./demo-config && sudo chown 65532:65532 ./demo-config
+#   docker compose -f docker-compose.demo.yml up -d
+#
+# Admin demo: http://127.0.0.1:8080/admin/ (password `demo`). Front door:
+# http://127.0.0.1:8080/. Customer-only listener: http://127.0.0.1:8081/.
+# To reseed, stop the container, delete ./demo-config, and start it again.
+#
+# Nothing here weakens the container hardening from docker-compose.yml.
+
+# Same hardening and logging as docker-compose.yml, defined once.
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  printpaca:
+    # The published Docker Hub image. To demo a source build, replace this
+    # line with `build: .` plus `image: printpaca:latest` (as
+    # docker-compose.yml does) and start with --build.
+    image: skilledalpaca/printpaca:latest
+    # Loopback only: the tunnel reaches the listeners over the compose
+    # network. Drop the "127.0.0.1:" prefixes only to expose the demo
+    # directly without the tunnel.
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - ./demo-config:/config
+    environment:
+      - DEMO_MODE=1
+      # The length policy is waived in demo mode.
+      - ADMIN_PASSWORD=demo
+      - PUBLIC_PORT=8081
+      # Every hostname that reaches PORT (8080) through a proxy or tunnel. The
+      # PUBLIC_PORT listener has no allowlist. Leave DEMO_HOSTNAME unset to
+      # run on localhost only.
+      - ALLOWED_HOSTS=${DEMO_HOSTNAME:-}
+      # Optional: an https URL for the customer-only listener, linked from the
+      # admin sign-in screen so visitors find the customer flow.
+      - DEMO_PUBLIC_URL=${DEMO_PUBLIC_URL:-}
+      # Remove both trust-proxy flags if you serve the demo without a proxy.
+      - ADMIN_TRUST_PROXY=1
+      - PUBLIC_TRUST_PROXY=1
+    restart: unless-stopped
+    # Mirrors the resource block in docker-compose.yml, the canonical one.
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
+    pids_limit: 128
+    <<: [*hardening, *logging]
+
+  # The demo's own tunnel, separate from any production tunnel so a demo
+  # outage or ingress mistake never touches it. Opt in with --profile tunnel.
+  # Requires CF_TUNNEL_TOKEN in the environment or a .env file.
+  cloudflared:
+    # Same pinned tag as docker-compose.yml; bump both together.
+    image: cloudflare/cloudflared:2026.8.3
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
+    depends_on:
+      - printpaca
+    restart: unless-stopped
+    <<: [*hardening, *logging]

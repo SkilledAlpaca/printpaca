@@ -1,0 +1,86 @@
+timezone: UTC
+currency: { symbol: "$", decimals: 2, code: "" }
+pricing:
+  strategy: margin
+  marginPct: 30
+  markupMultiplier: 2.5
+  taxRatePct: 0
+  defaultShippingCost: 0
+  defaultShippingCharge: 0
+  defaultFeeSchedule: none
+  laborPerUnit: false
+feeSchedules:
+  etsy-us:
+    source: "https://www.etsy.com/legal/fees (as of 2026-01)"
+    fixed:
+      - { amount: 0.20, label: Listing }
+      - { amount: 0.25, label: Payment processing (fixed) }
+    percent:
+      - { pct: 6.5, base: revenue, label: Transaction }
+      - { pct: 3.0, base: revenue, label: Payment processing }
+materials:
+  - { id: pla,   name: PLA,   density: 1.24, pricePerKg: 20.00, wastePct: 0 }
+  - { id: petg,  name: PETG,  density: 1.27, pricePerKg: 22.00, wastePct: 0 }
+  - { id: abs,   name: ABS,   density: 1.04, pricePerKg: 18.00, wastePct: 0 }
+  - { id: tpu,   name: TPU,   density: 1.21, pricePerKg: 30.00, wastePct: 0 }
+  - { id: resin, name: Resin, density: 1.15, pricePerKg: 35.00, wastePct: 0 }
+printers:
+  - id: generic
+    name: Generic FDM
+    watts: 250
+    purchaseCost: 400
+    lifespanHours: 4000
+    filamentDiameterMm: 1.75
+energy:
+  mode: flat
+  flatRate: 0.15
+  tou: { peakRate: 0.30, offPeakRate: 0.10, defaultOffPeakFrac: 0.7 }
+presets:
+  hobby:       { failureRatePct: 3, prepMinutes: 0, laborRate: 0,  monthlyFixed: 0,   monthlyHours: 50 }
+  side-hustle: { failureRatePct: 5, prepMinutes: 5, laborRate: 12, monthlyFixed: 0,   monthlyHours: 100 }
+  small-shop:  { failureRatePct: 8, prepMinutes: 8, laborRate: 18, monthlyFixed: 250, monthlyHours: 120 }
+defaults:
+  preset: side-hustle
+  printer: generic
+  material: pla
+  failureRatePct: 5
+  quantity: 1
+quote:
+  businessName: ""
+  address: ""
+  email: ""
+  phone: ""
+  taxId: ""
+  paymentInstructions: ""
+  termsText: ""
+  validDays: 14
+invoicing:
+  numberPrefix: "INV"
+  salesTaxPct: 0
+  dueDays: 30
+  paymentMethods: ["Cash", "Bank transfer", "PayPal", "Other"]
+  paypalMe: ""
+publicQuotes:
+  printer: generic
+  preset: side-hustle
+  introText: ""
+customCss: ""
+smtp:
+  host: ""
+  port: 587
+  username: ""
+  from: ""
+  to: ""
+  requireTLS: false
+ui:
+  disabledTabs: []
+integrationsUrls:
+  spoolmanUrl: ""
+  moonrakerUrl: ""
+  fluiddUrl: ""
+users:
+  multiUser: false
+site:
+  shopOnMainPort: true
+  staffLink: true
+  adminUrl: ""

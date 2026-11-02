@@ -1,0 +1,245 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "printpaca configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "currency": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "symbol": { "type": "string" },
+        "decimals": { "type": "integer", "minimum": 0, "maximum": 4 },
+        "code": { "type": "string", "pattern": "^([A-Z]{3})?$" }
+      }
+    },
+    "pricing": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "strategy": { "enum": ["margin", "markup"] },
+        "marginPct": { "type": "number", "minimum": 0, "maximum": 99.9 },
+        "markupMultiplier": { "type": "number", "minimum": 0, "maximum": 1000 },
+        "taxRatePct": { "type": "number", "minimum": 0, "maximum": 100 },
+        "defaultShippingCost": { "type": "number", "minimum": 0 },
+        "defaultShippingCharge": { "type": "number", "minimum": 0 },
+        "defaultFeeSchedule": { "type": "string" },
+        "laborPerUnit": { "type": "boolean" }
+      }
+    },
+    "feeSchedules": {
+      "type": "object",
+      "maxProperties": 200,
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false,
+        "properties": {
+          "source": { "type": "string" },
+          "fixed": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "properties": { "amount": { "type": "number", "minimum": 0 }, "label": { "type": "string" } },
+              "required": ["amount", "label"]
+            }
+          },
+          "percent": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "properties": {
+                "pct": { "type": "number", "minimum": 0, "maximum": 100 },
+                "base": { "enum": ["revenue"] },
+                "label": { "type": "string" }
+              },
+              "required": ["pct", "base", "label"]
+            }
+          }
+        }
+      }
+    },
+    "materials": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" }, "name": { "type": "string" },
+          "density": { "type": "number", "exclusiveMinimum": 0 },
+          "pricePerKg": { "type": "number", "minimum": 0 },
+          "wastePct": { "type": "number", "minimum": 0, "maximum": 100 },
+          "public": { "type": "boolean" }
+        },
+        "required": ["id", "name", "density", "pricePerKg"]
+      }
+    },
+    "printers": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" }, "name": { "type": "string" },
+          "watts": { "type": "number", "minimum": 0 },
+          "purchaseCost": { "type": "number", "minimum": 0 },
+          "lifespanHours": { "type": "number", "minimum": 0 },
+          "filamentDiameterMm": { "type": "number", "exclusiveMinimum": 0 }
+        },
+        "required": ["id", "name", "watts", "purchaseCost", "lifespanHours", "filamentDiameterMm"]
+      }
+    },
+    "hardware": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "unitCost": { "type": "number", "minimum": 0 },
+          "lostOnFailure": { "type": "boolean" }
+        },
+        "required": ["name", "unitCost"]
+      }
+    },
+    "energy": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["flat", "tou"] },
+        "flatRate": { "type": "number", "minimum": 0 },
+        "tou": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "peakRate": { "type": "number", "minimum": 0 },
+            "offPeakRate": { "type": "number", "minimum": 0 },
+            "defaultOffPeakFrac": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    },
+    "presets": {
+      "type": "object",
+      "maxProperties": 200,
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false,
+        "properties": {
+          "failureRatePct": { "type": "number", "minimum": 0, "maximum": 90 },
+          "prepMinutes": { "type": "number", "minimum": 0 },
+          "laborRate": { "type": "number", "minimum": 0 },
+          "monthlyFixed": { "type": "number", "minimum": 0 },
+          "monthlyHours": { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+    "defaults": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "preset": { "type": "string" }, "printer": { "type": "string" },
+        "material": { "type": "string" },
+        "failureRatePct": { "type": "number", "minimum": 0, "maximum": 90 },
+        "quantity": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "quote": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "businessName": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "address": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "taxId": { "type": "string" },
+        "paymentInstructions": { "type": "string", "maxLength": 2000 },
+        "termsText": { "type": "string", "maxLength": 2000 },
+        "validDays": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "invoicing": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "numberPrefix": { "type": "string", "pattern": "^[A-Za-z0-9]{1,10}$" },
+        "salesTaxPct": { "type": "number", "minimum": 0, "maximum": 30 },
+        "dueDays": { "type": "integer", "minimum": 0, "maximum": 365 },
+        "paymentMethods": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": { "type": "string", "maxLength": 50 }
+        },
+        "paypalMe": { "type": "string", "pattern": "^([A-Za-z0-9]{1,20})?$" }
+      }
+    },
+    "publicQuotes": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "printer": { "type": "string" },
+        "preset": { "type": "string" },
+        "introText": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "timezone": { "type": "string", "minLength": 1 },
+    "customCss": { "type": "string", "maxLength": 32768 },
+    "smtp": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "host": { "type": "string" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "username": { "type": "string" },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "requireTLS": { "type": "boolean" }
+      }
+    },
+    "ui": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "disabledTabs": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "quotes", "requests", "invoices", "items", "clients", "dashboard",
+              "filament", "electricity", "printers", "guide"
+            ]
+          }
+        }
+      }
+    },
+    "integrationsUrls": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "spoolmanUrl": { "type": "string" },
+        "moonrakerUrl": { "type": "string" },
+        "fluiddUrl": { "type": "string" }
+      }
+    },
+    "users": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "multiUser": {
+          "type": "boolean",
+          "description": "Enables employee accounts and per-tab permissions. Requires ADMIN_PASSWORD to be set."
+        },
+        "accessAdminEmail": {
+          "type": "string",
+          "maxLength": 254,
+          "description": "The Cloudflare Access email that signs in as the admin in multi-user mode. Optional; stored lowercased."
+        }
+      }
+    },
+    "site": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "shopOnMainPort": {
+          "type": "boolean",
+          "description": "Serve the front door (/), the shop (/order) and the public API on PORT. When false, / redirects to /admin/ and the public routes return 404 on PORT. PUBLIC_PORT is unaffected."
+        },
+        "staffLink": {
+          "type": "boolean",
+          "description": "Show the Staff sign-in button on the front door served on PORT."
+        },
+        "adminUrl": {
+          "type": "string",
+          "description": "Absolute http or https URL of the admin app, the Staff sign-in target on the PUBLIC_PORT front door. Empty hides the button there."
+        }
+      }
+    }
+  }
+}

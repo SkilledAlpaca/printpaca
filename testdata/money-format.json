@@ -1,0 +1,15 @@
+[
+  { "cents": 0, "decimals": 2, "symbol": "$", "expected": "$0.00" },
+  { "cents": 1234, "decimals": 2, "symbol": "$", "expected": "$12.34" },
+  { "cents": -50, "decimals": 2, "symbol": "$", "expected": "-$0.50" },
+  { "cents": 999, "decimals": 2, "symbol": "$", "expected": "$9.99" },
+  { "cents": 100000, "decimals": 2, "symbol": "$", "expected": "$1,000.00" },
+  { "cents": 123456789, "decimals": 2, "symbol": "$", "expected": "$1,234,567.89" },
+  { "cents": -123456789, "decimals": 2, "symbol": "$", "expected": "-$1,234,567.89" },
+  { "cents": 1234, "decimals": 0, "symbol": "¥", "expected": "¥12" },
+  { "cents": 123456700, "decimals": 0, "symbol": "$", "expected": "$1,234,567" },
+  { "cents": 999900, "decimals": 0, "symbol": "$", "expected": "$9,999" },
+  { "cents": 123456700, "decimals": 3, "symbol": "$", "expected": "$1,234,567.000" },
+  { "cents": 5, "decimals": 4, "symbol": "€", "expected": "€0.0500" },
+  { "cents": -1, "decimals": 4, "symbol": "€", "expected": "-€0.0100" }
+]

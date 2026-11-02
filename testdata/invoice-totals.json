@@ -1,0 +1,292 @@
+[
+  {
+    "name": "quantity rounds half-up (0.5 x 99c)",
+    "lines": [
+      {
+        "description": "Item",
+        "kind": "item",
+        "quantity": 0.5,
+        "unitPriceCents": 99,
+        "discountCents": 0
+      }
+    ],
+    "invoiceDiscountCents": 0,
+    "taxBp": 0,
+    "lineAmounts": [
+      50
+    ],
+    "subtotalCents": 50,
+    "taxCents": 0,
+    "totalCents": 50
+  },
+  {
+    "name": "line discount exceeding line amount goes negative",
+    "lines": [
+      {
+        "description": "Item",
+        "kind": "item",
+        "quantity": 1,
+        "unitPriceCents": 1000,
+        "discountCents": 1500
+      }
+    ],
+    "invoiceDiscountCents": 0,
+    "taxBp": 1000,
+    "lineAmounts": [
+      -500
+    ],
+    "subtotalCents": -500,
+    "taxCents": 0,
+    "totalCents": 0
+  },
+  {
+    "name": "invoice discount exceeding subtotal floors taxable at 0",
+    "lines": [
+      {
+        "description": "Item",
+        "kind": "item",
+        "quantity": 1,
+        "unitPriceCents": 1000,
+        "discountCents": 0
+      }
+    ],
+    "invoiceDiscountCents": 5000,
+    "taxBp": 825,
+    "lineAmounts": [
+      1000
+    ],
+    "subtotalCents": 1000,
+    "taxCents": 0,
+    "totalCents": 0
+  },
+  {
+    "name": "taxBp 825 on 10000 cents = 825",
+    "lines": [
+      {
+        "description": "Item",
+        "kind": "item",
+        "quantity": 1,
+        "unitPriceCents": 10000,
+        "discountCents": 0
+      }
+    ],
+    "invoiceDiscountCents": 0,
+    "taxBp": 825,
+    "lineAmounts": [
+      10000
+    ],
+    "subtotalCents": 10000,
+    "taxCents": 825,
+    "totalCents": 10825
+  },
+  {
+    "name": "empty draft has zero totals",
+    "lines": [],
+    "invoiceDiscountCents": 0,
+    "taxBp": 500,
+    "lineAmounts": [],
+    "subtotalCents": 0,
+    "taxCents": 0,
+    "totalCents": 0
+  },
+  {
+    "name": "multi-line sum with fractional quantity and rounding",
+    "lines": [
+      {
+        "description": "Item",
+        "kind": "item",
+        "quantity": 2,
+        "unitPriceCents": 333,
+        "discountCents": 10
+      },
+      {
+        "description": "Item",
+        "kind": "item",
+        "quantity": 1.5,
+        "unitPriceCents": 200,
+        "discountCents": 0
+      }
+    ],
+    "invoiceDiscountCents": 50,
+    "taxBp": 1000,
+    "lineAmounts": [
+      656,
+      300
+    ],
+    "subtotalCents": 956,
+    "taxCents": 91,
+    "totalCents": 997
+  },
+  {
+    "name": "epsilon: 1.005 x 100c rounds up to 101 (IEEE 754 stores 100.49999999999999)",
+    "lines": [
+      {
+        "description": "Item",
+        "kind": "item",
+        "quantity": 1.005,
+        "unitPriceCents": 100,
+        "discountCents": 0
+      }
+    ],
+    "invoiceDiscountCents": 0,
+    "taxBp": 0,
+    "lineAmounts": [
+      101
+    ],
+    "subtotalCents": 101,
+    "taxCents": 0,
+    "totalCents": 101
+  },
+  {
+    "name": "epsilon: 2.675 x 100c rounds up to 268",
+    "lines": [
+      {
+        "description": "Item",
+        "kind": "item",
+        "quantity": 2.675,
+        "unitPriceCents": 100,
+        "discountCents": 0
+      }
+    ],
+    "invoiceDiscountCents": 0,
+    "taxBp": 0,
+    "lineAmounts": [
+      268
+    ],
+    "subtotalCents": 268,
+    "taxCents": 0,
+    "totalCents": 268
+  },
+  {
+    "name": "epsilon: 1.015 x 100c rounds up to 102",
+    "lines": [
+      {
+        "description": "Item",
+        "kind": "item",
+        "quantity": 1.015,
+        "unitPriceCents": 100,
+        "discountCents": 0
+      }
+    ],
+    "invoiceDiscountCents": 0,
+    "taxBp": 0,
+    "lineAmounts": [
+      102
+    ],
+    "subtotalCents": 102,
+    "taxCents": 0,
+    "totalCents": 102
+  },
+  {
+    "name": "shipping kind is exempt from tax",
+    "lines": [
+      {
+        "description": "Widget",
+        "kind": "item",
+        "quantity": 2,
+        "unitPriceCents": 1250,
+        "discountCents": 0
+      },
+      {
+        "description": "Shipping",
+        "kind": "shipping",
+        "quantity": 1,
+        "unitPriceCents": 1000,
+        "discountCents": 0
+      }
+    ],
+    "invoiceDiscountCents": 0,
+    "taxBp": 800,
+    "lineAmounts": [
+      2500,
+      1000
+    ],
+    "subtotalCents": 3500,
+    "taxCents": 200,
+    "totalCents": 3700
+  },
+  {
+    "name": "shipping kind is exempt whatever the description says",
+    "lines": [
+      {
+        "description": "Widget",
+        "kind": "item",
+        "quantity": 2,
+        "unitPriceCents": 1250,
+        "discountCents": 0
+      },
+      {
+        "description": "Postage and handling",
+        "kind": "shipping",
+        "quantity": 1,
+        "unitPriceCents": 1000,
+        "discountCents": 0
+      }
+    ],
+    "invoiceDiscountCents": 0,
+    "taxBp": 800,
+    "lineAmounts": [
+      2500,
+      1000
+    ],
+    "subtotalCents": 3500,
+    "taxCents": 200,
+    "totalCents": 3700
+  },
+  {
+    "name": "a line described Shipping with kind item is taxed",
+    "lines": [
+      {
+        "description": "Widget",
+        "kind": "item",
+        "quantity": 2,
+        "unitPriceCents": 1250,
+        "discountCents": 0
+      },
+      {
+        "description": "Shipping",
+        "kind": "item",
+        "quantity": 1,
+        "unitPriceCents": 1000,
+        "discountCents": 0
+      }
+    ],
+    "invoiceDiscountCents": 0,
+    "taxBp": 800,
+    "lineAmounts": [
+      2500,
+      1000
+    ],
+    "subtotalCents": 3500,
+    "taxCents": 280,
+    "totalCents": 3780
+  },
+  {
+    "name": "invoice discount reduces taxable item revenue, not shipping",
+    "lines": [
+      {
+        "description": "Widget",
+        "kind": "item",
+        "quantity": 1,
+        "unitPriceCents": 10000,
+        "discountCents": 0
+      },
+      {
+        "description": "Shipping",
+        "kind": "shipping",
+        "quantity": 1,
+        "unitPriceCents": 1000,
+        "discountCents": 0
+      }
+    ],
+    "invoiceDiscountCents": 2000,
+    "taxBp": 1000,
+    "lineAmounts": [
+      10000,
+      1000
+    ],
+    "subtotalCents": 11000,
+    "taxCents": 800,
+    "totalCents": 9800
+  }
+]

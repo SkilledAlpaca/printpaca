@@ -1,0 +1,1179 @@
+<script lang="ts">
+  import { onMount, untrack } from "svelte";
+  import { MediaQuery } from "svelte/reactivity";
+  import {
+    mdiViewDashboard,
+    mdiFileDocumentOutline,
+    mdiAccountMultipleOutline,
+    mdiCalculator,
+    mdiFlash,
+    mdiPrinter3dNozzle,
+    mdiPrinter3d,
+    mdiBookOpenVariant,
+    mdiCogOutline,
+    mdiChevronLeft,
+    mdiChevronRight,
+    mdiInboxOutline,
+    mdiFileDocumentMultipleOutline,
+    mdiLogout,
+    mdiOpenInNew,
+    mdiStorefrontOutline,
+    mdiMenu,
+  } from "@mdi/js";
+  import { authRequired, loadConfig } from "./lib/api";
+  import { setErrorCurrencySymbol } from "./lib/serverErrors";
+  import { accessWatch, installAccessWatch, resetAccessRevoked } from "./lib/accessWatch.svelte";
+  import { DEFAULT_FETCH_TIMEOUT_MS } from "./lib/fetchTimeouts";
+  import { fluiddUrl } from "./lib/moonraker";
+  import { extractConfigUser, hasTabAccess, ungrantedTabs } from "./lib/permissions";
+  import { signOutAction } from "./lib/accessSignIn";
+  import { applyConfig, appConfig, effectiveConfig, printJob, invoicePrintJob, quoteActions, pendingOpen } from "./lib/state.svelte";
+  import {
+    demoLocal,
+    initDemoLocal,
+    setTheme as setDemoTheme,
+    setCurrency as setDemoCurrency,
+    setUserMode as setDemoUserMode,
+    CURRENCY_PRESET_OPTIONS,
+    type ThemeChoice,
+    type CurrencyPresetId,
+    type UserModeChoice,
+  } from "./lib/demoLocal.svelte";
+  import { preloadPrintLogo } from "./lib/printLogo.svelte";
+  import { settingsDirty } from "./lib/settingsDirty.svelte";
+  import { unsavedForm } from "./lib/unsavedForm.svelte";
+  import { unreadRequests, refreshUnread } from "./lib/requestsBadge.svelte";
+  import { fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab } from "./lib/navFilter";
+  import { splitHash } from "./lib/hashRoute";
+  import Icon from "./components/Icon.svelte";
+  import logoUrl from "./assets/alpaca-logo.svg";
+  import QuoteTab from "./components/QuoteTab.svelte";
+  import QuotesTab from "./components/QuotesTab.svelte";
+  import ElectricityTab from "./components/ElectricityTab.svelte";
+  import FilamentTab from "./components/FilamentTab.svelte";
+  import ClientsTab from "./components/ClientsTab.svelte";
+  import InvoicesTab from "./components/InvoicesTab.svelte";
+  import ItemsTab from "./components/ItemsTab.svelte";
+  import RequestsTab from "./components/RequestsTab.svelte";
+  import PrintersTab from "./components/PrintersTab.svelte";
+  import DashboardTab from "./components/DashboardTab.svelte";
+  import PrintView from "./components/PrintView.svelte";
+  import InvoicePrintView from "./components/InvoicePrintView.svelte";
+  import GettingStarted from "./components/GettingStarted.svelte";
+  import SettingsTab from "./components/SettingsTab.svelte";
+  import LoginScreen from "./components/LoginScreen.svelte";
+
+  // Read-only alias: appConfig.current (state.svelte.ts) is the source of truth. Declared early because
+  // tabFromHash's initial call reads disabledTabs during synchronous setup, before config loads (empty then;
+  // the $effect below corrects the initial tab).
+  const config = $derived(effectiveConfig(appConfig.current));
+  // UI decluttering only, never access control.
+  const disabledTabs = $derived(new Set(config?.ui.disabledTabs));
+
+  // /api/config's "user" extra (server/users.go's meResponse); null until the first response lands, which
+  // every permission check treats as "everything granted".
+  const configUser = $derived(extractConfigUser(config));
+
+  // Installed once, synchronously during setup, before any child issues its first request. The closures read
+  // `config` and `configUser` live, since neither is known until the first /api/config response lands. This
+  // keeps demo mode's expected 403s from tripping it (see accessWatch.svelte.ts), and lets a 403 from a
+  // cross-feature fetch (e.g. QuotesTab reading /api/invoices for an identity granted only "quotes") read as
+  // expected rather than a revocation, without a permission check at every call site.
+  installAccessWatch(() => config?.demoMode === true, () => configUser);
+
+  let configFailed = $state(false);
+  // True while GET /api/config's latest response was a 401 (auth enabled, no valid session): LoginScreen
+  // replaces the app shell until login succeeds. See authRequired in lib/api.ts (a module flag read right
+  // after each loadConfig()).
+  let loginRequired = $state(false);
+
+  // Also render LoginScreen, with a notice, when any other mid-session /api/* request 401s
+  // (accessWatch.sessionExpired). Read directly in the template condition rather than mirrored into local
+  // $state: it is already reactive and a tab's in-flight fetch can flip it at any time, so the shell switches
+  // on the next flush ("never render tab content states from 401 responses").
+  const SESSION_EXPIRED_NOTICE = "You were signed out: your session reached its 30-day limit, you signed out on another device, or your password changed.";
+
+  // Single source of truth for every tab: route hash, nav label and icon, keyed by Tab id. Adding a tab means
+  // one entry here; HASH_TABS and tabFromStorage derive from it and NAV_SECTIONS references its ids, so a
+  // typo is a type error.
+  const TABS = {
+    quote: { hash: "#/quote", label: "New quote", icon: mdiCalculator },
+    quotes: { hash: "#/quotes", label: "Quotes", icon: mdiFileDocumentMultipleOutline },
+    electricity: { hash: "#/electricity", label: "Electricity", icon: mdiFlash },
+    filament: { hash: "#/filament", label: "Filament", icon: mdiPrinter3dNozzle },
+    printers: { hash: "#/printers", label: "Printers", icon: mdiPrinter3d },
+    clients: { hash: "#/clients", label: "Clients", icon: mdiAccountMultipleOutline },
+    invoices: { hash: "#/invoices", label: "Invoices", icon: mdiFileDocumentOutline },
+    items: { hash: "#/items", label: "Items", icon: mdiStorefrontOutline },
+    requests: { hash: "#/requests", label: "Requests", icon: mdiInboxOutline },
+    dashboard: { hash: "#/dashboard", label: "Dashboard", icon: mdiViewDashboard },
+    guide: { hash: "#/guide", label: "Guide", icon: mdiBookOpenVariant },
+    settings: { hash: "#/settings", label: "Settings", icon: mdiCogOutline },
+  } as const;
+  type Tab = keyof typeof TABS;
+
+  // Reverse lookup (route hash to Tab) derived from TABS; resolveHashTab wants a plain Partial<Record<string,
+  // Tab>> since it must also reject a hash naming no tab.
+  const HASH_TABS: Partial<Record<string, Tab>> = Object.fromEntries(
+    (Object.keys(TABS) as Tab[]).map((id) => [TABS[id].hash, id]),
+  );
+  const TAB_STORAGE_KEY = "printpaca-tab";
+
+  function tabFromHash(hash: string): Tab | null {
+    // CardHelp's "More in the guide" links append a second fragment ("#/guide#margin-vs-markup"); splitHash
+    // strips it before the exact-match lookup, or every anchored link would fail to navigate.
+    const { base } = splitHash(hash);
+    // A hash naming a disabled tab resolves to null like an unrecognized one; every caller already falls back
+    // from null (Quote on initial load, no-op on hashchange).
+    return resolveHashTab(base, HASH_TABS, disabledTabs);
+  }
+
+  // Hands a deep-linked invoice/request/client id to the tab about to mount via pendingOpen (state.svelte.ts)
+  // instead of each tab parsing location.hash. Called only when a fragment could matter (initial load, a
+  // hashchange switching ONTO those tabs), never while already on the tab, so an in-app action that set the
+  // box just before its own bare-hash activate() isn't clobbered. Once mounted, the tab owns its id changes
+  // via its own hashchange listener.
+  function routePendingOpen(t: Tab, hash: string) {
+    if (t !== "invoices" && t !== "requests" && t !== "clients") return;
+    const { fragment: id } = splitHash(hash);
+    if (!id) return;
+    pendingOpen.current = { tab: t, id };
+  }
+
+  function tabFromStorage(): Tab | null {
+    try {
+      const v = localStorage.getItem(TAB_STORAGE_KEY);
+      return v !== null && v in TABS ? (v as Tab) : null;
+    } catch {
+      return null;
+    }
+  }
+  function persistTab(t: Tab) {
+    try {
+      localStorage.setItem(TAB_STORAGE_KEY, t);
+    } catch {
+      /* Safari private mode / quota: losing "last visited" isn't fatal. */
+    }
+  }
+
+  // Priority: a valid location.hash (deep link, reload), then the last-visited tab from localStorage, then
+  // "quote". `initialTab` is a plain local so persisting it doesn't trip Svelte's "state referenced locally"
+  // warning.
+  const hashTab = tabFromHash(location.hash);
+  const initialTab: Tab = hashTab ?? tabFromStorage() ?? "quote";
+  let tab = $state<Tab>(initialTab);
+  // True when `tab` came from an explicit, valid hash (deep link, typed URL, bookmark) rather than
+  // localStorage or the "quote" default. The permission fallback below redirects an ungranted default landing
+  // tab but leaves an explicit navigation to an ungranted tab on the "No access" card. Kept in sync at every
+  // site that assigns `tab`.
+  let tabExplicit = $state(hashTab !== null);
+  persistTab(initialTab); // every activation writes the key, including this initial one
+  // Route a pending id only when the hash produced initialTab (hashTab === initialTab); a second fragment on
+  // an absent or invalid hash belongs to nothing.
+  if (hashTab === initialTab) routePendingOpen(initialTab, location.hash);
+
+  // On desktop the app-main element is the scroll container (so the sidebar stays viewport-pinned). It never
+  // unmounts between tabs, so reset its scrollTop on every tab change. A no-op on mobile, where the window
+  // scrolls.
+  let mainEl: HTMLElement | undefined = $state();
+  function resetMainScroll() {
+    if (mainEl) mainEl.scrollTop = 0;
+  }
+
+  // At >=900px mainEl is the sole scroll container: .sidebar and .demo-banner sit in overflow:hidden cells,
+  // so a wheel over them would do nothing. Forward it to mainEl, except where something between the target
+  // and this element can still scroll itself (.side-nav's overflow-y: auto, which must keep working).
+  // Registered via onwheel in the markup: Svelte forces passive only on touchstart/touchmove, so the compiled
+  // wheel listener is non-passive and preventDefault() below works.
+  function forwardWheelToMain(event: WheelEvent) {
+    if (!mainEl) return;
+    // At <900px .sidebar is a slide-in drawer that can dispatch wheel events here (closed it is off-screen,
+    // not display:none), but the window scrolls, not mainEl. mainEl.scrollHeight > clientHeight is true only
+    // once the >=900px rule makes main an overflow-y: auto grid item, so this is a cheaper check than
+    // getComputedStyle, and there is nothing to forward to when main has no internal scroll range.
+    if (mainEl.scrollHeight <= mainEl.clientHeight) return;
+
+    const deltaY = normalizeWheelDeltaY(event);
+    const listener = event.currentTarget; // the sidebar <aside> or the demo-banner <p>
+
+    for (
+      let el = event.target instanceof HTMLElement ? event.target : null;
+      el && el !== listener;
+      el = el.parentElement
+    ) {
+      if (el.scrollHeight <= el.clientHeight) continue; // not a scroller at all
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight;
+      const atTop = el.scrollTop <= 0;
+      if ((deltaY > 0 && !atBottom) || (deltaY < 0 && !atTop)) return; // let it scroll itself instead
+    }
+
+    mainEl.scrollTop += deltaY;
+    event.preventDefault();
+  }
+
+  // Firefox defaults wheel events to DOM_DELTA_LINE, where deltaY is a line count, not pixels; 16px per line
+  // matches browsers' own figure. DOM_DELTA_PAGE (rare) scales by mainEl's height.
+  function normalizeWheelDeltaY(event: WheelEvent): number {
+    if (event.deltaMode === 1) return event.deltaY * 16;
+    if (event.deltaMode === 2) return event.deltaY * (mainEl?.clientHeight ?? 0);
+    return event.deltaY;
+  }
+
+  // href="#main" is kept for semantics (a real fragment link), but following it would set location.hash =
+  // "#main" and clobber the tab router. Handle activation here: move focus, leave the URL.
+  function skipToMain(e: MouseEvent) {
+    e.preventDefault();
+    mainEl?.focus({ preventScroll: true });
+  }
+
+  // Data-loss guard: SettingsEditor is embedded by several tabs and unmounts on tab switch, which would
+  // silently discard an in-progress edit. Native confirm() is a deliberate exception to the app's two-click
+  // delete pattern: navigating away loses data instantly, with no in-page place for a second click.
+  function activate(t: Tab) {
+    // A disabled tab has no nav button, but a few flows call activate() directly (e.g. RequestsTab's
+    // onOpenInvoice) with a destination that may have gone dark; stay put instead of mounting a tab the
+    // sidebar would never show.
+    if (disabledTabs.has(t)) return;
+    if (t !== tab && (settingsDirty.current || unsavedForm.current) && !confirm("You have unsaved changes. Leave without saving?")) {
+      return;
+    }
+    tab = t;
+    persistTab(t);
+    resetMainScroll();
+    if (location.hash !== TABS[t].hash) location.hash = TABS[t].hash; // pushes a history entry, enabling back/forward
+    // Selecting a destination from the drawer closes it (closeDrawer is a no-op when shut). It returns focus
+    // to the hamburger, but the next line re-focuses mainEl; the last focus() wins, landing focus on the new
+    // tab's content.
+    closeDrawer();
+    // <main> never unmounts between tabs, so focus it immediately: moves keyboard and screen-reader focus to
+    // the new page, like the skip link.
+    mainEl?.focus({ preventScroll: true });
+  }
+
+  // Syncs `tab` on hashchange (back/forward, manual URL edits); added and removed like the afterprint
+  // listener below.
+  function syncTabFromHash() {
+    const t = tabFromHash(location.hash);
+    if (t) {
+      const changingTab = t !== tab;
+      // Same data-loss guard as activate(): a hashchange (back/forward, edited URL, another tab's link) can
+      // switch tabs just like a sidebar click.
+      if (changingTab && (settingsDirty.current || unsavedForm.current) && !confirm("You have unsaved changes. Leave without saving?")) {
+        // Restore the hash via replaceState, not `location.hash =`, which would push a spurious history entry
+        // and re-fire this handler.
+        history.replaceState(null, "", TABS[tab].hash);
+        return;
+      }
+      tab = t;
+      tabExplicit = true; // see its declaration above: this hashchange named a real tab explicitly
+      persistTab(t);
+      resetMainScroll();
+      // Only when this hashchange switches onto invoices/requests/clients (about to mount fresh); see
+      // routePendingOpen for why it stays off while already on the tab.
+      if (changingTab) routePendingOpen(t, location.hash);
+    } else {
+      // Bogus hash, or one naming a tab disabled by now (config is loaded by the time a hashchange fires):
+      // rewrite the address bar to the tab actually showing. replaceState, so no spurious history entry and
+      // no re-fire.
+      history.replaceState(null, "", TABS[tab].hash);
+    }
+  }
+
+  // SettingsEditor.save() writes appConfig directly and never calls refreshConfig, so re-enabling Requests
+  // from Settings updates disabledTabs but leaves the unread badge stale. Track requests' previous membership
+  // in disabledTabs and fetch only on the falling edge (disabled to enabled). Initialized false to match
+  // disabledTabs' empty initial value, so config-not-loaded to loaded is never mistaken for a real
+  // transition.
+  let requestsWasDisabled = false;
+  // Server validation messages quote money in cents; they are shown in the configured currency.
+  $effect(() => {
+    setErrorCurrencySymbol(appConfig.current?.currency.symbol ?? "$");
+  });
+
+  $effect(() => {
+    const isDisabled = disabledTabs.has("requests");
+    // The falling edge is also reachable for an identity never granted "requests" (disabledTabs is
+    // independent of per-user grants); gate the fetch like refreshConfig's boot-time fetch, or the false
+    // "your access changed" banner reappears.
+    if (requestsWasDisabled && !isDisabled && hasTabAccess("requests", configUser)) refreshUnread();
+    requestsWasDisabled = isDisabled;
+  });
+
+  // Keeps printLogo.readyUrl warm from config resolution, well before either print view mounts for
+  // window.print() (see printLogo.svelte.ts). Re-runs when the effective logoUrl changes.
+  $effect(() => {
+    preloadPrintLogo(config?.quote.logoUrl);
+  });
+
+  const SIDEBAR_STORAGE_KEY = "printpaca-sidebar";
+  function loadSidebarCollapsed(): boolean {
+    try {
+      return localStorage.getItem(SIDEBAR_STORAGE_KEY) === "collapsed";
+    } catch {
+      return false;
+    }
+  }
+  let sidebarCollapsed = $state(loadSidebarCollapsed());
+  function toggleSidebar() {
+    sidebarCollapsed = !sidebarCollapsed;
+    try {
+      localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarCollapsed ? "collapsed" : "expanded");
+    } catch {
+      /* Safari private mode / quota: losing the collapse preference isn't fatal. */
+    }
+  }
+
+  // Below 900px .sidebar is the same markup as a slide-in drawer (one nav, not a second copy). isDesktop
+  // tracks which the viewport is, for what CSS can't express: navCollapsed (icon-only is a desktop-only
+  // preference; the drawer always shows labels) and auto-closing the drawer if a resize crosses 900px while
+  // open, so drawer state never leaks into the >=900px layout.
+  const desktopQuery = new MediaQuery("min-width: 900px", true);
+  const isDesktop = $derived(desktopQuery.current);
+  const navCollapsed = $derived(sidebarCollapsed && isDesktop);
+
+  let drawerOpen = $state(false);
+  let asideEl: HTMLElement | undefined = $state();
+  let hamburgerEl: HTMLButtonElement | undefined = $state();
+  function openDrawer() {
+    drawerOpen = true;
+    // asideEl's children are always in the DOM (only the CSS transform moves the drawer), so the focus target
+    // exists when this runs; no tick() needed.
+    asideEl?.querySelector<HTMLElement>("button, a[href]")?.focus();
+  }
+  function closeDrawer() {
+    if (!drawerOpen) return;
+    drawerOpen = false;
+    hamburgerEl?.focus();
+  }
+  function toggleDrawer() {
+    if (drawerOpen) closeDrawer();
+    else openDrawer();
+  }
+
+  $effect(() => {
+    if (isDesktop) untrack(closeDrawer);
+  });
+
+  // Escape only while the drawer is open, via an $effect whose cleanup removes the listener, instead of one
+  // permanent window listener re-checking drawerOpen on every keystroke.
+  $effect(() => {
+    if (!drawerOpen) return;
+    function onKeydown(e: KeyboardEvent) {
+      if (e.key === "Escape") closeDrawer();
+    }
+    window.addEventListener("keydown", onKeydown);
+    return () => window.removeEventListener("keydown", onKeydown);
+  });
+
+  // Background scroll lock while the drawer covers the screen: a class toggle on <body>
+  // (:global(body.drawer-open)), so there is no prior inline overflow value to restore.
+  $effect(() => {
+    document.body.classList.toggle("drawer-open", drawerOpen);
+  });
+
+  onMount(() => {
+    // Hydrate the URL to match the resolved initial tab (e.g. from localStorage with no hash) via
+    // replaceState, so there is no spurious back-button stop. Gated on tabFromHash, not an exact
+    // TABS[tab].hash match, so a deep link like "#/guide#margin-vs-markup" keeps its anchor for
+    // GettingStarted.
+    if (tabFromHash(location.hash) !== tab) {
+      history.replaceState(null, "", TABS[tab].hash);
+    }
+  });
+
+  async function refreshConfig() {
+    configFailed = false;
+    const result = await loadConfig();
+    loginRequired = authRequired; // read right after the call: see lib/api.ts's authRequired doc
+    if (loginRequired) {
+      appConfig.current = null;
+      return;
+    }
+    if (result) applyConfig(result);
+    appConfig.current = result;
+    configFailed = result === null;
+    // Computed from `result` directly, not the disabledTabs/configUser $derived values, which may not have
+    // repropagated within the tick that wrote appConfig.current. No unread count for a tab the nav hides, nor
+    // for an identity not granted "requests": that 403 would be swallowed by loadRequests() but not before
+    // accessWatch's wrapper permanently flipped the "your access changed" banner for an employee who never
+    // lost access.
+    const user = extractConfigUser(result);
+    if (result && !result.ui.disabledTabs.includes("requests") && hasTabAccess("requests", user)) {
+      refreshUnread();
+    }
+  }
+
+  onMount(refreshConfig);
+
+  // LoginScreen's onLoggedIn: a fresh login invalidates what accessWatch tracked about the previous session
+  // (revoked banner, sessionExpired notice). Reset both before re-running the boot flow, or a stale
+  // sessionExpired would bounce the new session back to LoginScreen on the next request; they otherwise clear
+  // only via resetAccessRevoked() or a full reload.
+  function handleLoggedIn() {
+    resetAccessRevoked();
+    refreshConfig();
+  }
+
+  // POST /api/logout (server/auth.go) clears the session cookie; location.reload() re-runs boot, which lands
+  // on LoginScreen (the next GET /api/config 401s). Best-effort: reloading lands on LoginScreen even if the
+  // request fails. The sidebar sign-out control: an Access sign-in has no printpaca session, so it leaves
+  // through Cloudflare's logout URL (a full navigation); everything else uses POST /api/logout.
+  const signOut = $derived(signOutAction(configUser, config?.authEnabled === true));
+
+  function signOutNow() {
+    if (signOut?.kind === "access") location.assign(signOut.href);
+    else void logout();
+  }
+
+  async function logout() {
+    try {
+      await fetch("api/logout", { method: "POST", signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS) });
+    } catch {
+      /* best effort, see doc above */
+    }
+    location.reload();
+  }
+
+  // The print dialog is driven from QuoteTab, which may be unmounted when it closes; clear the job here at
+  // the root on afterprint, the one event that fires for both printed and canceled.
+  function clearPrintJob() {
+    printJob.current = null;
+    invoicePrintJob.current = null;
+  }
+
+  function isTextEntryTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
+  }
+
+  // Ctrl+S/Cmd+S (no Shift/Alt) is scoped to the Quote tab: it triggers HistoryPanel's primary save action
+  // and always preventDefaults, even in the label input; the action no-ops when saving isn't possible
+  // (saveRowDisabled). "/" focuses the tab's own list filter (#quotes-filter, #clients-filter or
+  // #invoices-filter); with none rendered it is a silent no-op. Ignored while focus is in a text field,
+  // select or contenteditable, or any modifier is held.
+  function handleGlobalKeydown(e: KeyboardEvent) {
+    if (tab === "quote" && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      quoteActions.save?.();
+      return;
+    }
+    if (e.key !== "/" || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    const filterId =
+      tab === "quotes" ? "quotes-filter" : tab === "clients" ? "clients-filter" : tab === "invoices" ? "invoices-filter" : null;
+    if (!filterId) return;
+    if (isTextEntryTarget(e.target)) return;
+    const filterInput = document.getElementById(filterId);
+    if (!(filterInput instanceof HTMLInputElement)) return; // filter not rendered: silent no-op
+    e.preventDefault();
+    filterInput.focus();
+  }
+
+  // Sidebar sections, grouped by where a tab sits in the shop's lifecycle (sell vs. run the shop), with a
+  // header per group (null = ungrouped tail). One nav for every viewport: below 900px .sidebar is a slide-in
+  // drawer, the same markup. "guide" is absent on purpose: it is reached from the sidebar footer link (in the
+  // drawer too), so it stays reachable at every width; #/guide remains a valid Tab and deep link.
+  const NAV_SECTIONS: { label: string | null; items: Tab[] }[] = [
+    { label: "Sell", items: ["quote", "quotes", "requests", "invoices", "items", "clients", "dashboard"] },
+    { label: "Shop", items: ["filament", "electricity", "printers"] },
+    { label: null, items: ["settings"] },
+  ];
+  // Disabled tabs drop out here (filterNavSections also drops a section header once its items are gone);
+  // "quote" and "settings" are never in disabledTabs (server/config.go rejects both), so no section can fully
+  // empty. Union'd with ungrantedTabs (permissions.ts) so an employee's nav hides ungranted grantable tabs;
+  // "settings" is never grantable, so it stays for every authenticated user (SettingsTab decides what an
+  // employee sees).
+  const navHidden = $derived(new Set([...disabledTabs, ...ungrantedTabs(Object.keys(TABS) as Tab[], configUser)]));
+  const navSections = $derived(filterNavSections(NAV_SECTIONS, navHidden));
+
+  // Catches every other way the app sits on a tab it shouldn't: the initial resolution ran before config
+  // loaded, a settings save disabled the open tab, or the landing tab isn't granted. replaceState (not
+  // activate()) throughout, so it neither fights the data-loss confirm() nor pushes a spurious history entry.
+  $effect(() => {
+    if (!config) return;
+    const disabledFallback = fallbackIfDisabled(tab, disabledTabs, "quote");
+    if (disabledFallback !== tab) {
+      tab = disabledFallback;
+      tabExplicit = false;
+      persistTab(disabledFallback);
+      history.replaceState(null, "", TABS[disabledFallback].hash);
+      return;
+    }
+    // config (and so configUser) has resolved and `tab` is on something this identity isn't granted. An
+    // explicit hash navigation keeps the "No access" card; only the default landing (no hash, or a stale
+    // last-visited tab from before a revoked grant) redirects, to the first tab in the filtered nav. With no
+    // target (granted nothing at all) it stays on the "No access" card.
+    if (tabExplicit || hasTabAccess(tab, configUser)) return;
+    const granted = firstNavTab(navSections);
+    if (!granted || granted === tab) return;
+    tab = granted;
+    persistTab(granted);
+    history.replaceState(null, "", TABS[granted].hash);
+  });
+
+  const spoolmanEnabled = $derived(appConfig.current?.integrations.spoolman === true);
+  const moonrakerConfigured = $derived(appConfig.current?.moonraker === true);
+  const versionLabel = $derived(appConfig.current?.version ? `printpaca ${appConfig.current.version}` : "printpaca dev");
+  // DEMO_MODE=1 server-side (server/main.go), a plain field on the loaded config like authEnabled.
+  const demoMode = $derived(config?.demoMode === true);
+
+  // demoLocal.svelte.ts is inert until this runs, so the non-demo app never touches localStorage or the DOM
+  // through it. Gated on demoMode alone; initDemoLocal() is idempotent, so real work happens once.
+  $effect(() => {
+    if (demoMode) initDemoLocal();
+  });
+
+  // The platform doesn't change mid-session, so compute once. userAgentData.platform (Chromium) is preferred,
+  // falling back to navigator.platform (Safari/Firefox); it names the modifier that triggers HistoryPanel's
+  // save.
+  const isMac = (
+    (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ??
+    navigator.platform ??
+    ""
+  )
+    .toUpperCase()
+    .includes("MAC");
+  const shortcutMod = isMac ? "Cmd" : "Ctrl";
+
+  // Empty when Moonraker/Fluidd isn't configured (fluiddUrl returns "" for a null config or no fluiddUrl);
+  // the sidebar link renders only when non-empty.
+  const fluiddHref = $derived(fluiddUrl(config));
+</script>
+
+<svelte:window onhashchange={syncTabFromHash} onafterprint={clearPrintJob} onkeydown={handleGlobalKeydown} />
+
+{#snippet brand(showName: boolean)}
+  <div class="brand">
+    <img class="logo" src={logoUrl} alt="" />
+    {#if showName}<p class="brand-name">printpaca</p>{/if}
+  </div>
+{/snippet}
+
+{#snippet navButton(id: Tab, collapsed: boolean)}
+  <button
+    type="button"
+    class:active={tab === id}
+    aria-current={tab === id ? "page" : undefined}
+    title={collapsed ? TABS[id].label : undefined}
+    aria-label={collapsed ? TABS[id].label : undefined}
+    onclick={() => activate(id)}
+  >
+    <Icon path={TABS[id].icon} />
+    <span class="label">{TABS[id].label}</span>
+    {#if id === "requests" && unreadRequests.count > 0}
+      <span class="unread-pill">{unreadRequests.count}<span class="visually-hidden"> unread requests</span></span>
+    {/if}
+  </button>
+{/snippet}
+
+{#snippet sectionedNav(collapsed: boolean)}
+  {#each navSections as section, i (i)}
+    {#if section.label && !collapsed}
+      <div class="section-label nav-section-label">{section.label}</div>
+    {/if}
+    {#each section.items as id (id)}
+      {@render navButton(id, collapsed)}
+    {/each}
+  {/each}
+{/snippet}
+
+{#if loginRequired || accessWatch.sessionExpired}
+  <LoginScreen onLoggedIn={handleLoggedIn} notice={accessWatch.sessionExpired ? SESSION_EXPIRED_NOTICE : undefined} />
+{:else}
+<a class="skip-link" href="#main" onclick={skipToMain}>Skip to content</a>
+
+{#if demoMode}
+  <!-- Shell-level, rendered once here instead of inside each per-tab branch of <main>. The server already
+       rejects every write in demo mode (server/auth.go's demoWriteGuard); this banner only sets
+       expectations and gates no nav item or button. -->
+  <p class="banner-muted demo-banner" role="status" inert={drawerOpen && !isDesktop} onwheel={forwardWheelToMain}>
+    Read-only demo. Changes are disabled and nothing is saved.
+    <!-- Cosmetic per-browser display prefs only (demoLocal.svelte.ts): nothing reaches the server and
+         neither select gates any nav item or button. -->
+    <span class="demo-controls">
+      <select
+        class="demo-control"
+        aria-label="Theme"
+        value={demoLocal.theme}
+        onchange={(e) => setDemoTheme(e.currentTarget.value as ThemeChoice)}
+      >
+        <option value="system">System</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+      <select
+        class="demo-control"
+        aria-label="Currency"
+        title="Display only. Amounts aren't converted."
+        value={demoLocal.currency ?? ""}
+        onchange={(e) => setDemoCurrency((e.currentTarget.value || null) as CurrencyPresetId | null)}
+      >
+        <option value="">Demo default</option>
+        {#each CURRENCY_PRESET_OPTIONS as opt (opt.id)}
+          <option value={opt.id}>{opt.label}</option>
+        {/each}
+      </select>
+      <!-- User mode: presentation only. Switches whether the Users card, the Account card's multi-user
+           parts and attribution lines show, backed by the demo's seeded employees. Never gates a nav
+           item, route or write; the server blocks every write in demo mode regardless. -->
+      <select
+        class="demo-control"
+        aria-label="User mode"
+        title="Display only. It doesn't change which account you can sign in as."
+        value={demoLocal.userMode}
+        onchange={(e) => setDemoUserMode(e.currentTarget.value as UserModeChoice)}
+      >
+        <option value="single">User mode: single</option>
+        <option value="multi">User mode: multi</option>
+      </select>
+    </span>
+  </p>
+{/if}
+
+<header inert={drawerOpen && !isDesktop}>
+  <!-- Mobile-only top bar (hidden >=900px): the hamburger opens .sidebar as a drawer instead of this
+       header carrying a second copy of the nav. aria-controls names the drawer; aria-expanded mirrors
+       drawerOpen. -->
+  <button
+    type="button"
+    class="hamburger"
+    aria-expanded={drawerOpen}
+    aria-controls="app-drawer"
+    aria-label={drawerOpen ? "Close menu" : "Open menu"}
+    bind:this={hamburgerEl}
+    onclick={toggleDrawer}
+  >
+    <Icon path={mdiMenu} />
+    {#if unreadRequests.count > 0}
+      <!-- Decorative dot, not a count: the drawer shows the real number on the Requests nav button once
+           opened; this only says "something's waiting". -->
+      <span class="hamburger-badge" aria-hidden="true"></span>
+    {/if}
+  </button>
+  {@render brand(true)}
+</header>
+
+{#if drawerOpen}
+  <!-- Dismiss backdrop: in the DOM only while open, behind the drawer's z-index but above everything
+       else, including the sticky demo banner. -->
+  <button type="button" class="drawer-backdrop" aria-label="Close menu" onclick={closeDrawer}></button>
+{/if}
+
+<aside
+  id="app-drawer"
+  class="sidebar"
+  class:collapsed={sidebarCollapsed}
+  class:open={drawerOpen}
+  bind:this={asideEl}
+  onwheel={forwardWheelToMain}
+  inert={!isDesktop && !drawerOpen}
+>
+  {@render brand(!navCollapsed)}
+  <nav class="side-nav" aria-label="Sections">
+    {@render sectionedNav(navCollapsed)}
+    {#if fluiddHref}
+      <!-- Link-only, never proxied (server/main.go validates FLUIDD_URL at startup but never fetches it):
+           a plain external anchor styled like the buttons above, with the open-in-new icon marking it
+           external. Reachable at every width, as part of the same drawer. -->
+      <a
+        class="nav-external"
+        href={fluiddHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={navCollapsed ? "Fluidd (opens in a new tab)" : undefined}
+        aria-label="Fluidd (opens in a new tab)"
+        onclick={closeDrawer}
+      >
+        <Icon path={mdiOpenInNew} />
+        <span class="label">Fluidd</span>
+      </a>
+    {/if}
+  </nav>
+  <div class="sidebar-footer">
+    <!-- Only configured integrations get a line; an unconfigured one is status the owner already knows
+         and never acts on here. Renders nothing when neither is configured. -->
+    {#if spoolmanEnabled}
+      <div class="integration-line" title={navCollapsed ? "Spoolman configured" : undefined}>
+        <span class="dot ok" aria-hidden="true"></span>
+        {#if !navCollapsed}<span>Spoolman configured</span>{:else}<span class="visually-hidden">Spoolman configured</span>{/if}
+      </div>
+    {/if}
+    {#if moonrakerConfigured}
+      <div class="integration-line" title={navCollapsed ? "Moonraker configured" : undefined}>
+        <span class="dot ok" aria-hidden="true"></span>
+        {#if !navCollapsed}<span>Moonraker configured</span>{:else}<span class="visually-hidden">Moonraker configured</span>{/if}
+      </div>
+    {/if}
+    {#if !navCollapsed}
+      {#if !disabledTabs.has("guide")}
+        <button
+          type="button"
+          class="guide-footer-link"
+          class:active={tab === "guide"}
+          aria-current={tab === "guide" ? "page" : undefined}
+          onclick={() => activate("guide")}
+        >Guide</button>
+      {/if}
+      {#if signOut}
+        <button type="button" class="guide-footer-link" onclick={signOutNow}>{signOut.label}</button>
+      {/if}
+      <div class="version-line">{versionLabel}</div>
+      <!-- {shortcutMod}+S does something only on the New quote tab (handleGlobalKeydown gates it on tab
+           === "quote"); advertising it elsewhere trained users to press a no-op. The "/" filter works only on
+           the Quotes, Clients, and Invoices lists, so it is listed only there. -->
+      {#if ["quotes", "clients", "invoices"].includes(tab) || tab === "quote"}
+        <div class="shortcuts-line">Shortcuts: {["quotes", "clients", "invoices"].includes(tab) ? "/ filter" : ""}{tab === "quote" ? `${shortcutMod}+S save` : ""}</div>
+      {/if}
+    {:else}
+      {#if !disabledTabs.has("guide")}
+        <button type="button" class="guide-footer-icon" aria-label="Guide" onclick={() => activate("guide")}>
+          <Icon path={mdiBookOpenVariant} size={16} />
+        </button>
+      {/if}
+      {#if signOut}
+        <button type="button" class="guide-footer-icon" aria-label={signOut.label} onclick={signOutNow}>
+          <Icon path={mdiLogout} size={16} />
+        </button>
+      {/if}
+    {/if}
+    {#if isDesktop}
+      <!-- Icon-only collapsing is a desktop concept: below 900px the drawer is near full width (see
+           navCollapsed), where icons would save no space and the toggle would be one more control to
+           explain. -->
+      <button
+        type="button"
+        class="collapse-toggle"
+        aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        onclick={toggleSidebar}
+      >
+        <Icon path={sidebarCollapsed ? mdiChevronRight : mdiChevronLeft} size={16} />
+        {#if !sidebarCollapsed}<span>Collapse sidebar</span>{/if}
+      </button>
+    {/if}
+  </div>
+</aside>
+
+<main class="app-main" id="main" tabindex="-1" inert={drawerOpen && !isDesktop} aria-label={TABS[tab].label} bind:this={mainEl}>
+  {#if accessWatch.revoked}
+    <!-- Global 403 handling: a permission that worked just answered 403 (accessWatch.svelte.ts), most
+         likely because an admin revoked a grant or turned multi-user mode off mid-session. Reloading
+         re-runs the boot flow (LoginScreen if the session died, else a fresh /api/config). Rendered above
+         every other state, even a stale configFailed. -->
+    <div class="card banner-warn" role="alert">
+      <p>Your access changed. Reload the page to pick up your current permissions.</p>
+      <button type="button" onclick={() => location.reload()}>Reload</button>
+    </div>
+  {/if}
+  {#if configFailed}
+    <div class="card banner-error" role="alert">
+      <p>Couldn't load configuration from the server. Check that printpaca's backend is running.</p>
+      <button onclick={refreshConfig}>Retry</button>
+    </div>
+  {:else if !config}
+    <p>Loading…</p>
+  {:else if !hasTabAccess(tab, configUser)}
+    <!-- Direct hash navigation (or a stale last-visited tab) onto a tab this identity isn't granted gets
+         a "no access" note: not a blank page, and never a silent redirect (a disabled tab gets that,
+         being a config choice the visitor had no part in). The nav never links here (navHidden), so
+         reaching it means a hand-edited address bar, a bookmark predating a revoked grant, or a shared
+         link. -->
+    <div class="card banner-warn" role="alert">
+      <h2>No access</h2>
+      <p>You don't have access to the {TABS[tab].label} page. Ask an admin to grant it to you.</p>
+    </div>
+  {:else if tab === "guide"}
+    <GettingStarted />
+  {:else if tab === "quote"}
+    <QuoteTab cfg={config} />
+  {:else if tab === "quotes"}
+    <QuotesTab cfg={config} user={configUser} />
+  {:else if tab === "electricity"}
+    <ElectricityTab cfg={config} />
+  {:else if tab === "filament"}
+    <FilamentTab cfg={config} />
+  {:else if tab === "printers"}
+    <PrintersTab />
+  {:else if tab === "clients"}
+    <ClientsTab cfg={config} />
+  {:else if tab === "invoices"}
+    <InvoicesTab cfg={config} />
+  {:else if tab === "items"}
+    <ItemsTab cfg={config} />
+  {:else if tab === "requests"}
+    <RequestsTab cfg={config} onOpenInQuote={() => activate("quote")} onOpenInvoice={() => activate("invoices")} />
+  {:else if tab === "dashboard"}
+    <DashboardTab cfg={config} />
+  {:else}
+    <SettingsTab />
+  {/if}
+
+  <footer>
+    <span>printpaca, an open-source 3D print cost and quote calculator.</span>
+  </footer>
+</main>
+
+{#if printJob.current && config}
+  <PrintView
+    cfg={config}
+    order={printJob.current.order}
+    mode={printJob.current.mode}
+    meta={printJob.current.meta}
+  />
+{:else if invoicePrintJob.current && config}
+  <InvoicePrintView cfg={config} invoice={invoicePrintJob.current} />
+{/if}
+{/if}
+
+<style>
+  :global(#app) {
+    min-height: 100vh;
+    /* Containing block for every position:absolute descendant (skip-link, .visually-hidden labels/inputs).
+     * Without it, one escaping #app lays out outside its box; at >=900px (#app is 100vh + overflow:hidden)
+     * its extent still counts toward documentElement.scrollHeight, so a wheel over the sidebar scrolls the
+     * whole grid shell off-screen. */
+    position: relative;
+  }
+
+  /* Hidden until focused (Tab from a fresh load lands here first); a high z-index and on-brand background
+   * keep it legible over the header. */
+  .skip-link {
+    position: absolute;
+    top: -3rem;
+    left: 0.5rem;
+    z-index: 200;
+    padding: 0.5rem 1rem;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    border-radius: var(--radius);
+    transition: top 0.15s ease;
+  }
+  .skip-link:focus {
+    top: 0.5rem;
+  }
+
+  /* Edge-to-edge strip, not an inset card like .banner-muted's other callers: no radius, centered text,
+   * sticky to the viewport top. At >=900px it becomes its own grid row above "side main", which pins it
+   * without position:sticky (harmless to leave set). */
+  .demo-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem var(--space-2);
+    border-radius: 0;
+    border-width: 0 0 1px;
+    text-align: center;
+    position: sticky;
+    top: 0;
+    z-index: 150;
+  }
+  /* Wraps under the banner text at narrow widths instead of squeezing or overflowing; .demo-banner's
+   * flex-wrap handles the reflow, so no breakpoint is needed. */
+  .demo-controls {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.4rem;
+  }
+  /* Overrides the app-wide select { min-height: 44px } (a class beats a type selector): the banner is a
+   * thin strip, so its controls read as compact inline pickers (like button.quiet's --tap-sm). */
+  .demo-control {
+    min-height: var(--tap-sm);
+    padding: 0 var(--space-2);
+    font-size: var(--text-xs);
+  }
+
+  header {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 0.5rem; }
+  .brand .brand-name { font-size: 1.25rem; font-weight: 700; margin: 0; }
+  .logo { height: 40px; width: auto; display: block; }
+
+  /* Mobile top bar's menu button. position: relative anchors .hamburger-badge; min-width matches the global
+   * `button { min-height: 44px }` for a square tap target. */
+  .hamburger {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    border: none;
+    background: none;
+    border-radius: var(--radius);
+    color: var(--text);
+    flex-shrink: 0;
+  }
+  .hamburger:hover { background: var(--surface-2); }
+  /* Decorative badge over the menu glyph's corner, in the same accent as navButton's unread-pill in the
+   * drawer it opens (see the hamburger markup for why it is a dot). */
+  .hamburger-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  /* Backdrop behind the open drawer: covers and dims the viewport, above everything (including the sticky
+   * demo banner's z-index: 150) but below the drawer (z-index: 200). A <button>, so it is a real, labeled,
+   * keyboard-reachable control. */
+  .drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 199;
+    border: none;
+    padding: 0;
+    background: rgb(0 0 0 / 45%);
+  }
+
+  .side-nav { display: flex; flex-direction: column; gap: 0.15rem; margin-top: 0.5rem; overflow-y: auto; }
+  .side-nav button, .side-nav a.nav-external { width: 100%; }
+  /* Fluidd's external link: same box model and spacing as the nav buttons (shares their
+   * border-left/padding/gap rules), plus a text-decoration reset since it is an <a>. */
+  .side-nav a.nav-external {
+    color: var(--text);
+    text-decoration: none;
+  }
+  .side-nav a.nav-external:hover { color: var(--accent-text); }
+  .side-nav button, .side-nav a.nav-external {
+    /* A transparent 3px border-left reserves the active indicator's space on every button, so activating
+     * one doesn't shift the icon and label. */
+    border: none; border-left: 3px solid transparent;
+    background: none; padding: 0.4rem 0.8rem 0.4rem calc(0.8rem - 3px); border-radius: var(--radius);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .side-nav button.active {
+    background: var(--surface-2);
+    font-weight: 600;
+    border-left: 3px solid var(--accent);
+  }
+
+  .unread-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.1rem;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
+  }
+
+  /* Group headers ("Sell", "Shop") in the one nav, at every width. Hidden only when the sidebar is
+   * collapsed to icons on desktop (navCollapsed/sectionedNav); the drawer never collapses. */
+  .nav-section-label {
+    padding: var(--space-3) var(--space-2) var(--space-1);
+  }
+  .nav-section-label:first-child { padding-top: 0; }
+
+  /* 1280px, not the viewport: past roughly this width a card becomes a band with its contents stranded at
+   * one end (summary stats, list names, a drop zone's one line). The Guide already capped its measure for
+   * this reason; this applies the cap to every tab. Below ~1500px viewports nothing changes. */
+  main { max-width: 1280px; margin: 0 auto; padding: 1rem clamp(1rem, 2vw, 2rem); }
+  /* theme.css's global :focus-visible outline draws outside the element (outline-offset: 2px); #app clips
+   * overflow, so on <main> (the skip-link target and scroll container) it gets cut into a stray partial
+   * line. Pull the ring inward. */
+  #main:focus-visible { outline-offset: -2px; }
+  /* Lives inside <main> as its last child, not a separate grid row: content ends where it ends and the
+   * footer follows, instead of a fixed row pinning it to the viewport bottom with a void above on short
+   * pages. The top border/margin separate it. No max-width or horizontal margin of its own: it's already
+   * inside <main>'s, and adding them would double the indent versus every card. */
+  footer {
+    margin-top: 1.5rem;
+    padding: 1rem 0;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: var(--text-xs);
+  }
+
+  /* Sidebar shell below 900px: the same markup the >=900px block turns into a pinned column is a fixed,
+   * full-height drawer hidden off the left edge (translateX(-100%)) until .open slides it in. Scoped to
+   * this one media query, not an unscoped base rule the >=900px block overrides, so none of it reaches the
+   * >=900px layout. */
+  @media (max-width: 899.98px) {
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      inset-block: 0;
+      left: 0;
+      width: min(280px, 85vw);
+      z-index: 200;
+      padding: 1rem 0.75rem;
+      gap: 0.5rem;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+      transform: translateX(-100%);
+      transition: transform 0.2s ease;
+    }
+    .sidebar.open { transform: translateX(0); }
+  }
+  @media (max-width: 899.98px) and (prefers-reduced-motion: reduce) {
+    .sidebar { transition: none; }
+  }
+
+  /* Background scroll lock while the drawer is open (see the $effect toggling this class): the window
+   * scrolls below 900px, so this is the one place that needs it, and the drawer can't open above 900px
+   * (an effect on isDesktop closes it on resize). */
+  @media (max-width: 899.98px) {
+    :global(body.drawer-open) { overflow: hidden; }
+  }
+
+  .sidebar-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: auto;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+  }
+  /* Named .integration-line, not .status-line: theme.css's .status-line is the shared live-region class
+   * (verifying…, saving…), and this static Spoolman dot + text isn't a live region, so reusing the name
+   * would be a collision. */
+  .integration-line {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--muted);
+    font-size: var(--text-xs);
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+  .dot.ok { background: var(--ok); }
+  /* Accent-colored and underlined, unlike the muted status lines around it, so it reads as an actionable
+   * link. align-self: flex-start sizes the click target to its text (sidebar-footer is a column flex
+   * container, where buttons stretch); min-height brings the target nearer a reasonable tap size. */
+  .guide-footer-link {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    border: none;
+    background: none;
+    padding: 0;
+    text-align: left;
+    color: var(--accent-text);
+    text-decoration: underline;
+    font-size: var(--text-xs);
+    cursor: pointer;
+  }
+  .guide-footer-link:hover { color: var(--text); }
+  /* The same "this is where you are" affordance as the nav buttons (.side-nav button.active), adapted for a
+   * text link: bold weight and solid --text color instead of a background fill, which would look out of
+   * place on this thin footer link. */
+  .guide-footer-link.active {
+    font-weight: 700;
+    color: var(--text);
+  }
+  /* Collapsed-sidebar counterpart: same destination, icon-only like the nav buttons' collapsed treatment,
+   * since there is no room for a text link. */
+  .guide-footer-icon {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .guide-footer-icon:hover { color: var(--text); }
+  .version-line { color: var(--muted); font-size: var(--text-xs); }
+  .shortcuts-line { color: var(--muted); font-size: var(--text-xs); }
+  .collapse-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    align-self: flex-start;
+    border: none;
+    background: none;
+    padding: 0.3rem 0.4rem;
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-size: var(--text-xs);
+  }
+  .collapse-toggle:hover { color: var(--text); }
+
+  @media (min-width: 900px) {
+    header { display: none; }
+    /* Fixed height (not min-height) so the shell never grows past the viewport and never scrolls; <main> is
+     * the one scrolling region, so the sidebar (grid-area: side) stays viewport-pinned however tall a page
+     * gets. A single row: the page footer lives inside <main> as ordinary content, directly after the tab's
+     * content. */
+    :global(#app) {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      /* "banner" is its own row above "side main", so the demo banner sits pinned above both sidebar and
+       * main, outside main's scroll region. Sized "auto": with no banner (demoMode false) it collapses to 0
+       * height. */
+      grid-template-areas: "banner banner" "side main";
+      grid-template-rows: auto 1fr;
+      height: 100vh;
+      overflow: hidden;
+    }
+    /* Print undo for the grid above. theme.css's @media print block also sets #app { display: block; ... },
+     * but component styles bundle after theme.css, so at >=900px this grid rule would win under print and
+     * auto-place #print-view into the "side" column (a squeezed half-width printout). The undo must live
+     * here, after the grid declaration, to win the cascade; values mirror theme.css's print block. */
+    @media print {
+      :global(#app) {
+        display: block;
+        height: auto;
+        overflow: visible;
+      }
+    }
+    .demo-banner {
+      grid-area: banner;
+    }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      grid-area: side;
+      width: 220px;
+      padding: 1rem 0.75rem;
+      gap: 0.5rem;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      /* 100% of the grid row, NOT 100vh: with the demo banner rendered the "side main" row is viewport
+       * height minus the banner, so a 100vh sidebar overflows it. #app's overflow:hidden clips that
+       * visually but leaves programmatic scroll range, so scrollIntoView (guide anchor jumps) scrolled #app
+       * and shoved the banner off-screen. */
+      height: 100%;
+      overflow: hidden;
+    }
+    .sidebar.collapsed { width: 64px; padding: 1rem 0.5rem; }
+    .sidebar.collapsed .brand { justify-content: center; }
+    /* .side-nav's base rule (shared with the drawer) already has overflow-y: auto, so the nav list scrolls
+     * internally when it outgrows the viewport, keeping the footer below it reachable; nothing is added
+     * here. */
+    .sidebar.collapsed .side-nav button, .sidebar.collapsed .side-nav a.nav-external { justify-content: center; padding: 0.4rem; }
+    .sidebar.collapsed .label { display: none; }
+    /* The scrolling region: everything taller than the viewport (the tab's content, then the page footer)
+     * scrolls inside <main> instead of the page, which keeps the sidebar pinned. width: 100% matters: main
+     * is a grid item with auto inline margins, which override the default stretch and shrink-wrap it to its
+     * content's max-content width; a definite width restores full-width pages while max-width: 1280px still
+     * caps and centers it. */
+    main { grid-area: main; overflow-y: auto; width: 100%; }
+  }
+</style>

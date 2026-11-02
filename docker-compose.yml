@@ -1,0 +1,107 @@
+# Shared by printpaca and cloudflared: each is a single static binary that
+# writes nothing outside its declared volume and needs no Linux capabilities.
+x-hardening: &hardening
+  # printpaca writes only under CONFIG_DIR, which is the ./config bind mount
+  # and stays writable regardless of read_only.
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+x-logging: &logging
+  # The default json-file driver grows unbounded on the host.
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  printpaca:
+    # Builds from source by default, tagged printpaca:latest locally.
+    build: .
+    image: printpaca:latest
+    # To run the published image instead, comment out build: and image: above
+    # and use this line, then `docker compose pull && docker compose up -d`.
+    # Pin a release tag (skilledalpaca/printpaca:vX.Y.Z) to control upgrades.
+    # image: skilledalpaca/printpaca:latest
+    # Loopback only by default. One port serves everything: the customer front
+    # door at /, the shop at /order, and the admin app under /admin/. With no
+    # ADMIN_PASSWORD set, the server generates a password on first start,
+    # stores it in ./config/admin-password, and logs it once. Set
+    # ADMIN_PASSWORD below to choose your own; an empty value disables
+    # authentication (not recommended, see docs/configuration.md#authentication).
+    #
+    # Use the LAN alternative to reach the container from other devices, but
+    # only after you set or confirm a password: it publishes on every
+    # interface. PUBLIC_PORT, if you set it, needs its own entry here (for
+    # example "8081:8081"), or that customer-only listener is unreachable
+    # from outside the container.
+    ports:
+      - "127.0.0.1:8080:8080"
+      # - "8080:8080"   # LAN-wide alternative
+    # A bind mount, so data survives `docker compose down` and recreation.
+    # The image runs as uid 65532 (see the Dockerfile's gobuild stage) and has
+    # no shell to chown, so ./config must be owned by 65532:65532 before the
+    # first `up`: mkdir -p ./config && sudo chown 65532:65532 ./config
+    # Otherwise the server exits at start (it probes CONFIG_DIR for
+    # writability) and crash-loops under restart: unless-stopped.
+    volumes:
+      - ./config:/config
+    restart: unless-stopped
+    # THIS BLOCK (128m/0.5 cpu/128 pids, plus GOMEMLIMIT=112MiB in the
+    # Dockerfile) is the canonical resource budget. It is mirrored in:
+    #   - Dockerfile: ENV GOMEMLIMIT=112MiB
+    #   - packaging/unraid/printpaca.xml: <ExtraParams> (--memory/--cpus/--pids-limit)
+    #   - docker-compose.demo.yml: the same block
+    # Change one, change all, and keep GOMEMLIMIT at about 85-90% of the cap so
+    # the Go runtime frees memory before the OOM killer acts. memswap_limit
+    # equal to mem_limit disables swap.
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
+    pids_limit: 128
+    <<: [*hardening, *logging]
+    # Every variable is optional; docs/configuration.md#environment-variables
+    # lists them all. PORT, CONFIG_DIR, and DEMO_MODE are omitted: the first
+    # two have image defaults this file assumes in ports: and volumes:.
+    # environment:
+    #   - ADMIN_PASSWORD=your-password-here   # unset: a random one is generated; empty disables auth (unsafe)
+    #   - ALLOWED_HOSTS=        # every hostname that reaches PORT, comma-separated; covers public paths too and is enforced even with auth disabled
+    #   - ADMIN_TRUST_PROXY=1   # behind a TLS-terminating reverse proxy or the tunnel; see docs/configuration.md
+    #   - CF_ACCESS_TEAM=       # with CF_ACCESS_AUD, enables Cloudflare Access; see docs/cloudflare-tunnel.md
+    #   - CF_ACCESS_AUD=        # the Access application's 64-character Application Audience (AUD) Tag
+    #   - CF_ACCESS_REQUIRE_PASSWORD=1  # optional: also require the printpaca password after Access
+    #   - SPOOLMAN_URL=         # base URL of a Spoolman instance, for example http://spoolman.local:7912
+    #   - MOONRAKER_URL=        # base URL of a Moonraker instance, for example http://printer.local:7125
+    #   - FLUIDD_URL=           # link-only: shows a Fluidd link in the sidebar, for example http://printer.local
+    #   - SMTP_PASSWORD=        # password for smtp.username in config.yaml
+    #   - PUBLIC_PORT=          # optional customer-only listener, never serves /admin/ (add a ports: entry unless the tunnel is the path)
+    #   - PUBLIC_TRUST_PROXY=1  # PUBLIC_PORT only: behind one proxy that appends the client IP to X-Forwarded-For
+
+  # Optional Cloudflare Tunnel (recommended for remote access):
+  #   docker compose --profile tunnel up -d
+  # Needs CF_TUNNEL_TOKEN (environment or a .env file kept out of version
+  # control). Point one public hostname at http://printpaca:8080 over the
+  # compose network, and add the hostname to ALLOWED_HOSTS. Protect the path
+  # /admin with a Cloudflare Access application and set CF_ACCESS_TEAM and
+  # CF_ACCESS_AUD; with a password only, /admin/ is reachable through the
+  # tunnel and the password is the only lock. Set ADMIN_TRUST_PROXY=1 while
+  # this profile runs: otherwise every visitor shares one rate-limit bucket
+  # keyed on cloudflared's address. See docs/cloudflare-tunnel.md.
+  #
+  # TUNNEL_TOKEN uses plain interpolation, not ${VAR:?message}: Compose
+  # interpolates every service before applying --profile, so a required
+  # variable would break plain `docker compose up` too.
+  cloudflared:
+    # Pinned to a release tag, not :latest, for reproducibility. To update,
+    # find a newer tag on https://hub.docker.com/r/cloudflare/cloudflared/tags
+    # whose digests match :latest (`docker manifest inspect`), then bump it.
+    image: cloudflare/cloudflared:2026.8.3
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
+    depends_on:
+      - printpaca
+    restart: unless-stopped
+    <<: [*hardening, *logging]

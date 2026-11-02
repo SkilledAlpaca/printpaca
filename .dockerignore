@@ -1,0 +1,32 @@
+# Deny-by-default build context: only what the Dockerfile's COPY lines need
+# reaches the daemon (not config/, which can hold a developer's live
+# printpaca.db, nor .claude/ or .github/). Keep this allowlist in sync with
+# the Dockerfile's COPY commands.
+*
+!package.json
+!package-lock.json
+!tsconfig.base.json
+!vitest.config.ts
+!THIRD_PARTY_NOTICES.md
+!web
+!server
+# Fixtures the in-image tests read: testdata, and the config JSON Schema for
+# the schema-drift test. config/ is otherwise excluded.
+!testdata
+# local-only real-world slicer files; never commit
+testdata/*.gcode
+testdata/*.3mf
+testdata/*.stl
+!config/config.schema.json
+
+# Generated output and dependency trees that the build recreates itself.
+**/node_modules
+web/dist
+server/embedded/dist/assets
+
+# Backups, restores, and demo data the docs create beside config/; they hold
+# the database and admin password. The allowlist above already excludes them;
+# this keeps them out if a pattern is ever loosened.
+config-backup-*
+config-broken
+demo-config

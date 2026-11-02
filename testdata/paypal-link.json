@@ -1,0 +1,15 @@
+[
+  { "name": "handle only, no currency code", "handle": "yourshop", "code": "", "decimals": 2, "status": "sent", "balanceCents": 4250, "expected": "https://paypal.me/yourshop" },
+  { "name": "with currency code, 2 decimals", "handle": "yourshop", "code": "USD", "decimals": 2, "status": "sent", "balanceCents": 4250, "expected": "https://paypal.me/yourshop/42.50USD" },
+  { "name": "whole amount keeps decimals", "handle": "yourshop", "code": "EUR", "decimals": 2, "status": "sent", "balanceCents": 10000, "expected": "https://paypal.me/yourshop/100.00EUR" },
+  { "name": "no thousands grouping", "handle": "yourshop", "code": "USD", "decimals": 2, "status": "sent", "balanceCents": 123456789, "expected": "https://paypal.me/yourshop/1234567.89USD" },
+  { "name": "0 decimals rounds half up", "handle": "yourshop", "code": "JPY", "decimals": 0, "status": "sent", "balanceCents": 4250, "expected": "https://paypal.me/yourshop/43JPY" },
+  { "name": "0 decimals rounds down", "handle": "yourshop", "code": "JPY", "decimals": 0, "status": "sent", "balanceCents": 4249, "expected": "https://paypal.me/yourshop/42JPY" },
+  { "name": "3 decimals", "handle": "yourshop", "code": "KWD", "decimals": 3, "status": "sent", "balanceCents": 4250, "expected": "https://paypal.me/yourshop/42.500KWD" },
+  { "name": "sub-unit balance", "handle": "yourshop", "code": "USD", "decimals": 2, "status": "sent", "balanceCents": 5, "expected": "https://paypal.me/yourshop/0.05USD" },
+  { "name": "draft invoices still get a link", "handle": "yourshop", "code": "USD", "decimals": 2, "status": "draft", "balanceCents": 100, "expected": "https://paypal.me/yourshop/1.00USD" },
+  { "name": "zero balance has no block", "handle": "yourshop", "code": "USD", "decimals": 2, "status": "paid", "balanceCents": 0, "expected": "" },
+  { "name": "overpaid has no block", "handle": "yourshop", "code": "USD", "decimals": 2, "status": "paid", "balanceCents": -500, "expected": "" },
+  { "name": "canceled has no block", "handle": "yourshop", "code": "USD", "decimals": 2, "status": "canceled", "balanceCents": 4250, "expected": "" },
+  { "name": "empty handle has no block", "handle": "", "code": "USD", "decimals": 2, "status": "sent", "balanceCents": 4250, "expected": "" }
+]

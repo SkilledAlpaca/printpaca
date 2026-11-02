@@ -1,0 +1,579 @@
+:root {
+  /* Derived from the alpaca logo's own palette (see the comment inside web/src/assets/alpaca-logo.svg):
+   * cream ground, dark-brown ink, rim-orange accent. --danger/--warn/--ok are semantic colors with no logo
+   * source; they're picked to sit in the same warm family instead. */
+  --bg: #fff5dc;
+  --surface: #fffbef;
+  --surface-2: #f6e8c4;
+  --text: #43281f;
+  --muted: #915e43;
+  --accent: #e06020;
+  --accent-contrast: #2b1710;
+  /* Accent-hued text color: --accent itself only clears ~3.5:1 against --surface (fine for the non-text
+   * uses contrast.test.ts checks it for -- borders, the focus ring -- but not for body text at 4.5:1). Same
+   * orange family, darkened until small/regular-weight text on it passes; see contrast.test.ts for the
+   * enforced ratio. */
+  --accent-text: #9c4212;
+  --border: #e6d3a8;
+  --danger: #b5361f;
+  --warn: #8f5d17;
+  --ok: #4f6b3a;
+  --radius: 10px;
+  --shadow: 0 1px 3px rgb(59 47 36 / 0.12);
+
+  /* Tells the UA which palette to render its OWN widgets in: the select dropdown popup, number-input
+   * spinners, the file picker, scrollbars, and the default focus ring. Without it those stay light-themed
+   * while the page below is dark (the dark block re-declares it). */
+  color-scheme: light;
+  /* Checkbox/radio fills. Native controls otherwise paint the UA's default blue, the one color on screen
+   * that isn't from the logo palette above. */
+  accent-color: var(--accent);
+
+  /* Spacing scale, 0.25rem base: every gap/padding/margin added by the restyle picks one of these instead
+   * of an ad-hoc value. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  /* Below the app-wide 44px tap target on purpose: dense secondary controls (table row actions, the
+   * settings jump nav) already sit in tight rows where a 44px target would itself crowd the row. Opted into
+   * explicitly by button.quiet, never the app-wide default. */
+  --tap-sm: 32px;
+
+  /* Type scale: page title, section heading, body, small/meta. */
+  --text-xs: 0.75rem;
+  --text-sm: 0.85rem;
+  --text-base: 1rem;
+  --text-lg: 1.15rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  /* Long-form prose measure (Guide page, CardHelp's help text), in ch rather than rem: ch tracks the font's
+   * own average character width, so the reading-width target stays right even if the type scale above
+   * changes later. Separate from .measure-cap's 44rem below, which caps tabular/list content instead of
+   * prose. */
+  --measure-prose: 68ch;
+
+  /* Card border derived from --border/--surface via color-mix: reads as a finer hairline than the 1px solid
+   * --border tables/rows use, without a new literal color. color-mix reads the *computed* values of its
+   * inputs, so this one formula tracks both light and dark automatically; no separate dark-scheme override
+   * needed (verified: Chrome 111+, Safari 16.2+, Firefox 113+ all support relative color-mix, and this is a
+   * self-hosted LAN app with no legacy-browser requirement). */
+  --card-border: color-mix(in srgb, var(--border) 70%, var(--surface));
+}
+/* Tri-state theme: no attribute follows the OS preference (media query below); an explicit choice
+ * (demo-local only -- see web/src/lib/demoLocal.svelte.ts) sets data-theme on <html> and wins over the OS
+ * preference either way. :not([data-theme="light"]) lets an explicit light choice beat a dark OS
+ * preference; the [data-theme="dark"] block below is the mirror case, needed because prefers-color-scheme
+ * can't be overridden from inside its own media query. The two dark token blocks MUST stay byte-identical
+ * -- edit both or neither. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141414;
+    --surface: #1e1e1e;
+    --surface-2: #292929;
+    --text: #ececec;
+    --muted: #a3a3a3;
+    --accent: #f1b750;
+    --accent-contrast: #292929;
+    /* Already high-contrast against --surface/--bg, so no extra darkening needed here the way the light
+     * scheme's --accent-text is; kept as its own token (rather than components reading --accent directly
+     * for text) so both schemes go through the same var name. */
+    --accent-text: #f1b750;
+    --border: #3a3a3a;
+    --danger: #e07a5f;
+    --warn: #d9b45c;
+    --ok: #9ab87f;
+    --shadow: 0 1px 3px rgb(0 0 0 / 0.4);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141414;
+  --surface: #1e1e1e;
+  --surface-2: #292929;
+  --text: #ececec;
+  --muted: #a3a3a3;
+  --accent: #f1b750;
+  --accent-contrast: #292929;
+  /* Already high-contrast against --surface/--bg, so no extra darkening needed here the way the light
+   * scheme's --accent-text is; kept as its own token (rather than components reading --accent directly for
+   * text) so both schemes go through the same var name. */
+  --accent-text: #f1b750;
+  --border: #3a3a3a;
+  --danger: #e07a5f;
+  --warn: #d9b45c;
+  --ok: #9ab87f;
+  --shadow: 0 1px 3px rgb(0 0 0 / 0.4);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+h1, h2, h3 { line-height: 1.2; }
+/* One scale for the two heading levels components actually use: page title (h1) and card/section heading
+ * (h2), each with a bottom margin on the 0.25rem spacing scale (no top margin: vertical rhythm between
+ * sections comes from the parent's own gap/padding, not stacked margins). Components that want a smaller
+ * in-card heading (h3) keep setting their own size; there's no single right size for every h3 use, unlike
+ * h1/h2. A component that needs a different heading margin (e.g. a heading sharing a flex row with a
+ * button) overrides it locally, and that more-specific rule wins. */
+h1 { font-size: var(--text-xl); margin: 0 0 var(--space-4) 0; }
+h2 { font-size: var(--text-lg); margin: 0 0 var(--space-3) 0; }
+h3 { font-size: var(--text-base); margin: 0 0 var(--space-2) 0; }
+/* App-wide anchor color: without this, a bare <a> (CardHelp's "More in the guide" link, RequestsTab's
+ * email/download links) renders the UA default link blue, which fails contrast against the dark scheme's
+ * --bg/--surface. Underline stays the UA default; only color is set here. Components that need a different
+ * treatment (e.g. App.svelte's .skip-link) set their own color, which wins on specificity over this element
+ * selector. */
+a { color: var(--accent-text); }
+input, select, button, textarea {
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) / 2);
+  padding: 0.4rem 0.6rem;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Boxy controls draw the focus ring just INSIDE their own border box: the outward ring protrudes 4px per
+ * side, and .field-rows stacks rows with no row gap, so a focused control's ring would be overdrawn by the
+ * next row's box. Nothing in the UI may overlap a neighbor except a deliberate popout (the row menus,
+ * dropdowns), so the ring shrinks rather than the layout growing. Same exclusion list as the 44px
+ * tap-target rule below: a 2px inset ring inside a native checkbox/radio glyph would cover the mark itself,
+ * and those sit inside labels with room for the outward ring anyway. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+  outline-offset: -2px;
+}
+/* 44px tap target, app-wide. Checkbox/radio/range/file keep native sizing; their clickable area comes from
+ * a wrapping label instead. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+select,
+button {
+  min-height: 44px;
+}
+button.primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+  cursor: pointer;
+}
+button { cursor: pointer; }
+button:disabled { opacity: 0.5; cursor: default; }
+
+/* Dense secondary controls (table row actions, jump nav, HistoryPanel's save-row buttons) share one hover
+ * (--surface-2 fill) and nothing else. No underline: every quiet control's hover is identical. */
+button.quiet {
+  min-height: var(--tap-sm);
+  font-size: var(--text-sm);
+  padding: 0 var(--space-2);
+}
+/* color: var(--text) is required, not cosmetic: button.quiet inherits whatever ambient text color its
+ * context set (often --muted), and --muted only clears ~4.44:1 against --surface-2 in light, below the
+ * 4.5:1 floor. --text clears it comfortably; see contrast.test.ts's button.quiet hover assertion, which
+ * checks exactly this pairing. */
+button.quiet:hover { background: var(--surface-2); color: var(--text); }
+/* Without this, the hover rule above (0,2,1) would strip button.danger's (0,1,1) red from armed delete
+ * confirms exactly while the pointer is on them. --danger clears 4.5:1 on --surface-2 in both schemes;
+ * asserted in contrast.test.ts. */
+button.quiet.danger:hover { color: var(--danger); }
+
+button.danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* Base field: stacked label-above-control. This is also what the public quote page
+ * (public/PublicQuotePage.svelte, which imports this same stylesheet) renders as-is, since it is
+ * intentionally mobile-first single-column and must not change. The row layout below is scoped to .app-main
+ * (App.svelte's <main>, the admin app's tab content) so it never reaches the public page. */
+.field { display: flex; flex-direction: column; gap: 0.15rem; }
+/* Most field rows use a <span> for the row label (LabeledNumber, the Printer/Material selects below); the
+ * compound print-time field (QuoteTab.svelte) uses a real <label for> instead, so it gets an explicit
+ * programmatic association with its hours input, and needs the same look applied to both element types. */
+.field > span,
+.field > label {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+input.warn, textarea.warn { border-color: var(--danger); }
+.warn-text { display: block; color: var(--danger); font-size: var(--text-xs); }
+
+/* Admin app fields: label-left, control-right rows instead of the stacked layout above. */
+.app-main .field {
+  display: grid;
+  grid-template-columns: minmax(7rem, 13rem) minmax(0, 24rem);
+  align-items: center;
+  column-gap: 0.75rem;
+  row-gap: 0.15rem;
+}
+/* Label text hugs its control; the fixed column keeps the boxes themselves aligned across rows. */
+.app-main .field > span,
+.app-main .field > label {
+  text-align: right;
+  justify-self: end;
+}
+/* Admin field labels read at --text contrast rather than --muted: at --text-sm they're the smallest text on
+ * the page, and --muted only clears ~5:1 against --surface, so the two together sat close to the 4.5:1
+ * floor. --text (~13:1) removes the margin question entirely. Both element types a label can be (see the
+ * .field > span, .field > label comment above): the compound print-time field uses a real <label for>,
+ * everything else uses <span>, and both need the same color or the print-time row alone would read dimmer
+ * than its siblings. */
+.app-main .field > span,
+.app-main .field > label {
+  color: var(--text);
+}
+.app-main .field input,
+.app-main .field select,
+.app-main .field textarea {
+  width: 100%;
+}
+.app-main .field textarea {
+  grid-column: 2;
+}
+.app-main .warn-text {
+  grid-column: 2;
+}
+/* Textarea fields (payment instructions, terms, public-quote intro text): full-width row with a wider
+ * control column than the default 24rem cap, since 5 rows of wrapped prose reads worse squeezed to the
+ * standard field width. */
+.app-main .field.field-textarea {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(7rem, 13rem) minmax(0, 42rem);
+}
+
+/* Numeric controls are sized to what they hold, not to the control column: a quantity, a percentage, or a
+ * rate is at most a handful of digits, and a 24rem-wide box around "2" reads as an unfinished layout rather
+ * than a deliberate one. The column itself is unchanged, so boxes still start on the same left edge row to
+ * row; they just stop stretching to fill it. Scoped to .field so the inputs inside settings tables
+ * (.table-scroll td input, which are their own column grid) keep their full-cell width. */
+.app-main .field input[type="number"] {
+  max-width: 14rem;
+}
+/* Same idea for the handful of text fields with an equally short domain (the currency symbol): opt-in per
+ * call site, since most text fields (names, emails, URLs) genuinely want the full control column. */
+.app-main .field.field-narrow input {
+  max-width: 8rem;
+}
+
+/* Opt-out: toolbar-style pickers where a wide label/control row would be wrong keep the compact stacked
+ * layout at any width. Compound .field.field-inline selectors, so this wins over .app-main .field on
+ * specificity rather than relying on source order. */
+.field-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.app-main .field.field-inline {
+  display: flex;
+  flex-direction: column;
+  /* Not inherited from .app-main .field: that rule's align-items: center centers the *grid row's* label
+   * against its control, but re-read as a column flex container's cross-axis alignment here it shrink-wraps
+   * the label and centers it over the control -- which silently defeated the text-align: left /
+   * justify-self: start below (a label span only left-aligns within a box spanning the row). */
+  align-items: stretch;
+  gap: 0.15rem;
+}
+.app-main .field.field-inline > span {
+  text-align: left;
+  justify-self: start;
+}
+.app-main .field.field-inline input,
+.app-main .field.field-inline select {
+  max-width: none;
+}
+.app-main .field.field-inline .warn-text {
+  grid-column: auto;
+}
+
+/* Phones: collapse admin field rows back to the stacked layout. */
+@media (max-width: 600px) {
+  .app-main .field {
+    grid-template-columns: 1fr;
+  }
+  .app-main .field > span,
+  .app-main .field > label {
+    text-align: left;
+    justify-self: start;
+  }
+  .app-main .warn-text {
+    grid-column: auto;
+  }
+  .app-main .field-hint {
+    grid-column: auto;
+  }
+  /* .app-main .field textarea's base grid-column: 2 (desktop's control column) is never reset here either:
+   * left alone, it pins the textarea to an explicit second column that no longer exists once the field
+   * collapses to one, and the grid responds by fabricating an implicit column sized to the textarea instead
+   * of actually stacking it. */
+  .app-main .field textarea {
+    grid-column: auto;
+  }
+  /* .app-main .field.field-textarea (0-3-0 specificity) otherwise outranks the single-column .app-main
+   * .field rule above at this width, keeping its wider two-column grid-template-columns and stranding the
+   * textarea in a narrow second column. */
+  .app-main .field.field-textarea {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Form-grid wrapper standardized across components (SettingsTab, ClientsTab, InvoicesTab's editor grids,
+ * ElectricityTab, FilamentTab, QuoteTab's tile grids, PricingPanel): always a multi-column grid, the same
+ * layout the dashboard already used unconditionally. Readonly display grids (.readonly-grid) and tables are
+ * a separate class and unaffected by this rule. */
+.app-main .field-rows {
+  display: grid;
+  /* min(100%, ...) keeps the 24rem floor from overflowing narrow phone viewports (the row can never ask for
+   * more than its own width). max() floors each column at 24rem so a row can't get so narrow that the
+   * label/control ratio breaks down; 25% of the row's width is the 4-column share, so above that floor
+   * columns divide evenly up to 4 and shrink-to-fit (via auto-fit) below it as the page narrows. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(24rem, calc(25% - 0.6rem))), 1fr));
+  column-gap: 0.8rem;
+}
+
+/* Page skeleton every tab wraps its content in: one top-level rhythm (banner, card, form) instead of each
+ * tab picking its own gap. h1's own bottom margin (set above) is redundant once .page supplies that
+ * spacing, so it's zeroed here rather than removed from the base h1 rule, which
+ * public/PublicQuotePage.svelte still relies on outside any .page. */
+.page { display: flex; flex-direction: column; gap: var(--space-6); }
+.page > h1 { margin: 0; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  /* Named onto the spacing scale. */
+  padding: clamp(var(--space-4), 1.2vw, var(--space-6));
+}
+/* A left border is the severity marker, not a full red card, since the danger classification here is "this
+ * section has a destructive action in it," not "this section is itself an error." */
+.card.danger-border { border-left: 3px solid var(--danger); }
+/* Roomier padding for wide settings-page cards: the base .card padding (tuned for compact tiles/rows) reads
+ * cramped once a card is a full-width settings section with several field rows. */
+.card.roomy { padding: clamp(var(--space-5), 1.4vw, var(--space-8)); }
+
+/* Small uppercase letter-spaced label: sidebar section headers, card section titles ("Bill to"), stat tile
+ * captions. */
+.section-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+/* Measure cap: long-form tabular/list content (breakdown table, pricing output) capped to a comfortable
+ * reading width even inside a wide card, instead of stretching to fill whatever multi-column track it
+ * landed in. */
+.measure-cap { max-width: 44rem; }
+.measure-cap-prose { max-width: var(--measure-prose); }
+
+/* Shared table baseline: header row, row hover, right-aligned money columns. Components still own their own
+ * column widths/wrapping; this only normalizes the parts that should look identical everywhere a table
+ * appears (breakdown, invoice lines, payments, dashboard chart axis excluded since it's SVG, settings
+ * rows). */
+table { width: 100%; border-collapse: collapse; }
+td, th { padding: 0.45rem 0.4rem; border-top: 1px solid var(--border); text-align: left; }
+thead th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+tbody tr:hover { background: var(--surface-2); }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Shared classes */
+
+/* .banner-warn / .banner-error: distinguish a recoverable/informational failure (server unavailable) from
+ * one that blocks the page and offers its own Retry action. Both use the input/button radius, not the card
+ * radius: they read as inline notices, not as cards (banner-error still pairs with .card in markup for
+ * callers that want a full card treatment). */
+.banner-warn {
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: calc(var(--radius) / 2);
+  padding: var(--space-2) 0.6rem;
+  font-size: var(--text-sm);
+  margin: 0;
+}
+.banner-warn p { margin: 0; }
+.banner-error {
+  border-color: var(--danger);
+  color: var(--danger);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.banner-error p { margin: 0; }
+/* Same box as .banner-warn, muted colors, for an informational (not warn/error) notice. */
+.banner-muted {
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) / 2);
+  padding: var(--space-2) 0.6rem;
+  font-size: var(--text-sm);
+  margin: 0;
+}
+.banner-muted p { margin: 0; }
+
+.errors {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--danger);
+  border-radius: calc(var(--radius) / 2);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+/* Shared live-region status line (verifying…, saving…). min-height reserves space for the eventual message
+ * so its arrival doesn't shift the layout under it. */
+.status-line { font-size: var(--text-sm); color: var(--muted); min-height: 1.4em; }
+
+/* Severity split: field validation and anything blocking uses --danger (.warn-text, defined above).
+ * Everything informational but non-blocking -- a config change that might explain a mismatch, a hint that a
+ * price wasn't set -- uses --warn via .advisory-text instead, so a component's severity choice is visible
+ * at the call site rather than buried in which token got passed to one generic class. Declared AFTER
+ * .status-line so that an element co-applying both classes gets the warn color: both are single-class
+ * selectors, so source order decides. No current call site co-applies them (FilamentTab escapes with a
+ * two-class override instead), but the order makes that composition work for the next caller without a
+ * per-component escape. */
+.advisory-text { color: var(--warn); font-size: var(--text-sm); }
+
+.empty-state { color: var(--muted); font-size: var(--text-sm); padding: var(--space-3) 0; }
+
+.pill {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  padding: 0.1rem var(--space-2);
+}
+
+/* The 0.6rem gap is purely visual rhythm: chips are buttons, so their focus ring draws inside the chip (see
+ * the inset :focus-visible rule above) and needs no clearance. */
+.chips { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.chips button { border-radius: 999px; padding: 0.25rem 0.8rem; font-size: var(--text-sm); }
+.chips button.active { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
+
+.head-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+/* Grid variant for a head row that also carries a CardHelp: CardHelp's help-note sets grid-column: 1 / -1
+ * on itself so it lands on its own full-width row under the heading, which the flex variant above can't
+ * give it. */
+.head-row.with-help {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.head-row.with-help h2 { margin: 0; }
+
+/* position: relative so absolutely positioned descendants (a table header's .visually-hidden label) are
+ * clipped by the scroller instead of widening the page: without it, the Quotes ledger scrolled the whole
+ * page sideways on a phone. */
+.table-scroll { overflow-x: auto; margin-top: var(--space-2); position: relative; }
+/* :not(checkbox/radio): the 100%/6rem sizing is for the text and number boxes that fill an editable table
+ * cell. Applied to a checkbox it stretches the control itself to ~6rem wide while its 13px mark stays
+ * centered inside that box, which is why the "Public" checkbox on Materials/Items sat well to the right of
+ * the column heading it belongs to. */
+.table-scroll td input:not([type="checkbox"]):not([type="radio"]) { width: 100%; min-width: 6rem; }
+
+.plain-list { list-style: none; margin: 0; padding: 0; }
+
+/* Restores a top margin on the margin-less shared blocks above; the two-class selector outranks their
+ * margin: 0. */
+.plain-list.space-above,
+.banner-warn.space-above { margin-top: 0.4rem; }
+
+/* Selected-row highlight (a "this is the one currently loaded" signal, e.g. HistoryPanel's saved-quote
+ * list): accent left border plus the same --surface-2 fill rows already use on hover, so a selected row
+ * reads as a persistent version of the hover state instead of a different signal. The row's own base li/tr
+ * rule needs a matching 3px transparent border-left reserved ahead of time -- without it, gaining this
+ * class shifts the row's content 3px sideways. Consumers with Svelte-scoped row rules must ALSO re-declare
+ * the accent locally (see HistoryPanel and ClientsTab): their scoped transparent reservation outranks this
+ * unscoped rule, so border-left-color here only reaches unscoped consumers. */
+.active-row { border-left-color: var(--accent); background: var(--surface-2); }
+
+/* Checkbox-row treatment. */
+.toggle { display: flex; align-items: center; gap: var(--space-2); cursor: pointer; min-height: 44px; }
+
+/* Muted, nowrap suffix text beside an input. */
+.suffix { color: var(--muted); font-size: var(--text-sm); white-space: nowrap; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.readonly-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.6rem; margin-bottom: 0.6rem; }
+/* min-width: 0 lets a cell shrink below its value's intrinsic (unbroken) width instead of overflowing into
+ * the next column; overflow-wrap wraps that value (a long email is the common case) onto a second line once
+ * it no longer fits, scoped to readonly-grid's own value span so .lbl and other grids are unaffected. */
+.readonly-grid div { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.readonly-grid div span:last-child { overflow-wrap: anywhere; }
+.lbl { font-size: var(--text-sm); color: var(--muted); }
+
+.status-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+
+/* Top margin matches InvoicesTab's shape; a component that doesn't want it can override locally. */
+.form-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-3); }
+
+.field-hint { display: block; grid-column: 2; color: var(--muted); font-size: var(--text-xs); }
+
+/* Card-level muted subtitle under an h2; RequestsTab's verification-card hint uses a different margin for a
+ * different context and stays local. */
+.hint { color: var(--muted); font-size: var(--text-sm); margin: 0.2rem 0 0.6rem; }
+
+.subcard { border-top: 1px solid var(--border); padding-top: var(--space-3); margin-top: var(--space-3); }
+.subcard:first-of-type { border-top: none; padding-top: 0; margin-top: 0.6rem; }
+.subhead { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem; }
+.subhead h3 { margin: 0; font-size: var(--text-base); }
+
+@media print {
+  /* Portrait with a modest margin for both print views this stylesheet covers (PrintView.svelte's
+   * quote/cost-audit and InvoicePrintView.svelte's invoice, distinguished by #print-view's own class -- see
+   * each component's root element): neither ever needs landscape, and the UA default margin (~0.4in/~10mm
+   * in Chromium) crowds the header band's two-column layout and the totals block's right alignment. */
+  @page { size: portrait; margin: 12mm; }
+  /* #print-view renders as a sibling of header/aside/main at the App root (not nested inside them); hide
+   * the app chrome outright. visibility:hidden would leave blank trailing pages (hidden elements still
+   * reserve layout height), and position:absolute with inset:0 would clip multi-page internal audits to one
+   * viewport. */
+  /* Direct children of the mount node only; PrintView's own <header> lives inside #print-view and must stay
+   * visible on the printed page. The page footer isn't listed here: it lives inside <main>
+   * (App.svelte), so hiding #app > main already hides it too. Hide every other direct child by exclusion
+   * (not enumeration) so a future root-level sibling -- e.g. the demo banner, skip-link, or
+   * drawer-backdrop, all of which are direct children of #app -- can't reintroduce this same gap. */
+  #app > *:not(#print-view) { display: none; }
+  /* Wide paper (landscape) can satisfy the >=900px query, where #app is a grid; a grid-item #print-view
+   * would get auto-placed into a content-sized track. Force normal flow for print. Also undoes that same
+   * query's height:100vh/overflow:hidden (added so <main> can scroll internally on screen while the sidebar
+   * stays pinned): print has no sidebar to pin (it's already display:none above) and a multi-page printed
+   * audit must be free to grow past one viewport height instead of being clipped to it. */
+  #app { display: block; height: auto; overflow: visible; }
+  #print-view { display: block; }
+}

@@ -1,0 +1,29 @@
+node_modules/
+web/dist/
+server/embedded/dist/assets/
+server/printpaca
+e2e/test-results/
+*.log
+
+# Local runtime state dropped into config/ (a printpaca.db, config.yaml) is
+# never committed; the tracked reference files are re-allowed below.
+config/*
+!config/config.example.yaml
+!config/config.schema.json
+
+# Backups, restores, and demo data the docs create beside config/; they hold
+# the database and admin password.
+/config-backup-*/
+/config-broken/
+/demo-config/
+
+# Local editor tooling; never shipped.
+.claude/
+
+# docker compose env file holding live secrets such as CF_TUNNEL_TOKEN.
+.env
+
+# local-only real-world slicer files; never commit
+testdata/*.gcode
+testdata/*.3mf
+testdata/*.stl

@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>printpaca</Name>
+  <Repository>skilledalpaca/printpaca:latest</Repository>
+  <Registry>https://hub.docker.com/r/skilledalpaca/printpaca</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/SkilledAlpaca/printpaca/issues</Support>
+  <Project>https://github.com/SkilledAlpaca/printpaca</Project>
+  <!-- UID/GID 65532 (referenced in Overview and the Config description
+       below) is set by the image; see the Dockerfile's gobuild stage for
+       why 65532 and the source of truth for that number. -->
+  <Overview>printpaca is a self-hosted 3D-print cost and quote calculator. The container serves everything on port 8080: the admin UI at /admin/ for managing quotes, invoices, clients, and settings, and the customer front door at / with the shop at /order. An optional customer-only listener (set PUBLIC_PORT and map port 8081) serves the same customer pages without the admin interface.&#10;&#10;Requirements: the image runs as UID/GID 65532 and cannot chown its own files. Unraid creates the appdata folder below owned by root when you add this container, so before starting it for the first time, run this on the Unraid host:&#10;chown 65532:65532 /mnt/user/appdata/printpaca&#10;Skipping this step makes the container exit immediately on every start, since it refuses to run against a data directory it can't write to.&#10;&#10;This image is built FROM scratch. It contains the printpaca binary, a CA bundle, THIRD_PARTY_NOTICES.md, and an empty /config directory, and nothing else, so it has no shell, and the Console button in the Unraid UI won't work. See packaging/unraid/README.md in the repository for details and both install routes.</Overview>
+  <Category>Tools:Utilities Productivity:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/admin/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/SkilledAlpaca/printpaca/main/packaging/unraid/printpaca.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/SkilledAlpaca/printpaca/main/packaging/unraid/printpaca.png</Icon>
+  <!-- Resource caps (memory, memory-swap, cpus, pids-limit flags below)
+       mirror docker-compose.yml's mem_limit/cpus/pids_limit block, the
+       canonical statement of this budget: change one, change all; see
+       that file's comment for the full list of mirror sites and the
+       GOMEMLIMIT rule. -->
+  <ExtraParams>--read-only --cap-drop=ALL --security-opt no-new-privileges:true --memory=128m --memory-swap=128m --cpus=0.5 --pids-limit=128</ExtraParams>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="WebUI Port" Target="8080" Default="8080" Mode="tcp" Description="TCP port for the web UI: the customer front door at / and the admin UI at /admin/ (also used by the WebUI link above)." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="Public Quote Port" Target="8081" Default="8081" Mode="tcp" Description="TCP port for the optional customer-only listener (front door and shop, never the admin UI). Only served once PUBLIC_PORT below is set to a value (for example 8081); change this if you remap the host port." Type="Port" Display="always" Required="false" Mask="false">8081</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/printpaca" Mode="rw" Description="Persistent data: config.yaml, the SQLite database, and uploaded files. Must be owned by UID/GID 65532 before the first start. See the Requirements note in the description above." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/printpaca</Config>
+  <Config Name="ADMIN_PASSWORD" Target="ADMIN_PASSWORD" Default="" Mode="" Description="Required. Sets the password for the admin UI login. printpaca's own default when this is unset is to generate a random password and log it once on first start, which requires checking container logs to retrieve and which is easy to miss on Unraid, so this template requires you to set your own password instead. To disable authentication entirely (not recommended), edit the container's environment variables after install and set this to an explicitly empty value." Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="PUBLIC_PORT" Target="PUBLIC_PORT" Default="" Mode="" Description="Optional. Set to 8081 to start the customer-only listener inside the container, matching the Public Quote Port mapping above. Leave empty if you only want the main port." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="ALLOWED_HOSTS" Target="ALLOWED_HOSTS" Default="" Mode="" Description="Comma-separated hostnames the main port (8080) accepts in the Host header, for the admin UI and the customer pages alike, in addition to IP literals and localhost. List every hostname that reaches port 8080, such as a reverse-proxy or Cloudflare Tunnel hostname. Leave empty if you only use the server's IP address." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="ADMIN_TRUST_PROXY" Target="ADMIN_TRUST_PROXY" Default="" Mode="" Description="Advanced. Set to 1 only when a single reverse proxy that terminates TLS sits in front of port 8080 and forwards X-Forwarded-Proto and X-Forwarded-For. Leave empty for a directly exposed container." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="PUBLIC_TRUST_PROXY" Target="PUBLIC_TRUST_PROXY" Default="" Mode="" Description="Advanced. Set to 1 only when a single reverse proxy sits in front of the customer-only port and forwards X-Forwarded-For. Leave empty for a directly exposed container." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="SMTP_PASSWORD" Target="SMTP_PASSWORD" Default="" Mode="" Description="Optional. Password for the SMTP username set in Settings. It is never stored in config.yaml, and changing it requires restarting the container. Leave empty if you do not send email from printpaca." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="SPOOLMAN_URL" Target="SPOOLMAN_URL" Default="" Mode="" Description="Optional. Base URL of a Spoolman instance, for example http://spoolman.local:7912 (the scheme is required). Adds a spool picker to the New quote page. You can also set it on the Settings page." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="MOONRAKER_URL" Target="MOONRAKER_URL" Default="" Mode="" Description="Optional. Base URL of a Moonraker instance, for example http://printer.local:7125 (the scheme is required). Adds a recent-prints picker to the New quote page. You can also set it on the Settings page." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="FLUIDD_URL" Target="FLUIDD_URL" Default="" Mode="" Description="Optional. Adds a Fluidd link to the sidebar, for example http://printer.local. The link opens in a new tab and printpaca never sends anything to it. You can also set it on the Settings page." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="CF_ACCESS_TEAM" Target="CF_ACCESS_TEAM" Default="" Mode="" Description="Optional. Your Cloudflare Zero Trust team name (myteam, myteam.cloudflareaccess.com, or https://myteam.cloudflareaccess.com). Set it together with CF_ACCESS_AUD to reach /admin/ through Cloudflare Access. Setting only one of the two stops the container at startup." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="CF_ACCESS_AUD" Target="CF_ACCESS_AUD" Default="" Mode="" Description="Optional. The Cloudflare Access application's Application Audience (AUD) tag, 64 hexadecimal characters. Set it together with CF_ACCESS_TEAM." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="CF_ACCESS_REQUIRE_PASSWORD" Target="CF_ACCESS_REQUIRE_PASSWORD" Default="" Mode="" Description="Optional. Set to 1 to require the printpaca password on top of a valid Cloudflare Access token. Leave empty or 0 to make Access the login. Any other value stops the container at startup." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+</Container>

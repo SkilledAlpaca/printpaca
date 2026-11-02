@@ -1,0 +1,7 @@
+# Blank issues are off so every report comes through a template. See
+# SECURITY.md for private vulnerability disclosure.
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability privately
+    url: https://github.com/SkilledAlpaca/printpaca/security/advisories/new
+    about: Use private vulnerability reporting for a security issue. Don't file it as a public issue.

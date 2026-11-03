@@ -340,3 +340,44 @@ func TestOptionSummaryDelta(t *testing.T) {
 		}
 	}
 }
+
+// setOptionImage reports found=false and writes nothing when the option (or item) is gone, which is what
+// the upload handler sees when a PUT removed the option after its first check.
+func TestSetOptionImageNotFoundWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+	mux, db := newTestMuxWithDB(t, dir)
+	it := mustCreateItem(t, mux, twoGroupItem)
+	store := newItems(db, dir)
+	var before string
+	if err := db.QueryRow(`SELECT option_groups_json || updated_at FROM items WHERE id = ?`, it.ID).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ item, opt string }{{it.ID, "o_gone"}, {"nope", it.OptionGroups[0].Options[0].ID}} {
+		old, found, err := store.setOptionImage(c.item, c.opt, "aaaaaaaaaaaaaaaa.png", "tester")
+		if err != nil || found || old != "" {
+			t.Errorf("setOptionImage(%q, %q) = %q, %v, %v; want not found", c.item, c.opt, old, found, err)
+		}
+	}
+	var after string
+	if err := db.QueryRow(`SELECT option_groups_json || updated_at FROM items WHERE id = ?`, it.ID).Scan(&after); err != nil || after != before {
+		t.Errorf("row changed on a not-found write: %v", err)
+	}
+	// The transaction was released: the single connection still serves queries.
+	if rec := putItem(t, mux, it.ID, twoGroupItem); rec.Code != http.StatusOK {
+		t.Errorf("PUT after not-found write: %d", rec.Code)
+	}
+}
+
+// An upload for a missing option stores no file.
+func TestOptionImageUploadNotFoundLeavesNoFile(t *testing.T) {
+	dir := t.TempDir()
+	mux := newTestMux(t, dir)
+	it := mustCreateItem(t, mux, twoGroupItem)
+	if rec := uploadOptionImage(mux, it.ID, "o_gone", testPNG(t, color.RGBA{9, 9, 9, 255})); rec.Code != http.StatusNotFound {
+		t.Fatalf("upload to missing option: %d", rec.Code)
+	}
+	entries, _ := os.ReadDir(filepath.Join(dir, "uploads", "items"))
+	if len(entries) != 0 {
+		t.Errorf("files left behind: %v", entries)
+	}
+}

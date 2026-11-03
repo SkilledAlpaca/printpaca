@@ -345,9 +345,14 @@ func scanItem(row interface{ Scan(...any) error }) (Item, error) {
 	return it, nil
 }
 
+// rowQuerier is the QueryRow half of *sql.DB and *sql.Tx, so getItem runs on either.
+type rowQuerier interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
 // getItem loads one item by id; package-level so the public gallery handlers can use it.
 // Returns (Item{}, false, nil) when no row matches.
-func getItem(db *sql.DB, id string) (Item, bool, error) {
+func getItem(db rowQuerier, id string) (Item, bool, error) {
 	row := db.QueryRow(`SELECT `+itemColumns+` FROM items WHERE id = ?`, id)
 	it, err := scanItem(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -653,7 +658,15 @@ func (it *items) writeItem(w http.ResponseWriter, id string) {
 // setOptionImage sets (or, with file "", clears) the photo of option optionID on item id and returns the
 // file it replaced. found is false when the item or option does not exist.
 func (it *items) setOptionImage(id, optionID, file, by string) (old string, found bool, err error) {
-	item, ok, err := getItem(it.db, id)
+	// The read and the write share one transaction. The pool is one connection (see openDB), so the
+	// transaction holds it and a concurrent PUT of the item waits instead of interleaving between them;
+	// without that, the PUT's groups would be overwritten by this stale copy, or this imageFile lost.
+	tx, err := it.db.Begin()
+	if err != nil {
+		return "", false, err
+	}
+	defer tx.Rollback()
+	item, ok, err := getItem(tx, id)
 	if err != nil || !ok {
 		return "", false, err
 	}
@@ -670,8 +683,11 @@ func (it *items) setOptionImage(id, optionID, file, by string) (old string, foun
 				return "", false, err
 			}
 			now := time.Now().UTC().Format(time.RFC3339)
-			if _, err := it.db.Exec(`UPDATE items SET option_groups_json = ?, updated_at = ?, updated_by = ? WHERE id = ?`,
+			if _, err := tx.Exec(`UPDATE items SET option_groups_json = ?, updated_at = ?, updated_by = ? WHERE id = ?`,
 				string(groupsJSON), now, by, id); err != nil {
+				return "", false, err
+			}
+			if err := tx.Commit(); err != nil {
 				return "", false, err
 			}
 			return old, true, nil
@@ -718,10 +734,16 @@ func (it *items) handleOptionImageUpload(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	old, _, err := it.setOptionImage(id, optionID, name, identityFor(r).username)
+	old, found, err := it.setOptionImage(id, optionID, name, identityFor(r).username)
 	if err != nil {
 		log.Printf("items option image update: %v", err)
 		http.Error(w, "items not writable", http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		// The item or option was removed between the check above and the write: drop the new file.
+		removeItemImageIfUnshared(it.db, it.configDir, name)
+		writeAPIError(w, http.StatusNotFound, "option not found")
 		return
 	}
 	if old != "" && old != name {

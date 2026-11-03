@@ -500,3 +500,54 @@ func TestItemCreateWithNoContextIdentityStampsAdmin(t *testing.T) {
 		t.Fatalf("createdBy=%q updatedBy=%q, want both %q (identityFor's admin fallback)", created.CreatedBy, created.UpdatedBy, "admin")
 	}
 }
+
+// A PUT carrying the version it loaded succeeds and moves the version on; replaying that stale version is
+// a 409, and a PUT without a version still writes (the list's quick actions and older clients).
+func TestItemPutRejectsStaleVersion(t *testing.T) {
+	mux := newTestMux(t, t.TempDir())
+
+	rec := postItem(t, mux, `{"name":"Benchy","priceCents":1500,"stockMode":"ready_to_print","optionGroups":[]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("POST want 201, got %d %s", rec.Code, rec.Body.String())
+	}
+	var created Item
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Version != 1 {
+		t.Fatalf("new item version = %d, want 1", created.Version)
+	}
+
+	body := func(name string, version string) string {
+		return `{"name":"` + name + `","priceCents":1500,"stockMode":"ready_to_print","optionGroups":[]` + version + `}`
+	}
+	rec = putItem(t, mux, created.ID, body("Tab A", `,"version":1`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first PUT want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+	var updated Item
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.Version != 2 {
+		t.Fatalf("version after PUT = %d, want 2", updated.Version)
+	}
+
+	rec = putItem(t, mux, created.ID, body("Tab B", `,"version":1`))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("stale PUT want 409, got %d %s", rec.Code, rec.Body.String())
+	}
+	if got := getItems(t, mux).Items[0].Name; got != "Tab A" {
+		t.Fatalf("stale PUT must not write; name = %q", got)
+	}
+
+	// A photo upload also moves the version, so a form that predates it is stale.
+	rec = putItem(t, mux, created.ID, body("Tab C", ""))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("versionless PUT want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+	rec = putItem(t, mux, created.ID, body("Tab D", `,"version":2`))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("PUT with version 2 after a versionless write want 409, got %d", rec.Code)
+	}
+}

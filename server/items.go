@@ -32,8 +32,11 @@ const (
 // maxItemOrderQty caps the units of one item in a gallery order (handlePublicItemOrder), backorders included.
 const maxItemOrderQty = 100
 
+// itemConflictMessage is the 409 body for a PUT sent with a stale version.
+const itemConflictMessage = "this item was changed in another tab or by another user; reload to see the latest"
+
 const itemColumns = `id, name, description, price_cents, option_groups_json,
-  image_file, public, stock_mode, stock_qty, allow_backorder, sort_order, created_at, updated_at, created_by, updated_by`
+  image_file, public, stock_mode, stock_qty, allow_backorder, sort_order, created_at, updated_at, created_by, updated_by, version`
 
 // Option group limits.
 const (
@@ -84,6 +87,10 @@ type Item struct {
 	// requests.go's handleStatus stock decrement.
 	CreatedBy string `json:"createdBy"`
 	UpdatedBy string `json:"updatedBy"`
+	// Version counts every write to the row (a trigger from migration 3 bumps it, so photo uploads and
+	// stock decrements count too). A PUT that sends the version it loaded is rejected with 409 when the
+	// row has moved on since.
+	Version int `json:"version"`
 }
 
 // itemInput is the POST/PUT body: Item minus the server-assigned id, image file, and timestamps. Group and
@@ -98,6 +105,8 @@ type itemInput struct {
 	StockQty       int               `json:"stockQty"`
 	AllowBackorder bool              `json:"allowBackorder"`
 	SortOrder      int               `json:"sortOrder"`
+	// Version is the Item.Version the form was loaded with. Optional: a PUT without it skips the check.
+	Version *int `json:"version"`
 }
 
 type items struct {
@@ -328,7 +337,7 @@ func scanItem(row interface{ Scan(...any) error }) (Item, error) {
 	var groupsJSON string
 	if err := row.Scan(&it.ID, &it.Name, &it.Description, &it.PriceCents, &groupsJSON,
 		&it.ImageFile, &it.Public, &it.StockMode, &it.StockQty, &it.AllowBackorder, &it.SortOrder, &it.CreatedAt, &it.UpdatedAt,
-		&it.CreatedBy, &it.UpdatedBy); err != nil {
+		&it.CreatedBy, &it.UpdatedBy, &it.Version); err != nil {
 		return Item{}, err
 	}
 	if err := json.Unmarshal([]byte(groupsJSON), &it.OptionGroups); err != nil {
@@ -432,6 +441,7 @@ func (it *items) handlePost(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:      now,
 		CreatedBy:      by,
 		UpdatedBy:      by,
+		Version:        1,
 	}
 	_, err = it.db.Exec(`
 		INSERT INTO items (id, name, description, price_cents, option_groups_json,
@@ -471,6 +481,10 @@ func (it *items) handlePut(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusNotFound, "item not found")
 		return
 	}
+	if in.Version != nil && *in.Version != existing.Version {
+		writeAPIError(w, http.StatusConflict, itemConflictMessage)
+		return
+	}
 	groups := reconcileOptionGroups(existing.OptionGroups, in.OptionGroups)
 	groupsJSON, err := json.Marshal(groups)
 	if err != nil {
@@ -480,12 +494,14 @@ func (it *items) handlePut(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
+	// The version is checked again in the WHERE so a write landing between the read above and this UPDATE
+	// still loses (0 rows affected, reported as a conflict below).
 	res, err := it.db.Exec(`
 		UPDATE items SET name = ?, description = ?, price_cents = ?, option_groups_json = ?,
 			public = ?, stock_mode = ?, stock_qty = ?, allow_backorder = ?, sort_order = ?, updated_at = ?, updated_by = ?
-		WHERE id = ?`,
+		WHERE id = ? AND version = ?`,
 		in.Name, in.Description, in.PriceCents, string(groupsJSON),
-		in.Public, in.StockMode, in.StockQty, in.AllowBackorder, in.SortOrder, now, identityFor(r).username, id)
+		in.Public, in.StockMode, in.StockQty, in.AllowBackorder, in.SortOrder, now, identityFor(r).username, id, existing.Version)
 	if err != nil {
 		log.Printf("items update: %v", err)
 		http.Error(w, "items not writable", http.StatusInternalServerError)
@@ -498,7 +514,7 @@ func (it *items) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if n == 0 {
-		writeAPIError(w, http.StatusNotFound, "item not found")
+		writeAPIError(w, http.StatusConflict, itemConflictMessage)
 		return
 	}
 

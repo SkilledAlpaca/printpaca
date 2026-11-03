@@ -1,0 +1,50 @@
+name: Accessibility problem
+description: Something in printpaca is hard or impossible to use with a keyboard, a screen reader, or other assistive technology.
+labels: [accessibility]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        printpaca targets WCAG 2.2 Level AA. See [Accessibility](https://github.com/SkilledAlpaca/printpaca/blob/main/docs/accessibility.md) for what is covered and the known limitations. For a security issue, don't open a public issue. Use [private vulnerability reporting](https://github.com/SkilledAlpaca/printpaca/security/advisories/new) instead.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The image tag (for example v1.0.4) or the version in the sidebar footer.
+    validations:
+      required: true
+  - type: input
+    id: page
+    attributes:
+      label: Page or screen
+      description: Where the problem is, for example "admin app, Invoices tab, an open invoice" or "the shop at /order".
+    validations:
+      required: true
+  - type: input
+    id: assistive-technology
+    attributes:
+      label: Assistive technology
+      description: The screen reader, magnifier, voice control, switch device, or keyboard-only use, with its version. Write "none" if you found this without assistive technology.
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and operating system
+      description: For example Firefox 124 on Fedora, or Safari 17.4 on iOS.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+      description: What you expected to happen or hear.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: What happened or what you heard instead, and the steps to reproduce it.
+    validations:
+      required: true

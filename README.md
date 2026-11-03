@@ -14,6 +14,7 @@ To try printpaca with fake data first, [run the demo yourself](docs/demo.md).
 - [Configuration](docs/configuration.md): the Settings tab, `config.yaml`, every environment variable, authentication, the public quote page, and running behind a reverse proxy.
 - [Cloudflare Tunnel](docs/cloudflare-tunnel.md): put printpaca on one real hostname, and protect the admin app with Cloudflare Access. Optional, and recommended for remote access.
 - [Formulas](docs/formulas.md): every cost and pricing formula, with units and assumptions.
+- [Accessibility](docs/accessibility.md): the WCAG 2.2 AA target, how it's tested, keyboard and screen-reader behavior, known limitations, and how to report a problem.
 - [Architecture](docs/architecture.md), [CONTRIBUTING.md](CONTRIBUTING.md), and [SECURITY.md](SECURITY.md) for contributors.
 
 ## Features
@@ -25,7 +26,8 @@ To try printpaca with fake data first, [run the demo yourself](docs/demo.md).
 | Files and integrations | A G-code drop zone reads slicer-reported weight, length, and time from the file (Cura, PrusaSlicer, OrcaSlicer/Bambu, Snapmaker Orca), and estimates weight from STL and 3MF files. Optional Spoolman integration (spool picker, low-material warnings). Optional Moonraker integration (prefill a quote from a completed print's filament use and duration) and a Fluidd sidebar link. Every integration URL is settable from the Settings page or by environment variable, with a Test button. |
 | Business records | Quote history (save, restore, filter, delete, JSON export and import). Printable and exportable quotes with your branding. Client records with a searchable list. Invoices: numbered, status-tracked (draft, sent, paid, canceled), with line items, discounts, and US sales tax, convertible from a saved quote, with lines that can link to gallery items (sending takes in-stock items off the shelf; canceling a sent invoice puts them back), with a printable document and an optional PayPal.me link and QR code. A per-invoice payment register that marks an invoice paid when its balance reaches zero, and a dashboard (revenue this month and year, outstanding balance, overdue count, revenue over time) with a Top items panel (gallery and in-person units, orders, and booked revenue per gallery item over 30, 90, or 365 days, kept when a request is deleted). |
 | Public shop | A public quote page and item gallery: list ready-to-print or fixed-quantity products with images and options, optionally accepting orders beyond stock. Orders land in Requests for review, and stock decrements when you finalize an order. |
-| Interface | A built-in getting-started guide, help text on cost and pricing fields, a dark theme that follows the system preference, mobile navigation, and an installable Progressive Web App (needs HTTPS or `localhost`; it silently no-ops on plain-HTTP LAN deployments). |
+| Interface | A built-in getting-started guide, help text on cost and pricing fields, keyboard and screen-reader support, a dark theme that follows the system preference, mobile navigation, and an installable Progressive Web App (needs HTTPS or `localhost`; it silently no-ops on plain-HTTP LAN deployments). |
+| Accessibility | A WCAG 2.2 Level AA target for the admin app, the sign-in screen, and the customer pages: visible focus, keyboard shortcuts and a skip link, screen-reader announcements and labeled errors, light and dark themes with checked contrast, reduced-motion support, and an axe-core check in CI. See [Accessibility](docs/accessibility.md) for coverage and known limitations. |
 | Operations | Edit the full configuration in the browser; printpaca validates it like `config.yaml` and applies it with no restart. One scratch-based container of about 16 MiB uncompressed rootfs (CI fails the build above 20 MiB; see `scripts/check-image-size.sh`). The compose files cap memory at 128 MiB. |
 
 <table>
@@ -132,7 +134,7 @@ npm test                    # web unit suite (vitest)
 npm run check -w web        # svelte-check
 (cd server && go test ./... -race)   # Go unit suite
 npx playwright install --with-deps chromium  # one-time: browser for npm run e2e
-npm run e2e                  # Playwright end-to-end (builds a real binary, serves on :8099, :9099, and :9199)
+npm run e2e                  # Playwright end-to-end (builds a real binary, starts servers with the main port on :8099, :9099, and :9199 and a customer-only listener beside each on :8098, :9098, and :9198, and runs the axe accessibility gate)
 docker build -t printpaca .  # full multi-stage image build (runs all tests inside the build)
 bash scripts/check-image-size.sh printpaca   # enforce the uncompressed size gate
 ```
@@ -151,7 +153,7 @@ Open the URL Vite prints (typically `http://localhost:5173`). Vite proxies `/api
 
 To run the built app, use `bash scripts/e2e-server.sh` (main port on `:8099` with the admin app at `/admin/`, and the customer-only listener on `:8098`). It builds the web assets, copies them into `server/embedded/dist` just long enough to compile a binary, restores the placeholder, and runs the binary against a throwaway config directory. `npm run e2e` runs the same script (see [`e2e/playwright.config.ts`](e2e/playwright.config.ts)).
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the house rules and [`SECURITY.md`](SECURITY.md) to report a vulnerability.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the house rules, [Accessibility](docs/accessibility.md#contributor-guidance) for the accessibility conventions, and [`SECURITY.md`](SECURITY.md) to report a vulnerability.
 
 **CI.** GitHub Actions ([`ci.yml`](.github/workflows/ci.yml)) runs the test gates, then builds a multi-arch (amd64 and arm64) image by cross-compilation, with no emulation, and checks it against the size gate. On a `v*` tag it pushes the image to Docker Hub (`skilledalpaca/printpaca`).
 

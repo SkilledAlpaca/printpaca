@@ -42,6 +42,8 @@ The preset, printer, material, failure rate, and quantity a brand new quote star
 
 Your business name, logo URL, contact details, tax ID, and how many days a quote stays valid. Printed on quotes and invoices, along with payment instructions and terms text you write here.
 
+The business name and logo also appear on the front door and the shop. The shared footer on every customer page shows your **email**, **phone**, and **address** when you set them here (the `quote.email`, `quote.phone`, and `quote.address` keys in `config.yaml`), as a `mailto:` link, a `tel:` link, and plain text. With none of the three set, the footer shows only its **Home** and **Shop** links. The tax ID, payment instructions, and terms text stay private.
+
 ### Custom CSS
 
 Your own CSS, saved to the top-level `customCss` key in `config.yaml` and served verbatim and unsanitized, because it's CSS you wrote for your own instance, the same trust level as every other free-text field on this page. It applies on two surfaces:
@@ -171,7 +173,7 @@ The main port already serves the front door and the shop (see [Routing and hostn
 **Routes.**
 
 - `GET /` and `GET /order`: the front door at `/` shows your business name, logo, intro text, an **Order** button, and a **Staff sign-in** button when `staffUrl` is set. The shop at `/order` is the estimate page. A visitor picks a material you opted in (`materials[].public: true`), drops a G-code file or enters weight and time, and gets a live price.
-- `GET /api/public/config`: display data only: materials, currency, upload limits, demo-mode flag, business name and logo, intro text, and the printer's filament diameter (for client-side weight estimation). No cost-model field (rate, margin, markup, fee schedule, or printer cost input) is in the payload.
+- `GET /api/public/config`: display data only: materials, currency, upload limits, demo-mode flag, business name, logo, email, phone, and address, intro text, and the printer's filament diameter (for client-side weight estimation). No cost-model field (rate, margin, markup, fee schedule, or printer cost input) is in the payload.
 - `GET /api/public/items` and `GET /item-images/{file}`: the [item gallery](#items-gallery).
 - `POST /api/public/quote/preview`: returns the price and the shipping charge (`pricing.defaultShippingCharge`) the page displays, computed by the server. It has its own per-IP rate limit, separate from submissions, so typing doesn't spend a visitor's submission budget.
 - `POST /api/public/quote-request` and `POST /api/public/item-order`: the two ways a visitor's request lands in your **Requests** tab for manual review.
@@ -207,7 +209,9 @@ On the public page, a customer:
 - Picks a material from the ones you've opted in. Opt a material in by checking its **Public** column on the Filament tab; new materials default to not public.
 - Enters a quantity.
 - Either drops a G-code, sliced 3MF, or STL/plain-3MF file to fill in weight and print time automatically (see [Quoting from files](#quoting-from-files) below), or enters weight and print time by hand.
-- Enters their name, email, and an optional note, then submits.
+- Enters their name, email, and an optional note, then submits. The email must look like `name@example.com`: one `@`, text before it, and a domain with a dot that isn't first or last, and no spaces. The page checks this when the visitor submits, and the server checks it again and refuses a malformed address with `422`. It confirms the shape only, not that the address works.
+
+The estimate and order buttons say "You won't be charged now" because submitting only sends you a request. You review it in the Requests tab and follow up by email, and nothing is charged.
 
 Choose which printer and preset the public page prices every visitor's estimate against on the Requests tab, in its **Public estimates** section.
 

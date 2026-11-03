@@ -464,12 +464,15 @@
   // #invoices-filter); with none rendered it is a silent no-op. It needs a modifier (WCAG 2.1.4: no bare
   // character-key shortcut) and is ignored while focus is in a text field, select or contenteditable.
   function handleGlobalKeydown(e: KeyboardEvent) {
-    if (tab === "quote" && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
+    // Browser autofill dispatches keydown events with no `key`, so check the modifiers first and read the key defensively.
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+    const isKey = (code: string, letter: string) => e.code === code || e.key?.toLowerCase() === letter;
+    if (tab === "quote" && isKey("KeyS", "s")) {
       e.preventDefault();
       quoteActions.save?.();
       return;
     }
-    if (e.key.toLowerCase() !== "k" || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+    if (!isKey("KeyK", "k")) return;
     const filterId =
       tab === "quotes" ? "quotes-filter" : tab === "clients" ? "clients-filter" : tab === "invoices" ? "invoices-filter" : null;
     if (!filterId) return;

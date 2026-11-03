@@ -238,7 +238,7 @@
                   class="bar-value-label"
                 >{money(m.cents, cfg)}</text>
               {/if}
-              <text x={barX(i) + barWidth / 2} y={LABEL_Y} text-anchor="middle" class="axis-label">{monthLabel(m.month)}</text>
+              <text x={barX(i) + barWidth / 2} y={LABEL_Y} text-anchor="middle" class="axis-label" class:alt={i % 2 === 1}>{monthLabel(m.month)}</text>
             {/each}
             <!-- Painted after the bars so a tall bar never covers a gridline's value label. -->
             {#each gridlines as g (g.y)}
@@ -408,6 +408,11 @@
     fill: var(--muted);
     font-size: 9px;
     font-variant-numeric: tabular-nums;
+  }
+  /* Narrow screens scale the chart down, so every other month label is hidden to keep them apart; the
+   * "Revenue by month table" below still lists all of them. */
+  @media (max-width: 600px) {
+    .axis-label.alt { display: none; }
   }
   .grid-label {
     fill: var(--muted);

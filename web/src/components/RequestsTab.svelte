@@ -28,6 +28,7 @@
   import { refreshUnread } from "../lib/requestsBadge.svelte";
   import { splitSeconds } from "../lib/gcodeTime";
   import { buildQuoteInputs, energyInputsFor } from "../lib/quoteInputs";
+  import { nextStartWall } from "../lib/engine/schedule";
   import { findDuplicateRequestIds } from "../lib/requestDuplicates";
   import {
     classifyRequestFileState,
@@ -306,7 +307,11 @@
         timeSeconds,
         printer,
         preset,
-        energy: energyInputsFor(cfg.energy),
+        // A schedule-mode public quote prices from the next default start after it was submitted.
+        energy: energyInputsFor(cfg.energy, undefined, undefined, {
+          timezone: cfg.timezone || "UTC",
+          start: nextStartWall(cfg.energy.schedule.defaultStartTime, cfg.timezone || "UTC", new Date(record.createdAt)),
+        }),
         quantity: record.quantity,
         pricing: {
           strategy: cfg.pricing.strategy,

@@ -50,6 +50,7 @@ export function seedQuoteBody(label: string): Record<string, unknown> {
           machineLifeHours: 0,
           flatRate: 0.1,
           offPeakFrac: 0.7,
+          printStart: "",
           failureRatePct: 0,
           prepMinutes: 0,
           laborRate: 0,
@@ -72,6 +73,7 @@ export function seedQuoteBody(label: string): Record<string, unknown> {
         shippingCharge: 0,
         shippingCost: 0,
         feeScheduleName: "none",
+        printStart: "",
       },
     },
   };

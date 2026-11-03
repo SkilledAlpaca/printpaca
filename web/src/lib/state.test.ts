@@ -3,6 +3,7 @@ import type { EffectiveConfig, HardwareConfig } from "./engine/index";
 import {
   addPart,
   defaultOrderForm,
+  defaultPrintStart,
   defaultPartState,
   duplicatePart,
   effectiveConfig,
@@ -20,6 +21,7 @@ import {
   toOrderInputs,
 } from "./state.svelte";
 import { demoLocal } from "./demoLocal.svelte";
+import { sceExampleSchedule } from "./scheduleExamples";
 
 function config(overrides: Partial<EffectiveConfig> = {}): EffectiveConfig {
   return {
@@ -52,7 +54,7 @@ describe("toOrderInputs: hardware resolution", () => {
   function hardwareCfg(hardware: HardwareConfig[]): EffectiveConfig {
     return {
       ...config(),
-      energy: { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.3, offPeakRate: 0.1, defaultOffPeakFrac: 0.7 } },
+      energy: { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.3, offPeakRate: 0.1, defaultOffPeakFrac: 0.7 }, schedule: { defaultStartTime: "22:00", holidays: [], seasons: [] } },
       hardware,
     } as EffectiveConfig;
   }
@@ -97,7 +99,7 @@ describe("toOrderInputs: salePriceOverride presence vs. truthiness", () => {
   function pricingCfg(): EffectiveConfig {
     return {
       ...config(),
-      energy: { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.3, offPeakRate: 0.1, defaultOffPeakFrac: 0.7 } },
+      energy: { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.3, offPeakRate: 0.1, defaultOffPeakFrac: 0.7 }, schedule: { defaultStartTime: "22:00", holidays: [], seasons: [] } },
       feeSchedules: {},
     } as EffectiveConfig;
   }
@@ -405,7 +407,7 @@ describe("toOrderInputs: order shape", () => {
   beforeEach(resetQuote);
   const cfg = {
     currency: { symbol: "$", decimals: 2, code: "" },
-    energy: { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.3, offPeakRate: 0.1, defaultOffPeakFrac: 0.7 } },
+    energy: { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.3, offPeakRate: 0.1, defaultOffPeakFrac: 0.7 }, schedule: { defaultStartTime: "22:00", holidays: [], seasons: [] } },
     feeSchedules: { etsy: { fixed: [], percent: [] } },
     hardware: [],
   } as unknown as EffectiveConfig;
@@ -434,5 +436,62 @@ describe("toOrderInputs: order shape", () => {
   it("omits overrides when selling is off", () => {
     restoreFormState({ version: 1, parts: [{ label: "A", salePriceOverride: 3 }], order: { sellingEnabled: false } });
     expect(toOrderInputs(cfg).parts[0]!.salePriceOverride).toBeUndefined();
+  });
+});
+
+describe("schedule mode print start", () => {
+  function scheduleCfg(): EffectiveConfig {
+    return {
+      ...config(),
+      defaults: { printer: "pr1", material: "m1", quantity: 1, failureRatePct: 5, preset: "none" },
+      printers: [{ id: "pr1", name: "P", watts: 250, purchaseCost: 400, lifespanHours: 4000, filamentDiameterMm: 1.75 }],
+      materials: [{ id: "m1", name: "M", pricePerKg: 20, wastePct: 0, density: 1.2, public: false }],
+      presets: {},
+      pricing: { strategy: "margin", marginPct: 30, markupMultiplier: 2, taxRatePct: 0, defaultShippingCharge: 0, defaultShippingCost: 0, defaultFeeSchedule: "none" },
+      timezone: "America/Los_Angeles",
+      energy: { mode: "schedule", flatRate: 0.15, tou: { peakRate: 0.3, offPeakRate: 0.1, defaultOffPeakFrac: 0.7 }, schedule: sceExampleSchedule() },
+    } as EffectiveConfig;
+  }
+
+  beforeEach(() => {
+    resetQuote();
+  });
+
+  it("defaults to the next default start time, and to nothing outside schedule mode", () => {
+    // 2026-03-10T00:30Z is 17:30 PDT on March 9, so the next 22:00 is that evening.
+    expect(defaultPrintStart(scheduleCfg(), new Date("2026-03-10T00:30:00Z"))).toBe("2026-03-09T22:00");
+    expect(defaultPrintStart({ ...scheduleCfg(), energy: { ...scheduleCfg().energy, mode: "flat" } })).toBe("");
+  });
+
+  it("sends the part's own start, else the order's, with the zone and a tariff snapshot", () => {
+    const cfg = scheduleCfg();
+    quote.order.printStart = "2026-07-03T22:00";
+    quote.parts[0]!.printStart = "";
+    let part = toOrderInputs(cfg).parts[0]!;
+    expect(part.energy).toMatchObject({ mode: "schedule", timezone: "America/Los_Angeles", start: "2026-07-03T22:00" });
+    expect(part.energy.schedule).toEqual(sceExampleSchedule());
+    quote.parts[0]!.printStart = "2026-07-04T08:00";
+    part = toOrderInputs(cfg).parts[0]!;
+    expect(part.energy.start).toBe("2026-07-04T08:00");
+  });
+
+  it("saves the start with the quote and restores it unchanged", () => {
+    const cfg = scheduleCfg();
+    quote.order.printStart = "2026-07-03T22:00";
+    quote.parts[0]!.printStart = "2026-07-04T08:00";
+    const saved = toFormState();
+    expect(saved.order.printStart).toBe("2026-07-03T22:00");
+    expect(saved.parts[0]!.printStart).toBe("2026-07-04T08:00");
+    resetQuote();
+    expect(restoreFormState(JSON.parse(JSON.stringify(saved)), cfg)).toBe(true);
+    expect(quote.order.printStart).toBe("2026-07-03T22:00");
+    expect(quote.parts[0]!.printStart).toBe("2026-07-04T08:00");
+  });
+
+  it("gives a quote saved before schedule mode the default start", () => {
+    const old = { version: 1, parts: [{ label: "Part 1" }], order: { sellingEnabled: false } };
+    const parsed = parseFormState(old, scheduleCfg())!;
+    expect(parsed.order.printStart).toMatch(/^\d{4}-\d{2}-\d{2}T22:00$/);
+    expect(parsed.parts[0]!.printStart).toBe("");
   });
 });

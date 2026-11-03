@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CostBreakdown, EffectiveConfig } from "../lib/engine/index";
-  import { money } from "../lib/format";
+  import { money, moneyPrecise } from "../lib/format";
   import { computeBreakdownSegments } from "../lib/breakdownBar";
   import { breakdownHint } from "../lib/quoteRow";
   import { TILE_HELP } from "../lib/guideContent";
@@ -12,6 +12,11 @@
   // invalidates Overhead alone.
   function amount(cents: number, lineInvalid: boolean): string {
     return lineInvalid ? "-" : money(cents, cfg);
+  }
+
+  /** Hours to at most two decimals, no trailing zeros. */
+  function formatHours(h: number): string {
+    return String(Math.round(h * 100) / 100);
   }
 
   const segments = $derived(computeBreakdownSegments(breakdown));
@@ -48,6 +53,14 @@
             <details>
               <summary>{line.label}</summary>
               <code>{line.formula}</code>
+              {#if line.periods && line.periods.length > 0}
+                <ul class="periods" aria-label={breakdown.quantity > 1 ? "Electricity by tariff period, whole batch" : "Electricity by tariff period"}>
+                  {#each line.periods as p (p.name)}
+                    <li><span>{p.name}</span><span class="num">{formatHours(p.hours)} h · {moneyPrecise(p.cost, cfg, 3)}</span></li>
+                  {/each}
+                </ul>
+                {#if breakdown.quantity > 1}<small class="muted">Period costs cover the whole batch of {breakdown.quantity}, printed back to back.</small>{/if}
+              {/if}
             </details>
           </td>
           <td class="num">{amount(line.amount, invalid)}</td>
@@ -80,6 +93,8 @@
   details summary { cursor: pointer; }
   details code { display: block; margin: 0.25rem 0 0; color: var(--muted); font-size: var(--text-sm); }
   tfoot th { font-size: var(--text-lg); }
+  .periods { list-style: none; margin: 0.25rem 0 0; padding: 0; font-size: var(--text-sm); color: var(--muted); }
+  .periods li { display: flex; justify-content: space-between; gap: 1rem; }
 
   .bar {
     display: flex;

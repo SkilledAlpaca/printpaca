@@ -3,6 +3,7 @@
 
 import type { Cents } from "./money";
 import type { EnergyInputs } from "./electricity";
+import type { EnergyPeriod } from "./schedule";
 import type { FieldWarning } from "./validate";
 import type { FeeSchedule } from "./types";
 
@@ -84,6 +85,8 @@ export interface LineItem {
   formula: string;
   inputs: Record<string, number | string>;
   warnings: FieldWarning[];
+  /** The electricity line's split by named tariff period, schedule mode only. */
+  periods?: EnergyPeriod[];
 }
 
 export interface CostBreakdown {

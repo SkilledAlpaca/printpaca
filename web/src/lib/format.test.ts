@@ -107,7 +107,7 @@ function allInvalidConfig(): ServerConfig {
     materials: [{ id: "", name: "PLA", density: 0, pricePerKg: 20, wastePct: -1, public: false }],
     printers: [{ id: "", name: "Printer", watts: 250, purchaseCost: 400, lifespanHours: 4000, filamentDiameterMm: 0 }],
     hardware: [{ name: "", unitCost: -1, lostOnFailure: true }],
-    energy: { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.2, offPeakRate: 0.1, defaultOffPeakFrac: 0.5 } },
+    energy: { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.2, offPeakRate: 0.1, defaultOffPeakFrac: 0.5 }, schedule: { defaultStartTime: "22:00", holidays: [], seasons: [] } },
     presets: {
       "side-hustle": { failureRatePct: 5, prepMinutes: 10, laborRate: 20, monthlyFixed: 50, monthlyHours: 40 },
     },

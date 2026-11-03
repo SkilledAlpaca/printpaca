@@ -34,6 +34,8 @@ const FIELD_LABELS: Record<string, string> = {
   peakRate: "Peak rate",
   offPeakRate: "Off-peak rate",
   offPeakFrac: "Off-peak share",
+  printStart: "Print start",
+  schedule: "Electricity schedule",
   failureRatePct: "Failure rate",
   netProfit: "Net profit",
   prepMinutes: "Prep time",

@@ -15,7 +15,7 @@ The one place a quantity is rounded separately is `itemRevenue` (the quantity-sc
 | Line | Formula |
 |---|---|
 | material | weight_g × (1 + wastePct ÷ 100) × pricePerKg ÷ 1000 (wastePct defaults to 0) |
-| electricity | hours × watts ÷ 1000 × rate  (TOU: rate = offPeakFrac·offPeakRate + (1−offPeakFrac)·peakRate, with offPeakFrac clamped to [0, 1] before blending). `offPeakFrac` is the operator's estimate of the share of the print that runs off peak. printpaca doesn't compute it from the print start time or tariff periods, and doesn't split a print across periods or midnight. Public quotes always use `energy.tou.defaultOffPeakFrac`. |
+| electricity | Flat: hours × watts ÷ 1000 × rate. Simple time-of-use (`tou`): the same with rate = offPeakFrac·offPeakRate + (1−offPeakFrac)·peakRate, with offPeakFrac clamped to [0, 1] before blending. In simple mode, `offPeakFrac` is your estimate of the share of the print that runs off peak; printpaca doesn't derive it from a start time, and public quotes use `energy.tou.defaultOffPeakFrac`. Time-of-use schedule (`schedule`): watts ÷ 1000 × Σ (hours in each segment × that segment's rate), where the print's start time decides which tariff periods it falls in. See [Time-of-use schedule](#time-of-use-schedule). |
 | depreciation | hours × machineCost ÷ lifespanHours (0 when lifespan unset) |
 | failure buffer | failure base × p ÷ (1 − p), where p = failureRatePct ÷ 100; floored at 0 (see below for what's in the base) |
 | prep labor | laborRate × prepMinutes ÷ 60, per batch, amortized ÷ quantity (laborPerUnit flips this) |
@@ -45,6 +45,25 @@ Two consequences of the base are not visible from the failure-buffer row alone:
 ### Hardware scope
 
 The hardware catalog is **admin-quote-only**: the operator's internal cost basis for physical add-ons attached by hand on the Quote tab. The public quote page, the public preview endpoint, and the Requests verification replay build their inputs with no hardware field and price accordingly. A public visitor can't select hardware or know which add-ons a part needs, so applying the catalog to every public quote would charge visitors for parts their model may not use. `server/public_test.go` pins the scope in both public paths.
+
+### Time-of-use schedule
+
+Energy mode `schedule` prices electricity from a tariff and a start time, not from a share estimate. The `flat` and `tou` modes are unchanged.
+
+The tariff has seasons (each a set of months), and each season has a weekday and a weekend schedule. A day type has a base rate with a name, plus up to 8 non-overlapping windows. Each window has a name, a start, an end, and a rate. Hours that no window covers use the base rate. Times are wall-clock times in the instance time zone (the top-level `timezone`), written `HH:MM`, and a window's end can be `24:00`. Saturdays, Sundays, and the dates listed in `holidays` use the weekend schedule.
+
+For a part with per-unit time _h_, quantity _q_, and printer power _W_:
+
+1. The print runs continuously from its start for _h_ × _q_ hours. Units print back to back.
+2. printpaca splits that span at every window edge, at midnight, and where the season changes. A change of day also changes the day type, so a print that crosses midnight into Saturday switches to the weekend schedule.
+3. Each segment costs _W_ ÷ 1000 × segment hours × segment rate. The electricity batch cost is the sum of the segments, and the per-unit cost is the batch cost ÷ _q_.
+4. The breakdown lists the hours and cost for each named period. Periods with the same name, such as "Off-peak" in summer and winter, add together.
+
+The hours are real elapsed hours, so a daylight saving change inside the print shortens or lengthens the wall-clock span but not the number of hours billed. A wall-clock time that happens twice resolves to the first occurrence. A wall-clock time that doesn't exist (the skipped hour in spring) resolves to the instant after the gap.
+
+Each part has an optional print start, and the order has one that parts inherit. The start is wall-clock `YYYY-MM-DDTHH:MM` in the instance time zone. The quote saves the resolved start together with a copy of the tariff, so reopening or repricing a saved quote gives the same electricity cost even after you edit the tariff. Public quotes start at the next occurrence of `energy.schedule.defaultStartTime` at the time of the request. Spans longer than 366 days simulate the first 366 days and scale that average for the rest, which only matters for very large batches.
+
+`server/energy_schedule.go` and `web/src/lib/engine/schedule.ts` implement the same algorithm. `testdata/schedule-vectors.json` holds shared test vectors (midnight, a season boundary, daylight saving changes in both directions, a holiday, quantity above 1, and a span past 366 days) that both the Go tests and the Vitest tests read.
 
 ## Pricing
 
@@ -103,7 +122,8 @@ Every money, quantity, and duration input carries an inclusive plausibility maxi
 | `prepMinutes` | 6,000,000 | `maxMinutesInput` (`maxHoursInput × 60`) |
 | `quantity`, `hardware[i].qtyPerUnit` | 100000 | `maxQuantity` |
 | `watts` | 5000 | `maxPrinterWatts` |
-| `offPeakFrac` (TOU mode only) | 1 | Rejected above 1 like any bound, and also clamped to [0, 1] inside `effectiveRate` (see [Cost per unit](#cost-per-unit)), so an invalid `offPeakFrac = 1.5` never extrapolates the blended rate past pure off-peak or peak. |
+| Schedule: seasons, windows per day type, holidays | 6, 8, 100 | `maxScheduleSeasons`, `maxScheduleWindows`, `maxScheduleHolidays`; schedule rates are also capped at `maxMoneyAmount` |
+| `offPeakFrac` (simple `tou` mode only) | 1 | Rejected above 1 like any bound, and also clamped to [0, 1] inside `effectiveRate` (see [Cost per unit](#cost-per-unit)), so an invalid `offPeakFrac = 1.5` never extrapolates the blended rate past pure off-peak or peak. |
 | `markupMultiplier` | 1000 | `maxMarkupMultiplier`, see [Markup ceiling](#markup-ceiling) above |
 | `hardware` (array length, admin quotes only) | 200 | `maxConfigCollectionSize`, shared with the `config.yaml` hardware catalog's limit |
 | `timeMinutes` | **59** | Semantic, not a plausibility bound: it is the minutes remainder, so 60 or more belongs in `timeHours`. `timeMinutes = 60` blanks the quote with an above-max warning. `splitPublicSeconds` in `server/public.go` converts raw seconds into an hours and minutes pair that never trips it. |

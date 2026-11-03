@@ -267,14 +267,12 @@
     </button>
   </div>
 
-  <QuoteSummaryBar {cfg} {order} />
-  {#if previewState.status === "pending"}
-    <p class="muted preview-status" role="status">Updating price…</p>
-  {:else if previewState.status === "error"}
-    <p class="warn-text preview-status" role="alert">
-      {previewState.errors[0]} Showing the last known price. It retries on the next change.
-    </p>
-  {/if}
+  <QuoteSummaryBar
+    {cfg}
+    {order}
+    previewStatus={previewState.status}
+    previewError={previewState.status === "error" ? `${previewState.errors[0]} Showing the last known price. It retries on the next change.` : ""}
+  />
 
   {#if showFirstRun}
     <div class="card first-run">
@@ -496,10 +494,6 @@
 
   .first-run ol { margin: 0 0 0.75rem; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.3rem; }
 
-  .muted { color: var(--muted); }
-  /* Quiet, not alarming: covers the debounce wait and the round trip (same rationale as PublicQuotePage's
-   * preview status line). */
-  .preview-status { margin: -0.4rem 0 0; font-size: var(--text-sm); }
 
   .tile { display: flex; flex-direction: column; gap: 0.4rem; }
 

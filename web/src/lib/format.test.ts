@@ -168,3 +168,14 @@ describe("presetDisplayName", () => {
     expect(presetDisplayName("Custom")).toBe("Custom");
   });
 });
+
+describe("friendlyMessage: blank print time", () => {
+  it("reads 'Enter the print time.' for either half", () => {
+    for (const field of ["timeHours", "timeMinutes"]) {
+      expect(friendlyMessage({ field, code: "required", message: "Enter the print time", severity: "error" })).toBe("Enter the print time.");
+    }
+  });
+  it("keeps the generic copy for other required fields", () => {
+    expect(friendlyMessage({ field: "weightG", code: "required", message: "x", severity: "error" })).toBe("Model weight is required.");
+  });
+});

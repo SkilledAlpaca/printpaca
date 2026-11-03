@@ -5,7 +5,33 @@
   import { money } from "../lib/format";
   import { quoteSummaryStats } from "../lib/quoteSummary";
 
-  let { cfg, order }: { cfg: EffectiveConfig; order: OrderBreakdown } = $props();
+  let {
+    cfg,
+    order,
+    previewStatus = "idle",
+    previewError = "",
+  }: {
+    cfg: EffectiveConfig;
+    order: OrderBreakdown;
+    /** The server preview's state (QuotePreviewState["status"]); only "pending" and "error" show anything. */
+    previewStatus?: string;
+    /** The full message to show while previewStatus is "error". */
+    previewError?: string;
+  } = $props();
+
+  // "Updating price…" appears only once the preview has been pending for PENDING_DELAY_MS, so a fast round trip
+  // (the usual case while stepping a field) never flashes text. The slot below is always rendered, so showing
+  // or hiding the text never changes the page height.
+  const PENDING_DELAY_MS = 300;
+  let pendingVisible = $state(false);
+  $effect(() => {
+    if (previewStatus !== "pending") {
+      pendingVisible = false;
+      return;
+    }
+    const timer = setTimeout(() => (pendingVisible = true), PENDING_DELAY_MS);
+    return () => clearTimeout(timer);
+  });
 
   const s = $derived(quoteSummaryStats(order, quote.order.sellingEnabled));
   const loss = $derived(s.profitCents !== null && s.profitCents < 0);
@@ -61,6 +87,15 @@
       </button>
     {/if}
   </div>
+  <!-- Fixed-height status slot (always rendered, text swaps, height doesn't): a status line that came and went
+       above the cards shifted everything below on every keystroke. The status region stays in the DOM so
+       screen readers announce its text changes; the error is a separate alert. -->
+  <div class="status-slot">
+    <p class="status-text" role="status">{pendingVisible ? "Updating price…" : ""}</p>
+    {#if previewStatus === "error" && previewError}
+      <p class="status-text status-error" role="alert">{previewError}</p>
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -71,6 +106,11 @@
     gap: 1rem 2rem;
     margin-bottom: 0.75rem;
   }
+  /* One line tall at all times (the --text-sm line box), spanning the card's full width. An error message may
+   * wrap onto more lines on a narrow screen; that is the one case the slot grows. */
+  .status-slot { flex: 0 0 100%; min-height: calc(var(--text-sm) * 1.5); margin-top: -0.4rem; }
+  .status-text { margin: 0; font-size: var(--text-sm); line-height: 1.5; color: var(--muted); }
+  .status-text.status-error { color: var(--danger); }
   .group { display: flex; flex-direction: column; gap: 0.3rem; }
   .group.sell {
     border-left: 1px solid var(--border);

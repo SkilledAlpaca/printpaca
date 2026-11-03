@@ -35,13 +35,13 @@ Quote pricing lives in `server/pricing.go`, not in this module. `server/pricing_
 A Svelte 5 (runes) single-page app. Vite builds two entry points into one `dist/`:
 
 - `index.html`, the authenticated admin app (quotes, clients, invoices, settings, dashboard), served at `/admin/`
-- `public.html`, the anonymous front door (`/`) and public quote page (`/order`)
+- `public.html`, the anonymous shop: the landing page at `/`, also served at `/order` so old links work
 
 The Go binary embeds that `dist/` at build time (`//go:embed all:embedded/dist` in `server/static.go`).
 
 Accessibility helpers are shared by both entries. `web/src/lib/a11y.svelte.ts` exports `announce()` and `focusAfterUpdate()`, and `web/src/components/LiveAnnouncer.svelte` renders the hidden live regions `announce()` writes to. `App.svelte` mounts `LiveAnnouncer` for the admin app, and `public/PublicApp.svelte` mounts it for the customer pages. `web/src/lib/a11yFocus.ts` holds the focus helpers for two-step confirms and lists, and `ErrorSummary` and `DetailTitle` in `web/src/components/` give forms and detail views their shared error list and `h1`. See [Accessibility](accessibility.md#contributor-guidance).
 
-The admin app is an installable Progressive Web App with a hand-rolled service worker (`web/public/sw.js`, no Workbox) that precaches the app shell. `api/*` and `healthz` are never cached, and the worker's scope is `/admin/`, so it never controls the front door or the shop. Registration runs only in a secure context (HTTPS or `localhost`), so it silently no-ops on a plain-HTTP LAN deployment.
+The admin app is an installable Progressive Web App with a hand-rolled service worker (`web/public/sw.js`, no Workbox) that precaches the app shell. `api/*` and `healthz` are never cached, and the worker's scope is `/admin/`, so it never controls the shop. Registration runs only in a secure context (HTTPS or `localhost`), so it silently no-ops on a plain-HTTP LAN deployment.
 
 ### server/
 
@@ -70,7 +70,7 @@ The server runs one main listener and, optionally, a second customer-only listen
   - The admin app registers its service worker at `/admin/sw.js` with scope `/admin/`. The public pages register none, so `/sw.js` is a `404`.
   - The router's own answers (the `/admin` redirect, the `/api` `404`, path-cleaning redirects, `/healthz`) go through the public chain: security headers, access log, and the Host allowlist.
   - `/api/public/*` and everything outside `/admin/` and `/api/` go to the public routes behind the same Host allowlist. Any other `/api/*` is a JSON `404`; the admin API lives under `/admin/api/`.
-- **Public** (`PUBLIC_PORT`, optional): anonymous and isolated (`server/public.go`); it never serves `/admin/`. It serves the front door (`/`), the shop (`/order`), the item gallery, a display-only config payload, three rate-limited anonymous POST endpoints across two per-IP budgets (quote preview; quote-request and item-order submission, which share a budget), `GET /custom.css`, item images, and `GET /healthz`. Every price, preview or submission, is computed server-side through `server/pricing.go`; the visitor's browser never receives the cost model and never supplies a price.
+- **Public** (`PUBLIC_PORT`, optional): anonymous and isolated (`server/public.go`); it never serves `/admin/`. It serves the shop (`/` and `/order`), the item gallery, a display-only config payload, three rate-limited anonymous POST endpoints across two per-IP budgets (quote preview; quote-request and item-order submission, which share a budget), `GET /custom.css`, item images, and `GET /healthz`. Every price, preview or submission, is computed server-side through `server/pricing.go`; the visitor's browser never receives the cost model and never supplies a price.
 
 Both listeners mount the same public routes over one shared set of rate limiters, one upload semaphore, and one notification queue (`publicShared`), so a visitor gets one budget whichever port they use. `site.shopOnMainPort` turns the public routes off on `PORT`.
 

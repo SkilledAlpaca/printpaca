@@ -69,7 +69,7 @@ docker compose up -d
 
 `latest` tracks the newest stable release; use `skilledalpaca/printpaca:vX.Y.Z` to pin a version. The rest of this guide works the same either way.
 
-Open [http://localhost:8080/admin/](http://localhost:8080/admin/). You should see the sign-in screen: printpaca is secure by default, so the calculator stays behind a password. Step 4 gets you that password. Customers see a different page: the front door at [http://localhost:8080/](http://localhost:8080/), with the shop at `/order`.
+Open [http://localhost:8080/admin/](http://localhost:8080/admin/). You should see the sign-in screen: printpaca is secure by default, so the calculator stays behind a password. Step 4 gets you that password. Customers see a different page: the shop at [http://localhost:8080/](http://localhost:8080/), also served at `/order`.
 
 ## Step 4: sign in
 
@@ -153,7 +153,7 @@ docker compose restart
 
 If you reach the admin app through anything other than `localhost` or a bare IP address, such as a reverse proxy or a new hostname, and every page fails with `403` including the sign-in screen, the server is running and rejecting the request on purpose. `docker compose ps` still shows `Up`.
 
-**Cause**: the main port (`PORT`) accepts only requests whose `Host` header is an IP literal, `localhost`, or a name in `ALLOWED_HOSTS`, a defense against DNS rebinding (see [Authentication](configuration.md#authentication)). The allowlist covers the front door and the shop as well as `/admin/`. A proxy that forwards your own hostname trips it the same way a malicious page would. The optional customer-only listener ([`PUBLIC_PORT`](configuration.md#public-quote-page)) has no `Host` allowlist.
+**Cause**: the main port (`PORT`) accepts only requests whose `Host` header is an IP literal, `localhost`, or a name in `ALLOWED_HOSTS`, a defense against DNS rebinding (see [Authentication](configuration.md#authentication)). The allowlist covers the shop as well as `/admin/`. A proxy that forwards your own hostname trips it the same way a malicious page would. The optional customer-only listener ([`PUBLIC_PORT`](configuration.md#public-quote-page)) has no `Host` allowlist.
 
 **Fix**: add the hostname to `ALLOWED_HOSTS` in `docker-compose.yml`'s `environment:` block (comma-separated for more than one), then restart:
 

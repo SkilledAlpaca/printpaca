@@ -240,6 +240,37 @@ func TestValidateFieldMessagesNameTheBound(t *testing.T) {
 	}
 }
 
+// A blank print time (null on the wire, NaN once decoded) is a "required" error reading "Enter the print time",
+// not the generic non-finite copy, and still invalidates the cost.
+func TestBlankPrintTimeIsARequiredError(t *testing.T) {
+	inputs := boundaryBaseInputs()
+	inputs.TimeHours = F(math.NaN())
+	inputs.TimeMinutes = F(math.NaN())
+	bd := ComputeQuote(inputs, DefaultEngineOptions)
+	if bd.Valid {
+		t.Error("a quote with no print time priced as valid")
+	}
+	for _, field := range []string{"timeHours", "timeMinutes"} {
+		w, ok := warningFor(bd.Warnings, field, "required")
+		if !ok {
+			t.Errorf("no %s/required warning; warnings = %+v", field, bd.Warnings)
+			continue
+		}
+		if w.Message != "Enter the print time" || w.Severity != "error" {
+			t.Errorf("%s warning = %+v, want message %q, severity error", field, w, "Enter the print time")
+		}
+		if hasWarning(bd.Warnings, field, "nan") {
+			t.Errorf("%s still carries a nan warning", field)
+		}
+	}
+	// Range checks on a typed time are unchanged.
+	inputs.TimeHours = F(-1)
+	inputs.TimeMinutes = F(0)
+	if !hasWarning(ComputeQuote(inputs, DefaultEngineOptions).Warnings, "timeHours", "below-min") {
+		t.Error("negative timeHours lost its below-min warning")
+	}
+}
+
 // A Strategy that is not exactly "margin" once priced by the MARKUP formula while echoing the unrecognized name back. Both legitimate values keep their behavior; anything else is an error.
 func TestStrategyAndEnergyModeAreValidatedEnums(t *testing.T) {
 	price := func(strategy string) PricingResult {

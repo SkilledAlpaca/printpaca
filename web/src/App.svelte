@@ -44,6 +44,7 @@
   import { unsavedForm } from "./lib/unsavedForm.svelte";
   import { unreadRequests, refreshUnread } from "./lib/requestsBadge.svelte";
   import { fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab } from "./lib/navFilter";
+  import { loadPublicConfig } from "./public/api";
   import { splitHash } from "./lib/hashRoute";
   import { focusAfterUpdate } from "./lib/a11y.svelte";
   import { pageTitle as pageTitleState } from "./lib/pageTitle.svelte";
@@ -575,10 +576,50 @@
   const pageTitle = $derived(
     loginRequired || accessWatch.sessionExpired ? "Sign in" : pageTitleState.record ? `${pageTitleState.record} · ${TABS[tab].label}` : TABS[tab].label,
   );
+
+  // Branding: the business name and logo from Settings (config.quote), falling back to printpaca and the
+  // bundled mark, including when the logo URL fails to load. appConfig is refreshed after every Settings save,
+  // so a change shows without a reload. The login screen has no config yet and uses the public branding
+  // (GET /api/public/config) when the server offers it, else the fallbacks.
+  const onLoginScreen = $derived(loginRequired || accessWatch.sessionExpired);
+  let publicBranding = $state<{ businessName: string; logoUrl: string } | null>(null);
+  $effect(() => {
+    if (!onLoginScreen || publicBranding) return;
+    let cancelled = false;
+    void loadPublicConfig().then((c) => {
+      if (!cancelled && c) publicBranding = { businessName: c.branding.businessName, logoUrl: c.branding.logoUrl };
+    });
+    return () => (cancelled = true);
+  });
+  const brandSource = $derived(onLoginScreen ? publicBranding : (config?.quote ?? null));
+  const businessName = $derived(brandSource?.businessName.trim() || "printpaca");
+  // The URL that last failed to load, so the fallback holds for that URL only and a corrected URL is retried.
+  let failedLogoUrl = $state("");
+  const brandLogoSrc = $derived(brandSource?.logoUrl && brandSource.logoUrl !== failedLogoUrl ? brandSource.logoUrl : logoUrl);
+
+  // The brand link goes to the first tab in the nav (New quote for most people), like the Home link on a site.
+  const homeTab = $derived(firstNavTab(navSections) ?? "quote");
+  // Moves focus to the view's h1 (tabindex -1 so it can take script focus), the same landing spot a screen
+  // reader user gets from the skip link's neighbours. activate() has already closed the drawer and queued its
+  // own focus on <main>; this runs after the new tab has rendered and refines it.
+  async function goHome(e: MouseEvent) {
+    // Let the browser handle a modified click (open in a new tab or window) as a plain link.
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    activate(homeTab);
+    if (tab !== homeTab) return; // the unsaved-changes confirm was declined: stay put
+    await tick();
+    await tick();
+    const h1 = mainEl?.querySelector<HTMLElement>("h1");
+    if (h1) {
+      h1.tabIndex = -1;
+      h1.focus({ preventScroll: true });
+    }
+  }
 </script>
 
 <svelte:head>
-  <title>{pageTitle} · printpaca</title>
+  <title>{pageTitle} · {businessName}</title>
 </svelte:head>
 
 <LiveAnnouncer />
@@ -586,10 +627,12 @@
 <svelte:window onhashchange={syncTabFromHash} onafterprint={clearPrintJob} onkeydown={handleGlobalKeydown} />
 
 {#snippet brand(showName: boolean)}
-  <div class="brand">
-    <img class="logo" src={logoUrl} alt="" />
-    {#if showName}<p class="brand-name">printpaca</p>{/if}
-  </div>
+  <!-- The accessible name is set on the link, so a collapsed sidebar (logo only) still names it. It contains
+       the visible name (WCAG 2.5.3). -->
+  <a class="brand" href={TABS[homeTab].hash} aria-label={`${businessName} home`} onclick={goHome}>
+    <img class="logo" src={brandLogoSrc} alt="" onerror={() => (failedLogoUrl = brandLogoSrc)} />
+    {#if showName}<span class="brand-name">{businessName}</span>{/if}
+  </a>
 {/snippet}
 
 {#snippet navButton(id: Tab, collapsed: boolean)}
@@ -628,7 +671,7 @@
 {/snippet}
 
 {#if loginRequired || accessWatch.sessionExpired}
-  <LoginScreen onLoggedIn={handleLoggedIn} notice={accessWatch.sessionExpired ? SESSION_EXPIRED_NOTICE : undefined} />
+  <LoginScreen onLoggedIn={handleLoggedIn} {businessName} logoSrc={brandLogoSrc} onLogoError={() => (failedLogoUrl = brandLogoSrc)} notice={accessWatch.sessionExpired ? SESSION_EXPIRED_NOTICE : undefined} />
 {:else}
 <a class="skip-link" href="#main" onclick={skipToMain}>Skip to content</a>
 
@@ -804,6 +847,7 @@
 <!-- tabindex 0 on the Guide only: its scroll container has no focusable content, so keyboard users could not scroll it (WCAG 2.1.1). -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <main class="app-main" id="main" tabindex={tab === "guide" ? 0 : -1} inert={drawerOpen && !isDesktop} aria-label={TABS[tab].label} bind:this={mainEl}>
+  <div class="main-inner">
   {#if accessWatch.revoked}
     <!-- Global 403 handling: a permission that worked just answered 403 (accessWatch.svelte.ts), most
          likely because an admin revoked a grant or turned multi-user mode off mid-session. Reloading
@@ -860,6 +904,7 @@
   <footer>
     <span>printpaca, an open-source 3D print cost and quote calculator.</span>
   </footer>
+  </div>
 </main>
 
 {#if printJob.current && config}
@@ -939,8 +984,9 @@
     background: var(--surface);
     border-bottom: 1px solid var(--border);
   }
-  .brand { display: flex; align-items: center; gap: 0.5rem; }
-  .brand .brand-name { font-size: 1.25rem; font-weight: 700; margin: 0; }
+  .brand { display: flex; align-items: center; gap: 0.5rem; color: inherit; text-decoration: none; min-width: 0; border-radius: var(--radius); }
+  .brand .brand-name { font-size: 1.25rem; font-weight: 700; margin: 0; overflow-wrap: anywhere; }
+  .brand:hover .brand-name { text-decoration: underline; }
   .logo { height: 40px; width: auto; display: block; }
 
   /* Mobile top bar's menu button. position: relative anchors .hamburger-badge; min-width matches the global
@@ -1041,7 +1087,10 @@
     scroll-padding-top: calc(var(--demo-banner-h, 0px) + var(--sticky-top-h, 0px) + 1rem);
     scroll-padding-bottom: calc(var(--sticky-bottom-h, 0px) + 1rem);
   }
-  main { max-width: 1280px; margin: 0 auto; padding: 1rem clamp(1rem, 2vw, 2rem); }
+  /* <main> spans its whole grid cell so a wheel or a scrollbar works anywhere across the width; the 1280px cap,
+   * centring and padding live on this inner wrapper. <main> has no padding of its own, so a sticky bar at
+   * top: 0 sits flush with the scrollport edge instead of 1rem below it. */
+  .main-inner { max-width: 1280px; margin: 0 auto; padding: 1rem clamp(1rem, 2vw, 2rem); }
   /* theme.css's global :focus-visible outline draws outside the element (outline-offset: 2px); #app clips
    * overflow, so on <main> (the skip-link target and scroll container) it gets cut into a stray partial
    * line. Pull the ring inward. */
@@ -1229,10 +1278,9 @@
      * here. */
     .sidebar.collapsed .side-nav button, .sidebar.collapsed .side-nav a.nav-external { justify-content: center; padding: 0.4rem; }
     /* The scrolling region: everything taller than the viewport (the tab's content, then the page footer)
-     * scrolls inside <main> instead of the page, which keeps the sidebar pinned. width: 100% matters: main
-     * is a grid item with auto inline margins, which override the default stretch and shrink-wrap it to its
-     * content's max-content width; a definite width restores full-width pages while max-width: 1280px still
-     * caps and centers it. */
-    main { grid-area: main; overflow-y: auto; width: 100%; }
+     * scrolls inside <main> instead of the page, which keeps the sidebar pinned. <main> fills its grid
+     * cell (the scrollbar sits at the window edge); .main-inner caps and centres the content. min-width: 0
+     * lets wide content scroll inside the cell instead of widening the grid column. */
+    main { grid-area: main; overflow-y: auto; min-width: 0; }
   }
 </style>

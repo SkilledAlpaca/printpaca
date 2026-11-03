@@ -6,7 +6,7 @@ This guide sets up an optional [Cloudflare Tunnel](https://developers.cloudflare
 
 One hostname, for example `printpaca.example.com`, that points at printpaca's main port (`PORT`, default `8080`):
 
-- `/` is the customer front door, and `/order` is the shop with the [item gallery](configuration.md#items-gallery) and estimate form.
+- `/` is the shop, with the [item gallery](configuration.md#items-gallery) and estimate form. `/order` shows the same page, so old links keep working.
 - `/admin/` is the admin app and its API.
 
 Cloudflare terminates TLS and proxies back to your container over an outbound-only tunnel: no inbound port forwarding, and no `ports:` entry for the tunnel. The admin app lives entirely under `/admin/`, so a single Cloudflare Access application scoped to the path `/admin` protects it and leaves every customer path open. See [Routing and hostnames](configuration.md#routing-and-hostnames) for the full path table.
@@ -45,7 +45,7 @@ environment:
   - ADMIN_TRUST_PROXY=1
 ```
 
-- `ALLOWED_HOSTS` lists every hostname that reaches `PORT`. The Host allowlist covers the front door and the shop too, so a hostname missing from the list gets `403` on every page. A request through Cloudflare Access with a valid token skips the allowlist, but customers don't carry a token.
+- `ALLOWED_HOSTS` lists every hostname that reaches `PORT`. The Host allowlist covers the shop too, so a hostname missing from the list gets `403` on every page. A request through Cloudflare Access with a valid token skips the allowlist, but customers don't carry a token.
 - `ADMIN_TRUST_PROXY=1` tells printpaca that the tunnel is a single reverse proxy in front of `PORT`. It covers the admin login limits and the customer pages. Without it, the per-IP limits (5 submissions per hour and 60 previews per minute) read `cloudflared`'s container address, so every visitor shares one instance of each budget. Previews run out first: one fires on every debounced keystroke while a visitor fills in an estimate, so once all your visitors together pass 60 previews in a minute, the rest are rejected. Setting it also gives the session cookie the `Secure` flag.
 
 Cloudflare appends the client IP to the end of `X-Forwarded-For`, and printpaca's rate limiter reads the last address, the one Cloudflare appended. A visitor's own `X-Forwarded-For` header only adds earlier entries, which the limiter ignores. This holds only when the tunnel is the single hop between the visitor and printpaca. A second proxy or tunnel that also appends collapses every visitor's last element to that nearer hop's address, and everyone shares one bucket again. Set `ADMIN_TRUST_PROXY=1` only when exactly one such proxy sits in front of printpaca.
@@ -72,7 +72,7 @@ docker compose --profile tunnel up -d
 
 ## Verifying
 
-- Open your hostname (for example `https://printpaca.example.com`) in a browser. You should see the front door, served over HTTPS, with an **Order** button and a **Staff sign-in** button. **Staff sign-in** opens `/admin/`.
+- Open your hostname (for example `https://printpaca.example.com`) in a browser. You should see the shop, served over HTTPS, with a **Staff sign-in** link in the footer. **Staff sign-in** opens `/admin/`.
 - Check the connector's own logs for connection status:
 
   ```bash
@@ -90,13 +90,13 @@ Choose one of two ways to lock `/admin/` when it's reachable through the tunnel.
 
 If authentication is disabled (`ADMIN_PASSWORD=`) and Access isn't configured, printpaca refuses tunneled `/admin/` requests with `403`. Set a password or configure Access.
 
-The front door, the shop, and `/api/public/*` are anonymous by design and are never subject to this guard.
+The shop and `/api/public/*` are anonymous by design and are never subject to this guard.
 
 The one exception to the guard is `DEMO_MODE=1`. A demo instance is read-only, seeded with fake data, and has a published password, so it skips the guard and is intentionally served through the tunnel (see [Run the demo yourself](demo.md)). You can't combine `DEMO_MODE=1` with the Access variables; printpaca refuses to start.
 
 ## Isolating the customer pages with PUBLIC_PORT
 
-If you'd rather not run the admin app on the same port as the customer pages, set `PUBLIC_PORT` (for example `8081`) and point the tunnel's hostname at `printpaca:8081` instead. That listener serves the front door, the shop, and the public API, and never serves `/admin/`. Set `PUBLIC_TRUST_PROXY=1` for it, and set `site.adminUrl` (Settings, **Front door and shop**) if the front door should link to an admin hostname you run separately. The two listeners share one set of per-IP limits. See [Public quote page](configuration.md#public-quote-page).
+If you'd rather not run the admin app on the same port as the customer pages, set `PUBLIC_PORT` (for example `8081`) and point the tunnel's hostname at `printpaca:8081` instead. That listener serves the shop and the public API, and never serves `/admin/`. Set `PUBLIC_TRUST_PROXY=1` for it, and set `site.adminUrl` (Settings, **Storefront**) if the shop footer should link to an admin hostname you run separately. The two listeners share one set of per-IP limits. See [Public quote page](configuration.md#public-quote-page).
 
 ## Remote admin access with Cloudflare Access
 

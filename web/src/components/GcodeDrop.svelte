@@ -374,8 +374,11 @@
     width: 4rem;
     margin: 0 0.3rem;
   }
+  /* Two lines tall even when empty, so a parse result replacing "Parsing…" (or clearing) doesn't reflow the
+   * fields below. A longer message at a narrow width may still wrap onto a third line. */
   .status-line {
     margin: 0.5rem 0 0;
+    min-height: 3em;
   }
   .status-line.ok {
     color: var(--ok);

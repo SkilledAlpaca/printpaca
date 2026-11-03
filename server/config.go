@@ -225,16 +225,16 @@ type PublicQuotes struct {
 	IntroText string `yaml:"introText" json:"introText"`
 }
 
-// Site controls what the main port (PORT) serves at its root and what the front door links to. The admin
+// Site controls what the main port (PORT) serves at its root and what the shop footer links to. The admin
 // app always lives under /admin/. A change applies without a restart, like the rest of the config.
 type Site struct {
-	// ShopOnMainPort serves the front door (/), the shop (/order) and /api/public/* on the main port. When
+	// ShopOnMainPort serves the shop (/ and /order) and /api/public/* on the main port. When
 	// false, / redirects to /admin/ and the public routes 404 there. PUBLIC_PORT is unaffected.
 	ShopOnMainPort bool `yaml:"shopOnMainPort" json:"shopOnMainPort"`
-	// StaffLink shows the Staff sign-in button on the main port's front door.
+	// StaffLink shows the Staff sign-in link in the footer of the shop on the main port.
 	StaffLink bool `yaml:"staffLink" json:"staffLink"`
 	// AdminURL is the absolute http(s) URL of the admin app, the Staff sign-in target on the PUBLIC_PORT
-	// front door. Empty hides the button there.
+	// shop footer. Empty hides the link there.
 	AdminURL string `yaml:"adminUrl" json:"adminUrl"`
 }
 

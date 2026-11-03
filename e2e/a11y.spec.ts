@@ -4,7 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { navButton, seedQuoteBody, ADMIN_URL } from "./helpers";
 
 // Regression gate for WCAG 2.2 AA (docs: obsidian-ai/43 - 3D Printing/printpaca/wcag-fix-spec.md). Runs axe on
-// the login screen, front door, shop, every admin tab, and one open detail view per record type, in light and
+// the login screen, the shop (at /), every admin tab, and one open detail view per record type, in light and
 // dark, at desktop and 390 px, and asserts no horizontal page scroll at 320 px. Zero violations are required.
 // Focus checks cover the mobile drawer, a delete confirm, and the public submit confirmations.
 
@@ -172,11 +172,11 @@ test.describe("login", () => {
 });
 
 test.describe("public pages", () => {
-  test("front door", async ({ page }) => {
+  test("shop at /", async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto("/");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await scanAll(page, "front door");
+    await scanAll(page, "shop at /");
   });
 
   test("shop: gallery, item panel, empty form, and form with an estimate", async ({ page }) => {

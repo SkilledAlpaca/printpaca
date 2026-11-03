@@ -42,13 +42,13 @@ The preset, printer, material, failure rate, and quantity a brand new quote star
 
 Your business name, logo URL, contact details, tax ID, and how many days a quote stays valid. Printed on quotes and invoices, along with payment instructions and terms text you write here.
 
-The business name and logo also appear on the front door and the shop. The shared footer on every customer page shows your **email**, **phone**, and **address** when you set them here (the `quote.email`, `quote.phone`, and `quote.address` keys in `config.yaml`), as a `mailto:` link, a `tel:` link, and plain text. With none of the three set, the footer shows only its **Home** and **Shop** links. The tax ID, payment instructions, and terms text stay private.
+The business name and logo also appear on the shop, and in the admin app: the sidebar (and the top bar on a phone) shows them in place of the printpaca name and mark, the browser tab title ends with the name, and a logo that fails to load falls back to the printpaca mark. They update when you save Settings, with no reload. In the admin app, the name and logo are a link to the first tab (usually New quote). The shared footer on every customer page shows your **email**, **phone**, and **address** when you set them here (the `quote.email`, `quote.phone`, and `quote.address` keys in `config.yaml`), as a `mailto:` link, a `tel:` link, and plain text. The footer also shows a **Staff sign-in** link when [`site.staffLink`](#site-settings) or `site.adminUrl` provides one. The tax ID, payment instructions, and terms text stay private.
 
 ### Custom CSS
 
 Your own CSS, saved to the top-level `customCss` key in `config.yaml` and served verbatim and unsanitized, because it's CSS you wrote for your own instance, the same trust level as every other free-text field on this page. It applies on two surfaces:
 
-- The front door and the shop (see [Public quote page](#public-quote-page)), loaded on screen after the page's own stylesheets, so it can override theme tokens like `--accent` or target any selector on those pages.
+- The shop (see [Public quote page](#public-quote-page)), loaded on screen after the page's own stylesheets, so it can override theme tokens like `--accent` or target any selector on those pages.
 - Printed quotes and invoices, loaded with `media="print"` by the admin app. It never touches the on-screen admin UI, only what comes out of **Print client quote**, **Print cost audit**, and an invoice's own print view. Target `#print-view.quote` for printed quotes, `#print-view.invoice` for printed invoices, or `#print-view` for both.
 
 The customer pages load the stylesheet from `GET /custom.css`, and the admin app loads its print copy from `GET /admin/custom.css`.
@@ -142,7 +142,7 @@ printpaca serves everything from one port, `PORT` (default `8080`). One hostname
 | `/healthz` | The readiness probe that the Docker `HEALTHCHECK` uses: it checks the database and `CONFIG_DIR`. It sits outside the admin checks, behind the Host allowlist only, so a monitor that reaches the server through a tunnel, or a Cloudflare Access application scoped to `/admin`, still gets an answer. |
 | `/api/public/*` | The public API: config, items, estimate preview, and submissions. |
 | any other `/api/*` | A JSON `404`. The admin API lives under `/admin/api/`, and nothing redirects to it. |
-| everything else | The front door (`/`), the shop (`/order`), item images, `/custom.css`, and the public page's static files. |
+| everything else | The shop (`/`, also served at `/order`), item images, `/custom.css`, and the public page's static files. |
 
 Nothing outside `/admin/` serves the admin app or its API, so a single Cloudflare Access application with the path `/admin` protects the whole admin surface and leaves every customer path open. See [Cloudflare Tunnel](cloudflare-tunnel.md).
 
@@ -154,25 +154,25 @@ Nothing outside `/admin/` serves the admin app or its API, so a single Cloudflar
 
 ### Site settings
 
-The `site` section of `config.yaml`, also under **Front door and shop** on the Requests tab, controls the root of `PORT`. A change applies without a restart.
+The `site` section of `config.yaml`, also under **Storefront** on the Requests tab, controls the root of `PORT`. A change applies without a restart.
 
 | Key | Default | Effect |
 |---|---|---|
-| `site.shopOnMainPort` | `true` | Serves the front door, the shop, and `/api/public/*` on `PORT`. When `false`, `/` returns `302` to `/admin/` and the public routes return `404` on `PORT`. `PUBLIC_PORT` is unaffected. |
-| `site.staffLink` | `true` | Shows the **Staff sign-in** button on the front door served on `PORT`. It links to `/admin/`. |
-| `site.adminUrl` | empty | The **Staff sign-in** target on the `PUBLIC_PORT` front door: an absolute `http` or `https` URL such as `https://printpaca.example.com/admin/`. When empty, the button is hidden there. |
+| `site.shopOnMainPort` | `true` | Serves the shop (at `/` and `/order`) and `/api/public/*` on `PORT`. When `false`, `/` returns `302` to `/admin/` and the public routes return `404` on `PORT`. `PUBLIC_PORT` is unaffected. |
+| `site.staffLink` | `true` | Shows the **Staff sign-in** link in the footer of the shop served on `PORT`. It links to `/admin/`. |
+| `site.adminUrl` | empty | The **Staff sign-in** target in the footer of the shop on `PUBLIC_PORT`: an absolute `http` or `https` URL such as `https://printpaca.example.com/admin/`. When empty, the link is hidden there. |
 
-`GET /api/public/config` returns the result as `staffUrl`, computed per listener: on `PORT` it's `/admin/` when `site.staffLink` is `true` and empty otherwise, and on `PUBLIC_PORT` it's `site.adminUrl`. The front door shows the button only when `staffUrl` isn't empty.
+`GET /api/public/config` returns the result as `staffUrl`, computed per listener: on `PORT` it's `/admin/` when `site.staffLink` is `true` and empty otherwise, and on `PUBLIC_PORT` it's `site.adminUrl`. The shop footer shows the link only when `staffUrl` isn't empty.
 
 ## Public quote page
 
-The main port already serves the front door and the shop (see [Routing and hostnames](#routing-and-hostnames)). Set `PUBLIC_PORT` as well to run a second, customer-only listener for people who want isolation: the admin app is never served there, so you can expose that port without exposing `/admin/`. Only the routes below are reachable through it.
+The main port already serves the shop (see [Routing and hostnames](#routing-and-hostnames)). Set `PUBLIC_PORT` as well to run a second, customer-only listener for people who want isolation: the admin app is never served there, so you can expose that port without exposing `/admin/`. Only the routes below are reachable through it.
 
 ![The public quote page: a visitor-facing estimate form with a material picker, G-code drop zone, and instant price](screenshots/public-quote.png)
 
 **Routes.**
 
-- `GET /` and `GET /order`: the front door at `/` shows your business name, logo, intro text, an **Order** button, and a **Staff sign-in** button when `staffUrl` is set. The shop at `/order` is the estimate page. A visitor picks a material you opted in (`materials[].public: true`), drops a G-code file or enters weight and time, and gets a live price.
+- `GET /` and `GET /order`: both serve the shop, so the storefront is the landing page and old `/order` links keep working. It shows your business name, logo, and intro text at the top, the item gallery and estimate page, and a **Staff sign-in** link in the footer when `staffUrl` is set. A visitor picks a material you opted in (`materials[].public: true`), drops a G-code file or enters weight and time, and gets a live price.
 - `GET /api/public/config`: display data only: materials, currency, upload limits, demo-mode flag, business name, logo, email, phone, and address, intro text, and the printer's filament diameter (for client-side weight estimation). No cost-model field (rate, margin, markup, fee schedule, or printer cost input) is in the payload.
 - `GET /api/public/items` and `GET /item-images/{file}`: the [item gallery](#items-gallery).
 - `POST /api/public/quote/preview`: returns the price and the shipping charge (`pricing.defaultShippingCharge`) the page displays, computed by the server. It has its own per-IP rate limit, separate from submissions, so typing doesn't spend a visitor's submission budget.
@@ -275,12 +275,12 @@ The Settings page edits this configuration through `GET`/`PUT /admin/api/setting
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PORT` | `8080` | Main port: the front door, the shop, and the admin app under `/admin/`. See [Routing and hostnames](#routing-and-hostnames). |
+| `PORT` | `8080` | Main port: the shop and the admin app under `/admin/`. See [Routing and hostnames](#routing-and-hostnames). |
 | `CONFIG_DIR` | `/config` | Directory holding `config.yaml`, `printpaca.db`, and uploads. |
 | `SPOOLMAN_URL` | unset | Base URL of a Spoolman instance, for example `http://spoolman.local:7912` (scheme required). Enables the spool picker. |
 | `MOONRAKER_URL` | unset | Base URL of a Moonraker instance, for example `http://printer.local:7125` (scheme required). Enables the recent-prints picker. |
 | `FLUIDD_URL` | unset | Link-only (never proxied): adds a Fluidd link to the sidebar, for example `http://printer.local`. |
-| `PUBLIC_PORT` | unset | Port for an optional customer-only listener (front door, shop, and public API; never the admin app). Unset means the listener doesn't start. See [Public quote page](#public-quote-page). |
+| `PUBLIC_PORT` | unset | Port for an optional customer-only listener (the shop and public API; never the admin app). Unset means the listener doesn't start. See [Public quote page](#public-quote-page). |
 | `PUBLIC_TRUST_PROXY` | unset | Set to `1` when one reverse proxy sits in front of `PUBLIC_PORT` and sets or appends the client address as the last `X-Forwarded-For` element. Leave it unset on a directly exposed listener, where trusting the header would let a client rotate fabricated values to bypass the rate limit. Put only one such proxy in front: a second appending hop collapses every visitor into that hop's bucket. |
 | `SMTP_PASSWORD` | unset | Password for `smtp.username`; never stored in `config.yaml`. Changing it requires a restart. |
 | `ADMIN_PASSWORD` | unset | Admin login password (at least 8 characters). Unset generates a random password on first start, stores it at `CONFIG_DIR/admin-password`, and logs it once. An explicitly empty value (`ADMIN_PASSWORD=`) disables authentication; it is the only way to opt out. See [Authentication](#authentication). |
@@ -292,7 +292,7 @@ The Settings page edits this configuration through `GET`/`PUT /admin/api/setting
 | `DEMO_MODE` | unset | `1` runs a read-only public demo: admin writes are blocked except login and logout, public submissions are simulated, and Spoolman and Moonraker serve fake data. An empty database is seeded with about three months of sample data. Not for your own deployment; see [Run the demo yourself](demo.md). |
 | `DEMO_PUBLIC_URL` | unset | Demo only (ignored without `DEMO_MODE=1`). A link shown on the demo sign-in screen so visitors find the public quote page. A malformed value stops startup. |
 
-`ADMIN_PASSWORD` and the `CF_ACCESS_*` variables affect only `/admin/`. `ALLOWED_HOSTS` and `ADMIN_TRUST_PROXY` apply to everything on `PORT`. The front door and the shop are built for anonymous visitors and carry no admin capability to protect.
+`ADMIN_PASSWORD` and the `CF_ACCESS_*` variables affect only `/admin/`. `ALLOWED_HOSTS` and `ADMIN_TRUST_PROXY` apply to everything on `PORT`. The shop is built for anonymous visitors and carry no admin capability to protect.
 
 The three integration URLs can also be set in the Settings page; see [Optional integrations](#optional-integrations) for the precedence rule.
 
@@ -302,7 +302,7 @@ The admin app (`/admin/` on `PORT`) is secure by default. With no `ADMIN_PASSWOR
 
 With authentication enabled:
 
-- Every `/admin/api/*` route needs a valid session except `/admin/api/login` and `GET /admin/api/demo` (a pre-login signal for the sign-in screen). The admin app's static files stay reachable so the sign-in screen can load, and `/healthz` needs no session. Logging in sets a `printpaca_session` cookie (`HttpOnly`, `SameSite=Strict`, `Path=/admin/`) that expires 30 days after login, whatever the activity. Because of its path, the browser never sends it to the front door or the shop. The cookie gets `Secure` when the request arrived over TLS, directly or through `X-Forwarded-Proto: https` with `ADMIN_TRUST_PROXY=1`. The primary deployment is a LAN container on plain HTTP, where an unconditional `Secure` flag would make the cookie unusable.
+- Every `/admin/api/*` route needs a valid session except `/admin/api/login` and `GET /admin/api/demo` (a pre-login signal for the sign-in screen). The admin app's static files stay reachable so the sign-in screen can load, and `/healthz` needs no session. Logging in sets a `printpaca_session` cookie (`HttpOnly`, `SameSite=Strict`, `Path=/admin/`) that expires 30 days after login, whatever the activity. Because of its path, the browser never sends it to the shop. The cookie gets `Secure` when the request arrived over TLS, directly or through `X-Forwarded-Proto: https` with `ADMIN_TRUST_PROXY=1`. The primary deployment is a LAN container on plain HTTP, where an unconditional `Secure` flag would make the cookie unusable.
 - Sessions live in memory, so a restart logs everyone out. printpaca removes expired sessions hourly.
 - When the request is known to be HTTPS (directly, or through `X-Forwarded-Proto: https` with `ADMIN_TRUST_PROXY=1` or `PUBLIC_TRUST_PROXY=1`) and the Host is a DNS name, responses carry `Strict-Transport-Security: max-age=31536000`. printpaca never sends it over plain HTTP or to an IP address host. Browsers then refuse plain HTTP to that hostname for a year, on every port, so don't point the same hostname at printpaca's LAN address for plain-HTTP access. Use an IP address or a separate LAN-only name for that. To clear a mistaken entry in Chrome, open `chrome://net-internals/#hsts` and delete the domain.
 - Username logins are refused without any password hashing while multi-user mode is off, and at most four password hashes run at once; extra attempts get a `429`.
@@ -312,8 +312,8 @@ With authentication enabled:
   - Once either budget is exhausted, every attempt from that source, right or wrong, waits 1-2 seconds before the password is compared. Once 10 attempts are queued in that wait, the 11th gets `429` ("too many login attempts are already being throttled; try again shortly") before any comparison.
 
   Outside the queue-full case, a correct password is slowed, never rejected.
-- The `Host` header is checked against an allowlist, a DNS-rebinding defense: a malicious page could otherwise point a DNS name it controls at your LAN address and ride your browser's same-origin request. IP literals and `localhost` always pass; any other hostname must be in `ALLOWED_HOSTS`, for example `ALLOWED_HOSTS=printpaca.local,printpaca.example.com`. A disallowed `Host` gets `403` with a one-line explanation, on every request on `PORT` including the front door, the shop, and static files, even with authentication disabled.
-- The tunnel guard decides what a request carrying a header only Cloudflare's edge adds (`CF-Connecting-IP` or `Cf-Ray`) can do at `/admin/`. It never applies to the front door, the shop, or `/api/public/*`. Outside `DEMO_MODE`, it has three outcomes:
+- The `Host` header is checked against an allowlist, a DNS-rebinding defense: a malicious page could otherwise point a DNS name it controls at your LAN address and ride your browser's same-origin request. IP literals and `localhost` always pass; any other hostname must be in `ALLOWED_HOSTS`, for example `ALLOWED_HOSTS=printpaca.local,printpaca.example.com`. A disallowed `Host` gets `403` with a one-line explanation, on every request on `PORT` including the shop and static files, even with authentication disabled.
+- The tunnel guard decides what a request carrying a header only Cloudflare's edge adds (`CF-Connecting-IP` or `Cf-Ray`) can do at `/admin/`. It never applies to the shop or `/api/public/*`. Outside `DEMO_MODE`, it has three outcomes:
   - **Cloudflare Access configured** (`CF_ACCESS_TEAM` and `CF_ACCESS_AUD`): the request needs a valid `Cf-Access-Jwt-Assertion` token or gets `403` with the reason (for example `missing` or `audience`). A verified request skips the Host allowlist, gets a `Secure` cookie without `ADMIN_TRUST_PROXY`, and is rate-limited by `CF-Connecting-IP`. In multi-user mode the token's email picks the identity (`users.accessAdminEmail` for the admin, an employee's Email field for that employee). See [Cloudflare Tunnel](cloudflare-tunnel.md#remote-admin-access-with-cloudflare-access).
   - **No Access, authentication enabled**: the request is allowed and continues to the CSRF and session checks. The printpaca password and the login rate limits are then the only lock. printpaca logs `admin reached through Cloudflare without Cloudflare Access` at most once a minute. This is supported but not recommended.
   - **No Access, authentication disabled** (`ADMIN_PASSWORD=`): the request gets `403`. Set `ADMIN_PASSWORD` or configure Access.
@@ -369,7 +369,7 @@ To run `PORT` behind a TLS-terminating proxy:
 - Set `ADMIN_TRUST_PROXY=1` so printpaca trusts `X-Forwarded-Proto` from the proxy and applies the `Secure` flag to the session cookie.
 - Add your public hostname to `ALLOWED_HOSTS`, for example `ALLOWED_HOSTS=printpaca.example.com`. Without this, printpaca returns `403` for every request carrying that `Host` header (see [Authentication](#authentication)).
 
-`ADMIN_TRUST_PROXY=1` also makes the per-IP rate limits on the front door and the shop read the visitor's real address. If you also expose `PUBLIC_PORT` through a proxy, set `PUBLIC_TRUST_PROXY=1` for that listener.
+`ADMIN_TRUST_PROXY=1` also makes the per-IP rate limits on the shop read the visitor's real address. If you also expose `PUBLIC_PORT` through a proxy, set `PUBLIC_TRUST_PROXY=1` for that listener.
 
 In `docker-compose.yml`:
 

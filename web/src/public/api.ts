@@ -14,8 +14,8 @@ interface PublicMaterial {
 export interface PublicConfig {
   /** email/phone/address mirror server/config.go's QuoteBranding fields; "" when unset. */
   branding: { businessName: string; logoUrl: string; email: string; phone: string; address: string };
-  /** Where the front door's Staff sign-in button points: "/admin/" on the main port, site.adminUrl on the
-   * public port, "" to hide the button (server/public.go's staffURLFunc). */
+  /** Where the shop footer's Staff sign-in link points: "/admin/" on the main port, site.adminUrl on the
+   * public port, "" to hide the link (server/public.go's staffURLFunc). */
   staffUrl: string;
   introText: string;
   currency: CurrencyConfig;

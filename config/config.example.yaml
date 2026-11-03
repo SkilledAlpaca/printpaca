@@ -160,9 +160,9 @@
 # are also served unauthenticated to visitors of the public quote page.
 # ---------------------------------------------------------------------------
 # quote:
-#   businessName: ""               # also shown on the front door and shop, unauthenticated
+#   businessName: ""               # also shown on the shop, unauthenticated
 #   logoUrl: ""                    # shown on printed quotes; any URL or path your browser can load
-#                                   # (also shown on the front door and shop, unauthenticated)
+#                                   # (also shown on the shop, unauthenticated)
 #   address: ""                    # multiline; shown under the business name on printed quotes/invoices
 #   email: ""
 #   phone: ""
@@ -203,7 +203,7 @@
 # ---------------------------------------------------------------------------
 # customCss: your own CSS, served verbatim and NEVER sanitized, because it's CSS
 # you wrote for your own instance. Max 32 KiB. Applies on two surfaces:
-#   - the front door and shop, at GET /custom.css, loaded after the page's
+#   - the shop, at GET /custom.css, loaded after the page's
 #     own stylesheets on screen: override theme tokens like --accent, or
 #     target any selector on those pages.
 #   - printed quotes and invoices, at GET /admin/custom.css, loaded with
@@ -270,10 +270,10 @@
 # ---------------------------------------------------------------------------
 # site: what the main port (PORT) serves at its root. The admin app always
 # lives under /admin/. shopOnMainPort: false makes / redirect to /admin/ and
-# the public routes (/order, /api/public/*) return 404 on PORT; PUBLIC_PORT is
-# unaffected. staffLink shows the Staff sign-in button on the front door on
-# PORT. adminUrl is the Staff sign-in target on the PUBLIC_PORT front door (an
-# absolute http or https URL); empty hides the button there. A change applies
+# the public routes (/, /order, /api/public/*) return 404 on PORT; PUBLIC_PORT is
+# unaffected. staffLink shows the Staff sign-in link in the shop footer on
+# PORT. adminUrl is the Staff sign-in target in the PUBLIC_PORT shop footer (an
+# absolute http or https URL); empty hides the link there. A change applies
 # without a restart.
 # ---------------------------------------------------------------------------
 # site:

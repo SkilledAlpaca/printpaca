@@ -452,7 +452,7 @@ func main() {
 	mux.HandleFunc("PUT /api/settings", handleSettingsPut(configDir, store, authSt))
 	registerRoutes(mux, db, store, authSt, configDir, demoMode) // static + quotes + clients + invoices + items + ... + proxies
 
-	// The admin chain serves /admin/* on the main port; the public routes (front door, shop, /api/public/*)
+	// The admin chain serves /admin/* on the main port; the public routes (the shop, /api/public/*)
 	// sit beside it behind newMainRouter. PUBLIC_PORT, when set, mounts the same public routes on their own
 	// listener. Both share one publicShared, so rate limits, the upload bound and the notify queue are
 	// per process, not per listener.

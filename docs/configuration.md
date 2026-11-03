@@ -42,6 +42,7 @@ The preset, printer, material, failure rate, and quantity a brand new quote star
 
 Your business name, logo URL, contact details, tax ID, and how many days a quote stays valid. Printed on quotes and invoices, along with payment instructions and terms text you write here.
 
+**Order reference prefix** (`quote.referencePrefix`) starts the short reference a customer sees after sending an order or estimate, such as `HL-1001`, so they can quote it by phone. Leave it blank to use your business initials: two or more words give their initials (Hot Layer Prints becomes `HLP`), one word gives its first three letters, and no usable letters gives `REQ`. Set it to 1 to 10 letters or digits to choose your own. The numbers count up per shop, starting at 1001, across orders and estimates together. Changing the prefix keeps the count going under the new prefix, and references already issued keep the prefix they had. The Requests tab still identifies each request by its long internal ID.
 The business name and logo also appear on the shop, and in the admin app: the sidebar (and the top bar on a phone) shows them in place of the printpaca name and mark, the browser tab title ends with the name, and a logo that fails to load falls back to the printpaca mark. They update when you save Settings, with no reload. In the admin app, the name and logo are a link to the first tab (usually New quote). The shared footer on every customer page shows your **email**, **phone**, and **address** when you set them here (the `quote.email`, `quote.phone`, and `quote.address` keys in `config.yaml`), as a `mailto:` link, a `tel:` link, and plain text. The footer also shows a **Staff sign-in** link when [`site.staffLink`](#site-settings) or `site.adminUrl` provides one. The tax ID, payment instructions, and terms text stay private.
 
 ### Custom CSS
@@ -235,7 +236,7 @@ The main port already serves the shop (see [Routing and hostnames](#routing-and-
 - `GET /api/public/config`: display data only: materials, currency, upload limits, demo-mode flag, business name, logo, email, phone, and address, intro text, and the printer's filament diameter (for client-side weight estimation). No cost-model field (rate, margin, markup, fee schedule, or printer cost input) is in the payload.
 - `GET /api/public/items` and `GET /item-images/{file}`: the [item gallery](#items-gallery).
 - `POST /api/public/quote/preview`: returns the price and the shipping charge (`pricing.defaultShippingCharge`) the page displays, computed by the server. It has its own per-IP rate limit, separate from submissions, so typing doesn't spend a visitor's submission budget.
-- `POST /api/public/quote-request` and `POST /api/public/item-order`: the two ways a visitor's request lands in your **Requests** tab for manual review.
+- `POST /api/public/quote-request` and `POST /api/public/item-order`: the two ways a visitor's request lands in your **Requests** tab for manual review. Both answer `201` with the request's `id`, its short `reference` (see [Business identity](#business-identity)), and `priceCents`. The estimate also returns `needsPrintTime`.
 - `GET /custom.css`: the top-level `customCss` key, verbatim and unsanitized; `200` with an empty body when unset. The admin app serves its own copy at `/admin/custom.css`, for printed quotes and invoices (see [Custom CSS](#custom-css)).
 - `GET /healthz`: liveness only, on `PUBLIC_PORT`. The main port serves the readiness probe at the same path.
 
@@ -249,7 +250,7 @@ The public routes enforce fixed limits so an anonymous visitor can't fill your d
 
 - Each submission's whole upload is capped at 32 MiB total: the file (G-code, 3MF, or STL) plus the accompanying form fields (name, email, note, material, quantity, weight, time) and their MIME headers, not the file alone. A file a few hundred bytes under 32 MiB can still trip the cap.
 - Uploaded files accumulate in `CONFIG_DIR/uploads/` until they total 2 GiB. After that, the public page still accepts submissions but stores them without the attached file (the visitor is told the estimate went through) until you free space by deleting old requests from the Requests tab, or until the automatic retention below catches up. Item-gallery images under `uploads/items/` don't count against this cap.
-- Each visitor IP address is limited to 5 submissions per hour. IPv6 addresses are keyed on their /64 network, not the exact address (a single /64 holds 2^64 addresses), so every device behind one residential prefix shares one 5-per-hour budget; IPv4 stays keyed on the exact address.
+- Each visitor IP address is limited to 10 item orders per hour and, separately, 10 estimate requests per hour, so sending estimates doesn't use up a visitor's orders. IPv6 addresses are keyed on their /64 network, not the exact address (a single /64 holds 2^64 addresses), so every device behind one residential prefix shares one budget of each kind; IPv4 stays keyed on the exact address. A visitor who hits a limit is told to try again later and, when you've set them, sees your email and phone number.
 - Once 500 `quote_requests` rows sit in a non-finalized state (`new` or `viewed`), every new submission is refused with `503` and the message "too many pending requests, try again later" until you finalize or delete some from the Requests tab. Letting Requests pile up silently turns away new customers.
 - Only 2 submissions may be mid-upload at once across the whole process (both listeners); a third is refused immediately with `503` and the message "server is busy handling other uploads, please retry shortly" rather than queued.
 
@@ -269,6 +270,12 @@ On the public page, a customer:
 - Enters a quantity.
 - Either drops a G-code, sliced 3MF, or STL/plain-3MF file to fill in weight and print time automatically (see [Quoting from files](#quoting-from-files) below), or enters weight and print time by hand.
 - Enters their name, email, and an optional note, then submits. The email must look like `name@example.com`: one `@`, text before it, and a domain with a dot that isn't first or last, and no spaces. The page checks this when the visitor submits, and the server checks it again and refuses a malformed address with `422`. It confirms the shape only, not that the address works.
+
+### Requests without a print time
+
+An unsliced STL or 3MF has no print time the visitor can know. The public page lets them send it anyway. The price panel says "We'll confirm the price after we prepare your file for printing", and the confirmation says "Price to be confirmed". If the visitor does enter a print time, the page shows an "Estimated price" as before and the confirmation says so, with the file name and the print time used.
+
+The server accepts a public estimate with the `timeSeconds` field blank or absent and stores it with `needs_print_time` set, `time_seconds` 0, and `price_cents` 0. In that row a price of 0 means "to be confirmed", never "free". The Requests API returns `needsPrintTime: true` for it, and your new-request email says "Print time: not provided" and "Price: to be confirmed". You enter the print time yourself when you quote or convert it.
 
 The estimate and order buttons say "You won't be charged now" because submitting only sends you a request. You review it in the Requests tab and follow up by email, and nothing is charged.
 
@@ -317,7 +324,11 @@ An item only appears on the public gallery once you check its **Public** column 
 
 The public gallery shares the shop page at `/order` with the [public quote page](#public-quote-page) (on `PORT`, and on `PUBLIC_PORT` when set): a visitor can switch between browsing items and requesting a custom quote from the same page. Picking an item, an option in each required group, and a quantity, then submitting, creates a new entry in your **Requests** tab, priced entirely server-side so nothing the visitor's browser sends is trusted for money. From there, an item order behaves like any other request: review it, then finalize it once you've confirmed you can fulfill it. Finalizing an order against an **in stock** item is what decrements that item's stock quantity.
 
-Item orders share the per-IP limit of quote requests (see [Operational limits](#operational-limits)): 5 submissions per hour, counted across both together.
+Item orders have their own per-IP limit, separate from estimate requests (see [Operational limits](#operational-limits)): 10 orders per hour.
+
+Each item has its own address in the shop, `/#/item/<id>`, so a visitor can use the browser's Back button, reload the page, or share the link. The custom estimate form is at `/#/estimate`. These addresses use the part of the URL after `#`, which the server never sees, so no routing setup is needed. If a link points at an item that no longer exists, or at a confirmation that is gone (for example, in a new browser tab), the visitor returns to the gallery with a short note.
+
+After an order, the visitor sees the order's short reference (see [Business identity](#business-identity)), what happens next, and an **Order another item** button. The item page shows the stock on hand, and a note that shipping, if any, is confirmed by email.
 
 ## Quoting from files
 
@@ -325,7 +336,9 @@ Dropping a file on the G-code box (on the New quote page or the public quote pag
 
 - **G-code**: an exact weight, filament length, and print time, read directly from the slicer's own comments in the file.
 - **Sliced `.gcode.3mf`** (from Bambu Studio or OrcaSlicer): the same exact figures as G-code, taken from the slicer's own prediction and summed across every plate in the file.
-- **STL, or a plain (unsliced) 3MF**: an estimated weight only, calculated from the model's volume and an adjustable solidity percentage. Print time still needs entering by hand. Treat this as a starting point: adjust the weight after you've actually sliced the model, since a volume-based estimate can't know about supports, infill patterns, or purge waste the way a slicer does.
+- **STL, or a plain (unsliced) 3MF**: an estimated weight only, calculated from the model's volume and an adjustable solidity percentage. Treat this as a starting point: adjust the weight after you've actually sliced the model, since a volume-based estimate can't know about supports, infill patterns, or purge waste the way a slicer does. Print time still needs entering by hand on the New quote page. On the public page the print time is optional: printpaca never estimates it from the model's volume (see [Requests without a print time](#requests-without-a-print-time)).
+
+On the public page, a dropped STL or 3MF also shows the model's size in millimeters, with a warning when it looks exported in inches (under 2 mm) or larger than 1 m, and the visitor can type their own weight over the estimate. The default solidity there is 20%, inside the "15 to 25%" the hint gives.
 
 All file parsing happens in your browser. On the New quote page, no file is ever uploaded to the server. On the public quote page, the dropped file (G-code, sliced `.gcode.3mf`, plain 3MF, or STL) is uploaded along with the visitor's submission, so you can inspect it, provided the whole submission (the file plus the form fields) fits the server's 32 MiB cap. The server stores it gzipped under `$CONFIG_DIR/uploads/` and serves it back to you as `application/octet-stream` from the request's detail view. An oversized file degrades to estimate-only: only the parsed weight and print time (and the original filename) are sent with the request, and the visitor is told they may need to send the file separately.
 

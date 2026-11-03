@@ -33,6 +33,9 @@
   // users.multiUser, from the same GET /api/demo response (the pre-auth login-info surface; no separate
   // endpoint exists). Gates the username field, so a single-user login screen is unchanged.
   let multiUser = $state(false);
+  // Where the customer shop lives on this port ("/" while site.shopOnMainPort is on, else ""), so staff who
+  // arrived from the shop footer can go back. Same GET /api/demo response.
+  let shopUrl = $state("");
 
   // Password gets the initial focus (single-user's only field, and the default before the async multiUser
   // answer). Once the /api/demo response confirms multi-user mode, focus moves to Username as it mounts
@@ -53,7 +56,8 @@
     try {
       const res = await fetch("api/demo", { signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS) });
       if (!res.ok) return;
-      const body = (await res.json()) as { demoMode?: boolean; publicUrl?: string; multiUser?: boolean };
+      const body = (await res.json()) as { demoMode?: boolean; publicUrl?: string; multiUser?: boolean; shopUrl?: string };
+      if (typeof body.shopUrl === "string") shopUrl = body.shopUrl;
       if (body.demoMode === true) {
         demoMode = true;
         password = "demo"; // prefilled, not locked -- the visitor can still edit it
@@ -112,6 +116,7 @@
   <form class="card login-card" onsubmit={submit}>
     <img class="logo" src={logoSrc} alt="" onerror={onLogoError} />
     <h1>{businessName}</h1>
+    <p class="staff-line">For {businessName} staff</p>
     {#if notice}
       <!-- Set only for the mid-session-401 case (App passes accessWatch.sessionExpired). A plain
            informational note, not `.warn-text`, which is reserved for the submit-time error that can show
@@ -161,6 +166,7 @@
     <button type="submit" class="primary" aria-disabled={submitting ? "true" : undefined}>
       {submitting ? "Signing in…" : "Sign in"}
     </button>
+    {#if shopUrl}<a class="back-to-shop" href={shopUrl}>&larr; Back to shop</a>{/if}
   </form>
 </main>
 
@@ -191,8 +197,21 @@
     margin: 0 auto;
   }
   .login-card h1 {
-    margin: 0 0 var(--space-2, 0.5rem);
+    margin: 0;
     font-size: 1.25rem;
     text-align: center;
+  }
+  .staff-line {
+    margin: 0 0 var(--space-2, 0.5rem);
+    text-align: center;
+    color: var(--muted);
+    font-size: var(--text-sm, 0.875rem);
+  }
+  .back-to-shop {
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 var(--space-2, 0.5rem);
   }
 </style>

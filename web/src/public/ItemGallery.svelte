@@ -64,7 +64,7 @@
   {#if oncustomestimate}
     <button type="button" class="card item-card cta-card" onclick={oncustomestimate}>
       <p class="cta-heading">Need something custom?</p>
-      <p class="cta-desc">Upload your model for an instant estimate.</p>
+      <p class="cta-desc">Upload your own 3D model and get a price estimate.</p>
     </button>
   {/if}
 </div>
@@ -86,6 +86,12 @@
     text-align: left;
     width: 100%;
     min-height: 0;
+  }
+
+  /* A ring well clear of the card's 1px border, so keyboard focus is obvious against it. */
+  .item-card:focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 3px;
   }
 
   .thumb {

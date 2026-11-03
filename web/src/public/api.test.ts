@@ -24,6 +24,24 @@ describe("submitQuoteRequest", () => {
     expect(result.id).toBe("r1");
     expect(result.priceCents).toBe(1234);
     expect(result.fileStored).toBe(true);
+    // A server without the short reference falls back to the id.
+    expect(result.reference).toBe("r1");
+    expect(result.needsPrintTime).toBe(false);
+  });
+
+  it("passes the short reference and the needs-print-time flag through", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: async () => ({ id: "r1", reference: "HL-1001", priceCents: 0, needsPrintTime: true, fileStored: true }),
+      } as unknown as Response),
+    );
+    const result = await submitQuoteRequest(new FormData());
+    expect(result.reference).toBe("HL-1001");
+    expect(result.needsPrintTime).toBe(true);
+    expect(result.priceCents).toBe(0);
   });
 
   it("a 413 (http.MaxBytesReader tripping server-side) maps to actionable copy, not the generic fallback", async () => {

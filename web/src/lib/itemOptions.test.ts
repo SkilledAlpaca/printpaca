@@ -7,7 +7,6 @@ import {
   pickDisplayImage,
   selectedDeltaCents,
   selectionsPayload,
-  touchRecent,
   type ChoiceGroup,
 } from "./itemOptions";
 
@@ -56,26 +55,18 @@ describe("selection math", () => {
 });
 
 describe("photo choice", () => {
-  it("shows the most recently changed selection that has a photo", () => {
-    let recent: string[] = [];
-    recent = touchRecent(recent, "g1");
-    expect(pickDisplayImage(groups, { g1: "o1" }, recent)).toEqual({ url: "/item-images/black.png", alt: "Color: Black" });
-    recent = touchRecent(recent, "g2");
-    expect(pickDisplayImage(groups, { g1: "o1", g2: "o3" }, recent)?.url).toBe("/item-images/strip.png");
-    // Back to None on the newest group: falls back to the older selection's photo.
-    expect(pickDisplayImage(groups, { g1: "o1", g2: "" }, recent)?.url).toBe("/item-images/black.png");
-    // A newer selection without a photo does not hide an older photo.
-    recent = touchRecent(recent, "g1");
-    expect(pickDisplayImage(groups, { g1: "o2", g2: "o3" }, recent)?.url).toBe("/item-images/strip.png");
+  it("shows the first group's photo in display order, not the most recently changed one", () => {
+    expect(pickDisplayImage(groups, { g1: "o1" })).toEqual({ url: "/item-images/black.png", alt: "Color: Black" });
+    // Choosing a later group's photo does not replace the earlier group's.
+    expect(pickDisplayImage(groups, { g1: "o1", g2: "o3" })?.url).toBe("/item-images/black.png");
+    // The later group's photo shows when no earlier selection has one.
+    expect(pickDisplayImage(groups, { g1: "o2", g2: "o3" })?.url).toBe("/item-images/strip.png");
+    expect(pickDisplayImage(groups, { g1: "o1", g2: "" })?.url).toBe("/item-images/black.png");
   });
 
   it("returns null when nothing selected has a photo", () => {
-    expect(pickDisplayImage(groups, { g1: "o2" }, ["g1"])).toBeNull();
-    expect(pickDisplayImage(groups, {}, [])).toBeNull();
-  });
-
-  it("moves a group to the front of the recency list once", () => {
-    expect(touchRecent(["a", "b", "c"], "c")).toEqual(["c", "a", "b"]);
+    expect(pickDisplayImage(groups, { g1: "o2" })).toBeNull();
+    expect(pickDisplayImage(groups, {})).toBeNull();
   });
 });
 

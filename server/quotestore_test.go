@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // validQuoteInputsJSON is a hand-computed one-part bag: weightG=100 @ 20/kg = 200c material, 1h @ 100W @ 0.1/kWh = 1c electricity, everything else zero, quantity 1, so perUnitTotal=batchTotal=201c.
@@ -657,5 +658,87 @@ func TestQuoteCreateWithNoContextIdentityStampsAdmin(t *testing.T) {
 	}
 	if created.CreatedBy != "admin" || created.UpdatedBy != "admin" {
 		t.Fatalf("createdBy=%q updatedBy=%q, want both %q (identityFor's admin fallback)", created.CreatedBy, created.UpdatedBy, "admin")
+	}
+}
+
+func putQuoteIfMatch(t *testing.T, mux *http.ServeMux, id, body, ifMatch string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest("PUT", "/api/quotes/"+id, strings.NewReader(body))
+	if ifMatch != "" {
+		req.Header.Set("If-Match", ifMatch)
+	}
+	return serveReq(mux, req)
+}
+
+// A PUT that names the savedAt it loaded succeeds once; a second PUT with that same, now stale, value gets
+// 409 and changes nothing.
+func TestQuotesPutWithStaleVersionIs409(t *testing.T) {
+	mux := newTestMux(t, t.TempDir())
+	created := mustUnmarshalQuote(t, postQuote(t, mux, quoteBodyFor("")))
+
+	first := putQuoteIfMatch(t, mux, created.ID, strings.Replace(quoteBodyFor(""), `"Benchy"`, `"Tab A"`, 1), created.SavedAt)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first PUT want 200, got %d %s", first.Code, first.Body.String())
+	}
+	saved := mustUnmarshalQuote(t, first)
+	if saved.SavedAt == created.SavedAt {
+		t.Fatalf("savedAt did not change: %s", saved.SavedAt)
+	}
+
+	stale := putQuoteIfMatch(t, mux, created.ID, strings.Replace(quoteBodyFor(""), `"Benchy"`, `"Tab B"`, 1), created.SavedAt)
+	if stale.Code != http.StatusConflict {
+		t.Fatalf("stale PUT want 409, got %d %s", stale.Code, stale.Body.String())
+	}
+	if !strings.Contains(stale.Body.String(), "changed in another tab") {
+		t.Errorf("409 body = %s", stale.Body.String())
+	}
+
+	got := mustUnmarshalQuote(t, serveReq(mux, httptest.NewRequest("GET", "/api/quotes/"+created.ID, nil)))
+	if got.Label != "Tab A" {
+		t.Errorf("label after rejected PUT = %q, want Tab A", got.Label)
+	}
+
+	// The current version, quoted as an HTTP entity tag would be, is accepted.
+	again := putQuoteIfMatch(t, mux, created.ID, strings.Replace(quoteBodyFor(""), `"Benchy"`, `"Tab B"`, 1), `"`+saved.SavedAt+`"`)
+	if again.Code != http.StatusOK {
+		t.Fatalf("PUT with current version want 200, got %d %s", again.Code, again.Body.String())
+	}
+}
+
+// Without If-Match a PUT still overwrites (status changes and imports rely on it), and every PUT moves
+// savedAt forward even inside one millisecond.
+func TestQuotesPutWithoutVersionOverwritesAndAdvancesSavedAt(t *testing.T) {
+	mux := newTestMux(t, t.TempDir())
+	created := mustUnmarshalQuote(t, postQuote(t, mux, quoteBodyFor("")))
+	prev := created.SavedAt
+	for i := 0; i < 5; i++ {
+		rec := putQuote(t, mux, created.ID, quoteBodyFor(""))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("PUT %d want 200, got %d", i, rec.Code)
+		}
+		next := mustUnmarshalQuote(t, rec).SavedAt
+		if next <= prev {
+			t.Fatalf("PUT %d savedAt %s did not advance past %s", i, next, prev)
+		}
+		prev = next
+	}
+}
+
+func TestQuotesPutVersionOnUnknownIdIs404(t *testing.T) {
+	mux := newTestMux(t, t.TempDir())
+	rec := putQuoteIfMatch(t, mux, "nope", quoteBodyFor(""), "2020-01-01T00:00:00Z")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", rec.Code)
+	}
+}
+
+func TestNextQuoteVersionIsStrictlyLater(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour).Truncate(time.Millisecond)
+	cur := future.Format(quoteVersionLayout)
+	if got := nextQuoteVersion(cur); got <= cur {
+		t.Fatalf("nextQuoteVersion(%s) = %s, want later", cur, got)
+	}
+	if got := nextQuoteVersion("2020-01-01T00:00:00Z"); got <= "2020-01-01T00:00:00Z" {
+		t.Fatalf("nextQuoteVersion of an old whole-second value = %s", got)
 	}
 }

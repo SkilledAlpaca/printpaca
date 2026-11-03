@@ -411,7 +411,7 @@ func (q *quotes) handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	by := identityFor(r).username
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := quoteVersionNow()
 	rec := Quote{
 		ID: newID(), SavedAt: now, Label: in.Label, ClientID: in.ClientID, ClientName: in.ClientName,
 		Project: in.Project, Reference: in.Reference, Status: in.Status, StatusLog: in.StatusLog,
@@ -442,6 +442,34 @@ func (q *quotes) handlePost(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rec)
 }
 
+// quoteConflictMessage is the 409 text for a PUT whose If-Match no longer matches the stored savedAt.
+const quoteConflictMessage = "This quote was changed in another tab or by another user."
+
+// quoteVersionLayout is the savedAt format for new writes: UTC with milliseconds, so two saves in the same
+// second still carry different versions. Older rows keep their whole-second value, which sorts and parses
+// the same way.
+const quoteVersionLayout = "2006-01-02T15:04:05.000Z"
+
+func quoteVersionNow() string {
+	return time.Now().UTC().Format(quoteVersionLayout)
+}
+
+// nextQuoteVersion is the savedAt for an update of a row whose current value is `current`. It is strictly
+// later than `current`, even when the clock reads the same millisecond or went backwards, so a stale
+// If-Match can never equal a newer row.
+func nextQuoteVersion(current string) string {
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	if prev, err := time.Parse(time.RFC3339, current); err == nil && !now.After(prev) {
+		now = prev.Truncate(time.Millisecond).Add(time.Millisecond)
+	}
+	return now.Format(quoteVersionLayout)
+}
+
+// quoteIfMatch is the savedAt the client loaded, from the If-Match header (quoted or bare), or "".
+func quoteIfMatch(r *http.Request) string {
+	return strings.Trim(strings.TrimSpace(r.Header.Get("If-Match")), `"`)
+}
+
 func (q *quotes) handlePut(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	in, ok := decodeJSONBody[quoteInput](w, r, quotesMaxBytes)
@@ -468,8 +496,30 @@ func (q *quotes) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	res, err := q.db.Exec(`
+	tx, err := q.db.Begin()
+	if err != nil {
+		log.Printf("quotes begin: %v", err)
+		http.Error(w, "quotes not writable", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+	var current string
+	if err := tx.QueryRow(`SELECT saved_at FROM quotes WHERE id = ?`, id).Scan(&current); errors.Is(err, sql.ErrNoRows) {
+		writeAPIError(w, http.StatusNotFound, "quote not found")
+		return
+	} else if err != nil {
+		log.Printf("quotes read version: %v", err)
+		http.Error(w, "quotes not writable", http.StatusInternalServerError)
+		return
+	}
+	// A client that sends the savedAt it loaded gets optimistic concurrency: a different current value means
+	// someone else saved first. Callers that omit the header (status changes, imports) keep last-write-wins.
+	if expected := quoteIfMatch(r); expected != "" && expected != current {
+		writeAPIError(w, http.StatusConflict, quoteConflictMessage)
+		return
+	}
+	now := nextQuoteVersion(current)
+	if _, err := tx.Exec(`
 		UPDATE quotes SET saved_at = ?, label = ?, client_id = ?, client_name = ?, project = ?, reference = ?,
 			status = ?, status_log = ?, invoiced_as = ?, inputs = ?, quantity = ?, per_unit_total_cents = ?,
 			batch_total_cents = ?, recommended_price_cents = ?, resolved_price_cents = ?, net_profit_cents = ?,
@@ -479,20 +529,14 @@ func (q *quotes) handlePut(w http.ResponseWriter, r *http.Request) {
 		in.Status, string(in.StatusLog), nullable(in.InvoicedAs), string(stored),
 		out.Quantity, out.PerUnitTotalCents, out.BatchTotalCents,
 		nullable(out.RecommendedPriceCents), nullable(out.ResolvedPriceCents), nullable(out.NetProfitCents),
-		nullable(out.AchievedMarginPct), boolToInt(out.Valid), out.PartCount, identityFor(r).username, id)
-	if err != nil {
+		nullable(out.AchievedMarginPct), boolToInt(out.Valid), out.PartCount, identityFor(r).username, id); err != nil {
 		log.Printf("quotes update: %v", err)
 		http.Error(w, "quotes not writable", http.StatusInternalServerError)
 		return
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		log.Printf("quotes rows affected: %v", err)
+	if err := tx.Commit(); err != nil {
+		log.Printf("quotes commit: %v", err)
 		http.Error(w, "quotes not writable", http.StatusInternalServerError)
-		return
-	}
-	if n == 0 {
-		writeAPIError(w, http.StatusNotFound, "quote not found")
 		return
 	}
 

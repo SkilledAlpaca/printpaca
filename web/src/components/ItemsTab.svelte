@@ -320,8 +320,10 @@
   function cancelDelete() {
     confirmingDelete = false;
   }
+  let deleting = false;
   async function confirmDeleteItem() {
-    if (!detail) return;
+    if (!detail || deleting) return;
+    deleting = true;
     const { id, name } = detail;
     const next = neighborId(items.map((x) => x.id), id);
     try {
@@ -332,6 +334,8 @@
     } catch (err) {
       formErrors = [err instanceof Error ? err.message : "Couldn't delete item."];
       confirmingDelete = false;
+    } finally {
+      deleting = false;
     }
   }
 

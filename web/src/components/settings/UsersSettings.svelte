@@ -152,7 +152,10 @@
   function cancelDeleteRow() {
     confirmDeleteId = null;
   }
+  let removingUser = false;
   async function remove(u: UserRecord) {
+    if (removingUser) return;
+    removingUser = true;
     confirmDeleteId = null;
     const next = usersState.status === "ready" ? neighborId(usersState.users.map((x) => x.id), u.id) : null;
     try {
@@ -165,6 +168,8 @@
       void focusAfterUpdate(() => (next ? document.querySelector<HTMLElement>(keySelector(`delete-user-${next}`)) : null) ?? document.querySelector<HTMLElement>("#section-users h2"));
     } catch (err) {
       rowError = { ...rowError, [u.id]: err instanceof Error ? err.message : "Couldn't delete the user." };
+    } finally {
+      removingUser = false;
     }
   }
 

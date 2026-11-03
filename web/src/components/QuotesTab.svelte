@@ -345,6 +345,7 @@
   }
 
   async function submitEmailEntry(q: SavedQuote) {
+    if (emailingId !== null) return;
     const email = validEntryEmail(emailDraft);
     if (!email) {
       emailEntryError = "Enter a valid email address.";
@@ -367,6 +368,7 @@
   }
 
   async function emailQuote(q: SavedQuote, entered?: string) {
+    if (emailingId !== null) return;
     closeMenu();
     let email = entered ?? clientEmailFor(q, clients);
     if (!email) return;
@@ -593,7 +595,10 @@
   function cancelDelete() {
     confirmingId = null;
   }
+  let removingId: string | null = null;
   async function remove(q: SavedQuote) {
+    if (removingId !== null) return;
+    removingId = q.id;
     confirmingId = null;
     closeMenu();
     const next = neighborId(sortedQuotes.map((x) => x.id), q.id);
@@ -608,6 +613,8 @@
     } catch (err) {
       actionFailed = true;
       actionStatus = err instanceof Error ? `Couldn't delete "${q.label}": ${err.message}` : `Couldn't delete "${q.label}".`;
+    } finally {
+      removingId = null;
     }
   }
 

@@ -533,8 +533,10 @@
   function cancelDeletePaymentConfirm() {
     confirmingPaymentDelete = null;
   }
+  let deletingPayment = false;
   async function confirmDeletePayment(paymentId: string) {
-    if (!detail) return;
+    if (!detail || deletingPayment) return;
+    deletingPayment = true;
     paymentErrors = [];
     const next = neighborId(detail.payments.map((p) => p.id), paymentId);
     try {
@@ -552,6 +554,8 @@
     } catch (err) {
       paymentErrors = [err instanceof Error ? err.message : "Couldn't delete payment."];
       confirmingPaymentDelete = null;
+    } finally {
+      deletingPayment = false;
     }
   }
 </script>

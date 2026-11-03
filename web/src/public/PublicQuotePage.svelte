@@ -260,10 +260,12 @@
   // Set only when a typed quantity exceeded MAX_QUOTE_QUANTITY and was clamped. Cleared on the next edit (the
   // input's oninput), not by the effect, which would clear it in the same reactive pass that set it.
   let quantityClampNotice = $state("");
+  let lastClampedTo = -1;
   $effect(() => {
     if (quantity === null) return;
     const clamped = clampQuantity(quantity, MAX_QUOTE_QUANTITY);
     if (clamped.message) {
+      lastClampedTo = clamped.value;
       quantity = clamped.value;
       quantityClampNotice = clamped.message;
     }
@@ -1064,7 +1066,7 @@
             step="1"
             bind:value={quantity}
             oninput={(e) => {
-              if (Number(e.currentTarget.value) <= MAX_QUOTE_QUANTITY) quantityClampNotice = "";
+              if (Number(e.currentTarget.value) !== lastClampedTo) quantityClampNotice = "";
             }}
             required
             aria-invalid={marked("quantity") ? "true" : undefined}

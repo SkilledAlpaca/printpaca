@@ -96,10 +96,12 @@
 
   // The cap comes from the stock on hand when that is below the per-order maximum of 100.
   const stockLimited = $derived(item.stock.mode === "in_stock" && !item.stock.allowBackorder && (item.stock.qty ?? 0) < 100);
+  let lastClampedTo = -1;
   $effect(() => {
     if (quantity === null) return;
     const clamped = clampQuantity(quantity, maxQuantity, 1, stockLimited ? "stock" : "policy");
     if (clamped.message) {
+      lastClampedTo = clamped.value;
       quantity = clamped.value;
       quantityClampNotice = clamped.message;
     }
@@ -307,9 +309,9 @@
         step="1"
         bind:value={quantity}
         oninput={(e) => {
-          // Keep the notice the clamp just set (its effect runs between the bind and this handler); clear it on
-          // the next in-range edit.
-          if (Number(e.currentTarget.value) <= maxQuantity) quantityClampNotice = "";
+          // The clamp effect runs between the bind and this handler and has already rewritten the box to the
+          // clamped value, so keep the notice while the box still shows exactly that; any other edit clears it.
+          if (Number(e.currentTarget.value) !== lastClampedTo) quantityClampNotice = "";
         }}
         required
         aria-invalid={quantityInvalid ? "true" : undefined}

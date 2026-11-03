@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { deflateSync, crc32 } from "node:zlib";
-import { navButton } from "./helpers";
+import { navButton, requestIdByReference } from "./helpers";
 
 /** A valid 1x1 PNG of one color: distinct colors give distinct bytes, so distinct content-addressed files. */
 function tinyPng(r: number, g: number, b: number): Buffer {
@@ -165,7 +165,7 @@ test("admin seeds a public item and the public gallery shows it", async ({ reque
   await expect(card).toContainText("In stock: 5");
 });
 
-test("ordering flow: required group blocks, optional starts on None, prices sum, photo follows the choice", async ({ page }) => {
+test("ordering flow: required group blocks, optional starts on None, prices sum, photo follows the choice", async ({ page, request }) => {
   await page.goto(`${PUBLIC_URL}order`);
   const card = page.getByRole("button", { name: new RegExp(ITEM_NAME) });
   await card.click();
@@ -187,13 +187,25 @@ test("ordering flow: required group blocks, optional starts on None, prices sum,
   await expect(page.getByRole("alert").filter({ hasText: "Choose Color." })).toBeVisible();
   await expect(color).toHaveAttribute("aria-invalid", "true");
   await expect(color).toBeFocused();
+  // The error sits under the select and is linked to it; the group is marked required.
+  await expect(color).toHaveAccessibleDescription("Choose Color.");
+  await expect(page.getByText("Color (required)")).toBeVisible();
 
   // Choosing Red swaps in its photo; the alt names the option.
   await color.selectOption({ label: "Red (+$5.00)" });
+  // The errors clear as soon as the problem is fixed, not on the next submit.
+  await expect(page.getByRole("alert").filter({ hasText: "Choose Color." })).toHaveCount(0);
+  await expect(color).not.toHaveAttribute("aria-invalid", "true");
   const photo = page.locator("img[data-option-photo]");
   await expect(photo).toHaveAttribute("alt", "Color: Red");
   const redSrc = await photo.getAttribute("src");
   expect(redSrc).toMatch(/^\/item-images\/[0-9a-f]{16}\.png$/);
+  // Tap to enlarge: the photo opens in a dialog, and Escape closes it without leaving the item.
+  await page.getByRole("button", { name: "Enlarge photo" }).click();
+  await expect(page.getByRole("dialog", { name: /Photo of/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: ITEM_NAME })).toBeVisible();
   await page.getByLabel("Quantity").fill(String(ORDER_QUANTITY));
 
   // The live total also carries a trailing " · $X.XX each" suffix, so use toContainText to pin only
@@ -225,7 +237,7 @@ test("ordering flow: required group blocks, optional starts on None, prices sum,
   const refText = (await page.locator(".confirmation .ref").textContent())?.trim() ?? "";
   const refMatch = refText.match(/^Reference: (.+)$/);
   expect(refMatch).not.toBeNull();
-  createdRequestId = refMatch![1]!;
+  createdRequestId = await requestIdByReference(request, refMatch![1]!);
 });
 
 test("the order appears in the admin Requests list as an item order", async ({ page, request }) => {
@@ -310,7 +322,7 @@ test("an in_stock item with allowBackorder and zero qty shows 'Available to orde
   const refText = (await page.locator(".confirmation .ref").textContent())?.trim() ?? "";
   const refMatch = refText.match(/^Reference: (.+)$/);
   expect(refMatch).not.toBeNull();
-  createdBackorderRequestId = refMatch![1]!;
+  createdBackorderRequestId = await requestIdByReference(request, refMatch![1]!);
 
   const apiRes = await request.get(`/admin/api/requests/${createdBackorderRequestId}`);
   expect(apiRes.ok()).toBeTruthy();
@@ -327,7 +339,7 @@ test("the gallery's custom-estimate CTA card switches to the quote view", async 
 
   const cta = page.getByRole("button", { name: /Need something custom\?/ });
   await expect(cta).toBeVisible();
-  await expect(cta).toContainText("Upload your model for an instant estimate.");
+  await expect(cta).toContainText("Upload your own 3D model and get a price estimate.");
 
   await cta.click();
 

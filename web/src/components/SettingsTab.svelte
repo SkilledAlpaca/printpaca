@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { timezoneOptions as timezoneOptionList } from "../lib/timezones";
   import { nextKey, type ServerConfig } from "../lib/settings";
   import { settingsWarnings } from "../lib/settingsRules";
   import { presetDisplayName, warnFor } from "../lib/format";
@@ -53,13 +54,7 @@
     { id: "section-diagnostics", label: "Diagnostics", key: "" },
   ];
   // Suggestions for the time zone field; a typed name outside the list is still accepted if Intl knows it.
-  const timezoneOptions: string[] = (() => {
-    try {
-      return ["UTC", ...Intl.supportedValuesOf("timeZone")];
-    } catch {
-      return ["UTC"];
-    }
-  })();
+  const timezoneOptions = timezoneOptionList();
   function jumpTo(id: string) {
     const section = document.getElementById(id);
     if (!section) return;

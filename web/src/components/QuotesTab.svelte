@@ -32,6 +32,8 @@
   import { clientEmailFor, emailDisabledReason, needsEmailEntry, validEntryEmail, canManageClientsFor } from "../lib/quoteEmail";
   import type { ConfigUser } from "../lib/permissions";
   import { computeMenuAnchor } from "../lib/menuAnchor";
+  import { handleMenuKeydown } from "../lib/menuNav";
+  import { matchesQuoteFilter, QUOTE_STATUS_CHIPS, type QuoteStatusFilter } from "../lib/quoteFilter";
   import type { OrderBreakdown } from "../lib/engine/index";
   import { INITIAL_PAGE_LIMIT } from "../lib/pagination";
   import { createBackfillController } from "../lib/backfillController.svelte";
@@ -63,18 +65,22 @@
   let loadingMore = $state(false);
 
   let filterText = $state("");
+  // Status chips, composing (AND) with the text filter like the Invoices list.
+  let statusFilter = $state<QuoteStatusFilter>("all");
   // Session-only: never persisted, applied after filtering for display, and never reorders `quotes`.
   let sortOrder = $state<QuoteSortOrder>("newest");
   // The filter appears only once the list is long enough to need it.
   const showFilter = $derived(quotes.length > 5);
+  const filterActive = $derived(filterText.trim() !== "" || statusFilter !== "all");
+  // The filter matches the label or the client name, so "Casey" finds Casey's quotes.
   const filteredQuotes = $derived(
-    filterText.trim() === ""
-      ? mappedQuotes
-      : mappedQuotes.filter((q) => q.label.toLowerCase().includes(filterText.trim().toLowerCase())),
+    filterActive
+      ? mappedQuotes.filter((q) => matchesQuoteFilter(q, filterText, statusFilter, cfg.quote.validDays, Date.now()))
+      : mappedQuotes,
   );
   const sortedQuotes = $derived(sortQuotes(filteredQuotes, sortOrder));
 
-  // The label filter must never run over a partially-loaded list: with text in the box and the list not fully
+  // The filter must never run over a partially-loaded list: with text in the box and the list not fully
   // loaded, backfill every remaining row first (shared latch, see backfillController.svelte.ts). Re-runs per
   // keystroke via the $effect; ensureReady is a no-op once fullyLoaded, backfilling, failed or blank.
   const backfill = createBackfillController<ServerQuote>({
@@ -87,7 +93,7 @@
     },
   });
   $effect(() => {
-    backfill.ensureReady(filterText);
+    backfill.ensureReady(filterActive ? `${statusFilter}|${filterText}` : "");
   });
 
   async function loadMore() {
@@ -194,6 +200,12 @@
     closeMenu();
   }
   function handleWindowKeydown(e: KeyboardEvent) {
+    // Arrow keys, Home and End move between the open panel's items; Tab closes it with focus on the toggle.
+    if (menuOpenId !== null && e.key !== "Escape") {
+      const panel = document.getElementById(`row-menu-${menuOpenId}`);
+      if (panel && e.target instanceof Node && panel.contains(e.target)) handleMenuKeydown(e, panel, closeMenu);
+      return;
+    }
     if (e.key !== "Escape") return;
     if (menuOpenId === null) return;
     // Scoped to the open menu: confirmingId and menuOpenId are independent (toggleMenu/closeMenu never touch
@@ -346,8 +358,8 @@
     else void markStatus(q, c.kind);
   }
   function actionConfirmText(q: SavedQuote, c: { kind: QuoteStatus | "email" }): string {
-    if (c.kind === "email") return `Send "${q.label}" to ${clientEmailFor(q, clients) ?? "the client"}?`;
-    return `Mark "${q.label}" as ${c.kind}?`;
+    if (c.kind === "email") return `Yes, send to ${clientEmailFor(q, clients) ?? "the client"}`;
+    return `Yes, mark as ${c.kind}`;
   }
 
   let emailingId = $state<string | null>(null);
@@ -790,8 +802,8 @@
       <input
         id="quotes-filter"
         class="filter-input"
-        placeholder="Filter by label"
-        aria-label="Filter by label"
+        placeholder="Filter by label or client"
+        aria-label="Filter by label or client"
         bind:value={filterText}
       />
       <select class="sort-select" aria-label="Sort saved quotes" bind:value={sortOrder}>
@@ -805,6 +817,19 @@
     </div>
   {/if}
 
+  {#if quotes.length > 0}
+    <div class="chips" role="group" aria-label="Filter by status">
+      {#each QUOTE_STATUS_CHIPS as chip (chip.key)}
+        <button
+          type="button"
+          class:active={statusFilter === chip.key}
+          aria-pressed={statusFilter === chip.key}
+          onclick={() => (statusFilter = chip.key)}
+        >{chip.label}</button>
+      {/each}
+    </div>
+  {/if}
+
   <BackfillStatus backfilling={backfill.backfilling} backfillFailed={backfill.backfillFailed} verb="filter" />
 
   {#if cfg.smtp.host === ""}
@@ -814,7 +839,7 @@
   {/if}
 
   <div class="card">
-    <div class="table-scroll">
+    <div class="table-scroll stack">
       <table>
         <thead>
           <tr>
@@ -836,14 +861,14 @@
               {@const status = displayStatus(q, cfg.quote.validDays, Date.now())}
               {@const emailReason = emailDisabledReason(q, cfg.smtp.host, clientsLoaded, clients, canManageClients)}
               {@const primaryT = primaryTransition(q)}
-              <tr>
-                <td>
+              <tr class="quote-row">
+                <td class="c-label">
                   <button type="button" class="quiet linkish" data-row-id={q.id} onclick={() => openInEditor(q)}>{q.label}</button>
                   {#if isMultiPart(q)}<span class="parts-badge">{q.partCount} parts</span>{/if}
                   <AttributionLine createdBy={q.createdBy} updatedBy={q.updatedBy} />
                 </td>
-                <td>{q.clientName ?? "-"}</td>
-                <td class="num">
+                <td class="c-client">{q.clientName ?? "-"}</td>
+                <td class="num c-price">
                   {#if stats.priceCents !== null}
                     <div class="price-batch">{money(stats.priceCents * qty, cfg)}</div>
                     {#if qty > 1}
@@ -853,9 +878,18 @@
                     <span class="cost-only">cost only</span>
                   {/if}
                 </td>
-                <td><StatusBadge status={status} /></td>
-                <td class="nowrap">{formatSavedAt(q.savedAt)}</td>
-                <td>
+                <td class="c-status">
+                  <StatusBadge status={status} />
+                  {#if q.invoicedAs}
+                    <!-- In the status cell, not the action cluster: the long "Invoiced INV-…" label made the
+                         cluster wider than its column and clipped the ⋯ menu. -->
+                    <button type="button" class="pill invoiced-badge" onclick={() => openInvoiced(q)}>
+                      {invoicedLabel(q.invoicedAs)}
+                    </button>
+                  {/if}
+                </td>
+                <td class="nowrap c-saved" data-label="Saved">{formatSavedAt(q.savedAt)}</td>
+                <td class="c-actions">
                   <div class="row-actions">
                     <button type="button" class="quiet" onclick={() => openInEditor(q)}>Open in editor</button>
                     {#if primaryT}
@@ -865,11 +899,6 @@
                         data-focus-key={`transition-${q.id}`}
                         onclick={() => askAction(q, primaryT, `transition-${q.id}`)}
                       >{TRANSITION_LABELS[primaryT]}</button>
-                    {/if}
-                    {#if q.invoicedAs}
-                      <button type="button" class="pill invoiced-badge" onclick={() => openInvoiced(q)}>
-                        {invoicedLabel(q.invoicedAs)}
-                      </button>
                     {/if}
                     <button
                       type="button"
@@ -943,7 +972,7 @@
                               Duplicate
                             </button>
                             {#if confirmingId === q.id}
-                              <button type="button" class="quiet danger menu-item confirm-delete" onclick={() => remove(q)} aria-label={`Delete? "${q.label}"`} use:confirmFocus={{ restore: keySelector(`delete-quote-${q.id}`), cancel: cancelDelete }}>Delete?</button>
+                              <button type="button" class="quiet danger menu-item confirm-delete" onclick={() => remove(q)} aria-label={`Yes, delete "${q.label}"`} use:confirmFocus={{ restore: keySelector(`delete-quote-${q.id}`), cancel: cancelDelete }}>Yes, delete quote</button>
                               <button type="button" class="quiet menu-item cancel-delete" onclick={cancelDelete} aria-label={`Cancel deleting "${q.label}"`}>Cancel</button>
                             {:else}
                               <button type="button" class="quiet menu-item" data-focus-key={`delete-quote-${q.id}`} onclick={() => askDelete(q.id)} aria-label={`Delete "${q.label}"`}>Delete</button>
@@ -1046,7 +1075,7 @@
                 <td colspan="6" class="empty-state">
                   {quotes.length === 0
                     ? "No saved quotes yet. Save one from the New quote page."
-                    : "No quotes match the filter. Clear it to see all saved quotes."}
+                    : "No quotes match the filter. Clear it, or choose All, to see every saved quote."}
                 </td>
               </tr>
             {/each}
@@ -1054,7 +1083,7 @@
         </tbody>
       </table>
     </div>
-    {#if !loading && filterText.trim() === ""}
+    {#if !loading && !filterActive}
       <LoadMoreRow shown={quotes.length} {total} {loadingMore} onLoadMore={loadMore} />
     {/if}
   </div>
@@ -1141,6 +1170,41 @@
     white-space: nowrap;
   }
   .invoiced-badge:hover { color: var(--text); }
+  .c-status .invoiced-badge { display: block; margin-top: 0.25rem; }
+
+  /* Phones: each quote becomes a stacked card (label and price on top, client and status, saved date, then the
+   * actions) instead of a table that clips its status, price and actions behind a horizontal scroll. The
+   * header row stays in the DOM, hidden with the visually-hidden clip, and the elements keep their table
+   * semantics. */
+  @media (max-width: 600px) {
+    .stack { overflow-x: visible; }
+    .stack table, .stack tbody { display: block; }
+    .stack thead {
+      position: absolute;
+      width: 1px; height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    .stack tr.quote-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas: "label price" "client status" "saved saved" "actions actions";
+      gap: 0.2rem 0.75rem;
+      padding: 0.7rem 0;
+      border-top: 1px solid var(--border);
+    }
+    .stack td { display: block; padding: 0; border: none; min-width: 0; }
+    .c-label { grid-area: label; overflow-wrap: anywhere; }
+    .c-price { grid-area: price; text-align: right; font-weight: 600; }
+    .c-client { grid-area: client; overflow-wrap: anywhere; color: var(--muted); }
+    .c-status { grid-area: status; text-align: right; }
+    .c-saved { grid-area: saved; color: var(--muted); font-size: var(--text-sm); }
+    .c-saved::before { content: attr(data-label) " "; }
+    .c-actions { grid-area: actions; margin-top: 0.3rem; }
+    .row-actions { flex-wrap: wrap; }
+    .stack td.empty-state, .stack .convert-tr td { display: block; }
+  }
 
   .convert-row {
     display: flex;

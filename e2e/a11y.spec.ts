@@ -314,9 +314,8 @@ test.describe("admin detail views", () => {
     await expect(page.locator("main h1, main h2").first()).toBeVisible();
     await expectOneH1AndRecordTitle(page);
     await page.getByRole("button", { name: /^Delete client/ }).click();
-    // The trigger is replaced by the confirm and cancel buttons; focus must land on one of them, not <body>.
-    await expect(page.locator("main :focus")).toHaveCount(1);
-    await expect(page.locator("main :focus")).toHaveText(/Delete client\?|Cancel/);
+    // The trigger is replaced by the confirm and cancel buttons; focus must land on the confirm button, not <body> or Cancel.
+    await expect(page.getByRole("button", { name: "Delete client?" })).toBeFocused();
   });
 });
 

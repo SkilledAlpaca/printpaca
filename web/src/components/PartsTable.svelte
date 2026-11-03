@@ -67,6 +67,6 @@
     .parts-table.priced tfoot td:nth-child(3) { display: none; }
     .parts-table tfoot td:nth-child(2) { display: none; }
   }
-  /* Values were <th> cells; keep their heading weight now that they are data cells. */
+  /* Bold, matching the "Order total" row header. */
   .total-cell { font-weight: 700; }
 </style>

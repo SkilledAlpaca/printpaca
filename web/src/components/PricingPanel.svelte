@@ -98,9 +98,9 @@
     </p>
 
     {#if !p.valid}
-      <p class="warn-text" id="pricing-invalid">Pricing is incomplete. Fix the flagged fields above.</p>
+      <p class="warn-text">Pricing is incomplete. Fix the flagged fields above.</p>
     {/if}
-    <dl class="pricing-out measure-cap" class:invalid={!p.valid} aria-describedby={!p.valid ? "pricing-invalid" : undefined}>
+    <dl class="pricing-out measure-cap" class:invalid={!p.valid}>
       {#if multi}
         <div><dt>Recommended items total</dt><dd>{p.valid ? money(recommendedItems, cfg) : "-"}</dd></div>
         {#if overridden}

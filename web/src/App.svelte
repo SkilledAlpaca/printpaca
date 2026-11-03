@@ -601,8 +601,8 @@
     onclick={() => activate(id)}
   >
     <Icon path={TABS[id].icon} />
-    <!-- Collapsed: the label is visually hidden, not replaced by an aria-label, so the unread count below
-         stays part of the button's name (WCAG 1.3.1, 2.5.3). -->
+    <!-- The label is always in the DOM (visually hidden when collapsed), so the button's accessible name is its
+         visible text plus the unread count below (WCAG 1.3.1, 2.5.3). -->
     <span class="label" class:visually-hidden={collapsed}>{TABS[id].label}</span>
     {#if id === "requests" && unreadRequests.count > 0}
       <span class="unread-pill">{unreadRequests.count}<span class="visually-hidden"> unread requests</span></span>

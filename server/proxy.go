@@ -529,9 +529,17 @@ type integrationsTestResponse struct {
 }
 
 // handleIntegrationsTest implements POST /api/integrations/test: validates kind and url (validProxyURL
-// rules, 4xx on failure), probes live, and reports the outcome. Demo mode rejects it so a public demo
-// can never trigger an outbound request.
-func handleIntegrationsTest(w http.ResponseWriter, r *http.Request) {
+// rules, 4xx on failure), probes live, and reports the outcome. An empty url tests the effective URL (the
+// environment variable, else the saved setting), which is how the Settings card tests a URL it can't show
+// because an environment variable sets it. Demo mode rejects it so a public demo can never trigger an
+// outbound request.
+func handleIntegrationsTest(store *ConfigStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		integrationsTest(store, w, r)
+	}
+}
+
+func integrationsTest(store *ConfigStore, w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, integrationsTestMaxBytes)
 	var in integrationsTestRequest
 	dec := json.NewDecoder(r.Body)
@@ -544,7 +552,20 @@ func handleIntegrationsTest(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, `kind: must be "spoolman" or "moonraker"`)
 		return
 	}
-	target, err := validProxyURL("url", in.URL)
+	rawURL := in.URL
+	if rawURL == "" {
+		cfg := store.Get().IntegrationsUrls
+		if in.Kind == "spoolman" {
+			rawURL, _ = resolveIntegrationURL(os.Getenv("SPOOLMAN_URL"), cfg.SpoolmanURL)
+		} else {
+			rawURL, _ = resolveIntegrationURL(os.Getenv("MOONRAKER_URL"), cfg.MoonrakerURL)
+		}
+		if rawURL == "" {
+			writeAPIError(w, http.StatusBadRequest, "url: no URL is set for this integration")
+			return
+		}
+	}
+	target, err := validProxyURL("url", rawURL)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return

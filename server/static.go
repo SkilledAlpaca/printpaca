@@ -125,7 +125,7 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, cfgStore *ConfigStore, auth 
 	registerProxies(mux, demoMode, cfgStore, db) // proxy.go; permission-gated internally
 
 	// Probes a Spoolman/Moonraker URL before it is saved. Hard admin-only; demoWriteGuard blocks it in demo.
-	mux.HandleFunc("POST /api/integrations/test", adminOnly(handleIntegrationsTest))
+	mux.HandleFunc("POST /api/integrations/test", adminOnly(handleIntegrationsTest(cfgStore)))
 
 	// Same handler as the public listener, so web/index.html's print-only stylesheet link works here.
 	// Safe GET outside /api/*, so no demo block or auth exemption is needed.

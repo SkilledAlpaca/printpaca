@@ -109,6 +109,8 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, cfgStore *ConfigStore, auth 
 	mux.HandleFunc("PUT /api/items/{id}", requirePermission(db, "items", it.handlePut))
 	mux.HandleFunc("DELETE /api/items/{id}", requirePermission(db, "items", it.handleDelete))
 	mux.HandleFunc("POST /api/items/{id}/image", requirePermission(db, "items", it.handleImageUpload))
+	mux.HandleFunc("POST /api/items/{id}/options/{optionId}/image", requirePermission(db, "items", it.handleOptionImageUpload))
+	mux.HandleFunc("DELETE /api/items/{id}/options/{optionId}/image", requirePermission(db, "items", it.handleOptionImageDelete))
 	// Outside /api/ on purpose: keeps the long-lived Cache-Control past noStoreAPIMiddleware, and item
 	// images are public content. No permission wrapper applies.
 	mux.HandleFunc("GET /item-images/{file}", itemImageHandler(configDir))

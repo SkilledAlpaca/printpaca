@@ -49,7 +49,7 @@ func TestItemCRUD(t *testing.T) {
 	mux := newTestMux(t, t.TempDir())
 
 	rec := postItem(t, mux, `{"name":"Benchy","priceCents":1500,"public":true,
-		"optionLabel":"Color","options":[{"name":"Red","deltaCents":0},{"name":"Glow","deltaCents":250}],
+		"optionGroups":[{"label":"Color","required":true,"options":[{"name":"Red","deltaCents":0},{"name":"Glow","deltaCents":250}]}],
 		"stockMode":"in_stock","stockQty":3,"sortOrder":1,"description":"A boat"}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("POST want 201, got %d %s", rec.Code, rec.Body.String())
@@ -67,7 +67,7 @@ func TestItemCRUD(t *testing.T) {
 	if created.Name != "Benchy" || created.PriceCents != 1500 || !created.Public {
 		t.Fatalf("created item mismatch: %+v", created)
 	}
-	if created.OptionLabel != "Color" || len(created.Options) != 2 {
+	if len(created.OptionGroups) != 1 || created.OptionGroups[0].Label != "Color" || len(created.OptionGroups[0].Options) != 2 {
 		t.Fatalf("created item options mismatch: %+v", created)
 	}
 	if created.StockMode != "in_stock" || created.StockQty != 3 || created.SortOrder != 1 {
@@ -81,12 +81,12 @@ func TestItemCRUD(t *testing.T) {
 
 	// Fetch the item fresh via GET and compare, since the POST echo can't prove options_json and the other columns round-tripped.
 	fetched := list.Items[0]
-	wantOptions := []ItemOption{{Name: "Red", DeltaCents: 0}, {Name: "Glow", DeltaCents: 250}}
-	if !reflect.DeepEqual(fetched.Options, wantOptions) {
-		t.Fatalf("GET item options round trip = %+v, want %+v", fetched.Options, wantOptions)
+	if !reflect.DeepEqual(fetched.OptionGroups, created.OptionGroups) {
+		t.Fatalf("GET item option groups round trip = %+v, want %+v", fetched.OptionGroups, created.OptionGroups)
 	}
-	if fetched.OptionLabel != "Color" {
-		t.Fatalf("GET item optionLabel round trip = %q, want %q", fetched.OptionLabel, "Color")
+	g := fetched.OptionGroups[0]
+	if g.ID == "" || !strings.HasPrefix(g.ID, "g_") || !g.Required || g.Options[1].Name != "Glow" || g.Options[1].DeltaCents != 250 || !strings.HasPrefix(g.Options[1].ID, "o_") {
+		t.Fatalf("GET item option group = %+v, want server ids and the posted fields", g)
 	}
 	if !fetched.Public {
 		t.Fatalf("GET item public round trip = %v, want true", fetched.Public)
@@ -99,7 +99,7 @@ func TestItemCRUD(t *testing.T) {
 	}
 
 	rec = putItem(t, mux, created.ID, `{"name":"Benchy v2","priceCents":1500,"public":true,
-		"optionLabel":"Color","options":[{"name":"Red","deltaCents":0},{"name":"Glow","deltaCents":250}],
+		"optionGroups":[{"label":"Color","required":true,"options":[{"name":"Red","deltaCents":0},{"name":"Glow","deltaCents":250}]}],
 		"stockMode":"in_stock","stockQty":9,"sortOrder":1,"description":"A boat"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PUT want 200, got %d %s", rec.Code, rec.Body.String())
@@ -183,12 +183,17 @@ func TestItemValidation(t *testing.T) {
 		{"negative priceCents", `{"name":"x","priceCents":-1}`},
 		{"bogus stockMode", `{"name":"x","priceCents":100,"stockMode":"bogus"}`},
 		{"negative stockQty", `{"name":"x","priceCents":100,"stockQty":-1}`},
-		{"optionLabel without options", `{"name":"x","priceCents":100,"optionLabel":"Color"}`},
-		{"options without optionLabel", `{"name":"x","priceCents":100,"options":[{"name":"Red","deltaCents":0}]}`},
-		{"duplicate option names", `{"name":"x","priceCents":100,"optionLabel":"Color","options":[{"name":"Red","deltaCents":0},{"name":"Red","deltaCents":5}]}`},
-		{"option delta makes price negative", `{"name":"x","priceCents":100,"optionLabel":"Color","options":[{"name":"Red","deltaCents":-200}]}`},
-		{"option delta out of range", `{"name":"x","priceCents":100,"optionLabel":"Color","options":[{"name":"Red","deltaCents":200000000}]}`},
-		{"option delta overflow bypass", `{"name":"x","priceCents":100,"optionLabel":"Color","options":[{"name":"Red","deltaCents":-9223372036854775808}]}`},
+		{"group without options", `{"name":"x","priceCents":100,"optionGroups":[{"label":"Color","required":true,"options":[]}]}`},
+		{"group without label", `{"name":"x","priceCents":100,"optionGroups":[{"label":" ","required":true,"options":[{"name":"Red","deltaCents":0}]}]}`},
+		{"option without name", `{"name":"x","priceCents":100,"optionGroups":[{"label":"Color","options":[{"name":"","deltaCents":0}]}]}`},
+		{"duplicate option names", `{"name":"x","priceCents":100,"optionGroups":[{"label":"Color","options":[{"name":"Red","deltaCents":0},{"name":"red","deltaCents":5}]}]}`},
+		{"duplicate group labels (case-insensitive)", `{"name":"x","priceCents":100,"optionGroups":[{"label":"Color","options":[{"name":"Red"}]},{"label":"COLOR","options":[{"name":"Blue"}]}]}`},
+		{"six groups", `{"name":"x","priceCents":100,"optionGroups":[{"label":"G0","options":[{"name":"A"}]},{"label":"G1","options":[{"name":"A"}]},{"label":"G2","options":[{"name":"A"}]},{"label":"G3","options":[{"name":"A"}]},{"label":"G4","options":[{"name":"A"}]},{"label":"G5","options":[{"name":"A"}]}]}`},
+		{"twenty-one options in a group", `{"name":"x","priceCents":100,"optionGroups":[{"label":"Color","options":[{"name":"O0","deltaCents":0},{"name":"O1","deltaCents":0},{"name":"O2","deltaCents":0},{"name":"O3","deltaCents":0},{"name":"O4","deltaCents":0},{"name":"O5","deltaCents":0},{"name":"O6","deltaCents":0},{"name":"O7","deltaCents":0},{"name":"O8","deltaCents":0},{"name":"O9","deltaCents":0},{"name":"O10","deltaCents":0},{"name":"O11","deltaCents":0},{"name":"O12","deltaCents":0},{"name":"O13","deltaCents":0},{"name":"O14","deltaCents":0},{"name":"O15","deltaCents":0},{"name":"O16","deltaCents":0},{"name":"O17","deltaCents":0},{"name":"O18","deltaCents":0},{"name":"O19","deltaCents":0},{"name":"O20","deltaCents":0}]}]}`},
+		{"option delta makes price negative", `{"name":"x","priceCents":100,"optionGroups":[{"label":"Color","required":true,"options":[{"name":"Red","deltaCents":-200}]}]}`},
+		{"two required groups together make price negative", `{"name":"x","priceCents":100,"optionGroups":[{"label":"A","required":true,"options":[{"name":"a","deltaCents":-60}]},{"label":"B","required":true,"options":[{"name":"b","deltaCents":-60}]}]}`},
+		{"option delta out of range", `{"name":"x","priceCents":100,"optionGroups":[{"label":"Color","options":[{"name":"Red","deltaCents":200000000}]}]}`},
+		{"option delta overflow bypass", `{"name":"x","priceCents":100,"optionGroups":[{"label":"Color","options":[{"name":"Red","deltaCents":-9223372036854775808}]}]}`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

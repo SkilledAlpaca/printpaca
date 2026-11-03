@@ -35,8 +35,8 @@ func TestPublicItems(t *testing.T) {
 
 	// Public in_stock item with an option, an image, and allowBackorder set.
 	rec = postItem(t, adminMux, `{"name":"Benchy","priceCents":1500,"public":true,`+
-		`"stockMode":"in_stock","stockQty":3,"allowBackorder":true,"optionLabel":"Color",`+
-		`"options":[{"name":"Red","deltaCents":0}],"sortOrder":1}`)
+		`"stockMode":"in_stock","stockQty":3,"allowBackorder":true,`+
+		`"optionGroups":[{"label":"Color","required":true,"options":[{"name":"Red","deltaCents":0}]}],"sortOrder":1}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("POST item A want 201, got %d %s", rec.Code, rec.Body.String())
 	}
@@ -74,8 +74,8 @@ func TestPublicItems(t *testing.T) {
 			t.Errorf("response body leaks internal field %s: %s", key, body)
 		}
 	}
-	if !strings.Contains(body, `"options":[]`) {
-		t.Errorf("expected literal \"options\":[] for the empty-options item, body = %s", body)
+	if !strings.Contains(body, `"optionGroups":[]`) {
+		t.Errorf("expected literal \"optionGroups\":[] for the no-options item, body = %s", body)
 	}
 	// publicItemStock.Qty has no `omitempty`: a ready_to_print item must emit "qty":0 so the frontend's qty-0 "Out of stock" state is never confused with a mode where quantity doesn't apply.
 	// json.Unmarshal can't tell a present 0 from an absent key, so this is a raw-body substring check.
@@ -112,8 +112,9 @@ func TestPublicItems(t *testing.T) {
 	if first.Stock.Mode != stockModeInStock || first.Stock.Qty != 3 || !first.Stock.AllowBackorder {
 		t.Errorf("first stock = %+v, want {in_stock 3 true}", first.Stock)
 	}
-	if len(first.Options) != 1 || first.Options[0].Name != "Red" {
-		t.Errorf("first options = %+v, want [{Red 0}]", first.Options)
+	if len(first.OptionGroups) != 1 || first.OptionGroups[0].Label != "Color" || !first.OptionGroups[0].Required ||
+		len(first.OptionGroups[0].Options) != 1 || first.OptionGroups[0].Options[0].Name != "Red" || first.OptionGroups[0].Options[0].ID == "" {
+		t.Errorf("first option groups = %+v, want required Color / Red", first.OptionGroups)
 	}
 
 	if second.ID != itemB.ID {
@@ -125,8 +126,8 @@ func TestPublicItems(t *testing.T) {
 	if second.Stock.Mode != stockModeReadyToPrint {
 		t.Errorf("second stock mode = %q, want ready_to_print", second.Stock.Mode)
 	}
-	if second.Options == nil || len(second.Options) != 0 {
-		t.Errorf("second options = %+v, want empty non-nil slice", second.Options)
+	if second.OptionGroups == nil || len(second.OptionGroups) != 0 {
+		t.Errorf("second option groups = %+v, want empty non-nil slice", second.OptionGroups)
 	}
 
 	// The image route must be reachable through the PUBLIC mux too, not
@@ -210,17 +211,34 @@ func postPublicItemOrder(t *testing.T, mux *http.ServeMux, body any) *httptest.R
 }
 
 // validItemOrderBody returns a fresh, valid /api/public/item-order body for
-// itemID/optionName/quantity, ready for a test case to override individual
+// itemID/selections/quantity, ready for a test case to override individual
 // fields on top of.
-func validItemOrderBody(itemID, optionName string, quantity int) map[string]any {
+func validItemOrderBody(itemID string, sels []optionSelection, quantity int) map[string]any {
 	return map[string]any{
 		"itemId":     itemID,
-		"optionName": optionName,
+		"selections": sels,
 		"quantity":   quantity,
 		"name":       "Buyer",
 		"email":      "buyer@example.com",
 		"note":       "gift wrap please",
 	}
+}
+
+// selOf returns the selection of option name in group label of it; it fails the test when either is missing.
+func selOf(t *testing.T, it Item, label, name string) optionSelection {
+	t.Helper()
+	for _, g := range it.OptionGroups {
+		if g.Label != label {
+			continue
+		}
+		for _, o := range g.Options {
+			if o.Name == name {
+				return optionSelection{GroupID: g.ID, OptionID: o.ID}
+			}
+		}
+	}
+	t.Fatalf("item %q has no %s / %s", it.Name, label, name)
+	return optionSelection{}
 }
 
 // Happy path: a valid order against a public in_stock item with an option is priced server-side ((priceCents+deltaCents)*quantity), lands in quote_requests with kind 'item' and the snapshot columns, and shows in admin GET /api/requests.
@@ -230,8 +248,8 @@ func TestPublicItemOrder(t *testing.T) {
 	adminMux, publicMux, db, _ := newRequestsTestSetup(t, dir)
 
 	rec := postItem(t, adminMux, `{"name":"Benchy","priceCents":1500,"public":true,`+
-		`"stockMode":"in_stock","stockQty":3,"optionLabel":"Color",`+
-		`"options":[{"name":"Glow","deltaCents":250}]}`)
+		`"stockMode":"in_stock","stockQty":3,`+
+		`"optionGroups":[{"label":"Color","required":true,"options":[{"name":"Glow","deltaCents":250}]}]}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("POST item want 201, got %d %s", rec.Code, rec.Body.String())
 	}
@@ -241,7 +259,7 @@ func TestPublicItemOrder(t *testing.T) {
 	}
 
 	// A client-supplied priceCents must be rejected (DisallowUnknownFields), not ignored. The 400 body must be the fixed message, never err.Error(): a body-read timeout's error can include the listener's bind address and port.
-	priced := validItemOrderBody(item.ID, "Glow", 2)
+	priced := validItemOrderBody(item.ID, []optionSelection{selOf(t, item, "Color", "Glow")}, 2)
 	priced["priceCents"] = 999
 	rec = postPublicItemOrder(t, publicMux, priced)
 	if rec.Code != http.StatusBadRequest {
@@ -255,7 +273,7 @@ func TestPublicItemOrder(t *testing.T) {
 		t.Errorf("400 errors = %v, want exactly [\"invalid request body\"] (no echoed decode error)", badBody.Errors)
 	}
 
-	rec = postPublicItemOrder(t, publicMux, validItemOrderBody(item.ID, "Glow", 2))
+	rec = postPublicItemOrder(t, publicMux, validItemOrderBody(item.ID, []optionSelection{selOf(t, item, "Color", "Glow")}, 2))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("valid order want 201, got %d %s", rec.Code, rec.Body.String())
 	}
@@ -333,8 +351,8 @@ func TestPublicItemOrder(t *testing.T) {
 	if found.ItemName != "Benchy" {
 		t.Errorf("admin list itemName = %q, want Benchy", found.ItemName)
 	}
-	if found.OptionName != "Glow" {
-		t.Errorf("admin list optionName = %q, want Glow", found.OptionName)
+	if found.OptionName != "Color: Glow" {
+		t.Errorf("admin list optionName = %q, want %q", found.OptionName, "Color: Glow")
 	}
 }
 
@@ -357,8 +375,8 @@ func TestPublicItemOrderValidation(t *testing.T) {
 	}
 
 	withOptions := mustPostItem(`{"name":"WithOptions","priceCents":1000,"public":true,` +
-		`"stockMode":"in_stock","stockQty":3,"optionLabel":"Color",` +
-		`"options":[{"name":"Red","deltaCents":0}]}`)
+		`"stockMode":"in_stock","stockQty":3,` +
+		`"optionGroups":[{"label":"Color","required":true,"options":[{"name":"Red","deltaCents":0}]}]}`)
 	noOptions := mustPostItem(`{"name":"NoOptions","priceCents":500,"public":true}`)
 	outOfStock := mustPostItem(`{"name":"OutOfStock","priceCents":500,"public":true,` +
 		`"stockMode":"in_stock","stockQty":0}`)
@@ -376,77 +394,83 @@ func TestPublicItemOrderValidation(t *testing.T) {
 	}{
 		{
 			name:       "unknown itemId",
-			body:       validItemOrderBody("nonexistent-id", "", 1),
+			body:       validItemOrderBody("nonexistent-id", nil, 1),
 			wantStatus: http.StatusUnprocessableEntity,
 			wantErrSub: "item: no longer available",
 		},
 		{
 			name:       "non-public item",
-			body:       validItemOrderBody(hidden.ID, "", 1),
+			body:       validItemOrderBody(hidden.ID, nil, 1),
 			wantStatus: http.StatusUnprocessableEntity,
 			wantErrSub: "item: no longer available",
 		},
 		{
-			name:       "optionName missing when item has options",
-			body:       validItemOrderBody(withOptions.ID, "", 1),
+			name:       "required group not chosen",
+			body:       validItemOrderBody(withOptions.ID, nil, 1),
+			wantErrSub: "selections: choose Color",
 			wantStatus: http.StatusUnprocessableEntity,
 		},
 		{
-			name:       "optionName present when item has none",
-			body:       validItemOrderBody(noOptions.ID, "AnyOption", 1),
+			name:       "selection on an item with no groups",
+			body:       validItemOrderBody(noOptions.ID, []optionSelection{{GroupID: "g_x", OptionID: "o_x"}}, 1),
 			wantStatus: http.StatusUnprocessableEntity,
 		},
 		{
-			name:       "optionName not in the list",
-			body:       validItemOrderBody(withOptions.ID, "Blue", 1),
+			name:       "option id not in the group",
+			body:       validItemOrderBody(withOptions.ID, []optionSelection{{GroupID: withOptions.OptionGroups[0].ID, OptionID: "o_nope"}}, 1),
+			wantStatus: http.StatusUnprocessableEntity,
+		},
+		{
+			name:       "two choices in one group",
+			body:       validItemOrderBody(withOptions.ID, []optionSelection{selOf(t, withOptions, "Color", "Red"), selOf(t, withOptions, "Color", "Red")}, 1),
 			wantStatus: http.StatusUnprocessableEntity,
 		},
 		{
 			name:       "quantity 0",
-			body:       validItemOrderBody(noOptions.ID, "", 0),
+			body:       validItemOrderBody(noOptions.ID, nil, 0),
 			wantStatus: http.StatusUnprocessableEntity,
 		},
 		{
 			name:       "quantity over max",
-			body:       validItemOrderBody(noOptions.ID, "", maxItemOrderQty+1),
+			body:       validItemOrderBody(noOptions.ID, nil, maxItemOrderQty+1),
 			wantStatus: http.StatusUnprocessableEntity,
 		},
 		{
 			name:       "quantity exceeds stock",
-			body:       validItemOrderBody(withOptions.ID, "Red", 4),
+			body:       validItemOrderBody(withOptions.ID, []optionSelection{selOf(t, withOptions, "Color", "Red")}, 4),
 			wantStatus: http.StatusUnprocessableEntity,
 			wantErrSub: "quantity: only 3 in stock",
 		},
 		{
 			name:       "stock qty 0",
-			body:       validItemOrderBody(outOfStock.ID, "", 1),
+			body:       validItemOrderBody(outOfStock.ID, nil, 1),
 			wantStatus: http.StatusUnprocessableEntity,
 			wantErrSub: "item: no longer available",
 		},
 		{
 			name:       "ready_to_print ignores stock",
-			body:       validItemOrderBody(noOptions.ID, "", 50),
+			body:       validItemOrderBody(noOptions.ID, nil, 50),
 			wantStatus: http.StatusCreated,
 		},
 		{
 			name:       "allowBackorder accepts quantity beyond stockQty",
-			body:       validItemOrderBody(backorder.ID, "", 4),
+			body:       validItemOrderBody(backorder.ID, nil, 4),
 			wantStatus: http.StatusCreated,
 		},
 		{
 			name:       "allowBackorder accepts up to the global max",
-			body:       validItemOrderBody(backorder.ID, "", maxItemOrderQty),
+			body:       validItemOrderBody(backorder.ID, nil, maxItemOrderQty),
 			wantStatus: http.StatusCreated,
 		},
 		{
 			name:       "allowBackorder still rejects beyond the global max",
-			body:       validItemOrderBody(backorder.ID, "", maxItemOrderQty+1),
+			body:       validItemOrderBody(backorder.ID, nil, maxItemOrderQty+1),
 			wantStatus: http.StatusUnprocessableEntity,
 		},
 		{
 			name: "empty name",
 			body: func() map[string]any {
-				b := validItemOrderBody(noOptions.ID, "", 1)
+				b := validItemOrderBody(noOptions.ID, nil, 1)
 				b["name"] = ""
 				return b
 			}(),
@@ -455,7 +479,7 @@ func TestPublicItemOrderValidation(t *testing.T) {
 		{
 			name: "empty email",
 			body: func() map[string]any {
-				b := validItemOrderBody(noOptions.ID, "", 1)
+				b := validItemOrderBody(noOptions.ID, nil, 1)
 				b["email"] = ""
 				return b
 			}(),
@@ -464,7 +488,7 @@ func TestPublicItemOrderValidation(t *testing.T) {
 		{
 			name: "email without @",
 			body: func() map[string]any {
-				b := validItemOrderBody(noOptions.ID, "", 1)
+				b := validItemOrderBody(noOptions.ID, nil, 1)
 				b["email"] = "not-an-email"
 				return b
 			}(),
@@ -473,7 +497,7 @@ func TestPublicItemOrderValidation(t *testing.T) {
 		{
 			name: "note too long",
 			body: func() map[string]any {
-				b := validItemOrderBody(noOptions.ID, "", 1)
+				b := validItemOrderBody(noOptions.ID, nil, 1)
 				b["note"] = strings.Repeat("x", 2001)
 				return b
 			}(),
@@ -519,7 +543,7 @@ func TestPublicItemOrderBackpressure(t *testing.T) {
 		}
 	}
 
-	rec = postPublicItemOrder(t, publicMux, validItemOrderBody(item.ID, "", 1))
+	rec = postPublicItemOrder(t, publicMux, validItemOrderBody(item.ID, nil, 1))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("order at open-requests cap want 503, got %d %s", rec.Code, rec.Body.String())
 	}
@@ -549,7 +573,7 @@ func TestPublicItemOrderInsertFailureUsesWriteAPIError(t *testing.T) {
 		t.Fatalf("create blocking trigger: %v", err)
 	}
 
-	rec = postPublicItemOrder(t, publicMux, validItemOrderBody(item.ID, "", 1))
+	rec = postPublicItemOrder(t, publicMux, validItemOrderBody(item.ID, nil, 1))
 	assertWriteAPIErrorShape(t, rec, http.StatusInternalServerError)
 }
 

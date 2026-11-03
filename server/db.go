@@ -240,6 +240,26 @@ var migrations = []string{
 	);
 	CREATE INDEX item_sales_sold_at ON item_sales(sold_at);
 	`,
+
+	// 1 -> 2: option groups. items.option_groups_json holds the groups (server/items.go's ItemOptionGroup).
+	// Each item with a legacy option_label + options_json becomes one required group with generated ids and
+	// no option photos. option_label and options_json stay in the table but nothing reads or writes them.
+	`
+	ALTER TABLE items ADD COLUMN option_groups_json TEXT NOT NULL DEFAULT '[]';
+
+	UPDATE items SET option_groups_json = json_array(json_object(
+	  'id', 'g_' || lower(hex(randomblob(4))),
+	  'label', option_label,
+	  'required', json('true'),
+	  'options', json((SELECT json_group_array(json_object(
+	      'id', 'o_' || lower(hex(randomblob(4))),
+	      'name', json_extract(value, '$.name'),
+	      'deltaCents', json_extract(value, '$.deltaCents'),
+	      'imageFile', ''))
+	    FROM json_each(items.options_json)))
+	))
+	WHERE option_label != '' AND json_array_length(options_json) > 0;
+	`,
 }
 
 // openDB opens the SQLite database in configDir, creating it on first run, and runs pending migrations.

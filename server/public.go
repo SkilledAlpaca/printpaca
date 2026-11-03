@@ -352,14 +352,45 @@ type publicItemStock struct {
 // publicItem is the narrow shape served per public item: no imageFile (ImageURL is derived) and none
 // of the admin-only bookkeeping fields (public, createdAt, updatedAt, sortOrder).
 type publicItem struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	PriceCents  int             `json:"priceCents"`
-	OptionLabel string          `json:"optionLabel"`
-	Options     []ItemOption    `json:"options"`
-	ImageURL    string          `json:"imageUrl"` // "/item-images/{file}" or ""
-	Stock       publicItemStock `json:"stock"`
+	ID           string              `json:"id"`
+	Name         string              `json:"name"`
+	Description  string              `json:"description"`
+	PriceCents   int                 `json:"priceCents"`
+	OptionGroups []publicOptionGroup `json:"optionGroups"`
+	ImageURL     string              `json:"imageUrl"` // "/item-images/{file}" or ""
+	Stock        publicItemStock     `json:"stock"`
+}
+
+// publicOptionGroup and publicOption are ItemOptionGroup and ItemOption without imageFile: the photo is
+// served as ImageURL ("/item-images/{file}" or "").
+type publicOptionGroup struct {
+	ID       string         `json:"id"`
+	Label    string         `json:"label"`
+	Required bool           `json:"required"`
+	Options  []publicOption `json:"options"`
+}
+
+type publicOption struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	DeltaCents int    `json:"deltaCents"`
+	ImageURL   string `json:"imageUrl"`
+}
+
+func toPublicOptionGroups(groups []ItemOptionGroup) []publicOptionGroup {
+	out := make([]publicOptionGroup, 0, len(groups))
+	for _, g := range groups {
+		pg := publicOptionGroup{ID: g.ID, Label: g.Label, Required: g.Required, Options: make([]publicOption, 0, len(g.Options))}
+		for _, o := range g.Options {
+			url := ""
+			if o.ImageFile != "" {
+				url = "/item-images/" + o.ImageFile
+			}
+			pg.Options = append(pg.Options, publicOption{ID: o.ID, Name: o.Name, DeltaCents: o.DeltaCents, ImageURL: url})
+		}
+		out = append(out, pg)
+	}
+	return out
 }
 
 // publicItemsCacheTTL bounds how long handlePublicItems serves its cached response. This is the only
@@ -429,13 +460,12 @@ func handlePublicItems(db *sql.DB) http.HandlerFunc {
 				imageURL = "/item-images/" + it.ImageFile
 			}
 			items = append(items, publicItem{
-				ID:          it.ID,
-				Name:        it.Name,
-				Description: it.Description,
-				PriceCents:  it.PriceCents,
-				OptionLabel: it.OptionLabel,
-				Options:     it.Options, // scanItem already guarantees non-nil
-				ImageURL:    imageURL,
+				ID:           it.ID,
+				Name:         it.Name,
+				Description:  it.Description,
+				PriceCents:   it.PriceCents,
+				OptionGroups: toPublicOptionGroups(it.OptionGroups),
+				ImageURL:     imageURL,
 				Stock: publicItemStock{
 					Mode:           it.StockMode,
 					Qty:            it.StockQty,
@@ -475,12 +505,12 @@ const quoteRequestsEmailMaxLen = 320
 // publicItemOrderRequest is the POST /api/public/item-order body. DisallowUnknownFields rejects any
 // other field, a client-supplied price above all: the server is the only price authority.
 type publicItemOrderRequest struct {
-	ItemID     string `json:"itemId"`
-	OptionName string `json:"optionName"`
-	Quantity   int    `json:"quantity"`
-	Name       string `json:"name"`
-	Email      string `json:"email"`
-	Note       string `json:"note"`
+	ItemID     string            `json:"itemId"`
+	Selections []optionSelection `json:"selections"`
+	Quantity   int               `json:"quantity"`
+	Name       string            `json:"name"`
+	Email      string            `json:"email"`
+	Note       string            `json:"note"`
 }
 
 // writePublicOrderAccepted writes an order's 201, kept apart from writePublicQuoteAccepted's shape.
@@ -495,7 +525,7 @@ func writePublicOrderAccepted(w http.ResponseWriter, id string, priceCents int) 
 }
 
 // handlePublicItemOrder stores a visitor's order against one public item. Pricing is server-authoritative:
-// the item is reloaded (getItem) and total = (item.PriceCents + selectedOption.DeltaCents) * quantity
+// the item is reloaded (getItem) and total = (item.PriceCents + Σ selected option deltas) * quantity
 // is computed from that row; DisallowUnknownFields rejects a client priceCents.
 //
 // Order mirrors handlePublicQuoteRequest: rate limit, decode/validate, load the item (not found and
@@ -542,7 +572,6 @@ func handlePublicItemOrder(db *sql.DB, store *ConfigStore, rl *rateLimiter, trus
 		name := strings.TrimSpace(in.Name)
 		email := strings.TrimSpace(in.Email)
 		note := strings.TrimSpace(in.Note)
-		optionName := strings.TrimSpace(in.OptionName)
 
 		var problems []string
 		if name == "" {
@@ -581,22 +610,8 @@ func handlePublicItemOrder(db *sql.DB, store *ConfigStore, rl *rateLimiter, trus
 			return
 		}
 
-		var delta int
-		if item.OptionLabel != "" {
-			matched := false
-			for _, opt := range item.Options {
-				if opt.Name == optionName {
-					matched = true
-					delta = opt.DeltaCents
-					break
-				}
-			}
-			if !matched {
-				problems = append(problems, "optionName: must be one of this item's options")
-			}
-		} else if optionName != "" {
-			problems = append(problems, "optionName: this item has no options")
-		}
+		delta, optionName, selProblems := resolveSelections(item.OptionGroups, in.Selections)
+		problems = append(problems, selProblems...)
 
 		if item.StockMode == stockModeInStock && !item.AllowBackorder {
 			// Check-then-insert race accepted by design: concurrent orders can both pass against the same on-hand

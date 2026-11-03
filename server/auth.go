@@ -834,8 +834,8 @@ func tokenWriteSameOrigin(r *http.Request, allowedHosts []string) bool {
 	return r.Header.Get("Sec-Fetch-Site") == "same-origin"
 }
 
-// isItemImageUploadRoute matches "POST /api/items/{id}/image". The id is the only variable part, so a
-// prefix/suffix match is unambiguous.
+// isItemImageUploadRoute matches "POST /api/items/{id}/image" and "POST /api/items/{id}/options/{optionId}/image".
+// The ids are the only variable parts, so a prefix/suffix match is unambiguous.
 func isItemImageUploadRoute(method, path string) bool {
 	return method == http.MethodPost && strings.HasPrefix(path, "/api/items/") && strings.HasSuffix(path, "/image")
 }

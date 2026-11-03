@@ -1303,7 +1303,7 @@ func TestQuoteRequestsEmailMaxLenSharedBoundary(t *testing.T) {
 	overMax := emailOfLen(quoteRequestsEmailMaxLen + 1)
 
 	t.Run("item order accepts at max", func(t *testing.T) {
-		b := validItemOrderBody(item.ID, "", 1)
+		b := validItemOrderBody(item.ID, nil, 1)
 		b["email"] = atMax
 		rec := postPublicItemOrder(t, publicMux, b)
 		if rec.Code != http.StatusCreated {
@@ -1311,7 +1311,7 @@ func TestQuoteRequestsEmailMaxLenSharedBoundary(t *testing.T) {
 		}
 	})
 	t.Run("item order rejects over max", func(t *testing.T) {
-		b := validItemOrderBody(item.ID, "", 1)
+		b := validItemOrderBody(item.ID, nil, 1)
 		b["email"] = overMax
 		rec := postPublicItemOrder(t, publicMux, b)
 		if rec.Code != http.StatusUnprocessableEntity {

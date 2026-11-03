@@ -49,7 +49,7 @@
     {/if}
   </div>
 
-  <h3 class="section-label">Front door and shop</h3>
+  <h3 class="section-label">Storefront</h3>
   <p class="hint">What your server's main address shows to customers. Changes apply without a restart.</p>
   <label class="toggle">
     <input type="checkbox" bind:checked={form.site.shopOnMainPort} />
@@ -58,9 +58,9 @@
   <small class="field-hint">Turn off to send / to the admin sign-in and hide the shop and estimate page on the main address. A separate public port is not affected.</small>
   <label class="toggle">
     <input type="checkbox" bind:checked={form.site.staffLink} />
-    <span>Show a Staff sign-in button on the front door</span>
+    <span>Show a Staff sign-in link in the shop footer</span>
   </label>
-  <small class="field-hint">Adds a Staff sign-in button to the front door that opens the admin app at /admin/.</small>
+  <small class="field-hint">Adds a Staff sign-in link to the footer of the shop that opens the admin app at /admin/.</small>
   <LabeledText
     label="Staff sign-in link on the public port"
     bind:value={form.site.adminUrl}

@@ -12,7 +12,7 @@ export default defineConfig({
   // Port 8099, not the default 8080, so reuseExistingServer can only reuse an e2e-launched instance,
   // never a developer's real deployment.
   use: { baseURL: "http://127.0.0.1:8099" },
-  // The main port serves the front door (/), the shop (/order) and the admin app (/admin/); the specs reach
+  // The main port serves the shop (/ and /order) and the admin app (/admin/); the specs reach
   // the admin app under /admin/.
   // Three servers, each with its own throwaway CONFIG_DIR: 8099 (baseURL), 9099 with ADMIN_PASSWORD set
   // (auth.spec.ts), and 9199 with MOONRAKER_URL/FLUIDD_URL (moonraker.spec.ts). PUBLIC_PORT is set on

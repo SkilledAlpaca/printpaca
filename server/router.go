@@ -21,7 +21,7 @@ const apiNotFoundMessage = "not found"
 //	                verification and the Host allowlist see the chain's own paths ("/api/me", "/")
 //	GET /healthz    the readiness probe, outside the admin auth and tunnel chain
 //	/api/public/*   the public chain
-//	/api/*          404, never a redirect and never the front door: the admin API lives under /admin/api/
+//	/api/*          404, never a redirect and never the shop: the admin API lives under /admin/api/
 //	everything else the public chain ("/", "/order", item images, custom.css, public assets)
 //
 // admin and public are complete chains (adminListenerHandler, and publicListenerHandler around hostGuard),

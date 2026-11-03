@@ -76,8 +76,8 @@ interface PublicQuotesConfig {
   introText: string;
 }
 
-// Mirrors server/config.go's Site: what the main port serves at its root and where the front door's Staff
-// sign-in button points. Applies without a restart.
+// Mirrors server/config.go's Site: what the main port serves at its root and where the shop footer's Staff
+// sign-in link points. Applies without a restart.
 interface SiteConfig {
   shopOnMainPort: boolean;
   staffLink: boolean;

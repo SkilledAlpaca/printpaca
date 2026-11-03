@@ -243,7 +243,7 @@ type publicConfigResponse struct {
 		Phone   string `json:"phone"`
 		Address string `json:"address"`
 	} `json:"branding"`
-	// StaffUrl is the Staff sign-in target on the front door, "" to hide the button. It depends on the
+	// StaffUrl is the Staff sign-in target in the shop footer, "" to hide the link. It depends on the
 	// listener answering (staffURLFunc): /admin/ on the main port, site.adminUrl on PUBLIC_PORT.
 	StaffUrl  string           `json:"staffUrl"`
 	IntroText string           `json:"introText"`
@@ -258,7 +258,7 @@ type publicConfigResponse struct {
 	DemoMode bool `json:"demoMode"`
 }
 
-// staffURLFunc computes the front door's Staff sign-in target for one listener from the live config.
+// staffURLFunc computes the shop footer's Staff sign-in target for one listener from the live config.
 type staffURLFunc func(cfg *Config) string
 
 // mainStaffURL is the main port's target: the admin app under the same host, when site.staffLink is on.
@@ -1423,7 +1423,7 @@ func loadPublicManifest(sub fs.FS) map[string]struct{} {
 }
 
 // publicIndexHandler serves the public listener's static assets from sub (the admin's embedded dist),
-// but not all of it. "/" (the front door) and "/order" (the shop) serve public.html, the public Vite entry,
+// but not all of it. "/" (the shop) and "/order" (the same shop, kept for old links) serve public.html, the public Vite entry,
 // and 503 when it is absent (the
 // placeholder dist). Every other path must be in loadPublicManifest's allowlist, so the admin bundle
 // (index.html, assets/main-*.js/css) still 404s here.

@@ -115,3 +115,47 @@ test("a geometry-only 3MF explains the missing print time and the pricing panel 
   await expect(note).toHaveCount(0);
   await expect(page.getByText(/To price this quote, add:/)).toHaveCount(0);
 });
+
+test("the admin brand shows the business name and logo, links home, and updates after a save", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/admin/");
+  const sidebar = page.getByRole("complementary");
+  await expect(sidebar.getByRole("link", { name: "printpaca home" })).toBeVisible();
+  await expect(page).toHaveTitle(/ · printpaca$/);
+
+  await gotoSettings(page, { load: false });
+  await page.getByLabel("Business name").fill("Alpaca Prints");
+  await page.getByLabel("Logo URL").fill("/no-such-logo.png");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Settings saved.")).toBeVisible();
+
+  // No reload: the brand, the title, and the logo fallback (the URL 404s) all follow the saved settings.
+  const brand = sidebar.getByRole("link", { name: "Alpaca Prints home" });
+  await expect(brand).toBeVisible();
+  await expect(brand).toHaveAttribute("href", "#/quote");
+  await expect(page).toHaveTitle("Settings · Alpaca Prints");
+  await expect.poll(() => brand.locator("img.logo").getAttribute("src")).not.toContain("no-such-logo");
+
+  // Activating it selects the first nav tab and focuses that view's h1.
+  await brand.click();
+  await expect(page).toHaveURL(/#\/quote$/);
+  await expect(page.getByRole("heading", { level: 1, name: "New quote" })).toBeFocused();
+  await expect(page).toHaveTitle("New quote · Alpaca Prints");
+
+  // Mobile: the header copy of the link closes nothing when the drawer is shut, and the drawer copy closes it.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/admin/#/settings");
+  await page.getByRole("button", { name: /open menu/i }).click();
+  await page.getByRole("complementary").getByRole("link", { name: "Alpaca Prints home" }).click();
+  await expect(page.getByRole("button", { name: /open menu/i })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "New quote" })).toBeFocused();
+
+  // Restore the defaults for the specs that follow.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await gotoSettings(page, { load: false });
+  await page.getByLabel("Business name").fill("");
+  await page.getByLabel("Logo URL").fill("");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Settings saved.")).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "printpaca home" })).toBeVisible();
+});

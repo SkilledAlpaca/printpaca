@@ -8,7 +8,7 @@ Don't use demo mode for your own deployment. It waives the admin password length
 
 - Read-only admin: every change is blocked with a friendly message. Sign in with the password `demo` (shown on the sign-in screen).
 - Seeded history: on first start, about six months of fake clients, quotes, invoices, payments, and requests, plus three gallery items with generated images and one item order.
-- Customer pages (front door at `/`, shop at `/order`): the real customer flow, but nothing is stored.
+- Customer pages (the shop at `/`, also served at `/order`): the real customer flow, but nothing is stored.
 - Spoolman and Moonraker pages render fake sample data.
 - Multi-user mode with two employees, `sam` (quotes, invoices, clients, dashboard) and `riley` (items, requests, filament), both with the password `demo`.
 - The demo banner offers per-visitor display preferences (theme, currency, single-user or multi-user view). They stay in the visitor's browser.
@@ -23,8 +23,8 @@ docker compose -f docker-compose.demo.yml up -d
 Then open:
 
 - Admin app: `http://127.0.0.1:8080/admin/`
-- Front door: `http://127.0.0.1:8080/`
-- Customer-only listener: `http://127.0.0.1:8081/` (front door) and `http://127.0.0.1:8081/order` (shop)
+- Shop: `http://127.0.0.1:8080/`
+- Customer-only listener: `http://127.0.0.1:8081/` (shop, also at `/order`)
 
 To reseed, stop the container, delete `./demo-config`, and start it again. `DEMO_MODE=1` starts only against an empty data directory or one the demo seeded itself. Any other existing database makes the container crash-loop by design.
 

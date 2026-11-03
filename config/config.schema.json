@@ -229,15 +229,15 @@
       "properties": {
         "shopOnMainPort": {
           "type": "boolean",
-          "description": "Serve the front door (/), the shop (/order) and the public API on PORT. When false, / redirects to /admin/ and the public routes return 404 on PORT. PUBLIC_PORT is unaffected."
+          "description": "Serve the shop (/ and /order) and the public API on PORT. When false, / redirects to /admin/ and the public routes return 404 on PORT. PUBLIC_PORT is unaffected."
         },
         "staffLink": {
           "type": "boolean",
-          "description": "Show the Staff sign-in button on the front door served on PORT."
+          "description": "Show the Staff sign-in link in the footer of the shop served on PORT."
         },
         "adminUrl": {
           "type": "string",
-          "description": "Absolute http or https URL of the admin app, the Staff sign-in target on the PUBLIC_PORT front door. Empty hides the button there."
+          "description": "Absolute http or https URL of the admin app, the Staff sign-in target in the footer of the shop on PUBLIC_PORT. Empty hides the link there."
         }
       }
     }

@@ -1028,7 +1028,7 @@
       </form>
     {/if}
 
-    <PublicFooter branding={cfg.branding} />
+    <PublicFooter branding={cfg.branding} staffUrl={cfg.staffUrl} />
   {/if}
 </main>
 

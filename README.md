@@ -62,7 +62,7 @@ docker run -p 127.0.0.1:8080:8080 skilledalpaca/printpaca:latest
 docker build -t printpaca . && docker run -p 127.0.0.1:8080:8080 printpaca
 ```
 
-Open `http://localhost:8080/admin/` for the admin app. Customers see a front door at `http://localhost:8080/` and the shop at `http://localhost:8080/order`. With no `ADMIN_PASSWORD` set, the container generates a random password on first start and prints it once in `docker logs`, on a line starting `printpaca: Use this password to sign in:`. See [Authentication](#authentication).
+Open `http://localhost:8080/admin/` for the admin app. Customers see the shop at `http://localhost:8080/`. The older address `http://localhost:8080/order` shows the same page. With no `ADMIN_PASSWORD` set, the container generates a random password on first start and prints it once in `docker logs`, on a line starting `printpaca: Use this password to sign in:`. See [Authentication](#authentication).
 
 With no `-v` flag the container uses an anonymous volume that survives restarts but not recreation (`docker rm` plus a fresh `run`). The container runs as the non-root user `65532:65532`, so for a bind mount that survives recreation, own the directory first:
 
@@ -87,7 +87,7 @@ The compose file builds from source by default. To run the published image, comm
 
 ## Hosting options
 
-printpaca serves everything from one port (`PORT`, default `8080`): the front door at `/`, the shop at `/order`, and the admin app and its API under `/admin/`. Point one hostname at that port. Pick how traffic reaches it:
+printpaca serves everything from one port (`PORT`, default `8080`): the shop at `/` (and at `/order`, so old links work), and the admin app and its API under `/admin/`. Point one hostname at that port. Pick how traffic reaches it:
 
 | Option | Use it when | Details |
 |---|---|---|
@@ -116,7 +116,7 @@ Through a Cloudflare Tunnel, `/admin/` follows these rules:
 - Without Access and with a password set, the request is allowed, and the printpaca password and its login rate limits are the only lock. Cloudflare Access is the better choice; see [Cloudflare Tunnel](docs/cloudflare-tunnel.md).
 - Without Access and with authentication disabled (`ADMIN_PASSWORD=`), the request gets `403`.
 
-The front door, the shop, and `/api/public/*` are anonymous and carry no admin capability. See [Authentication](docs/configuration.md#authentication) for the full list, and [Multi-user mode](docs/configuration.md#users) for employee accounts.
+The shop and `/api/public/*` are anonymous and carry no admin capability. See [Authentication](docs/configuration.md#authentication) for the full list, and [Multi-user mode](docs/configuration.md#users) for employee accounts.
 
 ## Philosophy
 
@@ -149,7 +149,7 @@ mkdir -p /tmp/printpaca-dev && cd server && CONFIG_DIR=/tmp/printpaca-dev go run
 npm run dev -w web
 ```
 
-Open the URL Vite prints (typically `http://localhost:5173`). Vite proxies `/api/*` to `/admin/api/*` on `http://localhost:8080`, because the production admin app calls its API under `/admin/`. The proxy covers the admin app only, so this flow can't exercise the front door or the shop at `/order`.
+Open the URL Vite prints (typically `http://localhost:5173`). Vite proxies `/api/*` to `/admin/api/*` on `http://localhost:8080`, because the production admin app calls its API under `/admin/`. The proxy covers the admin app only, so this flow can't exercise the shop at `/`.
 
 To run the built app, use `bash scripts/e2e-server.sh` (main port on `:8099` with the admin app at `/admin/`, and the customer-only listener on `:8098`). It builds the web assets, copies them into `server/embedded/dist` just long enough to compile a binary, restores the placeholder, and runs the binary against a throwaway config directory. `npm run e2e` runs the same script (see [`e2e/playwright.config.ts`](e2e/playwright.config.ts)).
 

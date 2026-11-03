@@ -52,7 +52,7 @@ test("the service worker registers and takes control of the page", async ({ page
   expect(registration?.active).toBe("activated");
 });
 
-test("the service worker never controls the front door, the shop, or the public API", async ({ page, baseURL }) => {
+test("the service worker never controls the shop (at / or /order) or the public API", async ({ page, baseURL }) => {
   await page.goto("/admin/");
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null, undefined, { timeout: 15_000 });
 

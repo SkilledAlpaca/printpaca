@@ -1,20 +1,21 @@
 <script lang="ts">
   import type { PublicConfig } from "./api";
 
-  // One footer for every public page (front door, shop, item views, confirmations), in the same place with the
-  // same content, so help and navigation are consistent (WCAG 3.2.3, 3.2.6).
-  let { branding }: { branding: PublicConfig["branding"] } = $props();
+  // One footer for every view of the shop (gallery, item views, estimate form, confirmations), in the same
+  // place with the same content, so help and navigation are consistent (WCAG 3.2.3, 3.2.6). The shop is a
+  // single page, so there is no Home or Shop link; "Staff sign-in" shows only when the server offers one.
+  let { branding, staffUrl = "" }: { branding: PublicConfig["branding"]; staffUrl?: string } = $props();
 
   /** A phone number as a tel: target: digits and a leading plus only. */
   const telHref = $derived(`tel:${branding.phone.replace(/[^\d+]/g, "")}`);
 </script>
 
 <footer class="shop-footer">
-  <nav aria-label="Footer">
-    <a href="/">Home</a>
-    &middot;
-    <a href="/order">Shop</a>
-  </nav>
+  {#if staffUrl}
+    <nav aria-label="Footer">
+      <a href={staffUrl}>Staff sign-in</a>
+    </nav>
+  {/if}
   {#if branding.email || branding.phone}
     <p>
       Questions?

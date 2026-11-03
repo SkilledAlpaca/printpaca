@@ -201,8 +201,8 @@ function offsetMs(tz: string, ms: number): number {
 }
 
 /** A wall-clock date plus minutes after midnight (1440 and beyond roll into later days) in tz as an instant.
- * Around a DST change a repeated wall time resolves to the earlier instant and a skipped one to the instant
- * computed from the offset before the change, matching the server. */
+ * Around a DST change a repeated wall time resolves to the earlier instant and a skipped one (inside the
+ * spring-forward gap) to the first instant after the gap, matching the server. */
 export function wallToInstant(tz: string, y: number, mo: number, d: number, minutes: number): number {
   const wall = Date.UTC(y, mo - 1, d, 0, minutes);
   const oA = offsetMs(tz, wall - 86400000);
@@ -214,7 +214,16 @@ export function wallToInstant(tz: string, y: number, mo: number, d: number, minu
   if (okA && okB) return Math.min(tA, tB);
   if (okA) return tA;
   if (okB) return tB;
-  return tA;
+  // Inside the spring-forward gap: tB (read with the later offset) is before the change and tA is after it.
+  // Clamp to the first instant whose offset is no longer oA, found by bisection to the millisecond.
+  let lo = tB;
+  let hi = tA;
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (offsetMs(tz, mid) === oA) lo = mid;
+    else hi = mid;
+  }
+  return hi;
 }
 
 /** "YYYY-MM-DDTHH:MM" in tz to an instant, or null when it is not a real date and time. */

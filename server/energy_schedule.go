@@ -238,7 +238,7 @@ func zoneOffsetMs(loc *time.Location, ms float64) float64 {
 
 // wallToInstant converts a wall-clock date plus minutes after midnight (up to 1440 and beyond) in loc to an
 // instant. Around a DST change it is deterministic: a repeated wall time resolves to the earlier instant, and
-// a skipped one resolves using the offset before the change (so it lands after the gap).
+// a skipped one clamps to the first instant after the gap (02:30 on a spring-forward day becomes 03:00).
 func wallToInstant(loc *time.Location, y, mo, d, minutes int) float64 {
 	wall := float64(time.Date(y, time.Month(mo), d, 0, minutes, 0, 0, time.UTC).UnixMilli())
 	oA := zoneOffsetMs(loc, wall-86400000)
@@ -254,7 +254,18 @@ func wallToInstant(loc *time.Location, y, mo, d, minutes int) float64 {
 	case okB:
 		return tB
 	default:
-		return tA
+		// Inside the spring-forward gap: tB (read with the later offset) is before the change and tA is
+		// after it. Find the first instant whose offset is no longer oA by bisection to the millisecond.
+		lo, hi := tB, tA
+		for hi-lo > 1 {
+			mid := math.Floor((lo + hi) / 2)
+			if zoneOffsetMs(loc, mid) == oA {
+				lo = mid
+			} else {
+				hi = mid
+			}
+		}
+		return hi
 	}
 }
 

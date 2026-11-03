@@ -55,7 +55,7 @@
   ];
   let statusFilter = $state<StatusFilter>("all");
   // Free-text filter composing (AND) with statusFilter; same look as ClientsTab's search-input, registered as
-  // "invoices-filter" so App.svelte's "/" shortcut can focus it.
+  // "invoices-filter" so App.svelte's Ctrl+K (⌘K on macOS) shortcut can focus it.
   let filterText = $state("");
 
   const filterActive = $derived(statusFilter !== "all" || filterText.trim() !== "");
@@ -79,7 +79,7 @@
 </script>
 
 <div class="head-row">
-  <h1>Invoices</h1>
+  <h1 tabindex="-1">Invoices</h1>
   <button type="button" class="primary" onclick={onNew}>New invoice</button>
 </div>
 
@@ -109,7 +109,7 @@
 </div>
 
 {#if backfilling}
-  <p class="status-line">Loading the rest of the list to filter…</p>
+  <p class="status-line" role="status">Loading the rest of the list to filter…</p>
 {:else if backfillFailed}
   <p class="banner-warn" role="alert">
     Couldn't load the rest of the list; the filter may be missing some results.
@@ -131,12 +131,12 @@
       </thead>
       <tbody>
         {#if loading}
-          <tr><td colspan="6" class="empty-state">Loading invoices…</td></tr>
+          <tr><td colspan="6" class="empty-state"><span role="status">Loading invoices…</span></td></tr>
         {:else}
           {#each filteredInvoices as inv (inv.id)}
             <tr class="clickable-row" onclick={() => onOpenDetail(inv.id)}>
               <td class="nowrap">
-                <button type="button" class="open-btn" onclick={(e) => { e.stopPropagation(); onOpenDetail(inv.id); }}>{inv.number}</button>
+                <button type="button" class="open-btn" data-row-id={inv.id} onclick={(e) => { e.stopPropagation(); onOpenDetail(inv.id); }}>{inv.number}</button>
               </td>
               <td>{inv.clientName}</td>
               <td class="nowrap">{inv.issueDate ? formatDate(inv.issueDate) : "-"}</td>

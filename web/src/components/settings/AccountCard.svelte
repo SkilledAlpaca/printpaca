@@ -81,7 +81,7 @@
       </label>
       {#if error}<p class="warn-text" role="alert">{error}</p>{/if}
       {#if success}<p class="hint" role="status">Password changed.</p>{/if}
-      <button type="submit" class="primary" disabled={submitting}>{submitting ? "Changing…" : "Change password"}</button>
+      <button type="submit" class="primary" aria-disabled={submitting} aria-busy={submitting}>{submitting ? "Changing…" : "Change password"}</button>
     </form>
   {:else if user?.signedInVia === "none"}
     <p class="hint">Sign-in is off. Set ADMIN_PASSWORD on the server to require a password.</p>

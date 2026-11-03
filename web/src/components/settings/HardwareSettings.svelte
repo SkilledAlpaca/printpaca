@@ -3,6 +3,7 @@
   import { settingsWarnings } from "../../lib/settingsRules";
   import { warnFor } from "../../lib/format";
   import { rowProblems, warnId } from "../../lib/rowIssues";
+  import { focusAfterRowRemoval } from "../../lib/a11yFocus";
 
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 
@@ -21,6 +22,7 @@
   }
   function removeHardware(index: number) {
     form.hardware = form.hardware.filter((_, i) => i !== index);
+    void focusAfterRowRemoval("remove-hardware", index, form.hardware.length, "add-hardware");
   }
 </script>
 
@@ -33,7 +35,7 @@
     <div class="table-scroll">
       <table>
         <thead>
-          <tr><th>Name</th><th>Unit cost</th><th>Lost on failed prints</th><th></th></tr>
+          <tr><th>Name</th><th>Unit cost</th><th>Lost on failed prints</th><th><span class="visually-hidden">Actions</span></th></tr>
         </thead>
         <tbody>
           {#each form.hardware as h, i (i)}
@@ -47,7 +49,6 @@
                   class:warn={nameWarn !== ""}
                   aria-invalid={nameWarn !== ""}
                   aria-describedby={nameWarn !== "" ? warnId(`hardware[${i}].name`) : undefined}
-                  title={nameWarn || undefined}
                 />
               </td>
               <td>
@@ -59,7 +60,6 @@
                   class:warn={costWarn !== ""}
                   aria-invalid={costWarn !== ""}
                   aria-describedby={costWarn !== "" ? warnId(`hardware[${i}].unitCost`) : undefined}
-                  title={costWarn || undefined}
                 />
               </td>
               <td>
@@ -74,6 +74,7 @@
                 <button
                   type="button"
                   aria-label={`Remove hardware ${h.name}`}
+                  data-focus-key={`remove-hardware-${i}`}
                   onclick={() => removeHardware(i)}
                 >Remove</button>
               </td>
@@ -86,7 +87,7 @@
       <small id={warnId(issue.field)} class="warn-text">Row {issue.row}: {issue.message}</small>
     {/each}
   {/if}
-  <button type="button" onclick={addHardware}>Add hardware</button>
+  <button type="button" data-focus-key="add-hardware" onclick={addHardware}>Add hardware</button>
 </div>
 
 <style>

@@ -26,10 +26,11 @@ test("create a draft invoice, mark it sent, then cancel it", async ({ page }) =>
   await expect(page.getByText("$25.00").first()).toBeVisible();
 
   await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText(/^Invoice INV-/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
   await expect(page.getByText("draft", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Mark sent" }).click();
+  await page.getByRole("button", { name: /^Mark INV-.* as sent\?$/ }).click();
   await expect(page.getByText("sent", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Cancel invoice", exact: true }).click();
@@ -47,8 +48,9 @@ test("canceling an invoice that has payments shows the server's message until th
   await page.getByLabel("Line 1 quantity").fill("1");
   await page.getByLabel("Line 1 unit price").fill("50.00");
   await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText(/^Invoice INV-/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
   await page.getByRole("button", { name: "Mark sent" }).click();
+  await page.getByRole("button", { name: /^Mark INV-.* as sent\?$/ }).click();
   await expect(page.getByText("sent", { exact: true })).toBeVisible();
 
   // A $10.00 deposit leaves the invoice sent with a balance.
@@ -63,7 +65,7 @@ test("canceling an invoice that has payments shows the server's message until th
 
   // Removing the payment unblocks the cancel.
   await page.getByRole("button", { name: /^Delete payment of \$10\.00/ }).click();
-  await page.getByRole("button", { name: /^Confirm delete payment of \$10\.00/}).click();
+  await page.getByRole("button", { name: /^Delete\? payment of \$10\.00/}).click();
   await expect(page.getByText(/No payments recorded yet/)).toBeVisible();
   await page.getByRole("button", { name: "Cancel invoice" }).click();
   await page.getByRole("button", { name: "Cancel invoice?" }).click();

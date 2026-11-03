@@ -14,6 +14,8 @@
   import { money } from "../lib/format";
   import { pendingOpen } from "../lib/state.svelte";
   import StatusBadge from "./StatusBadge.svelte";
+  import { announce } from "../lib/a11y.svelte";
+  import ScrollRegion from "./ScrollRegion.svelte";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 
@@ -47,7 +49,7 @@
   // Bumped per request so a slow response for a window the user already left can't overwrite a newer one.
   let topItemsRequest = 0;
 
-  async function loadTopItems(days: TopItemsWindow) {
+  async function loadTopItems(days: TopItemsWindow, announceResult = false) {
     const request = ++topItemsRequest;
     topItemsLoading = true;
     const result = await fetchTopItems(days);
@@ -55,13 +57,19 @@
     topItems = result;
     topItemsUnavailable = result === null;
     topItemsLoading = false;
+    if (announceResult) announce(
+      result === null
+        ? "Couldn't load top items."
+        : `Top items updated for the last ${days} days: ${result.items.length} ${result.items.length === 1 ? "item" : "items"}.`,
+      result === null ? "assertive" : "polite",
+    );
   }
 
   function selectTopItemsDays(days: TopItemsWindow) {
     if (days === topItemsDays) return;
     topItemsDays = days;
     persistTopItemsDays(days);
-    void loadTopItems(days);
+    void loadTopItems(days, true);
   }
 
   onMount(() => {
@@ -88,6 +96,9 @@
   function monthLabel(month: string): string {
     const idx = Number(month.split("-")[1]) - 1;
     return MONTH_LABELS[idx] ?? month;
+  }
+  function monthWithYear(month: string): string {
+    return `${monthLabel(month)} ${month.split("-")[0]}`;
   }
 
   // Chart geometry: a fixed viewBox gives a stable aspect ratio while CSS makes the <svg> responsive.
@@ -138,6 +149,13 @@
   // Gridlines and labels are meaningless with no revenue: maxCents is clamped to 1 for dividing, but a
   // "$0.01" axis would misstate the data.
   const hasRevenue = $derived(months.some((m) => m.cents > 0));
+  // Text alternative for the chart (WCAG 1.1.1): the range and total in the label, every month in the table.
+  const revenueTotalCents = $derived(months.reduce((sum, m) => sum + m.cents, 0));
+  const chartLabel = $derived(
+    months.length > 0
+      ? `Revenue by month, ${monthWithYear(months[0]!.month)} to ${monthWithYear(months[months.length - 1]!.month)}, total ${money(revenueTotalCents, cfg)}. A table of the same data follows.`
+      : "Revenue by month",
+  );
   // The one bar that gets the peak label: the first month at maxCents with index > 1, else -1. A single index
   // avoids labeling every tied month; indices 0-1 are skipped because the 100% gridline label at x=PAD_X
   // would overlap.
@@ -152,7 +170,7 @@
   <h1>Dashboard</h1>
 
   {#if loading}
-    <p>Loading…</p>
+    <p role="status">Loading…</p>
   {:else}
     {#if unavailable}
       <p class="banner-warn" role="alert">Couldn't load the dashboard. The server couldn't be reached.</p>
@@ -197,7 +215,7 @@
             class="revenue-chart"
             viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
             role="img"
-            aria-label="Revenue by month, last 12 months"
+            aria-label={chartLabel}
           >
             {#each gridlines as g (g.y)}
               <line x1={PAD_X} y1={g.y} x2={CHART_WIDTH - PAD_X} y2={g.y} class="gridline" />
@@ -220,15 +238,28 @@
                   class="bar-value-label"
                 >{money(m.cents, cfg)}</text>
               {/if}
-              {#if i % 2 === 0}
-                <text x={barX(i) + barWidth / 2} y={LABEL_Y} text-anchor="middle" class="axis-label">{monthLabel(m.month)}</text>
-              {/if}
+              <text x={barX(i) + barWidth / 2} y={LABEL_Y} text-anchor="middle" class="axis-label" class:alt={i % 2 === 1}>{monthLabel(m.month)}</text>
             {/each}
             <!-- Painted after the bars so a tall bar never covers a gridline's value label. -->
             {#each gridlines as g (g.y)}
               <text x={PAD_X} y={g.y - 3} text-anchor="start" class="grid-label">{money(g.cents, cfg)}</text>
             {/each}
           </svg>
+          <details class="chart-data">
+            <summary>Revenue by month as a table</summary>
+            <ScrollRegion label="Revenue by month table">
+              <table>
+                <thead>
+                  <tr><th scope="col">Month</th><th scope="col" class="num">Revenue</th></tr>
+                </thead>
+                <tbody>
+                  {#each months as m (m.month)}
+                    <tr><th scope="row">{monthWithYear(m.month)}</th><td class="num">{money(m.cents, cfg)}</td></tr>
+                  {/each}
+                </tbody>
+              </table>
+            </ScrollRegion>
+          </details>
         {:else}
           <p class="empty-state">No revenue yet. Convert a quote to an invoice and record a payment to see revenue here.</p>
         {/if}
@@ -245,7 +276,7 @@
                 <button type="button" class="row-link" onclick={() => openInvoice(inv.id)}>
                   <span class="inv-number">{inv.number}</span>
                   <!-- title: this column gives up space as the card narrows, so a long name can truncate. -->
-                  <span class="inv-client" title={inv.clientName}>{inv.clientName}</span>
+                  <span class="inv-client">{inv.clientName}</span>
                   <StatusBadge status={inv.status} dueDate={inv.dueDate} />
                   <span class="inv-total">{money(inv.totalCents, cfg)}</span>
                 </button>
@@ -277,7 +308,7 @@
       </p>
 
       {#if topItemsLoading && topItems === null}
-        <p class="empty-state">Loading…</p>
+        <p class="empty-state" role="status">Loading…</p>
       {:else if topItemsUnavailable}
         <p class="banner-warn" role="alert">Couldn't load top items. The server couldn't be reached.</p>
       {:else if topItems}
@@ -292,7 +323,7 @@
             {sourceSplit(topItems.galleryUnits, topItems.inPersonUnits)}
           </p>
           <p class="top-items-summary">Booked is the line amount less its share of any invoice discount, before tax. It is not payments received.</p>
-          <div class="table-scroll">
+          <ScrollRegion label="Top items table">
             <table>
               <thead>
                 <tr>
@@ -323,7 +354,7 @@
                 {/each}
               </tbody>
             </table>
-          </div>
+          </ScrollRegion>
         {/if}
       {/if}
     </div>
@@ -348,7 +379,7 @@
    * side by side, the chart spanning two columns. */
   .cards {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(max(20rem, calc(25% - 0.6rem)), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, max(20rem, calc(25% - 0.6rem))), 1fr));
     gap: 1rem;
     /* Each card ends where its content ends; stretched, the shorter card (usually the chart, whose SVG
      * can't use extra height) gained empty space below the axis labels. */
@@ -378,6 +409,11 @@
     font-size: 9px;
     font-variant-numeric: tabular-nums;
   }
+  /* Narrow screens scale the chart down, so every other month label is hidden to keep them apart; the
+   * "Revenue by month table" below still lists all of them. */
+  @media (max-width: 600px) {
+    .axis-label.alt { display: none; }
+  }
   .grid-label {
     fill: var(--muted);
     font-size: 9px;
@@ -405,7 +441,7 @@
   .row-link {
     width: 100%;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: auto minmax(5rem, 1fr) auto auto;
     align-items: center;
     gap: 0.75rem;
     background: none;
@@ -416,7 +452,15 @@
   }
   .row-link:hover { background: var(--surface-2); }
   .inv-number { font-weight: 600; white-space: nowrap; }
-  .inv-client { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Wraps instead of truncating (WCAG 1.4.12 text spacing, 1.4.10 reflow): the name keeps a readable floor. */
+  .inv-client { min-width: 0; overflow-wrap: anywhere; }
+  @media (max-width: 520px) {
+    .row-link { display: flex; flex-wrap: wrap; }
+    .inv-client { flex: 1 1 8rem; }
+  }
+  .chart-data { margin-top: var(--space-2); color: var(--muted); font-size: var(--text-sm); }
+  .chart-data summary { cursor: pointer; }
+  .chart-data table { color: var(--text); }
   .inv-total {
     font-variant-numeric: tabular-nums;
     min-width: 5rem;

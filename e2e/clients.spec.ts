@@ -28,12 +28,19 @@ test("create, edit, and delete a client through the detail view", async ({ page 
   await expect(page.getByRole("heading", { name: "Jordan Alpaca" })).toBeVisible();
   await expect(page).toHaveURL(/#\/clients#.+/);
 
+  // A saved client keeps focus on the Save button (aria-disabled, not disabled), and "Back to list" without a
+  // list row to return to falls back to the list heading.
   await page.getByRole("button", { name: "Back to list" }).click();
   await expect(page).toHaveURL(/#\/clients$/);
   const row = clientRow(page, "Jordan Alpaca");
   await expect(row).toBeVisible();
   await expect(row).toContainText("555-0100");
 
+  // Opening a record focuses its h1; going back returns focus to the row that opened it (WCAG 2.4.3).
+  await row.getByRole("button").click();
+  await expect(page.getByRole("heading", { level: 1, name: "Jordan Alpaca" })).toBeFocused();
+  await page.getByRole("button", { name: "Back to list" }).click();
+  await expect(row.getByRole("button")).toBeFocused();
   await row.getByRole("button").click();
   await expect(page.getByRole("heading", { name: "Jordan Alpaca" })).toBeVisible();
   await page.getByLabel("Phone").fill("555-0199");
@@ -44,10 +51,19 @@ test("create, edit, and delete a client through the detail view", async ({ page 
   await expect(page.getByText("No saved quotes are linked to this client yet.")).toBeVisible();
   await expect(page.getByText("No invoices for this client yet.")).toBeVisible();
 
+  // The confirm button takes focus; Escape cancels and puts focus back on the trigger.
   await page.getByRole("button", { name: "Delete client" }).click();
   await expect(page.getByText("Invoices keep their own copy of this client's details.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Delete client?" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Delete client", exact: true })).toBeFocused();
+  await expect(page.getByRole("heading", { level: 1, name: "Jordan Alpaca" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete client", exact: true }).click();
   await page.getByRole("button", { name: "Delete client?" }).click();
 
+  // With no row left to take focus, it lands on the list heading.
   await expect(page).toHaveURL(/#\/clients$/);
   await expect(page.getByText("No clients yet.")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Clients" })).toBeFocused();
 });

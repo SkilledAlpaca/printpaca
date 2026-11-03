@@ -1,0 +1,407 @@
+import { test, expect } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import { navButton, seedQuoteBody, ADMIN_URL } from "./helpers";
+
+// Regression gate for WCAG 2.2 AA (docs: obsidian-ai/43 - 3D Printing/printpaca/wcag-fix-spec.md). Runs axe on
+// the login screen, front door, shop, every admin tab, and one open detail view per record type, in light and
+// dark, at desktop and 390 px, and asserts no horizontal page scroll at 320 px. Zero violations are required.
+// Focus checks cover the mobile drawer, a delete confirm, and the public submit confirmations.
+
+const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
+const SCHEMES = ["light", "dark"] as const;
+const VIEWPORTS = [
+  { name: "desktop", width: 1280, height: 900 },
+  { name: "390", width: 390, height: 844 },
+] as const;
+
+const ITEM_NAME = "A11y Gate Planter";
+const CLIENT_NAME = "A11y Gate Client";
+
+// Not serial: a failing page must not skip the rest, so one run lists every violation. The seed data is created
+// in beforeAll and removed in afterAll, which Playwright re-runs around the worker it restarts after a failure.
+/** Waits for the page to settle: network idle plus fonts, so contrast is computed on final styles. */
+async function settle(page: Page): Promise<void> {
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => document.fonts.ready);
+}
+
+/** Runs axe and returns one line per violation rule, so a page's failures from every combination can be reported
+ * together. */
+async function runAxe(page: Page, label: string): Promise<string[]> {
+  const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+  return results.violations.map(
+    (v) => `${label}: ${v.id} (${v.impact}), ${v.nodes.length} node(s), e.g. ${v.nodes[0]?.target.join(" ")}`,
+  );
+}
+
+/** Scans the page already on screen in all four scheme and viewport combinations, then checks reflow at 320 px.
+ * Every problem is collected before asserting, so one run lists everything wrong on the page. */
+async function scanAll(page: Page, name: string): Promise<void> {
+  const problems: string[] = [];
+  for (const vp of VIEWPORTS) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    for (const scheme of SCHEMES) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await settle(page);
+      problems.push(...(await runAxe(page, `${name} [${scheme}, ${vp.name}]`)));
+    }
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.setViewportSize({ width: 320, height: 640 });
+  await settle(page);
+  const overflow = await page.evaluate(() => ({
+    scroll: document.documentElement.scrollWidth,
+    client: document.documentElement.clientWidth,
+  }));
+  if (overflow.scroll > overflow.client) {
+    problems.push(`${name} [320 px]: horizontal page scroll (scrollWidth ${overflow.scroll} > ${overflow.client})`);
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  expect(problems, `a11y problems on ${name}`).toEqual([]);
+}
+
+/** A detail view has exactly one h1, and its text is the record segment of the document title (WCAG 1.3.1, 2.4.2). */
+async function expectOneH1AndRecordTitle(page: Page): Promise<void> {
+  await expect(page.locator("main h1")).toHaveCount(1);
+  const heading = ((await page.locator("main h1").innerText()) ?? "").trim();
+  expect(heading).not.toBe("");
+  await expect(page).toHaveTitle(new RegExp(`^${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} · [^·]+ · printpaca$`));
+}
+
+let originalConfig: Record<string, unknown> & { materials: Array<{ name: string; public?: boolean }> };
+const created: { clients: string[]; items: string[]; invoices: string[]; requests: string[] } = {
+  clients: [],
+  items: [],
+  invoices: [],
+  requests: [],
+};
+let clientId = "";
+let invoiceId = "";
+let requestId = "";
+
+test.beforeAll(async ({ request }) => {
+  // The shop form needs a public material.
+  const getRes = await request.get("/admin/api/settings");
+  expect(getRes.ok()).toBeTruthy();
+  originalConfig = (await getRes.json()).config;
+  const updated = structuredClone(originalConfig);
+  updated.materials = updated.materials.map((m) => (m.name === "PLA" ? { ...m, public: true } : m));
+  expect((await request.put("/admin/api/settings", { data: { config: updated } })).ok()).toBeTruthy();
+
+  const client = await request.post("/admin/api/clients", {
+    data: { name: CLIENT_NAME, email: "gate@example.com", phone: "", billingAddress: "", shippingAddress: "", notes: "" },
+  });
+  expect(client.ok()).toBeTruthy();
+  clientId = (await client.json()).id;
+  created.clients.push(clientId);
+
+  const item = await request.post("/admin/api/items", {
+    data: {
+      name: ITEM_NAME,
+      description: "A small printed planter.",
+      priceCents: 1200,
+      optionLabel: "",
+      options: [],
+      public: true,
+      stockMode: "in_stock",
+      stockQty: 3,
+      sortOrder: 0,
+    },
+  });
+  expect(item.ok()).toBeTruthy();
+  const itemId = (await item.json()).id as string;
+  created.items.push(itemId);
+
+  const invoice = await request.post("/admin/api/invoices", {
+    data: { clientName: CLIENT_NAME, lines: [{ description: "Bracket", quantity: 2, unitPriceCents: 1250 }] },
+  });
+  expect(invoice.ok()).toBeTruthy();
+  invoiceId = (await invoice.json()).id;
+  created.invoices.push(invoiceId);
+
+  await request.post("/admin/api/quotes", { data: seedQuoteBody("a11y-gate-quote") });
+
+  // The public items list is cached for 5 s with no write invalidation: wait until the new item is served.
+  await expect
+    .poll(async () => ((await (await request.get("/api/public/items")).json()).items as { name: string }[]).some((i) => i.name === ITEM_NAME), {
+      timeout: 15_000,
+      intervals: [500, 500, 1000],
+    })
+    .toBe(true);
+
+  const order = await request.post("/api/public/item-order", {
+    headers: { "X-Forwarded-For": `203.0.113.${100 + Math.floor(Math.random() * 100)}` },
+    data: { itemId, optionName: "", quantity: 1, name: "Gate Visitor", email: "visitor@example.com", note: "" },
+  });
+  expect(order.ok()).toBeTruthy();
+  requestId = (await order.json()).id;
+  created.requests.push(requestId);
+});
+
+test.afterAll(async ({ request }) => {
+  await cleanup(request);
+});
+
+async function cleanup(request: APIRequestContext): Promise<void> {
+  for (const id of created.requests) await request.delete(`/admin/api/requests/${id}`);
+  for (const id of created.invoices) await request.delete(`/admin/api/invoices/${id}`);
+  for (const id of created.items) await request.delete(`/admin/api/items/${id}`);
+  for (const id of created.clients) await request.delete(`/admin/api/clients/${id}`);
+  const quotes = await request.get("/admin/api/quotes");
+  if (quotes.ok()) {
+    for (const q of ((await quotes.json()) as { quotes: { id: string; label: string }[] }).quotes) {
+      if (q.label === "a11y-gate-quote") await request.delete(`/admin/api/quotes/${q.id}`);
+    }
+  }
+  if (originalConfig) await request.put("/admin/api/settings", { data: { config: originalConfig } });
+}
+
+test.describe("login", () => {
+  test("login screen and its error state", async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.goto(ADMIN_URL);
+    await expect(page.getByLabel("Password")).toBeVisible();
+    await expect(page).toHaveTitle("Sign in · printpaca");
+    await scanAll(page, "login");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "Enter your password." })).toBeVisible();
+    await expect(page.getByLabel("Password")).toBeFocused();
+    await scanAll(page, "login error");
+  });
+});
+
+test.describe("public pages", () => {
+  test("front door", async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await scanAll(page, "front door");
+  });
+
+  test("shop: gallery, item panel, empty form, and form with an estimate", async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.goto("/order");
+    await expect(page.getByRole("button", { name: new RegExp(ITEM_NAME) })).toBeVisible();
+    await scanAll(page, "shop gallery");
+
+    await page.getByRole("button", { name: new RegExp(ITEM_NAME) }).click();
+    await expect(page.getByRole("heading", { name: ITEM_NAME })).toBeFocused();
+    await scanAll(page, "shop item panel");
+
+    await page.getByRole("button", { name: /Back to gallery/ }).click();
+    // Focus returns to the card that opened the panel.
+    await expect(page.getByRole("button", { name: new RegExp(ITEM_NAME) })).toBeFocused();
+
+    await page.getByRole("button", { name: "Custom estimate" }).click();
+    await expect(page.getByLabel("Material")).toBeVisible();
+    await scanAll(page, "shop estimate form (empty)");
+
+    await page.getByLabel("Material").selectOption("PLA");
+    await page.getByLabel("Quantity").fill("1");
+    await page.getByLabel(/Model weight/).fill("50");
+    await page.getByLabel(/^Print time \(h/).fill("1");
+    await page.getByLabel(/Print time \(minutes\)/).fill("20");
+    await expect(page.locator(".estimate .price")).toBeVisible();
+    await scanAll(page, "shop estimate form (with estimate)");
+
+    // Validation surfaces even though the price has resolved: name and email are tied to their messages.
+    await page.getByRole("button", { name: "Request an estimate" }).click();
+    await expect(page.getByLabel("Name")).toBeFocused();
+    await expect(page.getByLabel("Name")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByLabel("Name")).toHaveAccessibleDescription("Name is required.");
+    await scanAll(page, "shop estimate form (validation)");
+  });
+
+  test("a submitted item order moves focus to the confirmation heading", async ({ page }) => {
+    await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.20" });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/order");
+    await page.getByRole("button", { name: new RegExp(ITEM_NAME) }).click();
+    await page.getByLabel("Name").fill("Focus Visitor");
+    await page.getByLabel("Email").fill("focus@example.com");
+    await page.getByRole("button", { name: "Place order" }).click();
+    const heading = page.getByRole("heading", { name: "Order received" });
+    await expect(heading).toBeFocused();
+    const ref = (await page.locator(".confirmation .ref").textContent())?.replace("Reference: ", "").trim() ?? "";
+    if (ref) created.requests.push(ref);
+    await scanAll(page, "shop order confirmation");
+  });
+
+  test("a submitted estimate request moves focus to the confirmation heading", async ({ page }) => {
+    await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.30" });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/order");
+    await page.getByRole("button", { name: "Custom estimate" }).click();
+    await page.getByLabel("Material").selectOption("PLA");
+    await page.getByLabel(/Model weight/).fill("50");
+    await page.getByLabel(/^Print time \(h/).fill("1");
+    await page.getByLabel(/Print time \(minutes\)/).fill("20");
+    await page.getByLabel("Name").fill("Focus Visitor");
+    await page.getByLabel("Email").fill("focus@example.com");
+    await expect(page.locator(".estimate .price")).toBeVisible();
+    await page.getByRole("button", { name: "Request an estimate" }).click();
+    await expect(page.getByRole("heading", { name: "Request received" })).toBeFocused();
+    const ref = (await page.locator(".confirmation .ref").textContent())?.replace("Reference: ", "").trim() ?? "";
+    if (ref) created.requests.push(ref);
+    await scanAll(page, "shop estimate confirmation");
+  });
+});
+
+const TABS: { name: string; hash: string }[] = [
+  { name: "New quote", hash: "#/quote" },
+  { name: "Quotes", hash: "#/quotes" },
+  { name: "Requests", hash: "#/requests" },
+  { name: "Invoices", hash: "#/invoices" },
+  { name: "Items", hash: "#/items" },
+  { name: "Clients", hash: "#/clients" },
+  { name: "Dashboard", hash: "#/dashboard" },
+  { name: "Filament", hash: "#/filament" },
+  { name: "Electricity", hash: "#/electricity" },
+  { name: "Printers", hash: "#/printers" },
+  { name: "Settings", hash: "#/settings" },
+  { name: "Guide", hash: "#/guide" },
+];
+
+test.describe("admin tabs", () => {
+  for (const tab of TABS) {
+    test(`tab: ${tab.name}`, async ({ page }) => {
+      test.setTimeout(120_000);
+      await page.goto(`/admin/${tab.hash}`);
+      await expect(page.locator("main h1").first()).toBeVisible();
+      await expect(page).toHaveTitle(/ · printpaca$/);
+      await scanAll(page, `admin ${tab.name}`);
+    });
+  }
+});
+
+test.describe("admin detail views", () => {
+  test("invoice detail", async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.goto(`/admin/#/invoices#${invoiceId}`);
+    await expect(page.locator("main h1, main h2").first()).toBeVisible();
+    await expectOneH1AndRecordTitle(page);
+    await scanAll(page, "admin invoice detail");
+  });
+
+  test("client detail", async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.goto(`/admin/#/clients#${clientId}`);
+    await expect(page.locator("main h1, main h2").first()).toBeVisible();
+    await expectOneH1AndRecordTitle(page);
+    await scanAll(page, "admin client detail");
+  });
+
+  test("request detail", async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.goto(`/admin/#/requests#${requestId}`);
+    await expect(page.locator("main h1, main h2").first()).toBeVisible();
+    await expectOneH1AndRecordTitle(page);
+    await scanAll(page, "admin request detail");
+  });
+
+  test("item detail", async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.goto("/admin/#/items");
+    await page.locator("main").getByRole("button", { name: new RegExp(ITEM_NAME) }).first().click();
+    await expect(page.locator("main h1, main h2").first()).toBeVisible();
+    await expectOneH1AndRecordTitle(page);
+    await scanAll(page, "admin item detail");
+  });
+
+  test("a delete confirm keeps focus on a control inside the page", async ({ page }) => {
+    await page.goto(`/admin/#/clients#${clientId}`);
+    await expect(page.locator("main h1, main h2").first()).toBeVisible();
+    await expectOneH1AndRecordTitle(page);
+    await page.getByRole("button", { name: /^Delete client/ }).click();
+    // The trigger is replaced by the confirm and cancel buttons; focus must land on the confirm button, not <body> or Cancel.
+    await expect(page.getByRole("button", { name: "Delete client?" })).toBeFocused();
+  });
+});
+
+test.describe("sticky bars (2.4.11)", () => {
+  /** The visible, enabled, tabbable controls inside <main>, in DOM order, as selectors the page can re-find. */
+  async function tag(page: Page): Promise<number> {
+    return page.evaluate(() => {
+      const sel = "a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]):not([tabindex='-1']), select:not([disabled]), textarea:not([disabled]), summary, [tabindex='0']";
+      const els = [...document.querySelectorAll<HTMLElement>(`#main ${sel}`)].filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden" && !el.closest(".save-bar, .jump-nav");
+      });
+      els.forEach((el, i) => el.setAttribute("data-walk", String(i)));
+      return els.length;
+    });
+  }
+  const rect = (page: Page, sel: string) =>
+    page.evaluate((s) => { const r = document.querySelector(s)!.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; }, sel);
+
+  test("Settings: the field Tab reaches above the save bar stays clear of it, and Shift+Tab clears the jump nav", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 700 });
+    await page.goto("/admin/#/settings");
+    await expect(page.locator(".jump-nav")).toBeVisible();
+    // Make the editor dirty so the sticky save bar shows; the original symbol is restored by the next reload.
+    const symbol = page.getByLabel("Symbol");
+    await symbol.fill("#");
+    await expect(page.locator(".save-bar")).toBeVisible();
+    // The bar's measured height reaches the scroll container's padding.
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector("#main")!).scrollPaddingBottom)).not.toBe("16px");
+
+    const count = await tag(page);
+    expect(count).toBeGreaterThan(10);
+    // Bottom edge: from the second-to-last control, Tab onto the last one above the save bar.
+    await page.evaluate((i) => (document.querySelector(`[data-walk="${i}"]`) as HTMLElement).focus({ preventScroll: true }), count - 2);
+    await page.evaluate((i) => {
+      document.querySelector("#main")!.scrollTop = 0;
+      (document.querySelector(`[data-walk="${i}"]`) as HTMLElement).focus({ preventScroll: true });
+    }, count - 2);
+    await page.keyboard.press("Tab");
+    const last = await rect(page, `[data-walk="${count - 1}"]`);
+    const bar = await rect(page, ".save-bar");
+    expect(last.bottom, "the last field above the save bar is not under it").toBeLessThanOrEqual(bar.top + 0.5);
+
+    // Top edge: scroll a control above the viewport, focus the next one, and Shift+Tab back to it.
+    const mid = Math.floor(count / 2);
+    await page.evaluate((i) => {
+      const main = document.querySelector("#main") as HTMLElement;
+      const el = document.querySelector(`[data-walk="${i}"]`) as HTMLElement;
+      main.scrollTop += el.getBoundingClientRect().top - main.getBoundingClientRect().top + 300;
+      (document.querySelector(`[data-walk="${i + 1}"]`) as HTMLElement).focus({ preventScroll: true });
+    }, mid);
+    await page.keyboard.press("Shift+Tab");
+    const field = await rect(page, `[data-walk="${mid}"]`);
+    const nav = await rect(page, ".jump-nav");
+    expect(field.top, "the field Shift+Tab reaches is not under the jump nav").toBeGreaterThanOrEqual(nav.bottom - 0.5);
+  });
+});
+
+test.describe("mobile drawer focus", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("focus moves into the drawer, back to the menu button, and to main after a pick", async ({ page }) => {
+    await page.goto("/admin/");
+    const menu = page.getByRole("button", { name: /^Open menu/ });
+    await menu.focus();
+    await page.keyboard.press("Enter");
+    const drawer = page.locator("#app-drawer");
+    await expect(drawer).toHaveClass(/open/);
+    await expect(drawer.locator("button, a[href]").first()).toBeFocused();
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: /^Open menu/ })).toBeFocused();
+
+    await page.getByRole("button", { name: /^Open menu/ }).click();
+    await expect(drawer.locator("button, a[href]").first()).toBeFocused();
+    await navButton(page, "Clients").click();
+    await expect(page.locator("#main")).toBeFocused();
+    await expect(page).toHaveTitle("Clients · printpaca");
+  });
+});
+
+test.describe("keyboard shortcuts", () => {
+  test("a bare slash is not a shortcut", async ({ page }) => {
+    await page.goto("/admin/#/quotes");
+    await expect(page.locator("main h1").first()).toBeVisible();
+    await page.keyboard.press("/");
+    await expect(page.locator("body")).toBeFocused();
+  });
+});

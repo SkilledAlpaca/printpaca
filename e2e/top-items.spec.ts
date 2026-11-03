@@ -35,6 +35,7 @@ test("a finalized gallery order is listed in Top items and survives deleting the
   await navButton(page, "Requests").click();
   await page.locator(".plain-list li", { hasText: BUYER_NAME }).getByRole("button").first().click();
   await page.getByRole("button", { name: "Finalize", exact: true }).click();
+  await page.getByRole("button", { name: /^Finalize request from/ }).click();
   await expect(page.getByRole("button", { name: "Finalize", exact: true })).toHaveCount(0);
 
   const topItemsRow = () => page.locator(".top-items tbody tr", { hasText: ITEM_NAME });
@@ -54,7 +55,7 @@ test("a finalized gallery order is listed in Top items and survives deleting the
   await navButton(page, "Requests").click();
   await page.locator(".plain-list li", { hasText: BUYER_NAME }).getByRole("button").first().click();
   await page.getByRole("button", { name: "Delete this request" }).click();
-  await page.getByRole("button", { name: "Confirm delete this request. Also deletes the stored file." }).click();
+  await page.getByRole("button", { name: "Delete? Also deletes the stored file." }).click();
   await expect(page.locator(".plain-list li", { hasText: BUYER_NAME })).toHaveCount(0);
 
   await openDashboard();
@@ -97,12 +98,13 @@ test("a counter sale on a sent invoice is counted and takes stock; canceling res
     await expect(page.getByLabel("Line 1 unit price")).toHaveValue("25");
     await page.getByLabel("Line 1 quantity").fill("2");
     await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByText(/^Invoice INV-/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
 
     // A draft reserves nothing.
     expect(await stockQty()).toBe(5);
 
     await page.getByRole("button", { name: "Mark sent" }).click();
+    await page.getByRole("button", { name: /^Mark INV-.* as sent\?$/ }).click();
     await expect(page.getByText("sent", { exact: true })).toBeVisible();
     expect(await stockQty()).toBe(3);
 

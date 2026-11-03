@@ -148,7 +148,7 @@ test("cleanup: admin deletes the employee and turns multi-user mode back off", a
   await gotoSettings(page, { load: false });
 
   await page.getByRole("button", { name: `Delete ${EMPLOYEE_USERNAME}` }).click();
-  await page.getByRole("button", { name: `Confirm delete ${EMPLOYEE_USERNAME}` }).click();
+  await page.getByRole("button", { name: `Delete? ${EMPLOYEE_USERNAME}` }).click();
   await expect(page.getByRole("cell", { name: EMPLOYEE_USERNAME })).toHaveCount(0);
 
   await page.getByLabel("Multi-user mode").uncheck();

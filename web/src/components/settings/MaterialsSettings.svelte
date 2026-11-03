@@ -4,6 +4,7 @@
   import { settingsWarnings } from "../../lib/settingsRules";
   import { warnFor } from "../../lib/format";
   import { rowProblems, warnId } from "../../lib/rowIssues";
+  import { focusAfterRowRemoval } from "../../lib/a11yFocus";
 
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 
@@ -21,6 +22,7 @@
   }
   function removeMaterial(index: number) {
     form.materials = form.materials.filter((_, i) => i !== index);
+    void focusAfterRowRemoval("remove-material", index, form.materials.length, "add-material");
   }
 </script>
 
@@ -31,7 +33,7 @@
   <div class="table-scroll">
     <table>
       <thead>
-        <tr><th>ID</th><th>Name</th><th>Density (g/cm³)</th><th>Price per kg</th><th>Waste (%)</th><th>Public</th><th></th></tr>
+        <tr><th>ID</th><th>Name</th><th>Density (g/cm³)</th><th>Price per kg</th><th>Waste (%)</th><th>Public</th><th><span class="visually-hidden">Actions</span></th></tr>
       </thead>
       <tbody>
         {#each form.materials as m, i (i)}
@@ -46,7 +48,6 @@
                 class:warn={idWarn !== ""}
                 aria-invalid={idWarn !== ""}
                 aria-describedby={idWarn !== "" ? warnId(`materials[${i}].id`) : undefined}
-                title={idWarn || undefined}
               />
             </td>
             <td><input aria-label={`Material ${i + 1} name`} bind:value={m.name} /></td>
@@ -59,7 +60,6 @@
                 class:warn={densityWarn !== ""}
                 aria-invalid={densityWarn !== ""}
                 aria-describedby={densityWarn !== "" ? warnId(`materials[${i}].density`) : undefined}
-                title={densityWarn || undefined}
               />
             </td>
             <td><input type="number" step="0.01" aria-label={`Material ${i + 1} price per kg`} bind:value={m.pricePerKg} /></td>
@@ -72,7 +72,6 @@
                 class:warn={wasteWarn !== ""}
                 aria-invalid={wasteWarn !== ""}
                 aria-describedby={wasteWarn !== "" ? warnId(`materials[${i}].wastePct`) : undefined}
-                title={wasteWarn || undefined}
               />
             </td>
             <td>
@@ -87,6 +86,7 @@
               <button
                 type="button"
                 aria-label={`Remove material ${m.name || m.id}`}
+                data-focus-key={`remove-material-${i}`}
                 disabled={form.materials.length <= 1}
                 onclick={() => removeMaterial(i)}
               >Remove</button>
@@ -99,7 +99,7 @@
   {#each rowIssues as issue (issue.field)}
     <small id={warnId(issue.field)} class="warn-text">Row {issue.row}: {issue.message}</small>
   {/each}
-  <button type="button" onclick={addMaterial}>Add material</button>
+  <button type="button" data-focus-key="add-material" onclick={addMaterial}>Add material</button>
 </div>
 
 <style>

@@ -14,9 +14,12 @@
 </script>
 
 <script lang="ts">
+  import { onMount, tick } from "svelte";
+  import { announce } from "../lib/a11y.svelte";
+  import { clearVisitor, visitor } from "./visitor.svelte";
   import { formatMoney, type CurrencyConfig } from "../lib/engine/index";
   import { itemTotalCents } from "../lib/itemMath";
-  import { NAME_MAX_BYTES, NOTE_MAX_BYTES, ITEM_ORDER_EMAIL_MAX_BYTES, utf8ByteLength } from "../lib/publicFormLimits";
+  import { NAME_MAX_BYTES, NOTE_MAX_BYTES, ITEM_ORDER_EMAIL_MAX_BYTES, utf8ByteLength, isPlausibleEmail, EMAIL_FORMAT_ERROR } from "../lib/publicFormLimits";
   import { clampQuantity, perUnitCents } from "./publicPricing";
   import { submitItemOrder, type PublicItem } from "./api";
 
@@ -41,9 +44,15 @@
   let optionName = $state(item.options[0]?.name ?? "");
   // number | null like PublicQuotePage's quantity: a cleared number input binds null, not 0 or NaN.
   let quantity = $state<number | null>(1);
-  let name = $state("");
-  let email = $state("");
+  // Name and email are shared with the custom-estimate form (visitor.svelte.ts), so a visitor who already
+  // typed them isn't asked again (WCAG 3.3.7).
+  const name = $derived(visitor.name);
+  const email = $derived(visitor.email);
   let note = $state("");
+  // Focus target on open (WCAG 2.4.3): the card that opened this panel unmounts, so focus would otherwise drop
+  // to <body>.
+  let headingEl: HTMLElement | undefined = $state();
+  onMount(() => headingEl?.focus());
   // Set only when a typed quantity exceeded maxQuantity and was clamped; cleared via oninput (see
   // PublicQuotePage's quantityClampNotice).
   let quantityClampNotice = $state("");
@@ -79,31 +88,47 @@
   // not $0.00).
   const totalCents = $derived(quantity === null ? null : itemTotalCents(item.priceCents, selectedDeltaCents, quantity));
 
-  const formErrors = $derived.by(() => {
-    const errors: string[] = [];
-    if (name.trim() === "") errors.push("Name is required.");
-    else if (utf8ByteLength(name) > NAME_MAX_BYTES) errors.push(`Name must be ${NAME_MAX_BYTES} characters or fewer.`);
-    if (email.trim() === "") errors.push("Email is required.");
+  // Name, email, and note errors are shown inline on their fields (aria-invalid + aria-describedby, WCAG
+  // 3.3.1); the rest go to the summary list. Shown only after the first submit attempt.
+  const fieldErrors = $derived.by(() => {
+    const out: { name?: string; email?: string; note?: string; other: string[] } = { other: [] };
+    if (name.trim() === "") out.name = "Name is required.";
+    else if (utf8ByteLength(name) > NAME_MAX_BYTES) out.name = `Name must be ${NAME_MAX_BYTES} characters or fewer.`;
+    if (email.trim() === "") out.email = "Email is required.";
     else if (utf8ByteLength(email) > ITEM_ORDER_EMAIL_MAX_BYTES)
-      errors.push(`Email must be ${ITEM_ORDER_EMAIL_MAX_BYTES} characters or fewer.`);
-    else if (!email.includes("@")) errors.push("Enter a valid email address.");
-    if (utf8ByteLength(note) > NOTE_MAX_BYTES) errors.push(`Note must be ${NOTE_MAX_BYTES} characters or fewer.`);
-    if (item.options.length > 0 && optionName === "") errors.push(`Choose ${item.optionLabel || "an option"}.`);
+      out.email = `Email must be ${ITEM_ORDER_EMAIL_MAX_BYTES} characters or fewer.`;
+    else if (!isPlausibleEmail(email.trim())) out.email = EMAIL_FORMAT_ERROR;
+    if (utf8ByteLength(note) > NOTE_MAX_BYTES) out.note = `Note must be ${NOTE_MAX_BYTES} characters or fewer.`;
+    if (item.options.length > 0 && optionName === "") out.other.push(`Choose ${item.optionLabel || "an option"}.`);
     if (quantity === null || !Number.isInteger(quantity) || quantity < 1 || quantity > maxQuantity) {
-      errors.push(`Quantity must be a whole number from 1 to ${maxQuantity}.`);
+      out.other.push(`Quantity must be a whole number from 1 to ${maxQuantity}.`);
     }
-    return errors;
+    return out;
   });
+  const formErrorCount = $derived(
+    (fieldErrors.name ? 1 : 0) + (fieldErrors.email ? 1 : 0) + (fieldErrors.note ? 1 : 0) + fieldErrors.other.length,
+  );
+  let showErrors = $state(false);
+  let formEl: HTMLFormElement | undefined = $state();
+  const nameError = $derived(showErrors ? fieldErrors.name : undefined);
+  const emailError = $derived(showErrors ? fieldErrors.email : undefined);
+  const noteError = $derived(showErrors ? fieldErrors.note : undefined);
 
   async function submit() {
+    // aria-disabled (not disabled) while in flight, so the focused button keeps focus (WCAG 2.4.3).
+    if (submitting) return;
     submitErrors = [];
     rateLimited = false;
-    if (formErrors.length > 0 || quantity === null) {
-      submitErrors = formErrors;
+    if (formErrorCount > 0 || quantity === null) {
+      showErrors = true;
+      submitErrors = fieldErrors.other;
+      await tick();
+      formEl?.querySelector<HTMLElement>("[aria-invalid='true']")?.focus();
       return;
     }
 
     submitting = true;
+    announce("Sending your order.");
     const result = await submitItemOrder(
       {
         itemId: item.id,
@@ -118,6 +143,9 @@
     submitting = false;
 
     if (result.ok && result.id !== undefined && result.priceCents !== undefined) {
+      // The order is placed: a shared device shouldn't keep the visitor's name and email around.
+      const sentEmail = email.trim();
+      clearVisitor();
       onordered({
         id: result.id,
         priceCents: result.priceCents,
@@ -125,7 +153,7 @@
         optionLabel: item.optionLabel,
         optionName,
         quantity,
-        email: email.trim(),
+        email: sentEmail,
       });
       return;
     }
@@ -153,13 +181,16 @@
       <div class="thumb thumb-empty" aria-hidden="true"></div>
     {/if}
     <div class="item-summary-text">
-      <h2>{item.name}</h2>
+      <h2 tabindex="-1" bind:this={headingEl}>{item.name}</h2>
       {#if item.description}<p class="i-desc">{item.description}</p>{/if}
     </div>
   </div>
 
+  <!-- novalidate: the panel validates itself and shows the messages inline (WCAG 3.3.1). -->
   <form
+    bind:this={formEl}
     class="card"
+    novalidate
     onsubmit={(e) => {
       e.preventDefault();
       void submit();
@@ -168,7 +199,7 @@
     {#if item.options.length > 0}
       <label class="field">
         <span>{item.optionLabel || "Option"}</span>
-        <select bind:value={optionName} required>
+        <select bind:value={optionName} required aria-invalid={showErrors && optionName === "" ? "true" : undefined}>
           {#each item.options as o (o.name)}
             <option value={o.name}
               >{o.name}{o.deltaCents !== 0
@@ -190,50 +221,91 @@
         bind:value={quantity}
         oninput={() => (quantityClampNotice = "")}
         required
+        aria-describedby="item-qty-notice"
       />
-      {#if quantityClampNotice}<p class="clamp-notice" role="status">{quantityClampNotice}</p>{/if}
+    </label>
+    <!-- Outside the <label> so the notices aren't part of the field's name, and always mounted so the live
+         region announces text changes (WCAG 1.3.1, 4.1.3). -->
+    <div id="item-qty-notice" role="status">
+      {#if quantityClampNotice}<p class="clamp-notice">{quantityClampNotice}</p>{/if}
       {#if showMadeToOrderNotice}
-        <p class="advisory-text" role="status">Made to order. Larger quantities may take longer.</p>
-      {/if}
-    </label>
-
-    <label class="field">
-      <span>Name</span>
-      <input type="text" bind:value={name} maxlength={NAME_MAX_BYTES} required />
-    </label>
-    <label class="field">
-      <span>Email</span>
-      <input type="email" bind:value={email} maxlength={ITEM_ORDER_EMAIL_MAX_BYTES} required />
-    </label>
-    <label class="field">
-      <span>Note (optional)</span>
-      <textarea bind:value={note} maxlength={NOTE_MAX_BYTES} rows="3"></textarea>
-    </label>
-
-    <div class="card estimate">
-      <p class="section-label">Total</p>
-      {#if totalCents !== null}
-        <p class="price">
-          {formatMoney(totalCents, currency)}
-          {#if quantity !== null && quantity > 1}
-            <span class="per-unit"> &middot; {formatMoney(unitPriceCents, currency)} each</span>
-          {/if}
-        </p>
-      {:else}
-        <p class="muted">Pick an option and quantity to see a price.</p>
+        <p class="advisory-text">Made to order. Larger quantities may take longer.</p>
       {/if}
     </div>
 
-    {#if rateLimited}
-      <p class="warn-text" role="alert">Too many requests from this network. Try again in an hour.</p>
-    {/if}
-    {#if submitErrors.length > 0}
-      <div role="alert">
-        {#each submitErrors as e (e)}<p class="warn-text">{e}</p>{/each}
-      </div>
-    {/if}
+    <div class="field">
+      <label for="item-name">Name</label>
+      <input
+        id="item-name"
+        type="text"
+        autocomplete="name"
+        bind:value={visitor.name}
+        maxlength={NAME_MAX_BYTES}
+        required
+        aria-invalid={nameError ? "true" : undefined}
+        aria-describedby={nameError ? "item-name-err" : undefined}
+      />
+      {#if nameError}<small class="warn-text" id="item-name-err">{nameError}</small>{/if}
+    </div>
+    <div class="field">
+      <label for="item-email">Email</label>
+      <input
+        id="item-email"
+        type="email"
+        autocomplete="email"
+        inputmode="email"
+        bind:value={visitor.email}
+        maxlength={ITEM_ORDER_EMAIL_MAX_BYTES}
+        required
+        aria-invalid={emailError ? "true" : undefined}
+        aria-describedby={emailError ? "item-email-err" : undefined}
+      />
+      {#if emailError}<small class="warn-text" id="item-email-err">{emailError}</small>{/if}
+    </div>
+    <div class="field">
+      <label for="item-note">Note (optional)</label>
+      <textarea
+        id="item-note"
+        bind:value={note}
+        maxlength={NOTE_MAX_BYTES}
+        rows="3"
+        aria-invalid={noteError ? "true" : undefined}
+        aria-describedby={noteError ? "item-note-err" : undefined}
+      ></textarea>
+      {#if noteError}<small class="warn-text" id="item-note-err">{noteError}</small>{/if}
+    </div>
 
-    <button type="submit" class="primary" disabled={submitting}>
+    <div class="card estimate" role="group" aria-labelledby="item-total-label">
+      <h2 class="section-label" id="item-total-label">Total</h2>
+      <!-- Persistent live region: the settled total is spoken when option or quantity changes (WCAG 4.1.3). -->
+      <div aria-live="polite" aria-atomic="true">
+        {#if totalCents !== null}
+          <p class="price">
+            {formatMoney(totalCents, currency)}
+            {#if quantity !== null && quantity > 1}
+              <span class="per-unit"> &middot; {formatMoney(unitPriceCents, currency)} each</span>
+            {/if}
+          </p>
+        {:else}
+          <p class="muted">Pick an option and quantity to see a price.</p>
+        {/if}
+      </div>
+    </div>
+
+    <!-- Persistent alert container with a plain list inside (WCAG 1.3.1, 4.1.3). -->
+    <div role="alert">
+      {#if rateLimited}
+        <p class="warn-text">Too many requests from this network. Try again in an hour.</p>
+      {/if}
+      {#if submitErrors.length > 0}
+        <ul class="error-list">
+          {#each submitErrors as e (e)}<li class="warn-text">{e}</li>{/each}
+        </ul>
+      {/if}
+    </div>
+
+    <p id="order-submit-note" class="submit-note">You won't be charged now. We'll review your order and follow up by email.</p>
+    <button type="submit" class="primary" class:busy={submitting} aria-disabled={submitting ? "true" : undefined} aria-describedby="order-submit-note">
       {submitting ? "Submitting…" : "Place order"}
     </button>
   </form>
@@ -284,4 +356,9 @@
   .per-unit { font-weight: 400; font-size: var(--text-base); color: var(--muted); }
 
   .clamp-notice { color: var(--warn); font-size: var(--text-sm); margin: 0.3rem 0 0; }
+  .error-list { list-style: none; margin: 0; padding: 0; }
+  .error-list li { margin: 0.2rem 0; }
+  /* In flight: aria-disabled keeps focus on the button, so the busy look is visual only. */
+  .submit-note { color: var(--muted); font-size: var(--text-sm); margin: 0; }
+  button.busy { opacity: 0.6; cursor: progress; }
 </style>

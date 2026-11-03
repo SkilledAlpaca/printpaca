@@ -4,6 +4,8 @@
   import { createUser, deleteUser, listUsers, resetUserPassword, updateUser, type UserRecord } from "../../lib/usersApi";
   import { appConfig } from "../../lib/state.svelte";
   import { demoLocal } from "../../lib/demoLocal.svelte";
+  import { announce, focusAfterUpdate } from "../../lib/a11y.svelte";
+  import { confirmFocus, focusOnMount, keySelector, neighborId } from "../../lib/a11yFocus";
 
   // Admin-only card (SettingsTab mounts the settings form only for the admin identity). `original`, not
   // `form`, gates the employee list and add-user UI: `form.users.multiUser` is the still-unsaved draft, but
@@ -68,6 +70,7 @@
       if (usersState.status === "ready") {
         usersState = { status: "ready", users: usersState.users.map((u) => (u.id === id ? updated : u)) };
       }
+      announce(`Saved changes for ${updated.username}.`);
       return true;
     } catch (err) {
       rowError = { ...rowError, [id]: err instanceof Error ? err.message : "Couldn't update the user." };
@@ -77,7 +80,11 @@
     }
   }
 
-  function togglePermission(u: UserRecord, key: GrantableTabKey, checked: boolean) {
+  function togglePermission(u: UserRecord, key: GrantableTabKey, checked: boolean, input: HTMLInputElement) {
+    if (rowSaving[u.id]) {
+      input.checked = !checked; // a save is in flight (aria-disabled, not disabled, so focus stays put)
+      return;
+    }
     const next = checked ? [...u.permissions, key] : u.permissions.filter((p) => p !== key);
     void applyUpdate(u.id, { permissions: next });
   }
@@ -86,13 +93,23 @@
   // as the Kelvin sign onto ASCII).
   async function changeEmail(u: UserRecord, input: HTMLInputElement) {
     const value = input.value.trim();
+    if (rowSaving[u.id]) {
+      // aria-disabled doesn't stop typing: put the stored address back rather than leave an unsaved edit in the box.
+      input.value = u.email;
+      announce("Wait for the current save to finish, then change the email.");
+      return;
+    }
     if (value.replace(/[A-Z]/g, (c) => c.toLowerCase()) === u.email) return;
     // A failed save keeps the row error but restores the stored address, so the box never shows an email the
     // server rejected.
     if (!(await applyUpdate(u.id, { email: value }))) input.value = u.email;
   }
 
-  function toggleDisabled(u: UserRecord) {
+  function toggleDisabled(u: UserRecord, input: HTMLInputElement) {
+    if (rowSaving[u.id]) {
+      input.checked = u.disabled;
+      return;
+    }
     void applyUpdate(u.id, { disabled: !u.disabled });
   }
 
@@ -107,10 +124,13 @@
     resetError = "";
   }
   function cancelReset() {
+    const id = resetOpenId;
     resetOpenId = null;
+    if (id) void focusAfterUpdate(keySelector(`reset-${id}`));
   }
   async function submitReset(e: SubmitEvent, u: UserRecord) {
     e.preventDefault();
+    if (resetSubmitting) return;
     if (resetValue.length < 8) {
       resetError = "Must be at least 8 characters.";
       return;
@@ -121,6 +141,8 @@
       await resetUserPassword(u.id, resetValue);
       resetOpenId = null;
       resetValue = "";
+      announce(`Password reset for ${u.username}.`);
+      void focusAfterUpdate(keySelector(`reset-${u.id}`));
     } catch (err) {
       resetError = err instanceof Error ? err.message : "Couldn't reset the password.";
     } finally {
@@ -135,15 +157,24 @@
   function cancelDeleteRow() {
     confirmDeleteId = null;
   }
+  let removingUser = false;
   async function remove(u: UserRecord) {
+    if (removingUser) return;
+    removingUser = true;
     confirmDeleteId = null;
+    const next = usersState.status === "ready" ? neighborId(usersState.users.map((x) => x.id), u.id) : null;
     try {
       await deleteUser(u.id);
       if (usersState.status === "ready") {
         usersState = { status: "ready", users: usersState.users.filter((x) => x.id !== u.id) };
       }
+      announce(`Deleted ${u.username}.`);
+      // Next row's Delete button, else the previous, else the card heading.
+      void focusAfterUpdate(() => (next ? document.querySelector<HTMLElement>(keySelector(`delete-user-${next}`)) : null) ?? document.querySelector<HTMLElement>("#section-users h2"));
     } catch (err) {
       rowError = { ...rowError, [u.id]: err instanceof Error ? err.message : "Couldn't delete the user." };
+    } finally {
+      removingUser = false;
     }
   }
 
@@ -181,6 +212,7 @@
       newPassword = "";
       newEmail = "";
       newPermissions = new Set();
+      announce(`Added employee ${created.username}.`);
     } catch (err) {
       addError = err instanceof Error ? err.message : "Couldn't create the user.";
     } finally {
@@ -190,7 +222,7 @@
 </script>
 
 <div id="section-users" class="card roomy" class:danger-border={hasError("users")}>
-  <h2>Users</h2>
+  <h2 tabindex="-1">Users</h2>
   <p class="hint">
     Multi-user mode lets employees sign in with their own username and password, each limited to the tabs you grant
     them. Enabling it requires ADMIN_PASSWORD to be set on the server.
@@ -222,7 +254,7 @@
   {#if demoSingle}
     <p class="hint">Switch the demo banner's User mode to "multi" to see example employee accounts here.</p>
   {:else if usersState.status === "loading"}
-    <p class="status-line">Loading employee accounts…</p>
+    <p class="status-line" role="status">Loading employee accounts…</p>
   {:else if usersState.status === "off"}
     <p class="hint">Turn on multi-user mode above and save changes to create and manage employee accounts here.</p>
   {:else if usersState.status === "error"}
@@ -254,34 +286,35 @@
                     type="email"
                     class="email-input"
                     value={u.email}
-                    disabled={rowSaving[u.id]}
+                    aria-disabled={rowSaving[u.id]} aria-busy={rowSaving[u.id]}
                     aria-label={`Cloudflare Access email for ${u.username}`}
                     placeholder="Not set"
                     onchange={(e) => changeEmail(u, e.currentTarget)}
                   />
                 </td>
                 <td>
-                  <div class="perm-grid">
+                  <fieldset class="perm-grid">
+                    <legend class="visually-hidden">Tabs {u.username} can open</legend>
                     {#each GRANTABLE_TAB_KEYS as key (key)}
                       <label class="toggle perm-toggle">
                         <input
                           type="checkbox"
                           checked={u.permissions.includes(key)}
-                          disabled={rowSaving[u.id]}
-                          onchange={(e) => togglePermission(u, key, e.currentTarget.checked)}
+                          aria-disabled={rowSaving[u.id]} aria-busy={rowSaving[u.id]}
+                          onchange={(e) => togglePermission(u, key, e.currentTarget.checked, e.currentTarget)}
                         />
                         <span>{GRANTABLE_TAB_LABELS[key]}<span class="visually-hidden"> for {u.username}</span></span>
                       </label>
                     {/each}
-                  </div>
+                  </fieldset>
                 </td>
                 <td>
                   <input
                     type="checkbox"
                     checked={u.disabled}
-                    disabled={rowSaving[u.id]}
+                    aria-disabled={rowSaving[u.id]} aria-busy={rowSaving[u.id]}
                     aria-label={`Disable ${u.username}`}
-                    onchange={() => toggleDisabled(u)}
+                    onchange={(e) => toggleDisabled(u, e.currentTarget)}
                   />
                 </td>
                 <td>
@@ -290,24 +323,24 @@
                       <form class="reset-form" onsubmit={(e) => submitReset(e, u)}>
                         <label class="field field-inline">
                           <span class="visually-hidden">{`New password for ${u.username}`}</span>
-                          <input type="password" bind:value={resetValue} placeholder="New password" minlength={8} required />
+                          <input type="password" bind:value={resetValue} placeholder="New password" minlength={8} required autocomplete="new-password" use:focusOnMount />
                         </label>
-                        <button type="submit" disabled={resetSubmitting}>{resetSubmitting ? "Saving…" : "Save"}</button>
+                        <button type="submit" aria-disabled={resetSubmitting} aria-busy={resetSubmitting}>{resetSubmitting ? "Saving…" : "Save"}</button>
                         <button type="button" onclick={cancelReset}>Cancel</button>
                       </form>
                       {#if resetError}<p class="warn-text" role="alert">{resetError}</p>{/if}
                     {:else}
-                      <button type="button" onclick={() => openReset(u.id)} aria-label={`Reset password for ${u.username}`}>
+                      <button type="button" data-focus-key={`reset-${u.id}`} onclick={() => openReset(u.id)} aria-label={`Reset password for ${u.username}`}>
                         Reset password
                       </button>
                     {/if}
                     {#if confirmDeleteId === u.id}
-                      <button type="button" class="danger" onclick={() => remove(u)} aria-label={`Confirm delete ${u.username}`}>
+                      <button type="button" class="danger" onclick={() => remove(u)} aria-label={`Delete? ${u.username}`} use:confirmFocus={{ restore: keySelector(`delete-user-${u.id}`), cancel: cancelDeleteRow }}>
                         Delete?
                       </button>
                       <button type="button" onclick={cancelDeleteRow} aria-label={`Cancel deleting ${u.username}`}>Cancel</button>
                     {:else}
-                      <button type="button" onclick={() => askDelete(u.id)} aria-label={`Delete ${u.username}`}>Delete</button>
+                      <button type="button" data-focus-key={`delete-user-${u.id}`} onclick={() => askDelete(u.id)} aria-label={`Delete ${u.username}`}>Delete</button>
                     {/if}
                   </div>
                   {#if rowError[u.id]}<p class="warn-text" role="alert">{rowError[u.id]}</p>{/if}
@@ -336,7 +369,8 @@
           <input id="new-user-email" type="email" bind:value={newEmail} autocomplete="off" placeholder="jordan@example.com" />
           <small class="field-hint">The address this person signs in to Cloudflare Access with. It lets them skip the password when they reach printpaca through Access.</small>
         </div>
-        <div class="perm-grid">
+        <fieldset class="perm-grid">
+          <legend>Tabs this employee can open</legend>
           {#each GRANTABLE_TAB_KEYS as key (key)}
             <label class="toggle perm-toggle">
               <input
@@ -347,9 +381,9 @@
               <span>{GRANTABLE_TAB_LABELS[key]}</span>
             </label>
           {/each}
-        </div>
+        </fieldset>
         {#if addError}<p class="warn-text" role="alert">{addError}</p>{/if}
-        <button type="submit" class="primary" disabled={adding}>{adding ? "Adding…" : "Add employee"}</button>
+        <button type="submit" class="primary" aria-disabled={adding} aria-busy={adding}>{adding ? "Adding…" : "Add employee"}</button>
       </form>
     </div>
   {/if}
@@ -369,8 +403,13 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
     gap: 0.2rem 0.6rem;
-    min-width: 18rem;
+    min-width: min(18rem, 100%);
+    border: 0;
+    padding: 0;
+    margin: 0;
   }
+  .perm-grid legend { grid-column: 1 / -1; padding: 0; font-weight: 600; margin-bottom: 0.2rem; }
+  .perm-grid legend.visually-hidden { margin: 0; }
   .perm-toggle { min-height: 28px; font-size: var(--text-sm); }
   .row-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
   .reset-form { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }

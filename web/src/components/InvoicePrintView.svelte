@@ -41,7 +41,7 @@
       </div>
     </div>
     <div class="invoice-col">
-      <p class="wordmark">Invoice</p>
+      <h1 class="wordmark">Invoice <span class="visually-hidden">{invoice.number}</span></h1>
       <p class="invoice-number">{invoice.number}</p>
       <table class="meta-table">
         <tbody>
@@ -159,6 +159,8 @@
    * appears literally exactly twice on purpose (header rule and .total-due's top rule), never
    * var(--accent), which differs in dark theme. */
   #print-view { background: white; color: black; padding: 2rem; }
+  /* theme.css stripes and highlights table rows with tokens; a dark scheme would put black text on those. */
+  #print-view tr, #print-view th, #print-view td { background: transparent; }
 
   /* Header band: two-column grid; the 2px amber rule is the band's border-bottom, not a separate <hr>. */
   header {

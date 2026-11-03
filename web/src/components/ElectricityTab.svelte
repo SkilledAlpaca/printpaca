@@ -9,6 +9,7 @@
   } from "../lib/engine/index";
   import { warnFor, moneyAmount, moneyPrecise } from "../lib/format";
   import LabeledNumber from "./LabeledNumber.svelte";
+  import { focusAfterUpdate } from "../lib/a11y.svelte";
   import SettingsEditor from "./settings/SettingsEditor.svelte";
   import EnergySettings from "./settings/EnergySettings.svelte";
 
@@ -38,6 +39,8 @@
 
   function useConfiguredRate() {
     rateOverridden = false;
+    // The button went away with the "overridden" note; focus the note that replaces it.
+    void focusAfterUpdate(".rate-note");
   }
 
   // Mirrors state.svelte.ts's toPartInputs: build EnergyInputs from the mode's fields and let the engine's helper
@@ -84,14 +87,14 @@
       {/if}
     </div>
     {#if rateOverridden}
-      <p class="rate-note">
+      <p class="rate-note" tabindex="-1">
         Rate overridden for this calculation.
         <button type="button" class="quiet" onclick={useConfiguredRate}>
           {#if cfg.energy.mode === "tou"}Use configured rates{:else}Use configured rate ({moneyPrecise(cfg.energy.flatRate, cfg, 3)}/kWh){/if}
         </button>
       </p>
     {:else}
-      <p class="rate-note">Using your configured energy rate. Change the rate above to try another one. The saved setting stays the same.</p>
+      <p class="rate-note" tabindex="-1">Using your configured energy rate. Change the rate above to try another one. The saved setting stays the same.</p>
     {/if}
     <dl class="out">
       <div><dt>This print</dt><dd>{r.valid ? moneyPrecise(r.total, cfg, 3) : "-"}</dd></div>

@@ -78,7 +78,7 @@ async function deleteClients(request: APIRequestContext, baseURL: string | undef
   }
 }
 
-test('"/" focuses the Quotes ledger filter when it is present', async ({ page, request, baseURL }) => {
+test('Ctrl+K focuses the Quotes ledger filter when it is present', async ({ page, request, baseURL }) => {
   // The filter input only renders with more than 5 saved quotes; seed 6 explicitly.
   const ids = await seedQuotes(request, baseURL, 6);
   try {
@@ -89,14 +89,14 @@ test('"/" focuses the Quotes ledger filter when it is present', async ({ page, r
     await expect(filterInput).not.toBeFocused();
 
     // Nothing is focused after a fresh load, so the keypress reaches the window handler.
-    await page.keyboard.press("/");
+    await page.keyboard.press("Control+K");
     await expect(filterInput).toBeFocused();
   } finally {
     await deleteQuotes(request, baseURL, ids);
   }
 });
 
-test('"/" is a silent no-op when the filter is absent: no preventDefault, focus unchanged', async ({ page, request, baseURL }) => {
+test('Ctrl+K is a silent no-op when the filter is absent: no preventDefault, focus unchanged', async ({ page, request, baseURL }) => {
   // At or under the threshold, so #quotes-filter never renders.
   const ids = await seedQuotes(request, baseURL, 2);
   try {
@@ -107,7 +107,7 @@ test('"/" is a silent no-op when the filter is absent: no preventDefault, focus 
     // Probe defaultPrevented directly: the handler's early return must leave the browser's own "/"
     // handling untouched.
     const readProbe = await armDefaultPreventedProbe(page);
-    await page.keyboard.press("/");
+    await page.keyboard.press("Control+K");
     expect(await readProbe()).toBe(false);
 
     // Focus never moved, so document.body is still active.
@@ -117,7 +117,7 @@ test('"/" is a silent no-op when the filter is absent: no preventDefault, focus 
   }
 });
 
-test('"/" does not focus a filter from the Quote (editor) tab: the shortcut is ledger-only', async ({
+test('Ctrl+K does not focus a filter from the Quote (editor) tab: the shortcut is ledger-only', async ({
   page,
   request,
   baseURL,
@@ -130,7 +130,7 @@ test('"/" does not focus a filter from the Quote (editor) tab: the shortcut is l
     await expect(page.locator("#history-filter")).toHaveCount(0);
 
     const readProbe = await armDefaultPreventedProbe(page);
-    await page.keyboard.press("/");
+    await page.keyboard.press("Control+K");
     expect(await readProbe()).toBe(false);
     await expect(page.locator("body")).toBeFocused();
   } finally {
@@ -162,7 +162,7 @@ test("Ctrl+S is not intercepted outside the quote tab (e.g. Invoices)", async ({
   expect(await readProbe()).toBe(false);
 });
 
-test('"/" typed in a text field is entered literally, not treated as a shortcut', async ({ page }) => {
+test('"/" is entered literally, and Ctrl+K in a text field is ignored', async ({ page }) => {
   await page.goto("/admin/");
   const labelInput = page.getByLabel("Label for this quote");
   await labelInput.click();
@@ -171,9 +171,11 @@ test('"/" typed in a text field is entered literally, not treated as a shortcut'
   // The character lands in the field and focus never moves to the filter input.
   await expect(labelInput).toHaveValue("a/b");
   await expect(labelInput).toBeFocused();
+  await labelInput.press("Control+K");
+  await expect(labelInput).toBeFocused();
 });
 
-test('"/" focuses the Clients list filter when it is present', async ({ page, request, baseURL }) => {
+test('Ctrl+K focuses the Clients list filter when it is present', async ({ page, request, baseURL }) => {
   // ClientsTab only renders the filter input with more than 5 clients; seed 6 explicitly.
   const ids = await seedClients(request, baseURL, 6);
   try {
@@ -184,7 +186,7 @@ test('"/" focuses the Clients list filter when it is present', async ({ page, re
     await expect(filterInput).not.toBeFocused();
 
     // Nothing is focused after a fresh load.
-    await page.keyboard.press("/");
+    await page.keyboard.press("Control+K");
     await expect(filterInput).toBeFocused();
   } finally {
     await deleteClients(request, baseURL, ids);

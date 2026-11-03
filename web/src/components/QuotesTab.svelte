@@ -39,6 +39,8 @@
   import AttributionLine from "./AttributionLine.svelte";
   import LoadMoreRow from "./LoadMoreRow.svelte";
   import BackfillStatus from "./BackfillStatus.svelte";
+  import { focusAfterUpdate } from "../lib/a11y.svelte";
+  import { confirmFocus, focusOnMount, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "../lib/a11yFocus";
 
   let { cfg, user = null }: { cfg: EffectiveConfig; user?: ConfigUser | null } = $props();
   const canManageClients = $derived(canManageClientsFor(user));
@@ -92,8 +94,11 @@
     loadingMore = true;
     const result = await listQuotes({ limit: INITIAL_PAGE_LIMIT, offset: quotes.length });
     if (result !== null) {
+      const firstNew = result.items[0];
       quotes = [...quotes, ...result.items];
       total = result.total;
+      // The button that was focused goes away when this page exhausts the list: land on the first new row.
+      if (firstNew) void refocusIfLost(rowSelector(firstNew.id));
     }
     loadingMore = false;
   }
@@ -161,20 +166,31 @@
     const firstItem = document.querySelector<HTMLElement>(`[data-row-menu="${id}"] .menu-group .menu-item:not([disabled])`);
     firstItem?.focus();
   }
-  function closeMenu() {
+  function closeMenu(restoreFocus = true) {
     const toggle = menuToggleEl;
     menuOpenId = null;
     menuAnchor = null;
     menuToggleEl = null;
-    toggle?.focus();
+    if (restoreFocus) toggle?.focus();
+  }
+  // Keyboard focus tabbing out of an open panel closes it without stealing focus back (WCAG 2.4.11: a fixed
+  // panel left open could cover the next focused row). relatedTarget is null when the focused item was just
+  // removed (a confirm swap), which must not close the menu.
+  function handleMenuFocusOut(e: FocusEvent) {
+    const next = e.relatedTarget;
+    if (!(next instanceof Node)) return;
+    if (e.currentTarget instanceof Node && e.currentTarget.contains(next)) return;
+    closeMenu(false);
   }
   function handleWindowPointerDown(e: PointerEvent) {
     if (menuOpenId === null) return;
     if (e.target instanceof Element && e.target.closest(`[data-row-menu="${menuOpenId}"]`)) return;
     closeMenu();
   }
-  function handleWindowScroll() {
+  function handleWindowScroll(e: Event) {
     if (!menuScrollArmed) return;
+    // The browser scrolls the panel itself to reveal a focused item; that must not close it.
+    if (e.target instanceof Element && e.target.closest(".menu-panel")) return;
     closeMenu();
   }
   function handleWindowKeydown(e: KeyboardEvent) {
@@ -294,6 +310,8 @@
       quotes = next;
       actionFailed = false;
       actionStatus = `"${q.label}" ${STATUS_MARKED_MESSAGE[status]}.`;
+      // The inline transition button may disappear (accepted and declined have none); keep focus on the row.
+      void refocusIfLost(rowSelector(q.id));
     } catch (err) {
       actionFailed = true;
       actionStatus =
@@ -301,6 +319,35 @@
           ? `Couldn't update "${q.label}": ${err.message}`
           : `Couldn't update "${q.label}".`;
     }
+  }
+
+  // Two-step confirm (WCAG 3.3.4) before the row actions that can't be taken back: every status transition (the
+  // row offers no way back to an earlier status) and emailing a quote to its client. `restore` is the focus key
+  // of the control that asked, so focus returns there on Cancel or Escape.
+  let actionConfirm = $state<{ id: string; kind: QuoteStatus | "email"; restore: string } | null>(null);
+  function askAction(q: SavedQuote, kind: QuoteStatus | "email", restore: string) {
+    closeMenu();
+    confirmingId = null;
+    convertFor = null;
+    emailEntryFor = null;
+    actionConfirm = { id: q.id, kind, restore };
+    // The row's trigger is still mounted (the confirm is a separate row), so confirmFocus takes focus from it.
+  }
+  function cancelAction() {
+    const c = actionConfirm;
+    actionConfirm = null;
+    if (c) void focusAfterUpdate(keySelector(c.restore));
+  }
+  function runAction(q: SavedQuote) {
+    const c = actionConfirm;
+    actionConfirm = null;
+    if (!c || emailingId !== null) return;
+    if (c.kind === "email") void emailQuote(q);
+    else void markStatus(q, c.kind);
+  }
+  function actionConfirmText(q: SavedQuote, c: { kind: QuoteStatus | "email" }): string {
+    if (c.kind === "email") return `Send "${q.label}" to ${clientEmailFor(q, clients) ?? "the client"}?`;
+    return `Mark "${q.label}" as ${c.kind}?`;
   }
 
   let emailingId = $state<string | null>(null);
@@ -314,16 +361,21 @@
     closeMenu();
     confirmingId = null;
     convertFor = null;
+    actionConfirm = null;
     emailEntryFor = q.id;
     emailDraft = "";
     emailEntryError = "";
   }
 
   function cancelEmailEntry() {
+    if (emailingId !== null) return;
+    const id = emailEntryFor;
     emailEntryFor = null;
+    if (id) void focusAfterUpdate(keySelector(`menu-toggle-${id}`));
   }
 
   async function submitEmailEntry(q: SavedQuote) {
+    if (emailingId !== null) return;
     const email = validEntryEmail(emailDraft);
     if (!email) {
       emailEntryError = "Enter a valid email address.";
@@ -346,6 +398,7 @@
   }
 
   async function emailQuote(q: SavedQuote, entered?: string) {
+    if (emailingId !== null) return;
     closeMenu();
     let email = entered ?? clientEmailFor(q, clients);
     if (!email) return;
@@ -451,9 +504,11 @@
   }
 
   async function openConvert(q: SavedQuote) {
+    if (convertFor === q.id) return;
     confirmingId = null;
     closeMenu();
     emailEntryFor = null;
+    actionConfirm = null;
     convertFor = q.id;
     clientChoice = "";
     convertOrder = null;
@@ -476,7 +531,10 @@
   }
 
   function cancelConvert() {
+    if (converting) return;
+    const id = convertFor;
     convertFor = null;
+    if (id) void focusAfterUpdate(keySelector(`convert-${id}`));
   }
 
   /** The status update for a raw quote converted to an invoice: `accepted` with a log entry unless already
@@ -487,7 +545,7 @@
   }
 
   async function convertToInvoice(q: SavedQuote) {
-    if (isMultiPart(q) && convertOrder === null) return;
+    if (converting || (isMultiPart(q) && convertOrder === null)) return;
     converting = true;
     try {
       const chosen = clients?.find((c) => c.id === clientChoice);
@@ -568,18 +626,26 @@
   function cancelDelete() {
     confirmingId = null;
   }
+  let removingId: string | null = null;
   async function remove(q: SavedQuote) {
+    if (removingId !== null) return;
+    removingId = q.id;
     confirmingId = null;
     closeMenu();
+    const next = neighborId(sortedQuotes.map((x) => x.id), q.id);
     try {
       await deleteQuote(q.id);
       quotes = quotes.filter((x) => x.id !== q.id);
       total = Math.max(0, total - 1);
       actionFailed = false;
       actionStatus = `Deleted "${q.label}".`;
+      // The toggle that closeMenu() refocused went with the row: next row, else previous, else the heading.
+      void focusRowOrHeading(next);
     } catch (err) {
       actionFailed = true;
       actionStatus = err instanceof Error ? `Couldn't delete "${q.label}": ${err.message}` : `Couldn't delete "${q.label}".`;
+    } finally {
+      removingId = null;
     }
   }
 
@@ -591,6 +657,7 @@
    * (bypassing the filter latch), showing the "Loading the rest of the list…" status/failure banner. A
    * failed backfill writes no file; the banner is the only feedback. */
   async function exportQuotes() {
+    if (quotes.length === 0 || backfill.backfilling) return;
     if (!fullyLoaded) {
       await backfill.runNow();
       if (backfill.backfillFailed) return;
@@ -678,19 +745,20 @@
 
 <div class="page">
   <div class="head-row">
-    <h1>Quotes</h1>
+    <h1 tabindex="-1">Quotes</h1>
     <div class="head-actions">
       <button type="button" class="primary" onclick={() => (location.hash = "#/quote")}>New quote</button>
-      <button type="button" class="quiet" onclick={exportQuotes} disabled={quotes.length === 0 || backfill.backfilling}>
+      <button type="button" class="quiet" onclick={exportQuotes} aria-disabled={quotes.length === 0 || backfill.backfilling}>
         Export
       </button>
-      <button type="button" class="quiet" onclick={() => fileInput.click()} disabled={importing}>{importing ? "Importing…" : "Import"}</button>
+      <button type="button" class="quiet" onclick={() => { if (!importing) fileInput.click(); }} aria-disabled={importing}>{importing ? "Importing…" : "Import"}</button>
       <input
         bind:this={fileInput}
         type="file"
         accept=".json,application/json"
         class="visually-hidden"
         tabindex="-1"
+        aria-label="Import quotes"
         onchange={handleImportFile}
       />
     </div>
@@ -726,7 +794,7 @@
         aria-label="Filter by label"
         bind:value={filterText}
       />
-      <select aria-label="Sort saved quotes" bind:value={sortOrder}>
+      <select class="sort-select" aria-label="Sort saved quotes" bind:value={sortOrder}>
         <option value="newest">Newest first</option>
         <option value="oldest">Oldest first</option>
         <option value="price-desc">Price high to low</option>
@@ -760,7 +828,7 @@
         </thead>
         <tbody>
           {#if loading}
-            <tr><td colspan="6" class="empty-state">Loading…</td></tr>
+            <tr><td colspan="6" class="empty-state"><span role="status">Loading…</span></td></tr>
           {:else}
             {#each sortedQuotes as q (q.id)}
               {@const stats = quoteRowStats(q)}
@@ -770,7 +838,7 @@
               {@const primaryT = primaryTransition(q)}
               <tr>
                 <td>
-                  <button type="button" class="quiet linkish" onclick={() => openInEditor(q)}>{q.label}</button>
+                  <button type="button" class="quiet linkish" data-row-id={q.id} onclick={() => openInEditor(q)}>{q.label}</button>
                   {#if isMultiPart(q)}<span class="parts-badge">{q.partCount} parts</span>{/if}
                   <AttributionLine createdBy={q.createdBy} updatedBy={q.updatedBy} />
                 </td>
@@ -794,8 +862,8 @@
                       <button
                         type="button"
                         class="quiet"
-                        onclick={() => markStatus(q, primaryT)}
-                        title={TRANSITION_HINTS[primaryT]}
+                        data-focus-key={`transition-${q.id}`}
+                        onclick={() => askAction(q, primaryT, `transition-${q.id}`)}
                       >{TRANSITION_LABELS[primaryT]}</button>
                     {/if}
                     {#if q.invoicedAs}
@@ -806,9 +874,10 @@
                     <button
                       type="button"
                       class="quiet"
+                      data-focus-key={`convert-${q.id}`}
                       onclick={() => openConvert(q)}
-                      aria-label={q.invoicedAs ? `Invoice "${q.label}" again` : `Convert "${q.label}" to invoice`}
-                      disabled={convertFor === q.id}
+                      aria-label={q.invoicedAs ? `Invoice again: "${q.label}"` : `Convert to invoice: "${q.label}"`}
+                      aria-disabled={convertFor === q.id}
                     >
                       {q.invoicedAs ? "Invoice again" : "Convert to invoice"}
                     </button>
@@ -817,18 +886,20 @@
                          Delete, kept in the DOM (not lazily mounted) so aria-expanded/haspopup stay wired
                          to one stable toggle. data-row-menu is the row's outside-click boundary for
                          handleWindowPointerDown. -->
-                    <div class="row-menu" data-row-menu={q.id}>
+                    <div class="row-menu" data-row-menu={q.id} onfocusout={handleMenuFocusOut}>
                       <button
                         type="button"
                         class="quiet menu-toggle"
-                        aria-haspopup="true"
+                        aria-controls={`row-menu-${q.id}`}
                         aria-expanded={menuOpenId === q.id}
+                        data-focus-key={`menu-toggle-${q.id}`}
                         aria-label={`More actions for "${q.label}"`}
                         onclick={(e) => toggleMenu(q.id, e.currentTarget)}
                       >⋯</button>
                       {#if menuOpenId === q.id && menuAnchor}
                         <div
                           class="menu-panel"
+                          id={`row-menu-${q.id}`}
                           style={`${menuAnchor.top !== undefined ? `top:${menuAnchor.top}px;` : `bottom:${menuAnchor.bottom}px;`}right:${menuAnchor.right}px;`}
                         >
                           <!-- A labeled group of buttons, not an ARIA menu: role="menu"/"menuitem" would
@@ -839,8 +910,7 @@
                               <button
                                 type="button"
                                 class="quiet menu-item"
-                                onclick={() => markStatus(q, t)}
-                                title={TRANSITION_HINTS[t]}
+                                onclick={() => askAction(q, t, `menu-toggle-${q.id}`)}
                               >{TRANSITION_LABELS[t]}</button>
                             {/each}
                             {#if needsEmailEntry(emailReason)}
@@ -848,24 +918,23 @@
                                 type="button"
                                 class="quiet menu-item"
                                 onclick={() => openEmailEntry(q)}
-                                aria-label={`Email "${q.label}" to client (add email)`}
+                                aria-label={`Email quote… to client "${q.label}" (add email)`}
                               >Email quote…</button>
                             {:else if emailReason}
                               <button
                                 type="button"
                                 class="quiet menu-item"
                                 disabled
-                                aria-label={`Email "${q.label}" to client (unavailable)`}
-                                title={emailReason === "unconfigured" ? "Email isn't configured. See the notice above the table." : undefined}
+                                aria-label={`Email quote "${q.label}" to client (unavailable)`}
                                 aria-describedby={emailReason === "unconfigured" ? undefined : `email-reason-${q.id}`}
                               >Email quote</button>
                             {:else}
                               <button
                                 type="button"
                                 class="quiet menu-item"
-                                onclick={() => emailQuote(q)}
-                                aria-label={`Email "${q.label}" to client`}
-                                disabled={emailingId === q.id}
+                                onclick={() => { if (emailingId === null) askAction(q, "email", `menu-toggle-${q.id}`); }}
+                                aria-label={`Email quote "${q.label}" to client`}
+                                aria-disabled={emailingId === q.id}
                               >
                                 {emailingId === q.id ? "Emailing…" : "Email quote"}
                               </button>
@@ -874,10 +943,10 @@
                               Duplicate
                             </button>
                             {#if confirmingId === q.id}
-                              <button type="button" class="quiet danger menu-item confirm-delete" onclick={() => remove(q)} aria-label={`Confirm delete "${q.label}"`}>Delete?</button>
+                              <button type="button" class="quiet danger menu-item confirm-delete" onclick={() => remove(q)} aria-label={`Delete? "${q.label}"`} use:confirmFocus={{ restore: keySelector(`delete-quote-${q.id}`), cancel: cancelDelete }}>Delete?</button>
                               <button type="button" class="quiet menu-item cancel-delete" onclick={cancelDelete} aria-label={`Cancel deleting "${q.label}"`}>Cancel</button>
                             {:else}
-                              <button type="button" class="quiet menu-item" onclick={() => askDelete(q.id)} aria-label={`Delete "${q.label}"`}>Delete</button>
+                              <button type="button" class="quiet menu-item" data-focus-key={`delete-quote-${q.id}`} onclick={() => askDelete(q.id)} aria-label={`Delete "${q.label}"`}>Delete</button>
                             {/if}
                           </div>
                           {#if emailReason && emailReason !== "unconfigured" && !needsEmailEntry(emailReason)}
@@ -899,6 +968,19 @@
                   </div>
                 </td>
               </tr>
+              {#if actionConfirm?.id === q.id}
+                <tr class="convert-tr">
+                  <td colspan="6">
+                    <div class="convert-row" role="group" aria-label="Confirm action">
+                      <button type="button" class="primary" onclick={() => runAction(q)} use:confirmFocus={{ restore: keySelector(actionConfirm.restore), cancel: cancelAction }}>{actionConfirmText(q, actionConfirm)}</button>
+                      <button type="button" onclick={cancelAction}>Cancel</button>
+                      {#if actionConfirm.kind !== "email" && TRANSITION_HINTS[actionConfirm.kind]}
+                        <span class="convert-note-plain">{TRANSITION_HINTS[actionConfirm.kind]}</span>
+                      {/if}
+                    </div>
+                  </td>
+                </tr>
+              {/if}
               {#if emailEntryFor === q.id}
                 <tr class="convert-tr">
                   <td colspan="6">
@@ -908,6 +990,7 @@
                         id={`email-entry-${q.id}`}
                         type="email"
                         placeholder="Client email"
+                        use:focusOnMount
                         bind:value={emailDraft}
                         aria-describedby={emailEntryError ? `email-entry-error-${q.id}` : undefined}
                       />
@@ -915,8 +998,8 @@
                         {q.clientId ? "Saved to the linked client." : "Creates a client from the quote's client name."}
                       </span>
                       {#if emailEntryError}<span id={`email-entry-error-${q.id}`} class="advisory-text" role="alert">{emailEntryError}</span>{/if}
-                      <button class="primary" type="submit" disabled={emailingId === q.id}>{emailingId === q.id ? "Sending…" : "Send"}</button>
-                      <button type="button" onclick={cancelEmailEntry} disabled={emailingId === q.id}>Cancel</button>
+                      <button class="primary" type="submit" aria-disabled={emailingId === q.id}>{emailingId === q.id ? "Sending…" : "Send"}</button>
+                      <button type="button" onclick={cancelEmailEntry} aria-disabled={emailingId === q.id}>Cancel</button>
                     </form>
                   </td>
                 </tr>
@@ -930,13 +1013,13 @@
                           No selling price on this quote. Open it in the editor and set a price first.
                         </span>
                         <button class="primary" disabled aria-describedby={`no-price-note-${q.id}`}>Create invoice</button>
-                        <button onclick={cancelConvert}>Cancel</button>
+                        <button onclick={cancelConvert} use:focusOnMount>Cancel</button>
                       </div>
                     {:else}
                       {@const preview = convertPreview(q, cfg.invoicing.salesTaxPct, convertOrder)}
                       <div class="convert-row">
                         <label class="visually-hidden" for={`convert-client-${q.id}`}>Client for this invoice</label>
-                        <select id={`convert-client-${q.id}`} bind:value={clientChoice}>
+                        <select id={`convert-client-${q.id}`} use:focusOnMount bind:value={clientChoice}>
                           <option value="">Walk-in (no client)</option>
                           {#each clients ?? [] as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
                         </select>
@@ -949,10 +1032,10 @@
                         {#if convertTaxBp(q) === 0}
                           <span class="convert-note-plain">Tax was included in the quoted price; the invoice adds none.</span>
                         {/if}
-                        <button class="primary" onclick={() => convertToInvoice(q)} disabled={converting || preview.lines.length === 0 || (isMultiPart(q) && convertOrder === null)}>
+                        <button class="primary" onclick={() => convertToInvoice(q)} aria-disabled={converting} disabled={preview.lines.length === 0 || (isMultiPart(q) && convertOrder === null)}>
                           {converting ? "Creating…" : `Create invoice · ${money(preview.totalCents, cfg)}`}
                         </button>
-                        <button onclick={cancelConvert} disabled={converting}>Cancel</button>
+                        <button onclick={cancelConvert} aria-disabled={converting}>Cancel</button>
                       </div>
                     {/if}
                   </td>
@@ -980,7 +1063,9 @@
 <style>
   .parts-badge { margin-left: 0.4rem; color: var(--muted); font-size: var(--text-sm); }
   .head-row h1 { margin: 0; }
-  .head-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
+  /* Wraps at 320 CSS px (WCAG 1.4.10): New quote, Export, and Import no longer fit beside the heading. */
+  .head-row { flex-wrap: wrap; }
+  .head-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
   .lede { color: var(--muted); font-size: var(--text-sm); margin: 0; }
 
   /* .status-line's app-wide min-height reserves room against layout shift, but before any action sets
@@ -990,7 +1075,13 @@
   .action-status.collapsed { min-height: 0; margin-top: calc(var(--space-6) * -1); margin-bottom: calc(var(--space-6) * -1); }
 
   .filter-row { display: flex; gap: 0.5rem; }
-  .filter-input { flex: 1; }
+  .filter-input { flex: 1; min-width: 0; }
+  .sort-select { min-width: 0; max-width: 100%; }
+  @media (max-width: 420px) {
+    .filter-row { flex-wrap: wrap; }
+    .filter-input { flex: 1 1 100%; }
+    .sort-select { flex: 1 1 100%; }
+  }
 
   .linkish {
     border: none; background: none; color: var(--accent-text); padding: 0; text-align: left;

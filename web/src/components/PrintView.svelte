@@ -157,6 +157,8 @@
 <style>
   /* Print colors stay literal (black on white); spacing and type sizes reuse the screen scale. */
   #print-view { background: white; color: black; padding: 2rem; }
+  /* theme.css stripes and highlights table rows with tokens; a dark scheme would put black text on those. */
+  #print-view tr, #print-view th, #print-view td { background: transparent; }
   #print-view header { margin-bottom: var(--space-4); }
   .logo { display: block; max-height: 56px; max-width: 240px; object-fit: contain; margin-bottom: var(--space-2); }
   .seller { font-size: var(--text-sm); color: #444; margin: var(--space-1) 0 0; }
@@ -167,6 +169,6 @@
   .terms { font-size: var(--text-sm); color: #444; }
   .tax-note { font-size: var(--text-sm); color: #666; }
   .formula { color: #666; font-weight: 400; font-size: var(--text-xs); }
-  .part-head { background: #f2f2f2; }
+  #print-view .part-head { background: #f2f2f2; }
   .invalid-note { color: #a00; font-style: italic; }
 </style>

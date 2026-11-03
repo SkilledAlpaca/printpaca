@@ -4,7 +4,7 @@ This project follows the [Code of Conduct](CODE_OF_CONDUCT.md). Report vulnerabi
 
 ## Dev setup
 
-- Node 22 (npm workspace: `web`)
+- Node 26 (npm workspace: `web`)
 - Go 1.26.9 or later (the floor declared in `server/go.mod`)
 
 ```bash

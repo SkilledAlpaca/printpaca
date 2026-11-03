@@ -17,8 +17,8 @@
 
 {#if shown < total}
   <div class="load-more-row">
-    <span class="advisory-text">Showing {shown} of {total}</span>
-    <button type="button" class="quiet" onclick={onLoadMore} disabled={loadingMore}>
+    <span class="advisory-text" role="status">Showing {shown} of {total}</span>
+    <button type="button" class="quiet" onclick={() => { if (!loadingMore) onLoadMore(); }} aria-disabled={loadingMore} aria-busy={loadingMore}>
       {loadingMore ? "Loading…" : "Load more"}
     </button>
   </div>

@@ -4,6 +4,7 @@
   import { warnFor } from "../../lib/format";
   import LabeledNumber from "../LabeledNumber.svelte";
   import LabeledText from "../LabeledText.svelte";
+  import { focusAfterRowRemoval } from "../../lib/a11yFocus";
 
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 
@@ -23,6 +24,7 @@
   function removePaymentMethod(index: number) {
     form.invoicing.paymentMethods = form.invoicing.paymentMethods.filter((_, i) => i !== index);
     touched.splice(index, 1);
+    void focusAfterRowRemoval("remove-payment-method", index, form.invoicing.paymentMethods.length, "add-payment-method");
   }
 </script>
 
@@ -87,6 +89,7 @@
       <button
         type="button"
         aria-label={`Remove payment method ${i + 1}`}
+        data-focus-key={`remove-payment-method-${i}`}
         disabled={form.invoicing.paymentMethods.length <= 1}
         onclick={() => removePaymentMethod(i)}
       >Remove</button>
@@ -95,7 +98,7 @@
   {#if warnFor(warnings, "invoicing.paymentMethods") !== ""}
     <small class="warn-text">{warnFor(warnings, "invoicing.paymentMethods")}</small>
   {/if}
-  <button type="button" onclick={addPaymentMethod}>Add payment method</button>
+  <button type="button" data-focus-key="add-payment-method" onclick={addPaymentMethod}>Add payment method</button>
 </div>
 
 <style>

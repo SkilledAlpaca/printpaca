@@ -344,7 +344,7 @@
 
 <style>
   .drop {
-    border: 2px dashed var(--border);
+    border: 2px dashed var(--control-border);
     text-align: center;
     min-height: 44px;
   }

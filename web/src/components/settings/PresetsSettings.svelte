@@ -1,6 +1,8 @@
 <script lang="ts">
   import { presetDisplayName } from "../../lib/format";
   import { nextKey, type ServerConfig } from "../../lib/settings";
+  import { focusAfterUpdate } from "../../lib/a11y.svelte";
+  import { keySelector } from "../../lib/a11yFocus";
 
   let {
     form,
@@ -33,6 +35,7 @@
     delete next[key];
     form.presets = next;
     clearRenameWarning(key);
+    void focusAfterUpdate(keySelector("add-preset"));
   }
   function renamePreset(oldKey: string, e: Event & { currentTarget: HTMLInputElement }) {
     const newKey = e.currentTarget.value.trim();
@@ -72,28 +75,28 @@
       <div class="field-rows">
         <label class="field">
           <span>Failure rate (%)</span>
-          <input type="number" step="any" min="0" max="90" aria-label={`${key} failure rate`} bind:value={preset.failureRatePct} />
+          <input type="number" step="any" min="0" max="90" aria-label={`Failure rate (%), ${key}`} bind:value={preset.failureRatePct} />
         </label>
         <label class="field">
           <span>Prep time (min/batch)</span>
-          <input type="number" step="any" aria-label={`${key} prep minutes`} bind:value={preset.prepMinutes} />
+          <input type="number" step="any" aria-label={`Prep time (min/batch), ${key}`} bind:value={preset.prepMinutes} />
         </label>
         <label class="field">
           <span>Labor rate (per h)</span>
-          <input type="number" step="any" aria-label={`${key} labor rate`} bind:value={preset.laborRate} />
+          <input type="number" step="any" aria-label={`Labor rate (per h), ${key}`} bind:value={preset.laborRate} />
         </label>
         <label class="field">
           <span>Monthly fixed costs</span>
-          <input type="number" step="any" aria-label={`${key} monthly fixed`} bind:value={preset.monthlyFixed} />
+          <input type="number" step="any" aria-label={`Monthly fixed costs, ${key}`} bind:value={preset.monthlyFixed} />
         </label>
         <label class="field">
           <span>Monthly print hours</span>
-          <input type="number" step="any" aria-label={`${key} monthly hours`} bind:value={preset.monthlyHours} />
+          <input type="number" step="any" aria-label={`Monthly print hours, ${key}`} bind:value={preset.monthlyHours} />
         </label>
       </div>
     </div>
   {/each}
-  <button type="button" onclick={addPreset}>Add preset</button>
+  <button type="button" data-focus-key="add-preset" onclick={addPreset}>Add preset</button>
 </div>
 
 <style>

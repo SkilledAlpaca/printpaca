@@ -11,6 +11,12 @@
   import { loadConfig } from "../../lib/api";
   import { appConfig } from "../../lib/state.svelte";
   import { settingsDirty } from "../../lib/settingsDirty.svelte";
+  import { announce } from "../../lib/a11y.svelte";
+  import { stickyInset } from "../../lib/stickyInset";
+  import ErrorSummary from "../ErrorSummary.svelte";
+  import { findFieldByLabel, errorLabel, type ErrorTarget } from "../../lib/fieldErrors";
+  import { fieldLabel, hasFieldLabel } from "../../lib/format";
+  import { refocusIfLost } from "../../lib/a11yFocus";
 
   // Reusable form-editing shell for SettingsTab and every tab that embeds a settings card (ElectricityTab,
   // FilamentTab, PrintersTab, ...). Only one instance is mounted at a time (tabs unmount on switch), so there
@@ -87,7 +93,7 @@
   onMount(refresh);
 
   async function save() {
-    if (!form) return;
+    if (!form || saving) return;
     saving = true;
     savedNotice = "";
     // $state.snapshot, not cloneConfig: form is a $state deep proxy and structuredClone throws DataCloneError
@@ -99,6 +105,8 @@
       original = snapshot;
       errors = [];
       savedNotice = "Settings saved.";
+      // The save bar unmounts now that the form is clean; keep focus on the saved notice (WCAG 2.4.3).
+      void refocusIfLost("[data-settings-status]");
       // Refresh appConfig so every mounted tab sees what /api/config now serves (the server applies a saved
       // config immediately). Deliberately not applyConfig(fresh): that seeds QuoteTab's form once, on first
       // load (the `seeded` guard in state.svelte.ts), and would clobber what the user has mid-typed. A failed
@@ -117,12 +125,26 @@
     // Same proxy caveat as save(): snapshot first; it is already detached from `original`.
     form = $state.snapshot(original) as ServerConfig;
     errors = [];
+    savedNotice = "";
+    announce("Changes discarded.");
+    void refocusIfLost("[data-settings-status]");
+  }
+
+  // A save error names a config path ("pricing.marginPct: ..."). Link it to its field when the path has a field
+  // label, else to the first control of the card that holds it (errorSection), so the summary always leads somewhere.
+  function resolveSettingsError(message: string): ErrorTarget | null {
+    const path = errorLabel(message);
+    const named = path && hasFieldLabel(path) ? findFieldByLabel(fieldLabel(path)) : null;
+    if (named) return { el: named, field: true };
+    const card = document.getElementById(`section-${errorSection(message)}`);
+    const first = card?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea, button");
+    return first ? { el: first, field: false } : null;
   }
 </script>
 
 <div class="settings-editor">
   {#if loading}
-    <p>Loading…</p>
+    <p role="status">Loading…</p>
   {:else if loadFailed}
     <div class="card banner-error">
       <p>Couldn't load settings from the server. Check that printpaca's backend is running.</p>
@@ -137,18 +159,14 @@
 
     {@render children({ form, builtin, original, hasError })}
 
-    <p class="hint" role="status">{dirty ? "" : savedNotice}</p>
+    <p class="hint" role="status" tabindex="-1" data-settings-status>{dirty ? "" : savedNotice}</p>
 
     {#if dirty || errors.length > 0}
-      <div class="save-bar">
-        {#if errors.length > 0}
-          <ul class="errors" role="alert">
-            {#each errors as e (e)}<li>{e}</li>{/each}
-          </ul>
-        {/if}
+      <div class="save-bar" use:stickyInset={{ edge: "bottom" }}>
+        <ErrorSummary {errors} resolve={resolveSettingsError} />
         <div class="save-actions">
-          <button type="button" onclick={discard} disabled={!dirty || saving}>Discard changes</button>
-          <button type="button" class="primary" onclick={save} disabled={saving}>{saving ? "Saving…" : "Save changes"}</button>
+          <button type="button" onclick={() => { if (!saving) discard(); }} disabled={!dirty} aria-disabled={saving} aria-busy={saving}>Discard changes</button>
+          <button type="button" class="primary" onclick={save} aria-disabled={saving} aria-busy={saving}>{saving ? "Saving…" : "Save changes"}</button>
         </div>
       </div>
     {/if}
@@ -173,5 +191,5 @@
   }
   .save-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
   /* The save bar's flex gap already spaces the error list; theme's .errors bottom margin would double it. */
-  .save-bar .errors { margin-bottom: 0; }
+  .save-bar :global(.errors) { margin-bottom: 0; }
 </style>

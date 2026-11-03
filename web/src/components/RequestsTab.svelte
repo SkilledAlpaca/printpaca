@@ -125,9 +125,15 @@
   function cancelDeleteAllNew() {
     confirmingDeleteAllNew = false;
   }
+  /** After the confirm closes: the "Delete all new" trigger if it is still rendered, else the list heading. */
+  function focusDeleteAllOrHeading(): Promise<void> {
+    return focusAfterUpdate(
+      () => document.querySelector<HTMLElement>(keySelector("delete-all-new")) ?? document.querySelector<HTMLElement>(keySelector("requests-heading")),
+    );
+  }
   async function removeAllNew() {
     if (bulkDeleting) return;
-    confirmingDeleteAllNew = false;
+    // The confirm stays open while the request runs, so its "Deleting…" label shows; it closes when done.
     bulkDeleting = true;
     try {
       const count = await deleteAllNewRequests();
@@ -135,12 +141,13 @@
       bulkStatus = count === 1 ? "Deleted 1 new request." : `Deleted ${count} new requests.`;
       await refresh();
       await refreshUnread();
-      // The confirm pair and possibly the whole button group are gone; land on the list heading.
-      void refocusIfLost(keySelector("delete-all-new") + ", .page h1");
+      confirmingDeleteAllNew = false;
+      void focusDeleteAllOrHeading();
     } catch (err) {
       bulkFailed = true;
       bulkStatus = err instanceof Error ? `Couldn't delete new requests: ${err.message}` : "Couldn't delete new requests.";
-      void refocusIfLost(keySelector("delete-all-new") + ", .page h1");
+      confirmingDeleteAllNew = false;
+      void focusDeleteAllOrHeading();
     } finally {
       bulkDeleting = false;
     }
@@ -502,7 +509,7 @@
 <div class="page">
   {#if view === "list"}
     <div class="head-row">
-      <h1 tabindex="-1">Requests</h1>
+      <h1 tabindex="-1" data-focus-key="requests-heading">Requests</h1>
       {#if hasNewRequests}
         <div class="head-actions">
           {#if confirmingDeleteAllNew}

@@ -16,6 +16,7 @@
   import HistoryPanel from "./HistoryPanel.svelte";
   import SpoolPicker from "./SpoolPicker.svelte";
   import RecentPrints from "./RecentPrints.svelte";
+  import PrintStartFields from "./PrintStartFields.svelte";
   import { moonrakerEnabled } from "../lib/moonraker";
   import QuoteSummaryBar from "./QuoteSummaryBar.svelte";
   import CardHelp from "./CardHelp.svelte";
@@ -252,9 +253,11 @@
   // number next to the percentages.
   const ratesSummary = $derived(
     `${part.presetName || "custom"}${part.presetModified ? " (modified)" : ""}: ${
-      cfg.energy.mode === "tou"
-        ? `time-of-use electricity (${Math.round(part.offPeakFrac * 100)}% off-peak)`
-        : `${part.flatRate === null ? "?" : moneyPrecise(part.flatRate, cfg, 3)} per kWh electricity`
+      cfg.energy.mode === "schedule"
+        ? "time-of-use schedule electricity"
+        : cfg.energy.mode === "tou"
+          ? `time-of-use electricity (${Math.round(part.offPeakFrac * 100)}% off-peak)`
+          : `${part.flatRate === null ? "?" : moneyPrecise(part.flatRate, cfg, 3)} per kWh electricity`
     }, ${part.laborRate === null ? "?" : moneyAmount(part.laborRate, cfg)} per hour labor, ${part.failureRatePct ?? "?"}% failure`,
   );
 </script>
@@ -351,6 +354,9 @@
           {#if timeWarn !== "" && timeTouched}<small id="print-time-warn" class="warn-text">{timeWarn}</small>{/if}
         </div>
         <LabeledNumber label="Quantity" suffix="units" bind:value={part.quantity} min={1} step={1} warn={warnFor(w, "quantity")} help="How many copies you are printing. Costs are shown per unit and as an order total." />
+        {#if cfg.energy.mode === "schedule"}
+          <PrintStartFields {cfg} {part} warn={warnFor(w, "printStart") || warnFor(w, "schedule")} />
+        {/if}
         <label class="field">
           <span>Printer</span>
           <select
@@ -397,7 +403,7 @@
               <span>Off-peak share: {Math.round(part.offPeakFrac * 100)}%</span>
               <input type="range" min="0" max="1" step="0.05" bind:value={part.offPeakFrac} />
             </label>
-          {:else}
+          {:else if cfg.energy.mode !== "schedule"}
             <LabeledNumber label="Electricity rate" suffix={`${cfg.currency.symbol} per kWh`} step={0.01} bind:value={part.flatRate} warn={warnFor(w, "flatRate")} help="What your utility charges per kilowatt-hour." />
           {/if}
           <LabeledNumber label="Printer power" suffix="W" bind:value={part.watts} warn={warnFor(w, "watts")} help="Average power draw while printing, in watts." />

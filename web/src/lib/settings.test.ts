@@ -18,7 +18,7 @@ function baseConfig(): ServerConfig {
     materials: [{ id: "pla", name: "PLA", density: 1.24, pricePerKg: 20, wastePct: 5, public: false }],
     printers: [{ id: "p1", name: "Printer", watts: 250, purchaseCost: 400, lifespanHours: 4000, filamentDiameterMm: 1.75 }],
     hardware: [],
-    energy: { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.2, offPeakRate: 0.1, defaultOffPeakFrac: 0.5 } },
+    energy: { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.2, offPeakRate: 0.1, defaultOffPeakFrac: 0.5 }, schedule: { defaultStartTime: "22:00", holidays: [], seasons: [] } },
     presets: {
       "side-hustle": { failureRatePct: 5, prepMinutes: 10, laborRate: 20, monthlyFixed: 50, monthlyHours: 40 },
     },

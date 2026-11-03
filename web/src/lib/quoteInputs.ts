@@ -8,7 +8,15 @@ export function energyInputsFor(
   energy: EnergyConfig,
   offPeakFrac: number = energy.tou.defaultOffPeakFrac,
   flatRate: number = energy.flatRate,
+  schedule?: { timezone: string; start: string },
 ): EnergyInputs {
+  if (energy.mode === "schedule") {
+    // A snapshot of the tariff travels with the quote, so a saved quote reprices identically after the shop's
+    // schedule changes. An omitted start is sent as missing and the server asks for it.
+    const out: EnergyInputs = { mode: "schedule", schedule: JSON.parse(JSON.stringify(energy.schedule)) as EnergyInputs["schedule"], timezone: schedule?.timezone ?? "UTC" };
+    if (schedule?.start) out.start = schedule.start;
+    return out;
+  }
   return energy.mode === "tou"
     ? { mode: "tou", peakRate: energy.tou.peakRate, offPeakRate: energy.tou.offPeakRate, offPeakFrac }
     : { mode: "flat", flatRate };

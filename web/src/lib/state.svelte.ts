@@ -12,6 +12,7 @@ import { localId } from "./api";
 import { FALLBACK_DENSITY } from "./filamentDefaults";
 import type { Invoice } from "./invoicesApi";
 import { energyInputsFor } from "./quoteInputs";
+import { nextStartWall } from "./engine/schedule";
 import { demoLocal, resolveCurrencyPreset } from "./demoLocal.svelte";
 
 interface SpoolOverrideState {
@@ -39,6 +40,9 @@ export interface PartFormState {
   machineLifeHours: number | null;
   flatRate: number | null;
   offPeakFrac: number;
+  /** Schedule energy mode: this part's print start as wall-clock "YYYY-MM-DDTHH:MM" in the instance time
+   * zone. "" uses the order's start. Saved with the quote so repricing is deterministic. */
+  printStart: string;
   failureRatePct: number | null;
   prepMinutes: number | null;
   laborRate: number | null;
@@ -69,6 +73,9 @@ export interface OrderForm {
   shippingCharge: number | null;
   shippingCost: number | null;
   feeScheduleName: string;
+  /** Schedule energy mode: the order's print start (wall-clock "YYYY-MM-DDTHH:MM" in the instance time
+   * zone). Seeded with the next occurrence of the schedule's default start time. "" in other modes. */
+  printStart: string;
 }
 
 /** The live editor state. */
@@ -101,6 +108,7 @@ export function defaultPartState(label = "Part 1"): PartFormState {
     machineLifeHours: 4000,
     flatRate: 0.15,
     offPeakFrac: 0.7,
+    printStart: "",
     failureRatePct: 5,
     prepMinutes: 5,
     laborRate: 12,
@@ -125,6 +133,7 @@ export function defaultOrderForm(): OrderForm {
     shippingCharge: 0,
     shippingCost: 0,
     feeScheduleName: "none",
+    printStart: "",
   };
 }
 
@@ -234,6 +243,7 @@ function seedPart(cfg: EffectiveConfig, part: PartFormState): void {
   part.failureRatePct = cfg.defaults.failureRatePct;
   part.flatRate = cfg.energy.flatRate;
   part.offPeakFrac = cfg.energy.tou.defaultOffPeakFrac;
+  part.printStart = "";
   applyPrinter(cfg, part, cfg.defaults.printer);
   applyMaterial(cfg, part, cfg.defaults.material);
   applyPreset(cfg, part, cfg.defaults.preset);
@@ -247,6 +257,14 @@ function seedOrder(cfg: EffectiveConfig, order: OrderForm): void {
   order.shippingCharge = cfg.pricing.defaultShippingCharge;
   order.shippingCost = cfg.pricing.defaultShippingCost;
   order.feeScheduleName = cfg.pricing.defaultFeeSchedule;
+  order.printStart = defaultPrintStart(cfg);
+}
+
+/** The next occurrence of the schedule's default start time in the instance time zone, or "" outside
+ * schedule mode. */
+export function defaultPrintStart(cfg: EffectiveConfig, now: Date = new Date()): string {
+  if (cfg.energy.mode !== "schedule") return "";
+  return nextStartWall(cfg.energy.schedule.defaultStartTime, cfg.timezone || "UTC", now);
 }
 
 /** The base a stored part is overlaid on: shop defaults when a config is available, else the constants. */
@@ -343,7 +361,7 @@ type PartSource = PartFormState & { id?: string };
 
 /** One part's engine inputs. `selling` gates the per-part sale price override, sent only with an order
  * pricing block (a costed-only quote has no price to override). */
-function toPartInputs(cfg: EffectiveConfig, src: PartSource, index: number, selling: boolean): PartInputs {
+function toPartInputs(cfg: EffectiveConfig, src: PartSource, index: number, selling: boolean, orderStart: string): PartInputs {
   const time = timePair(src.timeHours, src.timeMinutes);
   const inputs: PartInputs = {
     label: partLabel(src, index),
@@ -353,7 +371,10 @@ function toPartInputs(cfg: EffectiveConfig, src: PartSource, index: number, sell
     timeHours: time.hours,
     timeMinutes: time.minutes,
     watts: num(src.watts),
-    energy: energyInputsFor(cfg.energy, src.offPeakFrac, num(src.flatRate)),
+    energy: energyInputsFor(cfg.energy, src.offPeakFrac, num(src.flatRate), {
+      timezone: cfg.timezone || "UTC",
+      start: src.printStart !== "" ? src.printStart : orderStart,
+    }),
     failureRatePct: num(src.failureRatePct),
     prepMinutes: num(src.prepMinutes),
     laborRate: num(src.laborRate),
@@ -390,7 +411,7 @@ export function toOrderInputs(
 ): OrderInputs {
   const { order } = src;
   const out: OrderInputs = {
-    parts: src.parts.map((p, i) => toPartInputs(cfg, p, i, order.sellingEnabled)),
+    parts: src.parts.map((p, i) => toPartInputs(cfg, p, i, order.sellingEnabled, order.printStart)),
   };
   if (order.sellingEnabled) {
     out.pricing = {
@@ -443,6 +464,8 @@ export function parseFormState(raw: unknown, cfg?: EffectiveConfig): { parts: Pa
     parts.push(overlay(partBase(cfg, "Part 1"), p as Record<string, unknown>, PART_KEYS));
   }
   const order = overlay(orderBase(cfg), (src.order && typeof src.order === "object" ? src.order : {}) as Record<string, unknown>, ORDER_KEYS);
+  // A quote saved outside schedule mode has no start; give it the default so it prices once the mode is on.
+  if (cfg && order.printStart === "") order.printStart = defaultPrintStart(cfg);
   return { parts, order };
 }
 

@@ -1,11 +1,26 @@
 import { describe, expect, it } from "vitest";
 import type { EnergyConfig, PresetConfig, PrinterConfig } from "./engine/index";
 import { buildQuoteInputs, energyInputsFor } from "./quoteInputs";
+import { sceExampleSchedule } from "./scheduleExamples";
 
-const FLAT: EnergyConfig = { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.3, offPeakRate: 0.1, defaultOffPeakFrac: 0.7 } };
-const TOU: EnergyConfig = { mode: "tou", flatRate: 0.15, tou: { peakRate: 0.3, offPeakRate: 0.1, defaultOffPeakFrac: 0.7 } };
+const FLAT: EnergyConfig = { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.3, offPeakRate: 0.1, defaultOffPeakFrac: 0.7 }, schedule: { defaultStartTime: "22:00", holidays: [], seasons: [] } };
+const TOU: EnergyConfig = { mode: "tou", flatRate: 0.15, tou: { peakRate: 0.3, offPeakRate: 0.1, defaultOffPeakFrac: 0.7 }, schedule: { defaultStartTime: "22:00", holidays: [], seasons: [] } };
+
+const SCHEDULE_MODE: EnergyConfig = { ...FLAT, mode: "schedule", schedule: sceExampleSchedule() };
 
 describe("energyInputsFor", () => {
+  it("maps a schedule config to a snapshot of the tariff plus the zone and start", () => {
+    const out = energyInputsFor(SCHEDULE_MODE, undefined, undefined, { timezone: "America/Los_Angeles", start: "2026-07-03T14:00" });
+    expect(out).toEqual({ mode: "schedule", schedule: sceExampleSchedule(), timezone: "America/Los_Angeles", start: "2026-07-03T14:00" });
+    // A snapshot, not a reference: editing the config later can't change a priced quote.
+    expect(out.schedule).not.toBe(SCHEDULE_MODE.schedule);
+  });
+
+  it("sends a missing start as absent so the server asks for it", () => {
+    const out = energyInputsFor(SCHEDULE_MODE, undefined, undefined, { timezone: "UTC", start: "" });
+    expect(out).not.toHaveProperty("start");
+  });
+
   it("maps a flat config using cfg's own flat rate by default", () => {
     expect(energyInputsFor(FLAT)).toEqual({ mode: "flat", flatRate: 0.15 });
   });

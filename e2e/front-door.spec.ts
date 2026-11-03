@@ -80,8 +80,6 @@ test.describe("an item order placed through /order on the main port", () => {
         name: ITEM_NAME,
         description: "A small printed planter.",
         priceCents: 1200,
-        optionLabel: "",
-        options: [],
         public: true,
         stockMode: "in_stock",
         stockQty: 3,

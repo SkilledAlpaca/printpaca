@@ -10,10 +10,13 @@
     updateItem,
     deleteItem,
     uploadItemImage,
+    uploadOptionImage,
+    deleteOptionImage,
     type Item,
     type ItemInput,
-    type ItemOption,
   } from "../lib/itemsApi";
+  import { moveItem } from "../lib/itemOptions";
+  import { MAX_OPTION_GROUPS, MAX_OPTIONS_PER_GROUP } from "../lib/itemFormValidation";
   import { dollarsToCents, nextSortOrders } from "../lib/itemMath";
   import { validateItemForm } from "../lib/itemFormValidation";
   import { downscaleImage } from "../lib/downscaleImage";
@@ -60,8 +63,12 @@
       name: it.name,
       description: it.description,
       priceCents: it.priceCents,
-      optionLabel: it.optionLabel,
-      options: it.options,
+      optionGroups: it.optionGroups.map((g) => ({
+        id: g.id,
+        label: g.label,
+        required: g.required,
+        options: g.options.map((o) => ({ id: o.id, name: o.name, deltaCents: o.deltaCents })),
+      })),
       public: it.public,
       stockMode: it.stockMode,
       stockQty: it.stockQty,
@@ -135,16 +142,26 @@
   // price/stockQty/delta are `number | null` like LabeledNumber-bound fields elsewhere: bind:value yields
   // null while the box is empty. Plain `number` would coerce it to 0 in dollarsToCents; validateForm rejects
   // null so clearing a box shows an error instead of saving $0.
+  // key is a stable identity for {#each} and focus targets: the server id for a saved row, "new-N" for one
+  // added in this form. id is "" until the first save.
   interface OptionForm {
+    key: string;
+    id: string;
     name: string;
     delta: number | null;
+  }
+  interface GroupForm {
+    key: string;
+    id: string;
+    label: string;
+    required: boolean;
+    options: OptionForm[];
   }
   interface ItemForm {
     name: string;
     description: string;
     price: number | null;
-    optionLabel: string;
-    options: OptionForm[];
+    groups: GroupForm[];
     public: boolean;
     stockMode: "ready_to_print" | "in_stock";
     stockQty: number | null;
@@ -159,8 +176,7 @@
       name: "",
       description: "",
       price: 0,
-      optionLabel: "",
-      options: [],
+      groups: [],
       public: false,
       stockMode: "ready_to_print",
       stockQty: 0,
@@ -174,8 +190,13 @@
       name: it.name,
       description: it.description,
       price: it.priceCents / 100,
-      optionLabel: it.optionLabel,
-      options: it.options.map((o) => ({ name: o.name, delta: o.deltaCents / 100 })),
+      groups: it.optionGroups.map((g) => ({
+        key: g.id,
+        id: g.id,
+        label: g.label,
+        required: g.required,
+        options: g.options.map((o) => ({ key: o.id, id: o.id, name: o.name, delta: o.deltaCents / 100 })),
+      })),
       public: it.public,
       stockMode: it.stockMode,
       stockQty: it.stockQty,
@@ -187,15 +208,17 @@
   // Called only after validateForm confirmed price/stockQty/option deltas are non-null; the `?? 0` fallbacks
   // are unreachable, not a looser tolerance.
   function toInput(f: ItemForm): ItemInput {
-    const options: ItemOption[] = f.options.map((o) => ({ name: o.name, deltaCents: dollarsToCents(o.delta ?? 0) }));
     return {
       name: f.name,
       description: f.description,
       priceCents: dollarsToCents(f.price ?? 0),
-      // The server rejects optionLabel and options set independently (validateItemInput), so an emptied
-      // options list always clears the label.
-      optionLabel: options.length > 0 ? f.optionLabel : "",
-      options,
+      // Rows without an id are new; the server assigns ids and keeps the ids and photos of the rest.
+      optionGroups: f.groups.map((g) => ({
+        id: g.id || undefined,
+        label: g.label,
+        required: g.required,
+        options: g.options.map((o) => ({ id: o.id || undefined, name: o.name, deltaCents: dollarsToCents(o.delta ?? 0) })),
+      })),
       public: f.public,
       stockMode: f.stockMode,
       stockQty: f.stockQty ?? 0,
@@ -248,6 +271,7 @@
     formErrors = [];
     confirmingDelete = false;
     imageError = null;
+    optionImageError = null;
   }
 
   // The row that opened the detail view, so "Back to list" can return focus to it (WCAG 2.4.3).
@@ -338,13 +362,104 @@
     }
   }
 
-  function addOption() {
-    form.options = [...form.options, { name: "", delta: 0 }];
+  let newKeySeq = 0;
+  function newKey(): string {
+    return `new-${++newKeySeq}`;
   }
-  function removeOption(i: number) {
-    form.options = form.options.filter((_, idx) => idx !== i);
+
+  function addGroup() {
+    if (form.groups.length >= MAX_OPTION_GROUPS) return;
+    const group: GroupForm = { key: newKey(), id: "", label: "", required: true, options: [{ key: newKey(), id: "", name: "", delta: 0 }] };
+    form.groups = [...form.groups, group];
+    void focusAfterUpdate(keySelector(`group-label-${group.key}`));
+  }
+  function removeGroup(gi: number) {
+    const label = form.groups[gi]?.label.trim() || `group ${gi + 1}`;
+    form.groups = form.groups.filter((_, idx) => idx !== gi);
+    announce(`Removed ${label}.`);
+    // The removed group held focus; move to the next group's Remove button, else Add group.
+    void focusAfterRowRemoval("remove-group", gi, form.groups.length, "add-group");
+  }
+  function moveGroup(gi: number, delta: -1 | 1) {
+    const moved = moveItem(form.groups, gi, delta);
+    const g = moved[gi + delta];
+    if (moved === form.groups || !g) return;
+    form.groups = moved;
+    announce(`${g.label.trim() || `Group ${gi + 1}`} moved to position ${gi + delta + 1} of ${moved.length}.`);
+    // Reordering moves the focused button's row in the DOM, which can drop focus; put it back.
+    void focusAfterUpdate(keySelector(`${delta < 0 ? "group-up" : "group-down"}-${g.key}`));
+  }
+  function addOption(gi: number) {
+    const g = form.groups[gi];
+    if (!g || g.options.length >= MAX_OPTIONS_PER_GROUP) return;
+    const opt: OptionForm = { key: newKey(), id: "", name: "", delta: 0 };
+    g.options = [...g.options, opt];
+    void focusAfterUpdate(keySelector(`option-name-${g.key}-${opt.key}`));
+  }
+  function removeOption(gi: number, i: number) {
+    const g = form.groups[gi];
+    if (!g) return;
+    g.options = g.options.filter((_, idx) => idx !== i);
+    announce("Option removed.");
     // The removed row held focus; move to the next option's Remove button, else Add option.
-    void focusAfterRowRemoval("remove-option", i, form.options.length, "add-option");
+    void focusAfterRowRemoval(`remove-option-${gi}`, i, g.options.length, `add-option-${gi}`);
+  }
+  function moveOption(gi: number, i: number, delta: -1 | 1) {
+    const g = form.groups[gi];
+    if (!g) return;
+    const moved = moveItem(g.options, i, delta);
+    const o = moved[i + delta];
+    if (moved === g.options || !o) return;
+    g.options = moved;
+    announce(`${o.name.trim() || `Option ${i + 1}`} moved to position ${i + delta + 1} of ${moved.length}.`);
+    void focusAfterUpdate(keySelector(`${delta < 0 ? "option-up" : "option-down"}-${g.key}-${o.key}`));
+  }
+
+  // Option photos live on the saved item: `detail` carries each option's imageFile, so the controls below
+  // read it from there (by option id) rather than from the form, which would make a photo change look like
+  // an unsaved edit.
+  function optionImageFile(optionId: string): string {
+    if (!detail || !optionId) return "";
+    for (const g of detail.optionGroups) {
+      const o = g.options.find((x) => x.id === optionId);
+      if (o) return o.imageFile;
+    }
+    return "";
+  }
+  let optionImageError = $state<string | null>(null);
+  let optionImageBusy = $state<string | null>(null);
+
+  async function handleOptionFile(e: Event, o: OptionForm) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file || detailId === null || !o.id || optionImageBusy) return;
+    optionImageError = null;
+    optionImageBusy = o.id;
+    try {
+      detail = await uploadOptionImage(detailId, o.id, await downscaleImage(file));
+      await refresh();
+      announce(`Photo uploaded for ${o.name.trim() || "the option"}.`);
+    } catch (err) {
+      optionImageError = err instanceof Error ? err.message : "Couldn't upload image.";
+    } finally {
+      optionImageBusy = null;
+    }
+  }
+  async function removeOptionPhoto(o: OptionForm) {
+    if (detailId === null || !o.id || optionImageBusy) return;
+    optionImageError = null;
+    optionImageBusy = o.id;
+    try {
+      detail = await deleteOptionImage(detailId, o.id);
+      await refresh();
+      announce(`Photo removed from ${o.name.trim() || "the option"}.`);
+      await focusAfterUpdate(keySelector(`option-photo-${o.key}`));
+    } catch (err) {
+      optionImageError = err instanceof Error ? err.message : "Couldn't remove the photo.";
+    } finally {
+      optionImageBusy = null;
+    }
   }
 
   // Image upload needs a real item id, so it is disabled until the item has been saved once.
@@ -477,34 +592,122 @@
 
       <div class="subcard">
         <h3 class="section-label">Options</h3>
-        <label class="field">
-          <span>Option label</span>
-          <!-- Not server-bound (validateItemInput only requires optionLabel and options be set together);
-               100 is a UI-only cap matching option name's limit. -->
-          <input bind:value={form.optionLabel} maxlength={100} placeholder="For example, Color" disabled={form.options.length === 0} />
-          {#if form.options.length === 0}<small class="field-hint">Add an option first.</small>{/if}
-        </label>
-        {#each form.options as opt, i (i)}
-          {@const deltaWarn = opt.delta === null ? "Enter a valid price adjustment." : ""}
-          <div class="option-row">
-            <label class="field field-inline">
-              <span>Name</span>
-              <!-- Mirrors validateItemInput: each option name is at most 100 characters. -->
-              <input aria-label={`Option ${i + 1} name`} bind:value={opt.name} maxlength={100} />
-            </label>
-            <LabeledNumber
-              label="Price adjustment"
-              suffix={cfg.currency.symbol}
-              min={-1000000}
-              max={1000000}
-              step={0.01}
-              bind:value={opt.delta}
-              warn={deltaWarn}
-            />
-            <button type="button" aria-label={`Remove option ${i + 1}`} data-focus-key={`remove-option-${i}`} onclick={() => removeOption(i)}>Remove</button>
-          </div>
+        <p class="hint">
+          Each group is one choice the customer makes, such as Color or Size. A required group must be answered before ordering;
+          an optional group starts on None. Groups and options show in the order listed here.
+        </p>
+        {#each form.groups as g, gi (g.key)}
+          <fieldset class="group">
+            <legend>Option group {gi + 1}{g.label.trim() ? `: ${g.label.trim()}` : ""}</legend>
+            <div class="group-head">
+              <label class="field field-inline">
+                <span>Label</span>
+                <!-- Mirrors validateOptionGroups: a group label is at most 100 characters. -->
+                <input bind:value={g.label} maxlength={100} placeholder="For example, Color" data-focus-key={`group-label-${g.key}`} />
+              </label>
+              <label class="toggle">
+                <input type="checkbox" bind:checked={g.required} />
+                <span>Required</span>
+              </label>
+              <div class="reorder">
+                <button
+                  type="button"
+                  aria-label={`Move group ${gi + 1}${g.label.trim() ? ` (${g.label.trim()})` : ""} up`}
+                  aria-disabled={gi === 0}
+                  data-focus-key={`group-up-${g.key}`}
+                  onclick={() => moveGroup(gi, -1)}
+                >
+                  <Icon path={mdiArrowUp} size={16} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Move group ${gi + 1}${g.label.trim() ? ` (${g.label.trim()})` : ""} down`}
+                  aria-disabled={gi === form.groups.length - 1}
+                  data-focus-key={`group-down-${g.key}`}
+                  onclick={() => moveGroup(gi, 1)}
+                >
+                  <Icon path={mdiArrowDown} size={16} />
+                </button>
+              </div>
+              <button type="button" aria-label={`Remove group ${gi + 1}`} data-focus-key={`remove-group-${gi}`} onclick={() => removeGroup(gi)}>Remove group</button>
+            </div>
+
+            {#each g.options as opt, i (opt.key)}
+              {@const deltaWarn = opt.delta === null ? "Enter a valid price adjustment." : ""}
+              {@const photo = optionImageFile(opt.id)}
+              <div class="option-row">
+                <label class="field field-inline">
+                  <span>Name</span>
+                  <!-- Mirrors validateOptionGroups: each option name is at most 100 characters. -->
+                  <input
+                    aria-label={`Group ${gi + 1} option ${i + 1} name`}
+                    bind:value={opt.name}
+                    maxlength={100}
+                    data-focus-key={`option-name-${g.key}-${opt.key}`}
+                  />
+                </label>
+                <LabeledNumber
+                  label="Price adjustment"
+                  suffix={cfg.currency.symbol}
+                  min={-1000000}
+                  max={1000000}
+                  step={0.01}
+                  bind:value={opt.delta}
+                  warn={deltaWarn}
+                />
+                <div class="option-photo">
+                  {#if !opt.id || detailId === null}
+                    <small class="field-hint">Save the item first to add a photo.</small>
+                  {:else}
+                    {#if photo}
+                      <img class="option-thumb" src={"item-images/" + photo} alt={`Photo of ${opt.name.trim() || "option"}`} />
+                    {/if}
+                    <label class="file-label">
+                      <span class="visually-hidden">{photo ? "Replace" : "Add"} photo for group {gi + 1} option {i + 1}{opt.name.trim() ? ` (${opt.name.trim()})` : ""}</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        data-focus-key={`option-photo-${opt.key}`}
+                        onchange={(e) => handleOptionFile(e, opt)}
+                        disabled={optionImageBusy !== null}
+                        aria-busy={optionImageBusy === opt.id}
+                      />
+                    </label>
+                    {#if photo}
+                      <button type="button" aria-label={`Remove photo from group ${gi + 1} option ${i + 1}`} onclick={() => removeOptionPhoto(opt)}>Remove photo</button>
+                    {/if}
+                  {/if}
+                </div>
+                <div class="reorder">
+                  <button
+                    type="button"
+                    aria-label={`Move group ${gi + 1} option ${i + 1}${opt.name.trim() ? ` (${opt.name.trim()})` : ""} up`}
+                    aria-disabled={i === 0}
+                    data-focus-key={`option-up-${g.key}-${opt.key}`}
+                    onclick={() => moveOption(gi, i, -1)}
+                  >
+                    <Icon path={mdiArrowUp} size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Move group ${gi + 1} option ${i + 1}${opt.name.trim() ? ` (${opt.name.trim()})` : ""} down`}
+                    aria-disabled={i === g.options.length - 1}
+                    data-focus-key={`option-down-${g.key}-${opt.key}`}
+                    onclick={() => moveOption(gi, i, 1)}
+                  >
+                    <Icon path={mdiArrowDown} size={16} />
+                  </button>
+                </div>
+                <button type="button" aria-label={`Remove group ${gi + 1} option ${i + 1}`} data-focus-key={`remove-option-${gi}-${i}`} onclick={() => removeOption(gi, i)}>Remove</button>
+              </div>
+            {/each}
+            <button type="button" data-focus-key={`add-option-${gi}`} aria-disabled={g.options.length >= MAX_OPTIONS_PER_GROUP} onclick={() => addOption(gi)}>Add option</button>
+            {#if g.options.length >= MAX_OPTIONS_PER_GROUP}<small class="field-hint">A group has at most {MAX_OPTIONS_PER_GROUP} options.</small>{/if}
+          </fieldset>
         {/each}
-        <button type="button" data-focus-key="add-option" onclick={addOption}>Add option</button>
+        {#if optionImageError}<p class="banner-warn" role="alert">{optionImageError}</p>{/if}
+        <button type="button" data-focus-key="add-group" aria-disabled={form.groups.length >= MAX_OPTION_GROUPS} onclick={addGroup}>Add group</button>
+        {#if form.groups.length >= MAX_OPTION_GROUPS}<small class="field-hint">An item has at most {MAX_OPTION_GROUPS} groups.</small>{/if}
       </div>
 
       <div class="subcard">
@@ -583,8 +786,15 @@
 
   .card textarea { resize: vertical; }
 
+  .group { border: 1px solid var(--border); border-radius: var(--radius); margin: 0 0 0.75rem; padding: 0.6rem 0.75rem; min-width: 0; }
+  .group legend { font-weight: 600; padding: 0 0.3rem; }
+  .group-head { display: flex; align-items: end; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+  .group-head .field { flex: 1 1 140px; min-width: 120px; }
   .option-row { display: flex; align-items: end; gap: 0.5rem; margin-bottom: 0.4rem; flex-wrap: wrap; }
   .option-row .field { flex: 1 1 100px; min-width: 90px; }
+  .option-photo { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; flex: 1 1 14rem; min-width: 0; }
+  .option-photo input[type="file"] { max-width: 100%; }
+  .option-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: var(--radius); background: var(--surface-2); }
 
   .preview { display: block; max-width: 200px; max-height: 200px; border-radius: var(--radius); margin-bottom: 0.5rem; object-fit: cover; }
 

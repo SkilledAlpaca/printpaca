@@ -739,7 +739,7 @@
             <p class="ref">Reference: {itemOrderConfirmation.id}</p>
             <p class="order-summary">
               {itemOrderConfirmation.quantity} &times; {itemOrderConfirmation.itemName}{#if itemOrderConfirmation.optionName}
-                &middot; {itemOrderConfirmation.optionLabel || "Option"}: {itemOrderConfirmation.optionName}{/if}
+                &middot; {itemOrderConfirmation.optionName}{/if}
             </p>
             <p>We'll follow up at {itemOrderConfirmation.email}.</p>
           </div>

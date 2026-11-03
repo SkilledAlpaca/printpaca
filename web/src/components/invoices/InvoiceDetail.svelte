@@ -5,6 +5,7 @@
   import { bpToPct, type Invoice, type InvoiceStatus } from "../../lib/invoicesApi";
   import type { Client } from "../../lib/clientsApi";
   import type { Item } from "../../lib/itemsApi";
+  import { defaultSelection, parseOptionSummary } from "../../lib/itemOptions";
   import {
     matchingClientByName,
     previewTotalsFor,
@@ -127,10 +128,15 @@
   // Picking an item (or switching its option) rewrites the line's description, price and link; "" unlinks.
   function pickItem(i: number, line: LineForm, itemId: string) {
     const item = items.find((x) => x.id === itemId);
-    form.lines[i] = item ? linkLineToItem(line, item, item.options[0]?.name ?? "") : unlinkLine(line);
+    form.lines[i] = item ? linkLineToItem(line, item, defaultSelection(item.optionGroups)) : unlinkLine(line);
   }
-  function pickOption(i: number, line: LineForm, item: Item, optionName: string) {
-    form.lines[i] = linkLineToItem(line, item, optionName);
+  // One select per option group. The line stores the summary string, so the current choices are parsed back
+  // from it; a summary that no longer matches the item's groups shows every group unanswered.
+  function pickOption(i: number, line: LineForm, item: Item, groupId: string, optionId: string) {
+    const selected = { ...(parseOptionSummary(item.optionGroups, line.optionName) ?? {}) };
+    if (optionId) selected[groupId] = optionId;
+    else delete selected[groupId];
+    form.lines[i] = linkLineToItem(line, item, selected);
   }
 </script>
 
@@ -217,14 +223,18 @@
                       {#if line.itemId && !linked}<option value={line.itemId}>Gallery item (removed)</option>{/if}
                       {#each items as it (it.id)}<option value={it.id}>{it.name}</option>{/each}
                     </select>
-                    {#if linked && linked.options.length > 0}
-                      <select
-                        aria-label={`Line ${i + 1} ${linked.optionLabel || "option"}`}
-                        value={line.optionName}
-                        onchange={(e) => pickOption(i, line, linked, e.currentTarget.value)}
-                      >
-                        {#each linked.options as o (o.name)}<option value={o.name}>{o.name}</option>{/each}
-                      </select>
+                    {#if linked}
+                      {@const current = parseOptionSummary(linked.optionGroups, line.optionName) ?? {}}
+                      {#each linked.optionGroups as g (g.id)}
+                        <select
+                          aria-label={`Line ${i + 1} ${g.label}`}
+                          value={current[g.id] ?? ""}
+                          onchange={(e) => pickOption(i, line, linked, g.id, e.currentTarget.value)}
+                        >
+                          <option value="">{g.required ? `Choose ${g.label}` : `No ${g.label}`}</option>
+                          {#each g.options as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
+                        </select>
+                      {/each}
                     {/if}
                     {#if line.itemId}
                       <button type="button" class="quiet" aria-label={`Unlink line ${i + 1} from its gallery item`} onclick={() => pickItem(i, line, "")}>Unlink</button>

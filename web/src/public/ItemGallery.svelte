@@ -28,7 +28,7 @@
   // The "from" prefix only applies when an option can raise the price above the card's base;
   // zero/negative-only options mean the price is exact.
   function hasPositiveDelta(item: PublicItem): boolean {
-    return item.options.some((o) => o.deltaCents > 0);
+    return item.optionGroups.some((g) => g.options.some((o) => o.deltaCents > 0));
   }
 </script>
 

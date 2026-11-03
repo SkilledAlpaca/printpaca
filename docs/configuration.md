@@ -198,7 +198,7 @@ Uploaded files are deleted automatically after their request is finalized: G-cod
 
 ### Counter sales of gallery items
 
-In the Invoices tab, pick a gallery item (public or not) on a draft line to fill its description and price, and choose an option if the item has them. You can still edit the description and price, for example to give a counter discount; **Unlink** removes the link. Linked quantities must be whole numbers.
+In the Invoices tab, pick a gallery item (public or not) on a draft line to fill its description and price, and choose an option in each of its groups if the item has them. You can still edit the description and price, for example to give a counter discount; **Unlink** removes the link. Linked quantities must be whole numbers.
 
 - A linked line counts in the Dashboard's Top items panel while its invoice is sent or paid, dated by the invoice's issue date. Drafts and canceled invoices never count.
 - Sending the invoice (Mark sent or Email) takes the quantity off an in-stock item, down to zero at most. Canceling a sent invoice puts back exactly the units that were taken. Paid and back to sent changes nothing. Ready-to-print and deleted items take no stock.
@@ -225,7 +225,23 @@ The **Items** tab lets you list ready-made or made-to-order products alongside y
 
 ![The Items tab: a list of ready-made and made-to-order products with price, stock, and the Public toggle](screenshots/items.png)
 
-An item has a name, description, price, an optional image, and an optional set of named options (for example a color choice), each of which can add or subtract from the base price. Uploaded images are stored under `CONFIG_DIR/uploads/items/` and served back to the gallery; deleting an item removes its image file too, unless another item still references the same file (this happens when two items are uploaded with identical image bytes, which share one stored file).
+An item has a name, description, price, an optional image, and optional option groups (see [Option groups](#option-groups)). Uploaded images are stored under `CONFIG_DIR/uploads/items/` and served back to the gallery; deleting an item, or removing an option or its photo, removes the image file too, unless an item photo or another option photo still references the same file (this happens when two uploads have identical image bytes, which share one stored file).
+
+### Option groups
+
+An option group is one choice the customer makes, such as Color or Size. An item can have up to 5 groups, and a group up to 20 options. In the item's **Options** section:
+
+- **Label** names the group. Labels are unique within an item, ignoring case. Option names are unique within a group.
+- **Required** groups must be answered before the customer can order. The order panel shows a "Choose *label*" placeholder and blocks the order until the customer picks an option. An optional group starts on **None**, which adds nothing to the price.
+- Each option has a **price adjustment**, positive or negative. The price is the item price plus the adjustments of the selected options, times the quantity. The server computes it, and the cheapest possible selection can't make the price negative.
+- Each option can have a **photo**. The order panel shows the photo of the option the customer changed most recently, or the item photo when none of the selected options has one. The gallery card always shows the item photo. Photos upload after you save the item, the same as the item photo. A new option shows a note until you save.
+- **Move up** and **Move down** reorder groups and options. The customer sees them in this order, and focus stays on the button you pressed.
+
+The server gives each group and option a stable ID. Saving keeps the IDs and photos of the rows you edit, rename, or reorder, and gives new rows new IDs.
+
+A request, invoice line, and the Top items panel record the choice as text, for example `Color: Red · Size: Large`, listing only the groups the customer answered, in display order. In an invoice line, pick a gallery item, then pick an option in each of its groups, or **No** *label* to skip an optional group.
+
+Upgrading from an earlier version converts each item's single option list into one required group with the same label, options, and prices. The earlier `option_label` and `options_json` columns stay in the database but nothing reads them.
 
 ### Stock modes
 
@@ -240,7 +256,7 @@ An item only appears on the public gallery once you check its **Public** column 
 
 ### Ordering flow
 
-The public gallery shares the shop page at `/order` with the [public quote page](#public-quote-page) (on `PORT`, and on `PUBLIC_PORT` when set): a visitor can switch between browsing items and requesting a custom quote from the same page. Picking an item, an option (if any), and a quantity, then submitting, creates a new entry in your **Requests** tab, priced entirely server-side so nothing the visitor's browser sends is trusted for money. From there, an item order behaves like any other request: review it, then finalize it once you've confirmed you can fulfill it. Finalizing an order against an **in stock** item is what decrements that item's stock quantity.
+The public gallery shares the shop page at `/order` with the [public quote page](#public-quote-page) (on `PORT`, and on `PUBLIC_PORT` when set): a visitor can switch between browsing items and requesting a custom quote from the same page. Picking an item, an option in each required group, and a quantity, then submitting, creates a new entry in your **Requests** tab, priced entirely server-side so nothing the visitor's browser sends is trusted for money. From there, an item order behaves like any other request: review it, then finalize it once you've confirmed you can fulfill it. Finalizing an order against an **in stock** item is what decrements that item's stock quantity.
 
 Item orders share the per-IP limit of quote requests (see [Operational limits](#operational-limits)): 5 submissions per hour, counted across both together.
 

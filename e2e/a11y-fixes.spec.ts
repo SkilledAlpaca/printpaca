@@ -94,7 +94,7 @@ test.describe("quote email double submit", () => {
 test("a held Enter on a Delete button does not confirm the delete", async ({ page, request }) => {
   const name = `${PREFIX} Hold Item`;
   const created = await request.post("/admin/api/items", {
-    data: { name, description: "", priceCents: 500, optionLabel: "", options: [], public: false, stockMode: "in_stock", stockQty: 1, sortOrder: 0 },
+    data: { name, description: "", priceCents: 500, public: false, stockMode: "in_stock", stockQty: 1, sortOrder: 0 },
   });
   expect(created.ok()).toBe(true);
   const id = (await created.json()).id as string;
@@ -172,7 +172,7 @@ test.describe("public forms", () => {
     expect((await request.put("/admin/api/settings", { data: { config: updated } })).ok()).toBe(true);
 
     const item = await request.post("/admin/api/items", {
-      data: { name: ITEM, description: "", priceCents: 700, optionLabel: "", options: [], public: true, stockMode: "in_stock", stockQty: 5, sortOrder: 0 },
+      data: { name: ITEM, description: "", priceCents: 700, public: true, stockMode: "in_stock", stockQty: 5, sortOrder: 0 },
     });
     expect(item.ok()).toBe(true);
     itemId = (await item.json()).id as string;

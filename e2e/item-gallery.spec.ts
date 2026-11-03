@@ -1,5 +1,29 @@
 import { test, expect } from "@playwright/test";
+import { deflateSync, crc32 } from "node:zlib";
 import { navButton } from "./helpers";
+
+/** A valid 1x1 PNG of one color: distinct colors give distinct bytes, so distinct content-addressed files. */
+function tinyPng(r: number, g: number, b: number): Buffer {
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(1, 0);
+  ihdr.writeUInt32BE(1, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // RGB
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(Buffer.from([0, r, g, b]))),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
 
 // The public listener runs on its own port, so URLs here are absolute (see public.spec.ts).
 const PUBLIC_URL = "http://127.0.0.1:8098/";
@@ -10,6 +34,7 @@ const ITEM_NAME = "Articulated Dragon";
 // priceCents 1000 plus the "Red" option's deltaCents 500 is $15.00 per unit; times quantity 2 is $30.00.
 const UNIT_CENTS = 1000;
 const OPTION_DELTA_CENTS = 500;
+const ENGRAVING_DELTA_CENTS = 200;
 const ORDER_QUANTITY = 2;
 const EXPECTED_TOTAL = "$30.00";
 
@@ -78,10 +103,16 @@ test("admin seeds a public item and the public gallery shows it", async ({ reque
       name: ITEM_NAME,
       description: "A fully articulated 3D-printed dragon.",
       priceCents: UNIT_CENTS,
-      optionLabel: "Color",
-      options: [
-        { name: "Black", deltaCents: 0 },
-        { name: "Red", deltaCents: OPTION_DELTA_CENTS },
+      optionGroups: [
+        {
+          label: "Color",
+          required: true,
+          options: [
+            { name: "Black", deltaCents: 0 },
+            { name: "Red", deltaCents: OPTION_DELTA_CENTS },
+          ],
+        },
+        { label: "Engraving", required: false, options: [{ name: "Name plate", deltaCents: ENGRAVING_DELTA_CENTS }] },
       ],
       public: true,
       stockMode: "in_stock",
@@ -92,6 +123,19 @@ test("admin seeds a public item and the public gallery shows it", async ({ reque
   expect(createRes.ok()).toBeTruthy();
   const created = await createRes.json();
   createdItemId = created.id;
+
+  // The Black and Red options get photos (the item has none); Engraving's option has no photo.
+  const colorOptions = created.optionGroups[0].options as { id: string; name: string }[];
+  for (const [name, png] of [
+    ["Black", tinyPng(10, 10, 10)],
+    ["Red", tinyPng(200, 20, 20)],
+  ] as const) {
+    const up = await request.post(`/admin/api/items/${created.id}/options/${colorOptions.find((o) => o.name === name)!.id}/image`, {
+      headers: { "Content-Type": "image/png" },
+      data: png,
+    });
+    expect(up.ok()).toBeTruthy();
+  }
 
   // handlePublicItems caches its response for publicItemsCacheTTL (5s) with no write invalidation, so
   // poll the public endpoint until the new item shows up before navigating.
@@ -121,15 +165,35 @@ test("admin seeds a public item and the public gallery shows it", async ({ reque
   await expect(card).toContainText("In stock: 5");
 });
 
-test("ordering flow: pick an option, set quantity, submit, confirm the total", async ({ page }) => {
+test("ordering flow: required group blocks, optional starts on None, prices sum, photo follows the choice", async ({ page }) => {
   await page.goto(`${PUBLIC_URL}order`);
   const card = page.getByRole("button", { name: new RegExp(ITEM_NAME) });
   await card.click();
 
   await expect(page.getByRole("heading", { name: ITEM_NAME })).toBeVisible();
 
-  // Pick the non-default option (options[0] is "Black") and a quantity of 2.
-  await page.getByLabel("Color").selectOption("Red");
+  // A required group starts on its placeholder; an optional one starts on None.
+  const color = page.getByLabel("Color");
+  const engraving = page.getByLabel("Engraving (optional)");
+  await expect(color).toHaveValue("");
+  await expect(color.locator("option:checked")).toHaveText("Choose Color");
+  await expect(engraving.locator("option:checked")).toHaveText("None");
+  await expect(page.locator("img[data-option-photo]")).toHaveCount(0);
+
+  // Ordering is blocked until the required group is chosen, with the usual error pattern.
+  await page.getByLabel("Name", { exact: true }).fill(CUSTOMER_NAME);
+  await page.getByLabel("Email").fill(CUSTOMER_EMAIL);
+  await page.getByRole("button", { name: "Place order" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Choose Color." })).toBeVisible();
+  await expect(color).toHaveAttribute("aria-invalid", "true");
+  await expect(color).toBeFocused();
+
+  // Choosing Red swaps in its photo; the alt names the option.
+  await color.selectOption({ label: "Red (+$5.00)" });
+  const photo = page.locator("img[data-option-photo]");
+  await expect(photo).toHaveAttribute("alt", "Color: Red");
+  const redSrc = await photo.getAttribute("src");
+  expect(redSrc).toMatch(/^\/item-images\/[0-9a-f]{16}\.png$/);
   await page.getByLabel("Quantity").fill(String(ORDER_QUANTITY));
 
   // The live total also carries a trailing " · $X.XX each" suffix, so use toContainText to pin only
@@ -137,13 +201,27 @@ test("ordering flow: pick an option, set quantity, submit, confirm the total", a
   const totalLocator = page.locator(".estimate .price");
   await expect(totalLocator).toContainText(EXPECTED_TOTAL);
 
-  await page.getByLabel("Name").fill(CUSTOMER_NAME);
-  await page.getByLabel("Email").fill(CUSTOMER_EMAIL);
+  // The optional group adds to the sum, and its option has no photo, so Red's photo stays.
+  await engraving.selectOption({ label: "Name plate (+$2.00)" });
+  await expect(totalLocator).toContainText("$34.00");
+  await expect(photo).toHaveAttribute("src", redSrc!);
+  // Switching Color to Black (which has a photo) shows Black's, as the newest change.
+  await color.selectOption({ label: "Black" });
+  await expect(photo).toHaveAttribute("alt", "Color: Black");
+  expect(await photo.getAttribute("src")).not.toBe(redSrc);
+  await expect(totalLocator).toContainText("$24.00");
+
+  // Back to Red, and None for the optional group: the order stays $30.00.
+  await color.selectOption({ label: "Red (+$5.00)" });
+  await engraving.selectOption({ label: "None" });
+  await expect(totalLocator).toContainText(EXPECTED_TOTAL);
+  await expect(photo).toHaveAttribute("src", redSrc!);
 
   await page.getByRole("button", { name: "Place order" }).click();
 
   await expect(page.getByText("Order received")).toBeVisible();
   await expect(page.locator(".confirmation .price")).toHaveText(EXPECTED_TOTAL);
+  await expect(page.locator(".confirmation .order-summary")).toContainText("Color: Red");
   const refText = (await page.locator(".confirmation .ref").textContent())?.trim() ?? "";
   const refMatch = refText.match(/^Reference: (.+)$/);
   expect(refMatch).not.toBeNull();
@@ -167,7 +245,7 @@ test("the order appears in the admin Requests list as an item order", async ({ p
   expect(stored.kind).toBe("item");
   expect(stored.itemId).toBe(createdItemId);
   expect(stored.itemName).toBe(ITEM_NAME);
-  expect(stored.optionName).toBe("Red");
+  expect(stored.optionName).toBe("Color: Red");
   expect(stored.priceCents).toBe((UNIT_CENTS + OPTION_DELTA_CENTS) * ORDER_QUANTITY);
 });
 
@@ -256,4 +334,54 @@ test("the gallery's custom-estimate CTA card switches to the quote view", async 
   // The plain manual-quote form is the quote view's content.
   await expect(page.getByLabel("Material")).toBeVisible();
   await expect(page.getByRole("button", { name: "Request an estimate" })).toBeVisible();
+});
+
+// Admin: reorder groups and options with Move up / Move down; focus follows the moved row.
+
+test("admin reorders option groups and options, and the order persists and reaches the public panel", async ({ page, request }) => {
+  await page.goto("/admin/#/items");
+  await page.locator("main").getByRole("button", { name: new RegExp(ITEM_NAME) }).first().click();
+  await expect(page.getByLabel("Group 1 option 1 name")).toHaveValue("Black");
+
+  // Group 2 (Engraving) up: it becomes group 1, and focus stays on the button that was pressed.
+  await page.getByRole("button", { name: /^Move group 2 \(Engraving\) up$/ }).click();
+  await expect(page.getByRole("button", { name: /^Move group 1 \(Engraving\) up$/ })).toBeFocused();
+  await expect(page.getByLabel("Group 1 option 1 name")).toHaveValue("Name plate");
+
+  // Color's second option (Red) up, now in group 2.
+  await page.getByRole("button", { name: /^Move group 2 option 2 \(Red\) up$/ }).click();
+  await expect(page.getByRole("button", { name: /^Move group 2 option 1 \(Red\) up$/ })).toBeFocused();
+  await expect(page.getByLabel("Group 2 option 1 name")).toHaveValue("Red");
+
+  // Unsaved photos note: an unsaved new option explains photos upload after saving.
+  await page.getByRole("button", { name: "Add option" }).nth(1).click();
+  await expect(page.getByText("Save the item first to add a photo.").first()).toBeVisible();
+  await page.getByRole("button", { name: /^Remove group 2 option 3$/ }).click();
+
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText(`${ITEM_NAME} saved.`)).toBeAttached();
+
+  const res = await request.get("/admin/api/items");
+  const item = ((await res.json()).items as { id: string; optionGroups: { label: string; required: boolean; options: { name: string; imageFile: string }[] }[] }[]).find(
+    (i) => i.id === createdItemId,
+  )!;
+  expect(item.optionGroups.map((g) => g.label)).toEqual(["Engraving", "Color"]);
+  expect(item.optionGroups[1]!.options.map((o) => o.name)).toEqual(["Red", "Black"]);
+  // Photos and ids ride along with their options through a reorder.
+  expect(item.optionGroups[1]!.options.every((o) => /\.png$/.test(o.imageFile))).toBe(true);
+
+  await expect
+    .poll(
+      async () => {
+        const r = await request.get(`${PUBLIC_URL}api/public/items`);
+        const it = ((await r.json()).items as { name: string; optionGroups: { label: string }[] }[]).find((i) => i.name === ITEM_NAME);
+        return it?.optionGroups.map((g) => g.label).join(",");
+      },
+      { timeout: 15_000, intervals: [500, 500, 1000] },
+    )
+    .toBe("Engraving,Color");
+  await page.goto(`${PUBLIC_URL}order`);
+  await page.getByRole("button", { name: new RegExp(ITEM_NAME) }).click();
+  const labels = await page.locator("form .field > span").allTextContents();
+  expect(labels.slice(0, 2)).toEqual(["Engraving (optional)", "Color"]);
 });

@@ -26,7 +26,7 @@ test("a finalized gallery order is listed in Top items and survives deleting the
   itemId = (await createRes.json()).id;
 
   const orderRes = await request.post(`${PUBLIC_URL}api/public/item-order`, {
-    data: { itemId, optionName: "", quantity: QUANTITY, name: BUYER_NAME, email: "top-items@example.com", note: "" },
+    data: { itemId, selections: [], quantity: QUANTITY, name: BUYER_NAME, email: "top-items@example.com", note: "" },
   });
   expect(orderRes.status()).toBe(201);
 
@@ -70,8 +70,7 @@ test("a counter sale on a sent invoice is counted and takes stock; canceling res
     data: {
       name: COUNTER_ITEM,
       priceCents: 2000,
-      optionLabel: "Color",
-      options: [{ name: "Red", deltaCents: 0 }, { name: "Gold", deltaCents: 500 }],
+      optionGroups: [{ label: "Color", required: true, options: [{ name: "Red", deltaCents: 0 }, { name: "Gold", deltaCents: 500 }] }],
       public: false,
       stockMode: "in_stock",
       stockQty: 5,
@@ -94,7 +93,7 @@ test("a counter sale on a sent invoice is counted and takes stock; canceling res
     await page.getByRole("button", { name: "Add line" }).click();
     await page.getByLabel("Line 1 gallery item").selectOption({ label: COUNTER_ITEM });
     await page.getByLabel("Line 1 Color").selectOption("Gold");
-    await expect(page.getByLabel("Line 1 description")).toHaveValue(`${COUNTER_ITEM} (Gold)`);
+    await expect(page.getByLabel("Line 1 description")).toHaveValue(`${COUNTER_ITEM} (Color: Gold)`);
     await expect(page.getByLabel("Line 1 unit price")).toHaveValue("25");
     await page.getByLabel("Line 1 quantity").fill("2");
     await page.getByRole("button", { name: "Save" }).click();

@@ -29,9 +29,12 @@ export function requestInvoiceLines(req: QuoteRequest): InvoiceLineInput[] {
           unitPriceCents: req.priceCents / req.quantity,
           discountCents: 0,
           quoteId: "",
-          // Never linked to the item: finalize already counted this sale in item_sales and took its stock,
-          // so a link would count it twice.
-          itemId: "",
+          // Linked to the gallery item with its option summary, so the invoice line shows what was ordered.
+          // The server finalizes the request on conversion WITHOUT recording a sale or taking stock, so
+          // sending the invoice counts the sale and the stock once. It drops the link instead when the order
+          // was already finalized (that sale is already counted) or the item has been deleted.
+          itemId: req.itemId,
+          optionName: req.itemId ? req.optionName : "",
         }
       : {
           description: req.gcodeFilename ? `3D print: ${req.material} (${req.gcodeFilename})` : `3D print: ${req.material}`,
@@ -63,5 +66,7 @@ export function invoiceInputFromRequest(req: QuoteRequest, cfg: RequestConversio
     discountCents: 0,
     notes: "",
     lines: requestInvoiceLines(req),
+    // The server links the request to the new invoice and finalizes it in the same transaction.
+    requestId: req.id,
   };
 }

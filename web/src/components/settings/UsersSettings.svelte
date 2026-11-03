@@ -93,7 +93,13 @@
   // as the Kelvin sign onto ASCII).
   async function changeEmail(u: UserRecord, input: HTMLInputElement) {
     const value = input.value.trim();
-    if (rowSaving[u.id] || value.replace(/[A-Z]/g, (c) => c.toLowerCase()) === u.email) return;
+    if (rowSaving[u.id]) {
+      // aria-disabled doesn't stop typing: put the stored address back rather than leave an unsaved edit in the box.
+      input.value = u.email;
+      announce("Wait for the current save to finish, then change the email.");
+      return;
+    }
+    if (value.replace(/[A-Z]/g, (c) => c.toLowerCase()) === u.email) return;
     // A failed save keeps the row error but restores the stored address, so the box never shows an email the
     // server rejected.
     if (!(await applyUpdate(u.id, { email: value }))) input.value = u.email;

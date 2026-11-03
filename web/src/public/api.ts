@@ -1,5 +1,6 @@
 import type { CurrencyConfig } from "../lib/engine/index";
 import { DEFAULT_FETCH_TIMEOUT_MS } from "../lib/fetchTimeouts";
+import type { ChoiceGroup } from "../lib/itemOptions";
 
 // Shapes match server/public.go's publicConfigResponse and publicMaterial field for field: deliberately
 // narrow, never the full admin Config. Pricing is server-side (POST /api/public/quote/preview), so this
@@ -57,8 +58,8 @@ const PUBLIC_FIELD_LABELS: Record<string, string> = {
   email: "Email",
 };
 
-/** Maps one server validation error to customer-facing copy. `optionName` prefers the item's own option
- * label. An unrecognized identifier prefix gets a generic message rather than a raw field name; a string
+/** Maps one server validation error to customer-facing copy. A `selections` error already names the group
+ * ("selections: choose Color"), so only the prefix is dropped. An unrecognized identifier prefix gets a generic message rather than a raw field name; a string
  * without the "field: message" shape (no colon, or a non-identifier prefix) passes through as prose. Wire
  * strings are untouched. */
 function sentence(s: string): string {
@@ -68,7 +69,7 @@ function sentence(s: string): string {
   return /[.!?]$/.test(c) ? c : `${c}.`;
 }
 
-function humanizePublicFieldError(raw: string, optionLabel?: string): string {
+function humanizePublicFieldError(raw: string): string {
   const idx = raw.indexOf(":");
   if (idx === -1) return raw; // no "field: message" shape at all -- already-friendly prose, leave it alone
   const field = raw.slice(0, idx);
@@ -76,13 +77,13 @@ function humanizePublicFieldError(raw: string, optionLabel?: string): string {
   if (!/^[a-zA-Z][a-zA-Z0-9]*$/.test(field)) return raw;
   // The price error is a shop-side problem the customer can't fix by editing a field, so show the sentence alone.
   if (field === "price") return sentence(raw.slice(idx + 1));
-  if (field === "optionName") return sentence(`${optionLabel || "Option"}${raw.slice(idx)}`);
+  if (field === "selections") return sentence(raw.slice(idx + 1));
   const label = PUBLIC_FIELD_LABELS[field];
   return label ? sentence(`${label}${raw.slice(idx)}`) : "Check the form and try again.";
 }
 
-function humanizePublicFieldErrors(errors: string[], optionLabel?: string): string[] {
-  return errors.map((e) => humanizePublicFieldError(e, optionLabel));
+function humanizePublicFieldErrors(errors: string[]): string[] {
+  return errors.map((e) => humanizePublicFieldError(e));
 }
 
 export interface SubmitResult {
@@ -102,18 +103,13 @@ export interface SubmitResult {
 // Shapes match server/public.go's publicItem/publicItemStock field for field: a narrow wire shape, not the
 // admin-only Item/ItemOption from lib/itemsApi.ts (CRUD concerns have no place in the public entry).
 
-interface ItemOption {
-  name: string;
-  deltaCents: number;
-}
 
 export interface PublicItem {
   id: string;
   name: string;
   description: string;
   priceCents: number;
-  optionLabel: string;
-  options: ItemOption[];
+  optionGroups: ChoiceGroup[];
   imageUrl: string;
   stock: { mode: "ready_to_print" | "in_stock"; qty?: number; allowBackorder: boolean };
 }
@@ -137,13 +133,12 @@ export async function loadPublicItems(): Promise<PublicItem[] | null> {
 export async function submitItemOrder(
   body: {
     itemId: string;
-    optionName: string;
+    selections: { groupId: string; optionId: string }[];
     quantity: number;
     name: string;
     email: string;
     note: string;
   },
-  optionLabel?: string,
 ): Promise<SubmitResult> {
   let res: Response;
   try {
@@ -171,7 +166,7 @@ export async function submitItemOrder(
 
   const errBody = parsed as { errors?: string[] } | null;
   const errors = errBody?.errors?.length
-    ? humanizePublicFieldErrors(errBody.errors, optionLabel)
+    ? humanizePublicFieldErrors(errBody.errors)
     : ["Something went wrong submitting the order."];
   return { ok: false, status: res.status, errors };
 }

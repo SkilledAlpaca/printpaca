@@ -8,6 +8,7 @@ import { todayInTimezone } from "./invoiceStatus";
 import type { Client } from "./clientsApi";
 import type { Item } from "./itemsApi";
 import { itemUnitCents } from "./itemMath";
+import { optionSummary, selectedDeltaCents, type Selected } from "./itemOptions";
 
 // The editable form keeps money in currency units and tax in percent; buildInput() converts to cents and
 // basis points at the API edge.
@@ -131,18 +132,19 @@ export function buildInput(form: InvoiceForm): InvoiceInput {
   };
 }
 
-/** Links a line to a gallery item: fills the description ("Name" or "Name (Option)"), the unit price (item
- * price plus the option's delta), and the link fields. A quantity that isn't a whole number is rounded to
+/** Links a line to a gallery item: fills the description ("Name" or "Name (Color: Red · Size: Large)"), the
+ * unit price (item price plus the selected options' deltas), and the link fields; optionName holds the same
+ * summary the server stores for gallery orders. A quantity that isn't a whole number is rounded to
  * one, since linked lines move stock in whole units. Description and price stay editable afterward. */
-export function linkLineToItem(line: LineForm, item: Item, optionName: string): LineForm {
-  const option = item.options.find((o) => o.name === optionName);
+export function linkLineToItem(line: LineForm, item: Item, selected: Selected): LineForm {
+  const summary = optionSummary(item.optionGroups, selected);
   return {
     ...line,
-    description: option ? `${item.name} (${option.name})` : item.name,
-    unitPrice: itemUnitCents(item.priceCents, option?.deltaCents ?? 0) / 100,
+    description: summary ? `${item.name} (${summary})` : item.name,
+    unitPrice: itemUnitCents(item.priceCents, selectedDeltaCents(item.optionGroups, selected)) / 100,
     quantity: Math.max(1, Math.round(line.quantity)),
     itemId: item.id,
-    optionName: option ? option.name : "",
+    optionName: summary,
   };
 }
 

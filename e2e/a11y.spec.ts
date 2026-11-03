@@ -101,8 +101,10 @@ test.beforeAll(async ({ request }) => {
       name: ITEM_NAME,
       description: "A small printed planter.",
       priceCents: 1200,
-      optionLabel: "",
-      options: [],
+      optionGroups: [
+        { label: "Color", required: true, options: [{ name: "Sage", deltaCents: 0 }, { name: "Clay", deltaCents: 150 }] },
+        { label: "Finish", required: false, options: [{ name: "Matte", deltaCents: 0 }] },
+      ],
       public: true,
       stockMode: "in_stock",
       stockQty: 3,
@@ -110,7 +112,9 @@ test.beforeAll(async ({ request }) => {
     },
   });
   expect(item.ok()).toBeTruthy();
-  const itemId = (await item.json()).id as string;
+  const createdItem = (await item.json()) as { id: string; optionGroups: { id: string; options: { id: string }[] }[] };
+  const itemId = createdItem.id;
+  const firstGroup = createdItem.optionGroups[0]!;
   created.items.push(itemId);
 
   const invoice = await request.post("/admin/api/invoices", {
@@ -132,7 +136,7 @@ test.beforeAll(async ({ request }) => {
 
   const order = await request.post("/api/public/item-order", {
     headers: { "X-Forwarded-For": `203.0.113.${100 + Math.floor(Math.random() * 100)}` },
-    data: { itemId, optionName: "", quantity: 1, name: "Gate Visitor", email: "visitor@example.com", note: "" },
+    data: { itemId, selections: [{ groupId: firstGroup.id, optionId: firstGroup.options[0]!.id }], quantity: 1, name: "Gate Visitor", email: "visitor@example.com", note: "" },
   });
   expect(order.ok()).toBeTruthy();
   requestId = (await order.json()).id;
@@ -218,6 +222,7 @@ test.describe("public pages", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/order");
     await page.getByRole("button", { name: new RegExp(ITEM_NAME) }).click();
+    await page.getByLabel("Color").selectOption({ label: "Sage" });
     await page.getByLabel("Name").fill("Focus Visitor");
     await page.getByLabel("Email").fill("focus@example.com");
     await page.getByRole("button", { name: "Place order" }).click();

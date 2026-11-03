@@ -6,7 +6,7 @@
     id: string;
     priceCents: number;
     itemName: string;
-    optionLabel: string;
+    /** "Color: Red · Size: Large" (answered groups only); "" when the item has no options chosen. */
     optionName: string;
     quantity: number;
     email: string;
@@ -19,6 +19,15 @@
   import { clearVisitor, visitor } from "./visitor.svelte";
   import { formatMoney, type CurrencyConfig } from "../lib/engine/index";
   import { itemTotalCents } from "../lib/itemMath";
+  import {
+    missingRequired,
+    optionSummary,
+    pickDisplayImage,
+    selectedDeltaCents as sumSelectedDelta,
+    selectionsPayload,
+    touchRecent,
+    type Selected,
+  } from "../lib/itemOptions";
   import { NAME_MAX_BYTES, NOTE_MAX_BYTES, ITEM_ORDER_EMAIL_MAX_BYTES, utf8ByteLength, isPlausibleEmail, EMAIL_FORMAT_ERROR } from "../lib/publicFormLimits";
   import { clampQuantity, perUnitCents } from "./publicPricing";
   import { submitItemOrder, type PublicItem } from "./api";
@@ -37,11 +46,17 @@
     onordered: (confirmation: ItemOrderConfirmation) => void;
   } = $props();
 
-  // svelte-ignore state_referenced_locally -- initial seed only: item is a
-  // remount-on-change prop (PublicQuotePage.svelte wraps this component in
-  // {#key orderItem.id}), so reading it once here to pick the default
-  // option is intentional, not a missed reactive dependency.
-  let optionName = $state(item.options[0]?.name ?? "");
+  // groupId -> optionId. Starts empty: a required group shows its "Choose ..." placeholder and an optional one
+  // shows "None" (an empty choice adds no price). item is a remount-on-change prop (PublicQuotePage.svelte
+  // wraps this component in {#key orderItem.id}), so nothing here needs to reset when it changes.
+  let selected = $state<Selected>({});
+  // Group ids, most recently changed first: the photo shown is the newest selection that has one.
+  let recent = $state<string[]>([]);
+  function choose(groupId: string, optionId: string) {
+    selected[groupId] = optionId;
+    recent = touchRecent(recent, groupId);
+  }
+  const displayImage = $derived(pickDisplayImage(item.optionGroups, selected, recent));
   // number | null like PublicQuotePage's quantity: a cleared number input binds null, not 0 or NaN.
   let quantity = $state<number | null>(1);
   // Name and email are shared with the custom-estimate form (visitor.svelte.ts), so a visitor who already
@@ -82,7 +97,8 @@
     item.stock.mode === "in_stock" && item.stock.allowBackorder && quantity !== null && quantity > (item.stock.qty ?? 0),
   );
 
-  const selectedDeltaCents = $derived(item.options.find((o) => o.name === optionName)?.deltaCents ?? 0);
+  const selectedDeltaCents = $derived(sumSelectedDelta(item.optionGroups, selected));
+  const missingGroups = $derived(missingRequired(item.optionGroups, selected));
   const unitPriceCents = $derived(item.priceCents + selectedDeltaCents);
   // null while the quantity input is cleared: there is nothing honest to compute (the template shows a dash,
   // not $0.00).
@@ -99,7 +115,7 @@
       out.email = `Email must be ${ITEM_ORDER_EMAIL_MAX_BYTES} characters or fewer.`;
     else if (!isPlausibleEmail(email.trim())) out.email = EMAIL_FORMAT_ERROR;
     if (utf8ByteLength(note) > NOTE_MAX_BYTES) out.note = `Note must be ${NOTE_MAX_BYTES} characters or fewer.`;
-    if (item.options.length > 0 && optionName === "") out.other.push(`Choose ${item.optionLabel || "an option"}.`);
+    for (const g of missingGroups) out.other.push(`Choose ${g.label}.`);
     if (quantity === null || !Number.isInteger(quantity) || quantity < 1 || quantity > maxQuantity) {
       out.other.push(`Quantity must be a whole number from 1 to ${maxQuantity}.`);
     }
@@ -132,13 +148,12 @@
     const result = await submitItemOrder(
       {
         itemId: item.id,
-        optionName,
+        selections: selectionsPayload(item.optionGroups, selected),
         quantity,
         name: name.trim(),
         email: email.trim(),
         note: note.trim(),
       },
-      item.optionLabel,
     );
     submitting = false;
 
@@ -150,8 +165,7 @@
         id: result.id,
         priceCents: result.priceCents,
         itemName: item.name,
-        optionLabel: item.optionLabel,
-        optionName,
+        optionName: optionSummary(item.optionGroups, selected),
         quantity,
         email: sentEmail,
       });
@@ -175,7 +189,10 @@
   <button type="button" class="quiet back" onclick={onback}>&larr; Back to gallery</button>
 
   <div class="card item-summary">
-    {#if item.imageUrl}
+    {#if displayImage}
+      <!-- Same fixed box as the item photo, so swapping never shifts the layout; the alt names the option. -->
+      <img class="thumb" src={displayImage.url} alt={displayImage.alt} data-option-photo />
+    {:else if item.imageUrl}
       <img class="thumb" src={item.imageUrl} alt="" />
     {:else}
       <div class="thumb thumb-empty" aria-hidden="true"></div>
@@ -196,12 +213,20 @@
       void submit();
     }}
   >
-    {#if item.options.length > 0}
+    {#each item.optionGroups as g (g.id)}
+      {@const invalid = showErrors && g.required && !selected[g.id]}
       <label class="field">
-        <span>{item.optionLabel || "Option"}</span>
-        <select bind:value={optionName} required aria-invalid={showErrors && optionName === "" ? "true" : undefined}>
-          {#each item.options as o (o.name)}
-            <option value={o.name}
+        <span>{g.label}{g.required ? "" : " (optional)"}</span>
+        <select
+          required={g.required}
+          value={selected[g.id] ?? ""}
+          onchange={(e) => choose(g.id, e.currentTarget.value)}
+          aria-invalid={invalid ? "true" : undefined}
+          data-group-id={g.id}
+        >
+          <option value="">{g.required ? `Choose ${g.label}` : "None"}</option>
+          {#each g.options as o (o.id)}
+            <option value={o.id}
               >{o.name}{o.deltaCents !== 0
                 ? ` (${o.deltaCents > 0 ? "+" : ""}${formatMoney(o.deltaCents, currency)})`
                 : ""}</option
@@ -209,7 +234,7 @@
           {/each}
         </select>
       </label>
-    {/if}
+    {/each}
 
     <label class="field">
       <span>Quantity</span>
@@ -287,7 +312,7 @@
             {/if}
           </p>
         {:else}
-          <p class="muted">Pick an option and quantity to see a price.</p>
+          <p class="muted">Enter a quantity to see a price.</p>
         {/if}
       </div>
     </div>

@@ -418,10 +418,17 @@ describe("item links on lines", () => {
     name: "Dragon",
     description: "",
     priceCents: 1500,
-    optionLabel: "Color",
-    options: [
-      { name: "Red", deltaCents: 0 },
-      { name: "Gold", deltaCents: 250 },
+    optionGroups: [
+      {
+        id: "g1",
+        label: "Color",
+        required: true,
+        options: [
+          { id: "o1", name: "Red", deltaCents: 0, imageFile: "" },
+          { id: "o2", name: "Gold", deltaCents: 250, imageFile: "" },
+        ],
+      },
+      { id: "g2", label: "Mount", required: false, options: [{ id: "o3", name: "Strip", deltaCents: 100, imageFile: "" }] },
     ],
     imageFile: "",
     public: false,
@@ -437,28 +444,35 @@ describe("item links on lines", () => {
   const blank: LineForm = { description: "", quantity: 1.5, unitPrice: 0, discount: 2, quoteId: "", kind: "item", itemId: "", optionName: "" };
 
   it("fills description, price plus option delta, and the link, keeping the line discount", () => {
-    expect(linkLineToItem(blank, item, "Gold")).toEqual({
-      description: "Dragon (Gold)",
+    expect(linkLineToItem(blank, item, { g1: "o2" })).toEqual({
+      description: "Dragon (Color: Gold)",
       quantity: 2,
       unitPrice: 17.5,
       discount: 2,
       quoteId: "",
       kind: "item",
       itemId: "it1",
-      optionName: "Gold",
+      optionName: "Color: Gold",
     });
   });
 
+  it("sums several groups and names them in display order", () => {
+    const line = linkLineToItem(blank, item, { g2: "o3", g1: "o2" });
+    expect(line.description).toBe("Dragon (Color: Gold · Mount: Strip)");
+    expect(line.unitPrice).toBe(18.5);
+    expect(line.optionName).toBe("Color: Gold · Mount: Strip");
+  });
+
   it("links an item without options by its plain name", () => {
-    const plain = linkLineToItem(blank, { ...item, options: [] }, "");
+    const plain = linkLineToItem(blank, { ...item, optionGroups: [] }, {});
     expect(plain.description).toBe("Dragon");
     expect(plain.unitPrice).toBe(15);
     expect(plain.optionName).toBe("");
   });
 
   it("unlink clears the link and keeps what was typed", () => {
-    const linked = { ...linkLineToItem(blank, item, "Red"), unitPrice: 12 };
-    expect(unlinkLine(linked)).toMatchObject({ description: "Dragon (Red)", unitPrice: 12, itemId: "", optionName: "" });
+    const linked = { ...linkLineToItem(blank, item, { g1: "o1" }), unitPrice: 12 };
+    expect(unlinkLine(linked)).toMatchObject({ description: "Dragon (Color: Red)", unitPrice: 12, itemId: "", optionName: "" });
   });
 
   it("round-trips the link through the form and the API input, and a duplicate keeps it", () => {

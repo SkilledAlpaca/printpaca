@@ -16,7 +16,7 @@ Three layers back the conformance target:
 
 | Dimension | Coverage |
 |---|---|
-| Pages | The sign-in screen (empty, and after a failed submit), and the shop: gallery, an open item panel, the custom estimate form (empty, with a live estimate, and with validation errors), and the order and estimate confirmations. In the admin app: all 12 tabs (New quote, Quotes, Requests, Invoices, Items, Clients, Dashboard, Filament, Electricity, Printers, Settings, and Guide) and one open detail view each for an invoice, a client, a request, and an item. |
+| Pages | The sign-in screen (empty, and after a failed submit), and the shop: gallery, an open item panel, the custom estimate form (empty, with a live estimate, and with validation errors), and the order and estimate confirmations. In the admin app: all 12 tabs (New quote, Quotes, Requests, Invoices, Items, Clients, Dashboard, Filament, Electricity, Printers, Settings, and Guide) and one open detail view each for an invoice, a client, a request, and an item (with option groups). |
 | Themes | Light and dark, by emulating the system color scheme. |
 | Viewports | Desktop (1280 by 900 px) and phone (390 by 844 px). |
 | Reflow | At 320 by 640 px (light theme), the page has no horizontal scroll (WCAG 1.4.10). |

@@ -226,7 +226,7 @@ func validateInvoiceInput(in *invoiceInput) []string {
 }
 
 // validateInvoiceLinks checks the lines that carry an itemId: the item must exist, optionName must be empty or
-// one of its options, and quantity must be a whole number 1-maxItemOrderQty (stock moves in whole units).
+// a valid option summary for its groups ("Color: Red · Size: Large"), and quantity must be a whole number 1-maxItemOrderQty (stock moves in whole units).
 // One message per problem; unlinked lines are validateInvoiceInput's business alone. A non-nil error means a
 // lookup failed; the caller should 500.
 func validateInvoiceLinks(db *sql.DB, lines []invoiceLineInput) ([]string, error) {
@@ -235,8 +235,8 @@ func validateInvoiceLinks(db *sql.DB, lines []invoiceLineInput) ([]string, error
 		if l.ItemID == "" {
 			continue
 		}
-		var optionsJSON string
-		err := db.QueryRow(`SELECT options_json FROM items WHERE id = ?`, l.ItemID).Scan(&optionsJSON)
+		var groupsJSON string
+		err := db.QueryRow(`SELECT option_groups_json FROM items WHERE id = ?`, l.ItemID).Scan(&groupsJSON)
 		if errors.Is(err, sql.ErrNoRows) {
 			problems = append(problems, fmt.Sprintf("lines[%d].itemId: unknown item", i))
 			continue
@@ -245,19 +245,12 @@ func validateInvoiceLinks(db *sql.DB, lines []invoiceLineInput) ([]string, error
 			return nil, err
 		}
 		if l.OptionName != "" {
-			var options []ItemOption
-			if err := json.Unmarshal([]byte(optionsJSON), &options); err != nil {
+			var groups []ItemOptionGroup
+			if err := json.Unmarshal([]byte(groupsJSON), &groups); err != nil {
 				return nil, err
 			}
-			found := false
-			for _, o := range options {
-				if o.Name == l.OptionName {
-					found = true
-					break
-				}
-			}
-			if !found {
-				problems = append(problems, fmt.Sprintf("lines[%d].optionName: not an option of the item", i))
+			if _, ok := optionSummaryDelta(groups, l.OptionName); !ok {
+				problems = append(problems, fmt.Sprintf("lines[%d].optionName: not a selection of the item's options", i))
 			}
 		}
 		if l.Quantity != math.Trunc(l.Quantity) || l.Quantity < 1 || l.Quantity > maxItemOrderQty {

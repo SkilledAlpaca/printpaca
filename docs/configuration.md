@@ -117,19 +117,36 @@ printpaca writes no log files; everything goes to stderr, which Docker collects.
 
 Each integration is opt-in: with its URL unset, the feature is absent from the UI.
 
-You can set each of the three URLs below from the Settings page's **Integrations** card, as an alternative to the environment variable, for operators who can edit `config.yaml` through the UI but not the container's environment. The environment variable wins when both are set. Unlike other Settings sections, a change here applies only after you **restart the container**, because proxy targets resolve once at start. The card labels each row "Configured via environment" (locked), "Configured in settings", or "Not configured".
+You can set each of the three URLs below from the Settings page's **Integrations** card, as an alternative to the environment variable, for operators who can edit `config.yaml` through the UI but not the container's environment. The environment variable wins when both are set, and the card says so on a locked row. A saved URL applies right away, with no restart: printpaca reads the URL on every request. The card labels each row "Configured via environment" (locked), "Configured in settings", or "Not configured", and lists where the integration is used, with links.
 
 ### Spoolman
 
-[Spoolman](https://github.com/Donkie/Spoolman) is a self-hosted inventory tracker for 3D-printer filament spools. Set `SPOOLMAN_URL` (or the Settings page's Spoolman field) to the base URL of your Spoolman instance (for example `http://spoolman.local:7912`) to add a spool picker to the New quote page, along with warnings when a spool is running low on remaining material. The Settings page can test a URL against Spoolman's API directly, before you save it.
+[Spoolman](https://github.com/Donkie/Spoolman) is a self-hosted inventory tracker for 3D-printer filament spools. Set `SPOOLMAN_URL` (or the Settings page's Spoolman field) to the base URL of your Spoolman instance (for example `http://spoolman.local:7912`) to turn on two features:
+
+- A spool picker on the New quote page, with warnings when a spool is running low on remaining material.
+- A **Spoolman inventory** card on the Filament tab. It lists spool ID, vendor and filament name, material, colour, remaining grams, price, location, and archived state, with a filter box, a **Show archived** toggle, and **Refresh**. An admin can add a spool for an existing Spoolman filament, set the remaining weight, edit the location and price, and archive or unarchive a spool (archiving asks first). Employees with the Filament grant can view the inventory but not change it.
+
+The Settings page can test a URL against Spoolman before you save it. A passing test reports what it found, for example "Connected. 14 active spools."; a failing test says what to check, in plain words (the URL, the port, or the network).
 
 ### Moonraker and Fluidd
 
-[Moonraker](https://github.com/Arksine/moonraker) is the API server most Klipper-based 3D printers run alongside their firmware; [Fluidd](https://github.com/fluidd-core/fluidd) is a web interface built on top of it. Set `MOONRAKER_URL` (or the Settings page's Moonraker field) to your printer's Moonraker address (for example `http://printer.local:7125`) to add a **Recent print (from Moonraker)** picker to the New quote page, which fills in a quote's weight and print time from a completed print job's actual filament use and duration, instead of you typing them in. The Settings page can test a URL against Moonraker's API directly, before you save it.
+[Moonraker](https://github.com/Arksine/moonraker) is the API server most Klipper-based 3D printers run alongside their firmware; [Fluidd](https://github.com/fluidd-core/fluidd) is a web interface built on top of it. Set `MOONRAKER_URL` (or the Settings page's Moonraker field) to your printer's Moonraker address (for example `http://printer.local:7125`) to add a **Recent print (from Moonraker)** picker to the New quote page, which fills in a quote's weight and print time from a completed print job's actual filament use and duration, instead of you typing them in. The picker shows 50 completed jobs at a time with each job's status and end time, a **Load more prints** button, and a file name filter.
+
+The Settings page can test a URL against Moonraker before you save it, for example "Connected to voron (Klipper ready). 20 recent jobs." When the test finds a printer host name that isn't already the name of one of your printers, it asks "Add printer '<name>' to your printers?". **Add printer** saves a printer with that name and the standard starting values (250 W, 400 purchase cost, 4000 hour lifespan, 1.75 mm filament), then links to the Printers tab so you can check the wattage, cost, and lifespan. **Not now** hides the question until you change the URL.
 
 Set `FLUIDD_URL` (or the Settings page's Fluidd field) to add a **Fluidd** link to the sidebar that opens your printer's Fluidd interface in a new tab. This is link-only: printpaca never sends anything to it, so there's no test button.
 
-The Spoolman and Moonraker proxies exist so the browser needs no CORS configuration against them. Both accept only `GET` and `HEAD` and enforce an exact-path allowlist: `/admin/api/spoolman/*` reaches `/api/v1/spool` only, and `/admin/api/moonraker/*` reaches `/server/history/list` and `/server/files/metadata` only, because Moonraker's API also exposes printer control and arbitrary file download. Neither grants write access to the upstream service.
+The Spoolman and Moonraker proxies exist so the browser needs no CORS configuration against them. Spoolman has no authentication of its own, so the proxy is the only gate in front of it. Each proxy enforces an exact method and path allowlist and rejects everything else before any request reaches the upstream service:
+
+| Method | Path under `/admin/api/spoolman/` | Who |
+| --- | --- | --- |
+| `GET`, `HEAD` | `api/v1/spool`, `api/v1/spool/{id}`, `api/v1/filament`, `api/v1/vendor` | Admin, or an employee with the Filament grant |
+| `POST` | `api/v1/spool` | Admin only |
+| `PATCH` | `api/v1/spool/{id}` | Admin only |
+
+`{id}` is digits only. Writes need a JSON body of at most 16 KiB with only these fields: `POST` accepts `filament_id` (required), `initial_weight`, `remaining_weight`, `price`, `location`, and `comment`; `PATCH` accepts `remaining_weight`, `price`, `location`, `archived`, and `comment`. printpaca rebuilds the body from the validated fields, so nothing else reaches Spoolman. Writes also pass the same CSRF check as every other change and are blocked in demo mode.
+
+`/admin/api/moonraker/*` accepts only `GET` and `HEAD` and reaches `/server/history/list`, `/server/files/metadata`, and `/printer/info` only, because Moonraker's API also exposes printer control and arbitrary file download. It grants no write access to Moonraker.
 
 ## Routing and hostnames
 
@@ -277,7 +294,7 @@ The Settings page edits this configuration through `GET`/`PUT /admin/api/setting
 |---|---|---|
 | `PORT` | `8080` | Main port: the front door, the shop, and the admin app under `/admin/`. See [Routing and hostnames](#routing-and-hostnames). |
 | `CONFIG_DIR` | `/config` | Directory holding `config.yaml`, `printpaca.db`, and uploads. |
-| `SPOOLMAN_URL` | unset | Base URL of a Spoolman instance, for example `http://spoolman.local:7912` (scheme required). Enables the spool picker. |
+| `SPOOLMAN_URL` | unset | Base URL of a Spoolman instance, for example `http://spoolman.local:7912` (scheme required). Enables the spool picker and the Spoolman inventory card. |
 | `MOONRAKER_URL` | unset | Base URL of a Moonraker instance, for example `http://printer.local:7125` (scheme required). Enables the recent-prints picker. |
 | `FLUIDD_URL` | unset | Link-only (never proxied): adds a Fluidd link to the sidebar, for example `http://printer.local`. |
 | `PUBLIC_PORT` | unset | Port for an optional customer-only listener (front door, shop, and public API; never the admin app). Unset means the listener doesn't start. See [Public quote page](#public-quote-page). |

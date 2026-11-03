@@ -132,11 +132,14 @@ export async function testSmtp(): Promise<SendOutcome<SmtpTestResult>> {
   return outcomeFrom<SmtpTestResult>(res);
 }
 
-/** POST /api/integrations/test's body (server/proxy.go): `detail` is always an operator-facing string,
- * whether ok ("HTTP 200 from /api/v1/spool") or not ("connection refused"). */
+/** POST /api/integrations/test's body (server/proxy.go): `detail` is always a plain sentence for the
+ * operator, what was found ("Connected. 14 active spools.") or what to check. `count` is the active spools
+ * or recent jobs found; `hostname` is the Moonraker host name when it reported one. */
 export interface IntegrationsTestResult {
   ok: boolean;
   detail: string;
+  count?: number;
+  hostname?: string;
 }
 
 /** POST /api/integrations/test (server/proxy.go's handleIntegrationsTest): probes the url currently typed

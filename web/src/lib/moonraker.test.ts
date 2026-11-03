@@ -15,6 +15,9 @@ import {
   moonrakerMetadataUrl,
   moonrakerTimeSource,
   parseCompletedJobs,
+  parseHistoryPage,
+  filterJobs,
+  HISTORY_PAGE_SIZE,
   parseMetadata,
   type MoonrakerJob,
 } from "./moonraker";
@@ -29,8 +32,8 @@ describe("path constants", () => {
     expect(MOONRAKER_METADATA_PATH).toBe("api/moonraker/server/files/metadata");
   });
 
-  it("moonrakerHistoryUrl defaults to a 20-item newest-first page", () => {
-    expect(moonrakerHistoryUrl()).toBe("api/moonraker/server/history/list?limit=20&order=desc");
+  it("moonrakerHistoryUrl defaults to a 50-item newest-first page", () => {
+    expect(moonrakerHistoryUrl()).toBe("api/moonraker/server/history/list?limit=50&order=desc");
   });
 
   it("moonrakerHistoryUrl honors a custom limit", () => {
@@ -304,5 +307,37 @@ describe("moonrakerEnabled / fluiddUrl", () => {
     expect(fluiddUrl(cfg({ fluiddUrl: "http://fluidd.local" }))).toBe("http://fluidd.local");
     expect(fluiddUrl(cfg({}))).toBe("");
     expect(fluiddUrl(null)).toBe("");
+  });
+});
+
+describe("history paging", () => {
+  it("moonrakerHistoryUrl adds the start offset only past the first page", () => {
+    expect(moonrakerHistoryUrl(50, 0)).not.toContain("start");
+    expect(moonrakerHistoryUrl(50, 50)).toBe("api/moonraker/server/history/list?limit=50&order=desc&start=50");
+    expect(HISTORY_PAGE_SIZE).toBe(50);
+  });
+
+  it("parseHistoryPage counts jobs of every status for the next offset", () => {
+    const job = (id: string, status: string) => ({ job_id: id, filename: `${id}.gcode`, status });
+    const page = parseHistoryPage({ result: { count: 120, jobs: [job("1", "completed"), job("2", "cancelled"), { bad: true }] } });
+    expect(page.jobs.map((j) => j.job_id)).toEqual(["1"]);
+    expect(page.rawCount).toBe(3);
+    expect(page.total).toBe(120);
+  });
+
+  it("parseHistoryPage tolerates a malformed body", () => {
+    for (const bad of [null, undefined, 5, "x", {}, { result: null }, { result: { jobs: "no" } }]) {
+      expect(parseHistoryPage(bad)).toEqual({ jobs: [], rawCount: 0, total: null });
+    }
+  });
+
+  it("filterJobs matches file names case-insensitively and keeps all for an empty query", () => {
+    const jobs = [
+      { job_id: "1", filename: "Benchy.gcode", status: "completed" },
+      { job_id: "2", filename: "vase_tall.gcode", status: "completed" },
+    ];
+    expect(filterJobs(jobs, "")).toHaveLength(2);
+    expect(filterJobs(jobs, "  BENCH ").map((j) => j.job_id)).toEqual(["1"]);
+    expect(filterJobs(jobs, "zzz")).toEqual([]);
   });
 });

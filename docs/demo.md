@@ -9,7 +9,7 @@ Don't use demo mode for your own deployment. It waives the admin password length
 - Read-only admin: every change is blocked with a friendly message. Sign in with the password `demo` (shown on the sign-in screen).
 - Seeded history: on first start, about six months of fake clients, quotes, invoices, payments, and requests, plus three gallery items with generated images and one item order.
 - Customer pages (front door at `/`, shop at `/order`): the real customer flow, but nothing is stored.
-- Spoolman and Moonraker pages render fake sample data.
+- Spoolman and Moonraker pages render fake sample data. The Spoolman inventory card on the Filament tab lists the sample spools but can't change them.
 - Multi-user mode with two employees, `sam` (quotes, invoices, clients, dashboard) and `riley` (items, requests, filament), both with the password `demo`.
 - The demo banner offers per-visitor display preferences (theme, currency, single-user or multi-user view). They stay in the visitor's browser.
 

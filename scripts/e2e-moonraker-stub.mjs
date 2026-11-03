@@ -2,7 +2,7 @@
 // Dependency-free Moonraker stub for e2e/moonraker.spec.ts, started as its own
 // webServer in e2e/playwright.config.ts. It serves only the two paths in
 // server/proxy.go's moonrakerAllowedPaths (/server/history/list and
-// /server/files/metadata); anything else 404s.
+// /server/files/metadata) plus /printer/info; anything else 404s.
 //
 // Three completed jobs with distinct figures, following the priority rules in
 // web/src/lib/moonraker.ts:
@@ -13,6 +13,8 @@
 //   - job-cube: no metadata filament figures, so weight falls back to the job's
 //     filament_used; print_duration is 0 (unusable), so time falls back to
 //     metadata.estimated_time.
+// Fifty-seven older "bulk_NN.gcode" jobs follow, so the history has 60 entries and the picker's second page
+// ("Load more", 50 per page) is reachable. /server/history/list honours limit and start, newest first.
 // Expected prefilled numbers are worked out in e2e/moonraker.spec.ts.
 
 import { createServer } from "node:http";
@@ -50,6 +52,19 @@ const JOBS = [
   },
 ];
 
+for (let i = 1; i <= 57; i++) {
+  JOBS.push({
+    job_id: `job-bulk-${String(i).padStart(2, "0")}`,
+    filename: `bulk_${String(i).padStart(2, "0")}.gcode`,
+    status: "completed",
+    filament_used: 1000,
+    print_duration: 600,
+    total_duration: 650,
+    end_time: 1750000000 - i * 100,
+  });
+}
+JOBS.sort((a, b) => b.end_time - a.end_time);
+
 // Keyed by filename, the same way GET /server/files/metadata?filename=...
 // looks a job's metadata up.
 const METADATA = {
@@ -85,7 +100,16 @@ const server = createServer((req, res) => {
   }
 
   if (url.pathname === "/server/history/list") {
-    sendJson(res, 200, { result: { count: JOBS.length, jobs: JOBS } });
+    const limit = Number(url.searchParams.get("limit") ?? JOBS.length);
+    const start = Number(url.searchParams.get("start") ?? 0);
+    sendJson(res, 200, { result: { count: JOBS.length, jobs: JOBS.slice(start, start + limit) } });
+    return;
+  }
+
+  if (url.pathname === "/printer/info") {
+    sendJson(res, 200, {
+      result: { hostname: "voron-e2e", state: "ready", state_message: "Printer is ready", software_version: "v0.12.0" },
+    });
     return;
   }
 

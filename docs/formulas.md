@@ -59,9 +59,11 @@ For a part with per-unit time _h_, quantity _q_, and printer power _W_:
 3. Each segment costs _W_ ÷ 1000 × segment hours × segment rate. The electricity batch cost is the sum of the segments, and the per-unit cost is the batch cost ÷ _q_.
 4. The breakdown lists the hours and cost for each named period. Periods with the same name, such as "Off-peak" in summer and winter, add together.
 
-The hours are real elapsed hours, so a daylight saving change inside the print shortens or lengthens the wall-clock span but not the number of hours billed. A wall-clock time that happens twice resolves to the first occurrence. A wall-clock time that doesn't exist (the skipped hour in spring) resolves to the instant after the gap.
+The hours are real elapsed hours, so a daylight saving change inside the print shortens or lengthens the wall-clock span but not the number of hours billed. A wall-clock time that happens twice resolves to the first occurrence. A wall-clock time that doesn't exist (the skipped hour in spring) resolves to the first instant after the gap, so 02:30 on a spring-forward day starts at 03:00.
 
 Each part has an optional print start, and the order has one that parts inherit. The start is wall-clock `YYYY-MM-DDTHH:MM` in the instance time zone. The quote saves the resolved start together with a copy of the tariff, so reopening or repricing a saved quote gives the same electricity cost even after you edit the tariff. Public quotes start at the next occurrence of `energy.schedule.defaultStartTime` at the time of the request. Spans longer than 366 days simulate the first 366 days and scale that average for the rest, which only matters for very large batches.
+
+The public quote preview and the public quote submit each compute the next default start time when the request arrives. A preview requested just before the default start time and a submit sent just after it can therefore price the same quote differently, because the submit uses the following day's start.
 
 `server/energy_schedule.go` and `web/src/lib/engine/schedule.ts` implement the same algorithm. `testdata/schedule-vectors.json` holds shared test vectors (midnight, a season boundary, daylight saving changes in both directions, a holiday, quantity above 1, and a span past 366 days) that both the Go tests and the Vitest tests read.
 

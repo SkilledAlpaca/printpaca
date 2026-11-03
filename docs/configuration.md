@@ -103,11 +103,53 @@ A few settings live on the tab they affect instead of on the Settings tab itself
 
 ![The Printers tab: machine profiles and named presets for failure rate, labor, and overhead](screenshots/printers.png)
 
-![The Electricity tab: flat-rate or time-of-use pricing for the electricity cost line](screenshots/electricity.png)
+![The Electricity tab: flat-rate, simple time-of-use, or time-of-use schedule pricing for the electricity cost line](screenshots/electricity.png)
 
 The **Data** section at the bottom has a **Download data export** button. It exports your clients, invoices, payments, quotes, requests, items, and a snapshot of your settings (including the SMTP host and username, never `SMTP_PASSWORD` or the admin password) as one JSON file. Uploaded G-code, 3MF, and STL files and item images are not included. This export is one-way: printpaca can't import it. For a restorable backup, copy the `config` directory; see [Where your data lives](getting-started.md#where-your-data-lives) and [Restoring a backup](getting-started.md#restoring-a-backup).
 
 Updates are one-way too: the database schema only grows forward, and an older binary refuses to open a newer database (`database schema version N is newer than this binary knows`). To roll back, restore a pre-update backup; see [Updating printpaca](getting-started.md#updating-printpaca).
+
+### Time-of-use schedule
+
+The Electricity tab's **Mode** list offers three choices: **Flat rate**, **Time-of-use (simple)**, and **Time-of-use schedule**. The simple mode blends a peak and an off-peak rate by an off-peak share that you estimate. The schedule mode prices each print by the hours it runs, so the print start changes the cost. See [Time-of-use schedule in formulas.md](formulas.md#time-of-use-schedule) for the math.
+
+In schedule mode you edit the tariff on the Electricity tab (or Settings):
+
+- **Default print start** is a 24-hour `HH:MM` time. New orders and public quotes start at the next time that clock time comes round.
+- **Holidays** are dates written `YYYY-MM-DD`, one per line, up to 100. A holiday uses the weekend schedule.
+- **Seasons** (up to 6) each have a name and the months they cover. Every month from 1 to 12 must belong to exactly one season.
+- Each season has a **Weekday** and a **Weekend and holidays** schedule. Each has a base period name and rate, and up to 8 windows with a name, a start, an end (`24:00` is allowed), and a rate. Windows in one schedule can't overlap, and a start must be before its end. Hours outside every window use the base rate.
+
+Times are wall-clock times in the [time zone](#time-zone) from Settings.
+
+**Load SCE TOU-D-4-9PM example** fills in the structure of Southern California Edison's TOU-D-4-9PM plan: a summer season (June to September) and a winter season (October to May), each with weekday and weekend hours, an on-peak window from 4 to 9 pm, and a winter super off-peak window from 8 am to 4 pm. The rates it loads are examples, not SCE's published rates, which change. Check every rate against your own bill. If you already have a schedule, printpaca asks you to confirm before it replaces it. The structure comes from [SCE's time-of-use plans page](https://www.sce.com/save-money/rates-financing/residential-rate-plans/time-of-use-plans).
+
+On **New quote**, the **Print start (order)** field defaults to the next default print start. Each part has an optional **Print start (this part)** field. The quote saves the starts you used, so a reopened quote prices the same. On the **Electricity** tab, the calculator takes a start, a duration, and the printer power, and shows how the hours split across periods.
+
+The same keys in `config.yaml`:
+
+```yaml
+energy:
+  mode: schedule
+  schedule:
+    defaultStartTime: "22:00"
+    holidays: ["2026-12-25"]
+    seasons:
+      - name: Summer
+        months: [6, 7, 8, 9]
+        weekday:
+          baseName: Off-peak
+          baseRate: 0.33
+          windows:
+            - { name: On-peak, start: "16:00", end: "21:00", rate: 0.55 }
+        weekend:
+          baseName: Off-peak
+          baseRate: 0.33
+          windows:
+            - { name: Mid-peak, start: "16:00", end: "21:00", rate: 0.44 }
+```
+
+printpaca rejects a schedule with a month in no season or in two seasons, overlapping windows, a start that isn't before its end, a time that isn't `HH:MM`, a negative rate, or more than 6 seasons, 8 windows per schedule, or 100 holidays. In `flat` and `tou` mode the schedule isn't used, and an empty one is accepted.
 
 ### Diagnostics
 
@@ -267,7 +309,7 @@ printpaca merges `config.yaml` over the built-in defaults:
 - **Arrays** (`materials`, `printers`, `hardware`, `invoicing.paymentMethods`, `ui.disabledTabs`) replace the default list wholesale. If you set one, list every entry you want. `paymentMethods` is the usual trap: setting it drops the four built-in methods (cash, bank transfer, PayPal, other), and validation then requires 1-20 entries.
 - A `config.yaml` with more than one YAML document (a second `---`) is rejected at startup.
 
-At startup the server validates the merged configuration and, on a problem, exits with a path-level error such as `defaults.material: "abs" not in materials`. These numeric fields have hard range checks that crash-loop the container when violated: `currency.decimals` (0-4), `pricing.marginPct` (0-99.9), `pricing.markupMultiplier` (0-1000), material `density` (> 0) and `wastePct` (0-100), printer `filamentDiameterMm` (> 0), `defaults.quantity` (>= 1), `invoicing.salesTaxPct` (0-30), `invoicing.dueDays` (0-365), hardware `unitCost` (>= 0), and `smtp.port` (1-65535, checked only when `smtp.host` is set). [`config.schema.json`](../config/config.schema.json) lists the complete set. Other rate-like values, such as a negative energy or labor rate, are accepted at startup; the calculator shows a field warning on the affected line. `defaults.failureRatePct` and each preset `failureRatePct` also have a hard range check (0-90).
+At startup the server validates the merged configuration and, on a problem, exits with a path-level error such as `defaults.material: "abs" not in materials`. These numeric fields have hard range checks that crash-loop the container when violated: `currency.decimals` (0-4), `pricing.marginPct` (0-99.9), `pricing.markupMultiplier` (0-1000), material `density` (> 0) and `wastePct` (0-100), printer `filamentDiameterMm` (> 0), `defaults.quantity` (>= 1), `invoicing.salesTaxPct` (0-30), `invoicing.dueDays` (0-365), hardware `unitCost` (>= 0), and `smtp.port` (1-65535, checked only when `smtp.host` is set). [`config.schema.json`](../config/config.schema.json) lists the complete set. A schedule that breaks the rules in [Time-of-use schedule](#time-of-use-schedule) also fails at startup. Other rate-like values, such as a negative flat energy rate or labor rate, are accepted at startup; the calculator shows a field warning on the affected line. `defaults.failureRatePct` and each preset `failureRatePct` also have a hard range check (0-90).
 
 The Settings page edits this configuration through `GET`/`PUT /admin/api/settings` with the same validation. A save writes `config.yaml` as sparse overrides, keeps the previous file as `config.yaml.bak`, drops comments, and applies immediately with no restart.
 

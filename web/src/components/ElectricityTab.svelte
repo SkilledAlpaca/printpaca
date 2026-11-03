@@ -105,11 +105,11 @@
       <LabeledNumber label="Printer power" suffix="W" bind:value={watts} warn={warnFor(warnings, "watts")} />
       <LabeledNumber label="Print time" suffix="h" bind:value={hours} warn={warnFor(warnings, "hours")} />
       {#if scheduleMode}
-        <label class="field">
-          <span>Print start</span>
-          <input type="datetime-local" bind:value={start} aria-describedby="elec-start-help" aria-invalid={scheduleProblem !== ""} />
+        <div class="field">
+          <label for="elec-start">Print start</label>
+          <input id="elec-start" type="datetime-local" bind:value={start} aria-describedby="elec-start-help" aria-invalid={scheduleProblem !== ""} />
           <small id="elec-start-help" class="field-hint">Your {zone} time. Starts at the next {cfg.energy.schedule.defaultStartTime} until you change it.</small>
-        </label>
+        </div>
       {:else if cfg.energy.mode === "tou"}
         <LabeledNumber label="Peak rate" suffix="per kWh" step={0.01} bind:value={peakRate} warn={warnFor(warnings, "peakRate")} onchanged={() => (rateOverridden = true)} />
         <LabeledNumber label="Off-peak rate" suffix="per kWh" step={0.01} bind:value={offPeakRate} warn={warnFor(warnings, "offPeakRate")} onchanged={() => (rateOverridden = true)} />

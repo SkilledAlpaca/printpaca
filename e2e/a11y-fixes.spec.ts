@@ -228,3 +228,69 @@ test.describe("public forms", () => {
     await expect(page.getByLabel("Email")).toHaveValue("");
   });
 });
+
+test.describe("confirm before irreversible actions (3.3.4)", () => {
+  test("a quote status change asks first, Cancel returns focus, and confirming applies it", async ({ page, request }) => {
+    const label = `${PREFIX}-confirm-quote`;
+    const res = await request.post("/admin/api/quotes", { data: seedQuoteBody(label) });
+    expect(res.ok(), await res.text()).toBe(true);
+    try {
+      await page.goto("/admin/#/quotes");
+      const row = page.locator("table tbody tr", { hasText: label });
+      const trigger = row.getByRole("button", { name: "Mark sent", exact: true });
+      await trigger.click();
+      const confirm = page.getByRole("button", { name: `Mark "${label}" as sent?` });
+      await expect(confirm).toBeFocused();
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(trigger).toBeFocused();
+      await expect(confirm).toHaveCount(0);
+      await trigger.click();
+      await page.getByRole("button", { name: `Mark "${label}" as sent?` }).click();
+      await expect(page.getByText(`"${label}" marked sent.`)).toBeVisible();
+    } finally {
+      await deleteQuotesLabeled(request, label);
+    }
+  });
+
+  test("Email to client on an invoice asks first and sends one request after confirming", async ({ page, request }) => {
+    const client = await request.post("/admin/api/clients", {
+      data: { name: `${PREFIX} Mail Client`, email: "mail@example.com", phone: "", billingAddress: "", shippingAddress: "", notes: "" },
+    });
+    expect(client.ok(), await client.text()).toBe(true);
+    const clientId = (await client.json()).id as string;
+    const created = await request.post("/admin/api/invoices", {
+      data: { clientId, clientName: `${PREFIX} Mail Client`, lines: [{ description: "Bracket", quantity: 1, unitPriceCents: 1000 }] },
+    });
+    expect(created.ok(), await created.text()).toBe(true);
+    const inv = (await created.json()) as { id: string; number: string };
+    let sends = 0;
+    await page.route(/\/api\/config(\?.*)?$/, async (route) => {
+      const res = await route.fetch();
+      const cfg = await res.json();
+      cfg.smtp = { ...cfg.smtp, host: "smtp.example.test" };
+      await route.fulfill({ response: res, json: cfg });
+    });
+    await page.route(/\/api\/invoices\/[^/]+\/send$/, async (route) => {
+      sends += 1;
+      await route.fulfill({ status: 502, json: { errors: ["stub: not sent"] } });
+    });
+    try {
+      await page.goto("/admin/#/invoices");
+      await page.locator(".plain-list li, table tbody tr", { hasText: inv.number }).first().getByRole("button").first().click();
+      const trigger = page.getByRole("button", { name: "Email to client", exact: true });
+      await trigger.click();
+      const confirm = page.getByRole("button", { name: new RegExp(`^Send ${inv.number} to `) });
+      await expect(confirm).toBeFocused();
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(trigger).toBeFocused();
+      expect(sends).toBe(0);
+      await trigger.click();
+      await confirm.click();
+      await expect(page.getByText("stub: not sent")).toBeVisible();
+      expect(sends).toBe(1);
+    } finally {
+      await request.delete(`/admin/api/invoices/${inv.id}`);
+      await request.delete(`/admin/api/clients/${clientId}`);
+    }
+  });
+});

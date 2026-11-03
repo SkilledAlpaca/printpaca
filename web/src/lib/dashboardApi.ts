@@ -21,6 +21,32 @@ export interface Dashboard {
   quotesInvoicedSharePct: number | null;
   /** Mean achieved margin percent over every invoiced quote, any month; null when there are none. */
   quotesAvgMarginPct: number | null;
+  /** The "Needs attention" rows (server/dashboard.go): up to 10 per kind, requests only for callers who may
+   * open Requests and invoices only for those who may open Invoices. */
+  needsAttention: AttentionItem[];
+  attentionCounts: AttentionCounts;
+}
+
+export type AttentionKind = "new-request" | "print-time-request" | "overdue-invoice" | "draft-invoice";
+
+/** One "Needs attention" row. name is the requester or client; number is the invoice number (invoices only);
+ * amountCents is the request price or the invoice balance (overdue) or total (draft); date is the due date
+ * (overdue), the creation date (draft) or the submission time (requests). */
+export interface AttentionItem {
+  kind: AttentionKind;
+  id: string;
+  name: string;
+  number: string;
+  amountCents: number;
+  date: string;
+}
+
+/** The full count behind each kind, for "and N more". */
+export interface AttentionCounts {
+  newRequests: number;
+  printTimeRequests: number;
+  overdueInvoices: number;
+  draftInvoices: number;
 }
 
 /** A network failure returns null so the page can show an offline note. */
@@ -89,7 +115,7 @@ export function optionsLine(options: TopItemOption[]): string {
   return options.map((o) => `${o.name} ${o.units}`).join(" · ");
 }
 
-/** The muted gallery/in-person split: "9 gallery · 5 in person". */
+/** The muted shop-order/in-person split: "9 shop orders · 5 in person". */
 export function sourceSplit(galleryUnits: number, inPersonUnits: number): string {
-  return `${galleryUnits} gallery · ${inPersonUnits} in person`;
+  return `${galleryUnits} shop orders · ${inPersonUnits} in person`;
 }

@@ -13,7 +13,7 @@ describe("optionsLine", () => {
 
 describe("sourceSplit", () => {
   it("names both sources", () => {
-    expect(sourceSplit(9, 5)).toBe("9 gallery · 5 in person");
+    expect(sourceSplit(9, 5)).toBe("9 shop orders · 5 in person");
   });
 });
 

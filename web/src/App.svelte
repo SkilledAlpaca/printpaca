@@ -26,6 +26,10 @@
   import { DEFAULT_FETCH_TIMEOUT_MS } from "./lib/fetchTimeouts";
   import { fluiddUrl } from "./lib/moonraker";
   import { extractConfigUser, hasTabAccess, ungrantedTabs } from "./lib/permissions";
+  import { hasShopActivity } from "./lib/landing";
+  import { listQuotes } from "./lib/quotesApi";
+  import { loadRequests } from "./lib/requestsApi";
+  import { listInvoices } from "./lib/invoicesApi";
   import { signOutAction } from "./lib/accessSignIn";
   import { applyConfig, appConfig, effectiveConfig, printJob, invoicePrintJob, quoteActions, pendingOpen } from "./lib/state.svelte";
   import {
@@ -164,7 +168,11 @@
   // "quote". `initialTab` is a plain local so persisting it doesn't trip Svelte's "state referenced locally"
   // warning.
   const hashTab = tabFromHash(location.hash);
-  const initialTab: Tab = hashTab ?? tabFromStorage() ?? "quote";
+  const storedTab = tabFromStorage();
+  const initialTab: Tab = hashTab ?? storedTab ?? "quote";
+  // No hash and no remembered tab: the default landing, which becomes the Dashboard once the shop has any
+  // quote, request, or invoice (see the landing effect below).
+  let landedByDefault = hashTab === null && storedTab === null;
   let tab = $state<Tab>(initialTab);
   // True when `tab` came from an explicit, valid hash (deep link, typed URL, bookmark) rather than
   // localStorage or the "quote" default. The permission fallback below redirects an ungranted default landing
@@ -524,6 +532,26 @@
     tab = granted;
     persistTab(granted);
     history.replaceState(null, "", TABS[granted].hash);
+  });
+
+  // Decision 7: the default landing is the Dashboard once any quote, request, or invoice exists; only a fresh
+  // install lands on New quote. Runs once, after config loads, and only for the default landing (an explicit
+  // link or a remembered tab always wins). A list the user can't open answers 403, which counts as 0. It
+  // gives way to anything the user did meanwhile: another tab, or edits already started.
+  $effect(() => {
+    if (!config || !landedByDefault) return;
+    landedByDefault = false;
+    if (tab !== "quote" || disabledTabs.has("dashboard") || !hasTabAccess("dashboard", configUser)) return;
+    void (async () => {
+      const page = { limit: 1, offset: 0 };
+      const [quotes, requests, invoices] = await Promise.all([listQuotes(page), loadRequests(page), listInvoices(page)]);
+      const activity = { quotes: quotes?.total ?? 0, requests: requests?.total ?? 0, invoices: invoices?.total ?? 0 };
+      if (!hasShopActivity(activity)) return;
+      if (tab !== "quote" || tabExplicit || settingsDirty.current || unsavedForm.current) return;
+      tab = "dashboard";
+      persistTab("dashboard");
+      history.replaceState(null, "", TABS.dashboard.hash);
+    })();
   });
 
   const spoolmanEnabled = $derived(appConfig.current?.integrations.spoolman === true);

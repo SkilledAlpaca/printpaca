@@ -791,8 +791,10 @@
   .group-head { display: flex; align-items: end; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
   .group-head .field { flex: 1 1 140px; min-width: 120px; }
   .option-row { display: flex; align-items: end; gap: 0.5rem; margin-bottom: 0.4rem; flex-wrap: wrap; }
-  .option-row .field { flex: 1 1 100px; min-width: 90px; }
-  .option-photo { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; flex: 1 1 14rem; min-width: 0; }
+  .option-row .field { flex: 1 1 100px; min-width: 0; }
+  .option-row > *, .group-head > * { min-width: 0; max-width: 100%; }
+  .option-photo { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; flex: 1 1 100%; }
+  .option-photo .file-label { display: block; min-width: 0; max-width: 100%; }
   .option-photo input[type="file"] { max-width: 100%; }
   .option-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: var(--radius); background: var(--surface-2); }
 

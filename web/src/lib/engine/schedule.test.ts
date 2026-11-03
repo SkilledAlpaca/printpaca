@@ -71,8 +71,9 @@ describe("the SCE example", () => {
 describe("time zone helpers", () => {
   it("resolves DST edges deterministically", () => {
     const tz = "America/Los_Angeles";
-    // 2026-03-08 02:30 does not exist; it lands after the gap (offset before the change).
-    expect(wallFromInstant(tz, wallToInstant(tz, 2026, 3, 8, 150))).toBe("2026-03-08T03:30");
+    // 2026-03-08 02:30 does not exist; it clamps to the first instant after the gap.
+    expect(wallFromInstant(tz, wallToInstant(tz, 2026, 3, 8, 150))).toBe("2026-03-08T03:00");
+    expect(wallToInstant(tz, 2026, 3, 8, 150)).toBe(Date.UTC(2026, 2, 8, 10, 0));
     // 2026-11-01 01:30 happens twice; the earlier (PDT) instant wins.
     expect(wallToInstant(tz, 2026, 11, 1, 90)).toBe(Date.UTC(2026, 10, 1, 8, 30));
   });

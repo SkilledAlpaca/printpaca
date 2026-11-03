@@ -376,3 +376,18 @@ func TestConfigScheduleMode(t *testing.T) {
 		t.Errorf("sce example should validate: %v", p)
 	}
 }
+
+// A wall time inside the spring-forward gap clamps to the first instant after it, like the TypeScript engine.
+func TestWallToInstantClampsSpringForwardGap(t *testing.T) {
+	loc, err := loadTimezone("America/Los_Angeles")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := float64(time.Date(2026, 3, 8, 10, 0, 0, 0, time.UTC).UnixMilli())
+	if got := wallToInstant(loc, 2026, 3, 8, 150); got != want {
+		t.Errorf("wallToInstant(02:30) = %v, want %v (03:00 PDT)", got, want)
+	}
+	if got := wallToInstant(loc, 2026, 3, 8, 120); got != want {
+		t.Errorf("wallToInstant(02:00) = %v, want %v (03:00 PDT)", got, want)
+	}
+}

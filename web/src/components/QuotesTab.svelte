@@ -321,6 +321,35 @@
     }
   }
 
+  // Two-step confirm (WCAG 3.3.4) before the row actions that can't be taken back: every status transition (the
+  // row offers no way back to an earlier status) and emailing a quote to its client. `restore` is the focus key
+  // of the control that asked, so focus returns there on Cancel or Escape.
+  let actionConfirm = $state<{ id: string; kind: QuoteStatus | "email"; restore: string } | null>(null);
+  function askAction(q: SavedQuote, kind: QuoteStatus | "email", restore: string) {
+    closeMenu();
+    confirmingId = null;
+    convertFor = null;
+    emailEntryFor = null;
+    actionConfirm = { id: q.id, kind, restore };
+    // The row's trigger is still mounted (the confirm is a separate row), so confirmFocus takes focus from it.
+  }
+  function cancelAction() {
+    const c = actionConfirm;
+    actionConfirm = null;
+    if (c) void focusAfterUpdate(keySelector(c.restore));
+  }
+  function runAction(q: SavedQuote) {
+    const c = actionConfirm;
+    actionConfirm = null;
+    if (!c || emailingId !== null) return;
+    if (c.kind === "email") void emailQuote(q);
+    else void markStatus(q, c.kind);
+  }
+  function actionConfirmText(q: SavedQuote, c: { kind: QuoteStatus | "email" }): string {
+    if (c.kind === "email") return `Send "${q.label}" to ${clientEmailFor(q, clients) ?? "the client"}?`;
+    return `Mark "${q.label}" as ${c.kind}?`;
+  }
+
   let emailingId = $state<string | null>(null);
 
   // Inline email entry for a quote with no deliverable address: the asked row, its draft address and error.
@@ -332,6 +361,7 @@
     closeMenu();
     confirmingId = null;
     convertFor = null;
+    actionConfirm = null;
     emailEntryFor = q.id;
     emailDraft = "";
     emailEntryError = "";
@@ -478,6 +508,7 @@
     confirmingId = null;
     closeMenu();
     emailEntryFor = null;
+    actionConfirm = null;
     convertFor = q.id;
     clientChoice = "";
     convertOrder = null;
@@ -831,8 +862,8 @@
                       <button
                         type="button"
                         class="quiet"
-                        onclick={() => markStatus(q, primaryT)}
-                        title={TRANSITION_HINTS[primaryT]}
+                        data-focus-key={`transition-${q.id}`}
+                        onclick={() => askAction(q, primaryT, `transition-${q.id}`)}
                       >{TRANSITION_LABELS[primaryT]}</button>
                     {/if}
                     {#if q.invoicedAs}
@@ -879,8 +910,7 @@
                               <button
                                 type="button"
                                 class="quiet menu-item"
-                                onclick={() => markStatus(q, t)}
-                                title={TRANSITION_HINTS[t]}
+                                onclick={() => askAction(q, t, `menu-toggle-${q.id}`)}
                               >{TRANSITION_LABELS[t]}</button>
                             {/each}
                             {#if needsEmailEntry(emailReason)}
@@ -896,14 +926,13 @@
                                 class="quiet menu-item"
                                 disabled
                                 aria-label={`Email quote "${q.label}" to client (unavailable)`}
-                                title={emailReason === "unconfigured" ? "Email isn't configured. See the notice above the table." : undefined}
                                 aria-describedby={emailReason === "unconfigured" ? undefined : `email-reason-${q.id}`}
                               >Email quote</button>
                             {:else}
                               <button
                                 type="button"
                                 class="quiet menu-item"
-                                onclick={() => { if (emailingId === null) emailQuote(q); }}
+                                onclick={() => { if (emailingId === null) askAction(q, "email", `menu-toggle-${q.id}`); }}
                                 aria-label={`Email quote "${q.label}" to client`}
                                 aria-disabled={emailingId === q.id}
                               >
@@ -939,6 +968,19 @@
                   </div>
                 </td>
               </tr>
+              {#if actionConfirm?.id === q.id}
+                <tr class="convert-tr">
+                  <td colspan="6">
+                    <div class="convert-row" role="group" aria-label="Confirm action">
+                      <button type="button" class="primary" onclick={() => runAction(q)} use:confirmFocus={{ restore: keySelector(actionConfirm.restore), cancel: cancelAction }}>{actionConfirmText(q, actionConfirm)}</button>
+                      <button type="button" onclick={cancelAction}>Cancel</button>
+                      {#if actionConfirm.kind !== "email" && TRANSITION_HINTS[actionConfirm.kind]}
+                        <span class="convert-note-plain">{TRANSITION_HINTS[actionConfirm.kind]}</span>
+                      {/if}
+                    </div>
+                  </td>
+                </tr>
+              {/if}
               {#if emailEntryFor === q.id}
                 <tr class="convert-tr">
                   <td colspan="6">

@@ -97,7 +97,11 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET") return sendJson(res, 200, spool);
     if (req.method === "PATCH") {
       try {
-        Object.assign(spool, await readJson(req));
+        // Like Spoolman, a null clears an optional field and the response leaves a cleared field out.
+        for (const [key, value] of Object.entries(await readJson(req))) {
+          if (value === null) delete spool[key];
+          else spool[key] = value;
+        }
         return sendJson(res, 200, spool);
       } catch {
         return sendJson(res, 400, { message: "bad body" });

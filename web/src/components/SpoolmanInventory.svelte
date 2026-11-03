@@ -258,8 +258,8 @@
     await closeEditor(`spool-${id}-archive`);
   }
 
-  function money(n: number | undefined): string {
-    return n === undefined ? "-" : `${cfg.currency.symbol}${n.toFixed(2)}`;
+  function money(n: number | null | undefined): string {
+    return n == null ? "-" : `${cfg.currency.symbol}${n.toFixed(2)}`;
   }
 </script>
 

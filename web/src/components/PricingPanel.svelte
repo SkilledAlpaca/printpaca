@@ -1,6 +1,10 @@
 <script lang="ts">
   import type { EffectiveConfig, OrderBreakdown } from "../lib/engine/index";
-  import { quote, type PartForm } from "../lib/state.svelte";
+  import { tick } from "svelte";
+  import { quote, partLabel, setActivePart, type PartForm } from "../lib/state.svelte";
+  import { quoteBlockers, type QuoteBlocker } from "../lib/quoteBlockers";
+  import { findFieldByLabel } from "../lib/fieldErrors";
+  import { noteSaveAttempt } from "../lib/saveAttempt.svelte";
   import { money, warnFor, friendlyMessage } from "../lib/format";
   import { otherPricingWarnings, partPricingWarning } from "../lib/orderView";
   import LabeledNumber from "./LabeledNumber.svelte";
@@ -34,10 +38,32 @@
   // Per-part prices come from OrderBreakdown.parts[i] (per unit) and item revenue from
   // OrderBreakdown.itemRevenue; pricing.recommendedPrice/resolvedPrice are per-unit with one part but order
   // totals with 2+, so they are never read here.
+  // What blocks pricing, by name. Each entry links to its input; "add" is for blank fields, "fix" for values
+  // the server rejected. Empty only when nothing specific is known, which is when the generic line shows.
+  const blockers = $derived(quoteBlockers(order, quote.parts.map((x, i) => partLabel(x, i))));
+  const missingBlockers = $derived(blockers.filter((b) => b.missing));
+  const invalidBlockers = $derived(blockers.filter((b) => !b.missing));
+
+  // Switches to the blocker's part, reveals its field errors, and focuses the input once the part's cards
+  // have rendered. The href is only for semantics: following it would rewrite location.hash, the tab router.
+  async function goToBlocker(e: MouseEvent, b: QuoteBlocker) {
+    e.preventDefault();
+    const target = b.partIndex === null ? undefined : quote.parts[b.partIndex];
+    if (target) setActivePart(target.id);
+    noteSaveAttempt();
+    await tick();
+    await tick();
+    findFieldByLabel(b.inputLabel)?.focus();
+  }
+
   const first = $derived(order.parts[0]);
   const overridden = $derived(order.parts.some((x) => x.resolvedPrice !== x.recommendedPrice));
   const recommendedItems = $derived(order.parts.reduce((sum, x) => sum + x.recommendedPrice * x.breakdown.quantity, 0));
 </script>
+
+{#snippet blockerLinks(list: QuoteBlocker[])}
+  {#each list as b, i (b.key)}{#if i > 0}, {/if}<a href="#main" onclick={(e) => goToBlocker(e, b)}>{b.label}</a>{/each}
+{/snippet}
 
 <div class="card" id="pricing-card">
   <div class="head-row with-help">
@@ -98,7 +124,18 @@
     </p>
 
     {#if !p.valid}
-      <p class="warn-text">Pricing is incomplete. Fix the flagged fields above.</p>
+      {#if blockers.length === 0}
+        <p class="warn-text">Pricing is incomplete. Fix the flagged fields above.</p>
+      {:else}
+        <div class="blockers warn-text">
+          {#if missingBlockers.length > 0}
+            <p>To price this quote, add: {@render blockerLinks(missingBlockers)}.</p>
+          {/if}
+          {#if invalidBlockers.length > 0}
+            <p>{missingBlockers.length > 0 ? "Also fix" : "To price this quote, fix"}: {@render blockerLinks(invalidBlockers)}.</p>
+          {/if}
+        </div>
+      {/if}
     {/if}
     <dl class="pricing-out measure-cap" class:invalid={!p.valid}>
       {#if multi}
@@ -130,6 +167,8 @@
 <style>
   .pricing-warnings { margin-top: 0.6rem; }
   .pricing-warnings .warn-text { margin: 0.2rem 0; }
+  .blockers { margin-top: 0.6rem; }
+  .blockers p { margin: 0.2rem 0; }
   .pricing-basis { margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--muted); }
   .pricing-out { margin: 0.8rem 0 0; }
   .pricing-out div { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0; border-top: 1px solid var(--border); }

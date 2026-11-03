@@ -8,6 +8,7 @@
   import { consumePendingOpen, quoteActions, quoteClient, quoteMeta, quote, toOrderInputs, toFormState, restoreFormState, reconcileWithConfig, engineOptions } from "../lib/state.svelte";
   import type { FormState } from "../lib/state.svelte";
   import { costValid, orderCostHint } from "../lib/orderView";
+  import { noteSaveAttempt } from "../lib/saveAttempt.svelte";
   import { partLabel } from "../lib/state.svelte";
   import { formatSavedAt } from "../lib/quoteRow";
   import { listClients, createClient, type Client } from "../lib/clientsApi";
@@ -324,6 +325,9 @@
    * Used by handleLabelKeydown and registered on quoteActions so App's global Ctrl+S triggers it from
    * anywhere on the quote tab. */
   function primaryAction(): void {
+    // A save attempt on an incomplete quote reveals the Quote tab's quiet required-field errors; the row's
+    // buttons are natively disabled then, so Ctrl+S is the way to "try".
+    if (!saving && !loading && !pricingPending && !costValid(order)) noteSaveAttempt();
     if (saveRowDisabled()) return;
     if (loadedId) void update();
     else void save();

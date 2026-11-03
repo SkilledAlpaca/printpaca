@@ -78,3 +78,40 @@ test("stepping Solidity never moves the field", async ({ page }) => {
   await expect(page.getByText("Updating price…")).toBeHidden();
   expect((await solidity.boundingBox())!.y).toBe(y0);
 });
+
+test("a geometry-only 3MF explains the missing print time and the pricing panel links to it", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/admin/");
+  await navButton(page, "New quote").click();
+  await page.locator('input[type="file"]').first().setInputFiles({ name: "cube.3mf", mimeType: "model/3mf", buffer: geometryOnly3mf() });
+  await expect(page.getByLabel("Solidity")).toBeVisible();
+
+  const hours = page.getByLabel("Print time (hours)");
+  const minutes = page.getByLabel("Print time (minutes)");
+  const note = page.getByText("This file has no slicer time. Enter the print time from your slicer.");
+  await expect(note).toBeVisible();
+  await expect(hours).toHaveAttribute("aria-describedby", /print-time-note/);
+  await expect(minutes).toHaveAttribute("aria-describedby", /print-time-note/);
+  // Quiet until the user leaves the fields.
+  await expect(hours).not.toHaveAttribute("aria-invalid", "true");
+
+  await hours.focus();
+  await minutes.focus(); // moving between the halves is not leaving
+  await expect(minutes).not.toHaveAttribute("aria-invalid", "true");
+  await page.getByLabel("Quantity").focus();
+  await expect(hours).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText("Enter the print time.")).toBeVisible();
+
+  // The pricing panel names the blocker, and the link focuses the field.
+  await page.getByLabel("Set a selling price").check();
+  const link = page.getByRole("link", { name: "Print time" });
+  await expect(page.getByText(/To price this quote, add:/)).toBeVisible();
+  await expect(page.getByText("Pricing is incomplete")).toHaveCount(0);
+  await link.click();
+  await expect(hours).toBeFocused();
+
+  // Entering a time clears the note and the blocker.
+  await hours.fill("2");
+  await expect(note).toHaveCount(0);
+  await expect(page.getByText(/To price this quote, add:/)).toHaveCount(0);
+});

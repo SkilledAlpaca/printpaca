@@ -17,6 +17,8 @@
   import SpoolPicker from "./SpoolPicker.svelte";
   import RecentPrints from "./RecentPrints.svelte";
   import { moonrakerEnabled } from "../lib/moonraker";
+  import { prefillFor } from "../lib/prefill.svelte";
+  import { saveAttempt } from "../lib/saveAttempt.svelte";
   import QuoteSummaryBar from "./QuoteSummaryBar.svelte";
   import CardHelp from "./CardHelp.svelte";
   import { helpState, setAllHelp } from "../lib/help.svelte";
@@ -170,13 +172,26 @@
   const hoursWarn = $derived(warnFor(w, "timeHours"));
   const minutesWarn = $derived(warnFor(w, "timeMinutes"));
   const timeWarn = $derived(hoursWarn || minutesWarn);
-  let timeTouched = $state(false);
+  let timeTouchedByUser = $state(false);
+  // Errors stay quiet until the user leaves the field, or asks to save, or jumps here from the pricing panel's
+  // list of what is missing (all three bump saveAttempt).
+  const timeTouched = $derived(timeTouchedByUser || saveAttempt.count > 0);
   function markTimeTouched() {
-    timeTouched = true;
+    timeTouchedByUser = true;
   }
   function timeBlur(value: number | null) {
-    if (value !== null) timeTouched = true;
+    if (value !== null) timeTouchedByUser = true;
   }
+  // A geometry-only STL/3MF estimate fills the weight but has no slicer time. While both halves are blank the
+  // note says so, and leaving the pair (not just tabbing between the halves) counts as touched.
+  const noSlicerTime = $derived(prefillFor(part)?.source === "model" && part.timeHours === null && part.timeMinutes === null);
+  function timeGroupFocusOut(e: FocusEvent) {
+    if (!noSlicerTime) return;
+    const next = e.relatedTarget;
+    if (next instanceof Node && e.currentTarget instanceof Node && e.currentTarget.contains(next)) return;
+    timeTouchedByUser = true;
+  }
+  const timeDescribedBy = $derived([noSlicerTime ? "print-time-note" : "", timeWarn !== "" && timeTouched ? "print-time-warn" : ""].filter(Boolean).join(" ") || undefined);
 
   // Costs card: collapsed shop rates
   const COSTS_OPEN_KEY = "printpaca-costs-open";
@@ -314,7 +329,7 @@
         <LabeledNumber label="Model weight" suffix="g" bind:value={part.weightG} warn={warnFor(w, "weightG")} help="The weight of the model from your slicer, without supports or waste." />
         <div class="field">
           <label for={timeHoursId}>Print time</label>
-          <div class="time-pair" role="group" aria-label="Print time">
+          <div class="time-pair" role="group" aria-label="Print time" onfocusout={timeGroupFocusOut}>
             <span class="time-input">
               <input
                 id={timeHoursId}
@@ -326,7 +341,7 @@
                 oninput={markTimeTouched}
                 onblur={() => timeBlur(part.timeHours)}
                 aria-invalid={hoursWarn !== "" && timeTouched}
-                aria-describedby={timeWarn !== "" && timeTouched ? "print-time-warn" : undefined}
+                aria-describedby={timeDescribedBy}
               />
               <span class="suffix">h</span>
             </span>
@@ -341,11 +356,12 @@
                 oninput={markTimeTouched}
                 onblur={() => timeBlur(part.timeMinutes)}
                 aria-invalid={minutesWarn !== "" && timeTouched}
-                aria-describedby={timeWarn !== "" && timeTouched ? "print-time-warn" : undefined}
+                aria-describedby={timeDescribedBy}
               />
               <span class="suffix">min</span>
             </span>
           </div>
+          {#if noSlicerTime}<small id="print-time-note" class="field-hint">This file has no slicer time. Enter the print time from your slicer.</small>{/if}
           {#if timeWarn !== "" && timeTouched}<small id="print-time-warn" class="warn-text">{timeWarn}</small>{/if}
         </div>
         <LabeledNumber label="Quantity" suffix="units" bind:value={part.quantity} min={1} step={1} warn={warnFor(w, "quantity")} help="How many copies you are printing. Costs are shown per unit and as an order total." />

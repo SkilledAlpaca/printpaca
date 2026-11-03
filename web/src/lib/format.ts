@@ -142,6 +142,8 @@ export function friendlyMessage(w: FieldWarning): string {
   const lower = label.charAt(0).toLowerCase() + label.slice(1);
   switch (w.code) {
     case "required":
+      // A blank print time is one thing to the user, whichever half the warning names.
+      if (w.field === "timeHours" || w.field === "timeMinutes") return "Enter the print time.";
       return `${label} is required.`;
     case "nan":
       return `Enter a valid ${lower}.`;

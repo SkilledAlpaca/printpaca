@@ -47,13 +47,27 @@ export interface Item {
   /** Who created/last wrote this item (server/items.go). "" when unattributed. */
   createdBy: string;
   updatedBy: string;
+  /** Counts every write to the item (server/items.go's Item.Version). Send it back on a PUT so a save from a
+   * stale form is rejected (ConflictError) instead of silently overwriting a newer write. */
+  version?: number;
 }
 
 /** The POST/PUT body: every client-writable field. id, imageFile, timestamps and attribution are
  * server-assigned (imageFile is owned by uploadItemImage). */
-export type ItemInput = Omit<Item, "id" | "imageFile" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy" | "optionGroups"> & {
+export type ItemInput = Omit<Item, "id" | "imageFile" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy" | "optionGroups" | "version"> & {
   optionGroups: ItemOptionGroupInput[];
+  /** The Item.version the form was loaded with; omit to skip the stale-save check. */
+  version?: number;
 };
+
+/** The server answered 409: the item changed since the form loaded it (another tab or user, a photo upload,
+ * or a stock change). The UI offers Reload or Overwrite. */
+export class ConflictError extends Error {
+  constructor() {
+    super("This was changed in another tab or by another user.");
+    this.name = "ConflictError";
+  }
+}
 
 /** A network failure returns null so the page can show an offline note. */
 export async function listItems(): Promise<Item[] | null> {
@@ -85,6 +99,7 @@ export async function updateItem(id: string, input: ItemInput): Promise<Item> {
     body: JSON.stringify(input),
     signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS),
   });
+  if (res.status === 409) throw new ConflictError();
   if (!res.ok) throw await errorsFrom(res);
   return (await res.json()) as Item;
 }

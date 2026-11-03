@@ -12,9 +12,12 @@
     uploadItemImage,
     uploadOptionImage,
     deleteOptionImage,
+    ConflictError,
     type Item,
     type ItemInput,
   } from "../lib/itemsApi";
+  import { registerPageSave } from "../lib/pageShortcuts.svelte";
+  import { filterItems } from "../lib/itemFilter";
   import { moveItem } from "../lib/itemOptions";
   import { MAX_OPTION_GROUPS, MAX_OPTIONS_PER_GROUP } from "../lib/itemFormValidation";
   import { dollarsToCents, nextSortOrders } from "../lib/itemMath";
@@ -74,6 +77,7 @@
       stockQty: it.stockQty,
       allowBackorder: it.allowBackorder,
       sortOrder: it.sortOrder,
+      version: it.version,
       ...overrides,
     };
   }
@@ -84,15 +88,41 @@
   async function togglePublic(it: Item, e: Event) {
     const checkbox = e.currentTarget as HTMLInputElement;
     listActionError = null;
+    listNotice = null;
     try {
-      await updateItem(it.id, itemToInput(it, { public: !it.public }));
+      const saved = await updateItem(it.id, itemToInput(it, { public: !it.public }));
       await refresh();
-      announce(it.public ? `${it.name} is now hidden from the gallery.` : `${it.name} is now public.`);
+      const text = it.public ? `${it.name} is now hidden from the shop.` : `${it.name} is now shown in the shop.`;
+      listNotice = { text, undoId: saved.id, undoPublic: it.public };
+      announce(text);
     } catch (err) {
       checkbox.checked = it.public;
-      listActionError = err instanceof Error ? err.message : "Couldn't update item.";
+      listActionError = err instanceof ConflictError ? `${err.message} Reload the list and try again.` : err instanceof Error ? err.message : "Couldn't update item.";
+      if (err instanceof ConflictError) await refresh();
     }
   }
+
+  // The list's Public checkbox flips visibility in one click, so the result is stated with an Undo.
+  let listNotice = $state<{ text: string; undoId: string; undoPublic: boolean } | null>(null);
+  async function undoPublic() {
+    const n = listNotice;
+    if (!n) return;
+    const it = items.find((x) => x.id === n.undoId);
+    listNotice = null;
+    if (!it) return;
+    listActionError = null;
+    try {
+      await updateItem(it.id, itemToInput(it, { public: n.undoPublic }));
+      await refresh();
+      announce(n.undoPublic ? `${it.name} is shown in the shop again.` : `${it.name} is hidden from the shop again.`);
+    } catch (err) {
+      listActionError = err instanceof Error ? err.message : "Couldn't undo.";
+    }
+  }
+
+  // List filter (Ctrl/Cmd+K focuses it; App.svelte's FILTER_IDS).
+  let filter = $state("");
+  const visibleItems = $derived(filterItems(items, filter));
 
   // `items` is sorted by sort_order then name (server/items.go's handleList), so adjacent positions are
   // adjacent neighbors; the swap is two sequential PUTs (the server serializes writes on one sqlite
@@ -250,6 +280,13 @@
   const stockQtyWarn = $derived(form.stockMode === "in_stock" && form.stockQty === null ? "Enter a valid quantity." : "");
   let formErrors = $state<string[]>([]);
   let saving = $state(false);
+  // "Saved." status under the Save button; cleared by the next edit. `hidden` adds the Show in shop action.
+  let savedStatus = $state<{ text: string; hidden: boolean } | null>(null);
+  // True after a 409: the form shows the Reload / Overwrite choice instead of a plain error.
+  let conflict = $state(false);
+  $effect(() => {
+    if (dirty && savedStatus) savedStatus = null;
+  });
   let confirmingDelete = $state(false);
   let imageError = $state<string | null>(null);
   let uploadingImage = $state(false);
@@ -272,6 +309,8 @@
     confirmingDelete = false;
     imageError = null;
     optionImageError = null;
+    savedStatus = null;
+    conflict = false;
   }
 
   // The row that opened the detail view, so "Back to list" can return focus to it (WCAG 2.4.3).
@@ -289,6 +328,8 @@
     formErrors = [];
     confirmingDelete = false;
     imageError = null;
+    savedStatus = null;
+    conflict = false;
   }
 
   function requestBack() {
@@ -312,8 +353,9 @@
     void focusRowOrHeading(focusId);
   }
 
-  async function save() {
-    if (saving || !dirty) return;
+  // `overwrite` resends the form on top of the newest stored version after a 409.
+  async function save(overwrite = false) {
+    if (saving || (!dirty && !overwrite)) return;
     const nullFieldErrors = validateForm(form);
     if (nullFieldErrors.length > 0) {
       formErrors = nullFieldErrors;
@@ -321,21 +363,71 @@
     }
     saving = true;
     formErrors = [];
+    conflict = false;
     try {
       const input = toInput(form);
-      const result = detailId === null ? await createItem(input) : await updateItem(detailId, input);
+      let result: Item;
+      if (detailId === null) {
+        result = await createItem(input);
+      } else {
+        if (overwrite) {
+          const latest = (await listItems())?.find((x) => x.id === detailId);
+          if (latest) detail = latest;
+        }
+        result = await updateItem(detailId, { ...input, version: detail?.version });
+      }
+      const wasNew = detailId === null;
       detail = result;
       detailId = result.id;
       form = formFromItem(result);
       formBaseline = formFromItem(result); // saved state is the new clean baseline
       await refresh();
-      announce(`${result.name} saved.`);
+      savedStatus = {
+        text: result.public ? "Saved." : "Saved. Hidden from the shop.",
+        hidden: !result.public,
+      };
+      announce(result.public ? `${result.name} saved.` : `${result.name} saved. Hidden from the shop.`);
+      if (wasNew) openerId = result.id;
     } catch (err) {
-      formErrors = [err instanceof Error ? err.message : "Couldn't save item."];
+      if (err instanceof ConflictError) {
+        conflict = true;
+        formErrors = [];
+        void focusAfterUpdate("#item-conflict");
+      } else {
+        formErrors = [err instanceof Error ? err.message : "Couldn't save item."];
+      }
     } finally {
       saving = false;
     }
   }
+
+  // Throws away the form and loads the stored item again.
+  async function reloadFromServer() {
+    if (detailId === null) return;
+    const latest = (await listItems())?.find((x) => x.id === detailId);
+    conflict = false;
+    if (!latest) {
+      formErrors = ["That item no longer exists."];
+      return;
+    }
+    detail = latest;
+    form = formFromItem(latest);
+    formBaseline = formFromItem(latest);
+    savedStatus = null;
+    announce("Reloaded the latest version.");
+  }
+
+  // "Show in shop" on the Saved notice: turns Public on and saves.
+  async function showInShop() {
+    form.public = true;
+    await save();
+  }
+
+  // Ctrl/Cmd+S on the detail view (App.svelte's handler).
+  $effect(() => {
+    if (view !== "detail") return;
+    return registerPageSave(() => void save());
+  });
 
   function askDelete() {
     confirmingDelete = true;
@@ -487,8 +579,8 @@
 <div class="page">
   {#if view === "list"}
     <div class="head-row">
-      <h1 tabindex="-1">Items</h1>
-      <button type="button" class="primary" onclick={openNew} disabled={unavailable}>Add item</button>
+      <h1 tabindex="-1">Shop items</h1>
+      <button type="button" class="primary" onclick={openNew} disabled={unavailable}>Add shop item</button>
     </div>
 
     {#if unavailable}
@@ -497,13 +589,25 @@
     {#if listActionError}
       <p class="banner-warn" role="alert">{listActionError}</p>
     {/if}
+    {#if listNotice}
+      <p class="banner-muted notice" role="status">{listNotice.text} <button type="button" class="quiet" onclick={undoPublic}>Undo</button></p>
+    {/if}
+
+    {#if items.length > 0}
+      <label class="field filter">
+        <span>Filter shop items</span>
+        <input id="items-filter" type="search" bind:value={filter} autocomplete="off" placeholder="Name or description" />
+      </label>
+      <p class="hint" role="status">{filter.trim() === "" ? "" : `${visibleItems.length} of ${items.length} shop items match.`}</p>
+    {/if}
 
     <div class="card">
       <ul class="plain-list">
         {#if loading}
           <li class="empty-state"><span role="status">Loading…</span></li>
         {:else}
-          {#each items as it, i (it.id)}
+          {#each visibleItems as it (it.id)}
+            {@const i = items.indexOf(it)}
             <li class="item-row">
               <button type="button" class="row-open" data-row-id={it.id} onclick={() => openDetail(it.id)}>
                 {#if it.imageFile}
@@ -517,7 +621,7 @@
               </button>
               <label class="toggle i-public">
                 <input type="checkbox" checked={it.public} onchange={(e) => togglePublic(it, e)} />
-                <span>Public<span class="visually-hidden"> ({it.name})</span></span>
+                <span>Public<span class="visually-hidden"> ({it.name}, shown in the shop)</span></span>
               </label>
               <div class="reorder">
                 <button type="button" aria-label={`Move ${it.name} up`} aria-disabled={reordering || i === 0} data-focus-key={`up-${it.id}`} onclick={() => moveUp(i)}>
@@ -535,7 +639,7 @@
               </div>
             </li>
           {:else}
-            <li class="empty-state">No items yet. Add one with the Add item button above.</li>
+            <li class="empty-state">{items.length === 0 ? "No shop items yet. Add one with the Add item button above." : "No shop items match that filter."}</li>
           {/each}
         {/if}
       </ul>
@@ -546,10 +650,19 @@
     </div>
 
     <div class="card">
-      <DetailTitle>{detail ? detail.name : "Add item"}</DetailTitle>
+      <DetailTitle>{detail ? detail.name : "Add shop item"}</DetailTitle>
       {#if detail}<AttributionLine createdBy={detail.createdBy} updatedBy={detail.updatedBy} />{/if}
 
       <ErrorSummary errors={formErrors} />
+      {#if conflict}
+        <div class="banner-warn" role="alert" id="item-conflict" tabindex="-1">
+          <p>This was changed in another tab or by another user.</p>
+          <div class="form-actions">
+            <button type="button" onclick={reloadFromServer}>Reload</button>
+            <button type="button" onclick={() => save(true)}>Overwrite</button>
+          </div>
+        </div>
+      {/if}
 
       <div class="field-rows">
         <label class="field">
@@ -587,27 +700,27 @@
 
       <label class="toggle">
         <input type="checkbox" bind:checked={form.public} />
-        <span>Public (visible in the gallery)</span>
+        <span>Public (visible in the shop)</span>
       </label>
 
       <div class="subcard">
         <h3 class="section-label">Options</h3>
         <p class="hint">
-          Each group is one choice the customer makes, such as Color or Size. A required group must be answered before ordering;
-          an optional group starts on None. Groups and options show in the order listed here.
+          Each group is one choice the customer makes, such as Color or Size. When "Customer must choose one" is on, the customer must pick a choice before ordering;
+          when it is off, the group starts on None. Groups and choices show in the order listed here.
         </p>
         {#each form.groups as g, gi (g.key)}
           <fieldset class="group">
             <legend>Option group {gi + 1}{g.label.trim() ? `: ${g.label.trim()}` : ""}</legend>
             <div class="group-head">
               <label class="field field-inline">
-                <span>Label</span>
+                <span>Group name</span>
                 <!-- Mirrors validateOptionGroups: a group label is at most 100 characters. -->
                 <input bind:value={g.label} maxlength={100} placeholder="For example, Color" data-focus-key={`group-label-${g.key}`} />
               </label>
               <label class="toggle">
                 <input type="checkbox" bind:checked={g.required} />
-                <span>Required</span>
+                <span>Customer must choose one</span>
               </label>
               <div class="reorder">
                 <button
@@ -637,10 +750,10 @@
               {@const photo = optionImageFile(opt.id)}
               <div class="option-row">
                 <label class="field field-inline">
-                  <span>Name</span>
+                  <span>Choice</span>
                   <!-- Mirrors validateOptionGroups: each option name is at most 100 characters. -->
                   <input
-                    aria-label={`Group ${gi + 1} option ${i + 1} name`}
+                    aria-label={`Group ${gi + 1} choice ${i + 1}`}
                     bind:value={opt.name}
                     maxlength={100}
                     data-focus-key={`option-name-${g.key}-${opt.key}`}
@@ -701,7 +814,7 @@
                 <button type="button" aria-label={`Remove group ${gi + 1} option ${i + 1}`} data-focus-key={`remove-option-${gi}-${i}`} onclick={() => removeOption(gi, i)}>Remove</button>
               </div>
             {/each}
-            <button type="button" data-focus-key={`add-option-${gi}`} aria-disabled={g.options.length >= MAX_OPTIONS_PER_GROUP} onclick={() => addOption(gi)}>Add option</button>
+            <button type="button" data-focus-key={`add-option-${gi}`} aria-disabled={g.options.length >= MAX_OPTIONS_PER_GROUP} onclick={() => addOption(gi)}>Add choice</button>
             {#if g.options.length >= MAX_OPTIONS_PER_GROUP}<small class="field-hint">A group has at most {MAX_OPTIONS_PER_GROUP} options.</small>{/if}
           </fieldset>
         {/each}
@@ -725,18 +838,24 @@
       </div>
 
       <div class="form-actions">
-        <button type="button" class="primary" onclick={save} aria-disabled={saving || !dirty}>{saving ? "Saving…" : "Save"}</button>
+        <button type="button" class="primary" onclick={() => save()} aria-disabled={saving || !dirty}>{saving ? "Saving…" : "Save"}</button>
       </div>
+      <p class="status-line saved-status" role="status" data-testid="item-saved">
+        {#if savedStatus}
+          {savedStatus.text}
+          {#if savedStatus.hidden}<button type="button" class="quiet" onclick={showInShop}>Show in shop</button>{/if}
+        {/if}
+      </p>
 
       {#if detail}
         <div class="subcard">
           {#if confirmingDelete}
             <div class="form-actions delete-actions">
-              <button type="button" class="danger" onclick={confirmDeleteItem} use:confirmFocus={{ restore: keySelector("delete-item"), cancel: cancelDelete }}>Delete item?</button>
+              <button type="button" class="danger" onclick={confirmDeleteItem} use:confirmFocus={{ restore: keySelector("delete-item"), cancel: cancelDelete }}>Yes, delete {detail.name}</button>
               <button type="button" onclick={cancelDelete}>Cancel</button>
             </div>
           {:else}
-            <button type="button" data-focus-key="delete-item" onclick={askDelete}>Delete item</button>
+            <button type="button" data-focus-key="delete-item" onclick={askDelete}>Delete shop item</button>
           {/if}
         </div>
       {/if}
@@ -801,4 +920,7 @@
   .preview { display: block; max-width: 200px; max-height: 200px; border-radius: var(--radius); margin-bottom: 0.5rem; object-fit: cover; }
 
   .delete-actions { justify-content: flex-start; }
+  .filter { max-width: 24rem; }
+  .notice { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  .saved-status { margin: 0.4rem 0 0; }
 </style>

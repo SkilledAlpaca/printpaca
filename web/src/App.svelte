@@ -46,7 +46,7 @@
   import { unreadRequests, refreshUnread } from "./lib/requestsBadge.svelte";
   import { fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab } from "./lib/navFilter";
   import { loadPublicConfig } from "./public/api";
-  import { splitHash } from "./lib/hashRoute";
+  import { quoteIdFromHash, routeBase, splitHash } from "./lib/hashRoute";
   import { focusAfterUpdate } from "./lib/a11y.svelte";
   import { pageTitle as pageTitleState } from "./lib/pageTitle.svelte";
   import LiveAnnouncer from "./components/LiveAnnouncer.svelte";
@@ -109,7 +109,7 @@
     printers: { hash: "#/printers", label: "Printers", icon: mdiPrinter3d },
     clients: { hash: "#/clients", label: "Clients", icon: mdiAccountMultipleOutline },
     invoices: { hash: "#/invoices", label: "Invoices", icon: mdiFileDocumentOutline },
-    items: { hash: "#/items", label: "Items", icon: mdiStorefrontOutline },
+    items: { hash: "#/items", label: "Shop items", icon: mdiStorefrontOutline },
     requests: { hash: "#/requests", label: "Requests", icon: mdiInboxOutline },
     dashboard: { hash: "#/dashboard", label: "Dashboard", icon: mdiViewDashboard },
     guide: { hash: "#/guide", label: "Guide", icon: mdiBookOpenVariant },
@@ -130,7 +130,8 @@
     const { base } = splitHash(hash);
     // A hash naming a disabled tab resolves to null like an unrecognized one; every caller already falls back
     // from null (Quote on initial load, no-op on hashchange).
-    return resolveHashTab(base, HASH_TABS, disabledTabs);
+    // "#/quote/<id>" is the quote editor with a saved quote open; it resolves to the quote tab.
+    return resolveHashTab(routeBase(base), HASH_TABS, disabledTabs);
   }
 
   // Hands a deep-linked invoice/request/client id to the tab about to mount via pendingOpen (state.svelte.ts)
@@ -139,6 +140,13 @@
   // box just before its own bare-hash activate() isn't clobbered. Once mounted, the tab owns its id changes
   // via its own hashchange listener.
   function routePendingOpen(t: Tab, hash: string) {
+    // The quote editor's id rides in the path ("#/quote/<id>"), not a second fragment. QuoteTab takes it
+    // with consumePendingOpen("quote").
+    if (t === "quote") {
+      const quoteId = quoteIdFromHash(hash);
+      if (quoteId) pendingOpen.current = { tab: "quote", id: quoteId };
+      return;
+    }
     if (t !== "invoices" && t !== "requests" && t !== "clients") return;
     const { fragment: id } = splitHash(hash);
     if (!id) return;
@@ -447,6 +455,15 @@
     location.reload();
   }
 
+  // Reload, tab close and address-bar navigation while an editor holds unsaved edits (unsavedForm: the quote,
+  // invoice, item and client editors; settingsDirty: every SettingsEditor). In-app navigation is guarded
+  // separately by activate() and syncTabFromHash. The browser shows its own generic prompt.
+  function guardUnload(e: BeforeUnloadEvent) {
+    if (!unsavedForm.current && !settingsDirty.current) return;
+    e.preventDefault();
+    e.returnValue = "";
+  }
+
   // The print dialog is driven from QuoteTab, which may be unmounted when it closes; clear the job here at
   // the root on afterprint, the one event that fires for both printed and canceled.
   function clearPrintJob() {
@@ -522,7 +539,7 @@
   // drawer too), so it stays reachable at every width; #/guide remains a valid Tab and deep link.
   const NAV_SECTIONS: { label: string | null; items: Tab[] }[] = [
     { label: "Sell", items: ["quote", "quotes", "requests", "invoices", "items", "clients", "dashboard"] },
-    { label: "Shop", items: ["filament", "electricity", "printers"] },
+    { label: "Costs", items: ["filament", "electricity", "printers"] },
     { label: null, items: ["settings"] },
   ];
   // Disabled tabs drop out here (filterNavSections also drops a section header once its items are gone);
@@ -560,6 +577,11 @@
 
   const spoolmanEnabled = $derived(appConfig.current?.integrations.spoolman === true);
   const moonrakerConfigured = $derived(appConfig.current?.moonraker === true);
+  // Integration status is for people who can use or change the integration: an admin, or a user holding a
+  // grant for a page that depends on it (Spoolman: the spool picker on New quote, the Filament page;
+  // Moonraker: Recent prints on New quote). Anyone else would see status they can't act on.
+  const showSpoolmanLine = $derived(hasTabAccess("quote", configUser) || hasTabAccess("filament", configUser));
+  const showMoonrakerLine = $derived(hasTabAccess("quote", configUser));
   const versionLabel = $derived(appConfig.current?.version ? `printpaca ${appConfig.current.version}` : "printpaca dev");
   // DEMO_MODE=1 server-side (server/main.go), a plain field on the loaded config like authEnabled.
   const demoMode = $derived(config?.demoMode === true);
@@ -659,7 +681,7 @@
 
 <LiveAnnouncer />
 
-<svelte:window onhashchange={syncTabFromHash} onafterprint={clearPrintJob} onkeydown={handleGlobalKeydown} />
+<svelte:window onhashchange={syncTabFromHash} onafterprint={clearPrintJob} onkeydown={handleGlobalKeydown} onbeforeunload={guardUnload} />
 
 {#snippet brand(showName: boolean)}
   <!-- The accessible name is set on the link, so a collapsed sidebar (logo only) still names it. It contains
@@ -770,6 +792,7 @@
     onclick={toggleDrawer}
   >
     <Icon path={mdiMenu} />
+    <span class="hamburger-label" aria-hidden="true">Menu</span>
     {#if unreadRequests.count > 0}
       <!-- Decorative dot, not a count: the drawer shows the real number on the Requests nav button once
            opened; this only says "something's waiting". -->
@@ -818,13 +841,13 @@
   <div class="sidebar-footer">
     <!-- Only configured integrations get a line; an unconfigured one is status the owner already knows
          and never acts on here. Renders nothing when neither is configured. -->
-    {#if spoolmanEnabled}
+    {#if spoolmanEnabled && showSpoolmanLine}
       <div class="integration-line" title={navCollapsed ? "Spoolman configured" : undefined}>
         <span class="dot ok" aria-hidden="true"></span>
         {#if !navCollapsed}<span>Spoolman configured</span>{:else}<span class="visually-hidden">Spoolman configured</span>{/if}
       </div>
     {/if}
-    {#if moonrakerConfigured}
+    {#if moonrakerConfigured && showMoonrakerLine}
       <div class="integration-line" title={navCollapsed ? "Moonraker configured" : undefined}>
         <span class="dot ok" aria-hidden="true"></span>
         {#if !navCollapsed}<span>Moonraker configured</span>{:else}<span class="visually-hidden">Moonraker configured</span>{/if}
@@ -1031,12 +1054,17 @@
     align-items: center;
     justify-content: center;
     min-width: 44px;
+    gap: 0.35rem;
+    padding: 0 0.6rem;
     border: none;
     background: none;
     border-radius: var(--radius);
     color: var(--text);
     flex-shrink: 0;
   }
+  /* The visible word (WCAG 2.5.3: the accessible name "Open menu" contains it) so the icon alone isn't the
+   * only cue. */
+  .hamburger-label { font-size: var(--text-sm); font-weight: 600; }
   .hamburger:hover { background: var(--surface-2); }
   /* Decorative badge over the menu glyph's corner, in the same accent as navButton's unread-pill in the
    * drawer it opens (see the hamburger markup for why it is a dot). */
@@ -1062,7 +1090,21 @@
     background: rgb(0 0 0 / 45%);
   }
 
-  .side-nav { display: flex; flex-direction: column; gap: 0.15rem; margin-top: 0.5rem; overflow-y: auto; }
+  /* The list scrolls inside the sidebar when the window is short. The two local gradients are masks that
+   * cover the shadows once the list is scrolled to that edge, so a shadow shows only where more items hide. */
+  .side-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    margin-top: 0.5rem;
+    overflow-y: auto;
+    min-height: 0;
+    background:
+      linear-gradient(var(--surface) 30%, transparent) top / 100% 1.5rem no-repeat local,
+      linear-gradient(transparent, var(--surface) 70%) bottom / 100% 1.5rem no-repeat local,
+      radial-gradient(farthest-side at 50% 0, rgb(0 0 0 / 28%), transparent) top / 100% 0.6rem no-repeat scroll,
+      radial-gradient(farthest-side at 50% 100%, rgb(0 0 0 / 28%), transparent) bottom / 100% 0.6rem no-repeat scroll;
+  }
   .nav-group { display: flex; flex-direction: column; gap: 0.15rem; }
   .side-nav button, .side-nav a.nav-external { width: 100%; }
   /* Fluidd's external link: same box model and spacing as the nav buttons (shares their
@@ -1243,6 +1285,15 @@
   }
   .guide-footer-icon:hover { color: var(--text); }
   .version-line { color: var(--muted); font-size: var(--text-xs); }
+  /* Short windows (1366x768 laptops): tighter nav rows and footer so every destination, Settings included,
+   * fits without scrolling. The nav still scrolls, with its shadow, below this. */
+  @media (min-width: 900px) and (max-height: 820px) {
+    .side-nav { gap: 0; }
+    .side-nav button, .side-nav a.nav-external { padding-block: 0.2rem; min-height: 32px; }
+    .nav-section-label { padding-block: 0.4rem 0.15rem; }
+    .sidebar { padding-block: 0.6rem; gap: 0.25rem; }
+    .sidebar-footer { gap: 0.25rem; padding-top: 0.4rem; }
+  }
   .shortcuts-line { color: var(--muted); font-size: var(--text-xs); }
   .collapse-toggle {
     display: inline-flex;

@@ -408,7 +408,7 @@
                     {#if s.archived === true}
                       <button type="button" class="quiet" data-focus-key={`spool-${s.id}-archive`} aria-label={`Unarchive spool ${s.id}`} onclick={() => unarchive(s.id)}>Unarchive</button>
                     {:else if confirmingArchive === s.id}
-                      <button type="button" class="danger" onclick={() => archive(s.id)} use:confirmFocus={{ restore: keySelector(`spool-${s.id}-archive`), cancel: () => (confirmingArchive = null) }}>Archive spool {s.id}?</button>
+                      <button type="button" onclick={() => archive(s.id)} use:confirmFocus={{ restore: keySelector(`spool-${s.id}-archive`), cancel: () => (confirmingArchive = null) }}>Yes, archive spool {s.id}</button>
                       <button type="button" onclick={() => (confirmingArchive = null)}>Cancel</button>
                     {:else}
                       <button type="button" class="quiet" data-focus-key={`spool-${s.id}-archive`} aria-label={`Archive spool ${s.id}`} onclick={() => (confirmingArchive = s.id)}>Archive</button>

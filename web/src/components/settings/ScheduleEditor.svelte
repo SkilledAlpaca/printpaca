@@ -99,7 +99,7 @@
     {#if confirmingExample}
       <p id="sched-example-confirm" class="warn-text">Replace your seasons, windows, and rates with the example?</p>
       <div class="form-actions">
-        <button type="button" class="danger" aria-describedby="sched-example-confirm" onclick={loadExample} use:confirmFocus={{ restore: keySelector("load-example"), cancel: () => (confirmingExample = false) }}>Replace with example</button>
+        <button type="button" class="danger" aria-describedby="sched-example-confirm" onclick={loadExample} use:confirmFocus={{ restore: keySelector("load-example"), cancel: () => (confirmingExample = false) }}>Yes, replace with example</button>
         <button type="button" onclick={() => (confirmingExample = false)}>Cancel</button>
       </div>
     {:else}

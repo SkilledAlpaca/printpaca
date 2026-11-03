@@ -49,7 +49,6 @@
                   class:warn={nameWarn !== ""}
                   aria-invalid={nameWarn !== ""}
                   aria-describedby={nameWarn !== "" ? warnId(`hardware[${i}].name`) : undefined}
-                  title={nameWarn || undefined}
                 />
               </td>
               <td>
@@ -61,7 +60,6 @@
                   class:warn={costWarn !== ""}
                   aria-invalid={costWarn !== ""}
                   aria-describedby={costWarn !== "" ? warnId(`hardware[${i}].unitCost`) : undefined}
-                  title={costWarn || undefined}
                 />
               </td>
               <td>

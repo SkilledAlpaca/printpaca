@@ -48,7 +48,6 @@
                 class:warn={idWarn !== ""}
                 aria-invalid={idWarn !== ""}
                 aria-describedby={idWarn !== "" ? warnId(`materials[${i}].id`) : undefined}
-                title={idWarn || undefined}
               />
             </td>
             <td><input aria-label={`Material ${i + 1} name`} bind:value={m.name} /></td>
@@ -61,7 +60,6 @@
                 class:warn={densityWarn !== ""}
                 aria-invalid={densityWarn !== ""}
                 aria-describedby={densityWarn !== "" ? warnId(`materials[${i}].density`) : undefined}
-                title={densityWarn || undefined}
               />
             </td>
             <td><input type="number" step="0.01" aria-label={`Material ${i + 1} price per kg`} bind:value={m.pricePerKg} /></td>
@@ -74,7 +72,6 @@
                 class:warn={wasteWarn !== ""}
                 aria-invalid={wasteWarn !== ""}
                 aria-describedby={wasteWarn !== "" ? warnId(`materials[${i}].wastePct`) : undefined}
-                title={wasteWarn || undefined}
               />
             </td>
             <td>

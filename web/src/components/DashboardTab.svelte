@@ -276,7 +276,7 @@
                 <button type="button" class="row-link" onclick={() => openInvoice(inv.id)}>
                   <span class="inv-number">{inv.number}</span>
                   <!-- title: this column gives up space as the card narrows, so a long name can truncate. -->
-                  <span class="inv-client" title={inv.clientName}>{inv.clientName}</span>
+                  <span class="inv-client">{inv.clientName}</span>
                   <StatusBadge status={inv.status} dueDate={inv.dueDate} />
                   <span class="inv-total">{money(inv.totalCents, cfg)}</span>
                 </button>

@@ -29,7 +29,7 @@
   {#if segments.length > 0}
     <div class="bar" aria-hidden="true">
       {#each segments as seg (seg.id)}
-        <div class="segment" data-id={seg.id} style={`flex: ${seg.percent} 0 0`} title={`${seg.label}: ${seg.percent.toFixed(1)}%`}></div>
+        <div class="segment" data-id={seg.id} style={`flex: ${seg.percent} 0 0`}></div>
       {/each}
     </div>
     <ul class="legend">

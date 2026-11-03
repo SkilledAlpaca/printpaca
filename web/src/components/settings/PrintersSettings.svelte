@@ -44,7 +44,6 @@
                 class:warn={idWarn !== ""}
                 aria-invalid={idWarn !== ""}
                 aria-describedby={idWarn !== "" ? warnId(`printers[${i}].id`) : undefined}
-                title={idWarn || undefined}
               />
             </td>
             <td><input aria-label={`Printer ${i + 1} name`} bind:value={p.name} /></td>
@@ -60,7 +59,6 @@
                 class:warn={diameterWarn !== ""}
                 aria-invalid={diameterWarn !== ""}
                 aria-describedby={diameterWarn !== "" ? warnId(`printers[${i}].filamentDiameterMm`) : undefined}
-                title={diameterWarn || undefined}
               />
             </td>
             <td>

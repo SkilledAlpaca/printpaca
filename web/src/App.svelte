@@ -637,7 +637,7 @@
        rejects every write in demo mode (server/auth.go's demoWriteGuard); this banner only sets
        expectations and gates no nav item or button. -->
   <div class="banner-muted demo-banner" inert={drawerOpen && !isDesktop} onwheel={forwardWheelToMain} bind:this={demoBannerEl}>
-    <span role="status">Read-only demo. Changes are disabled and nothing is saved.</span>
+    <span role="status">Read-only demo. Changes are disabled and nothing is saved. Currency and user mode only change what you see: amounts aren't converted, and your sign-in stays the same.</span>
     <!-- Cosmetic per-browser display prefs only (demoLocal.svelte.ts): nothing reaches the server and
          neither select gates any nav item or button. -->
     <span class="demo-controls">
@@ -654,7 +654,6 @@
       <select
         class="demo-control"
         aria-label="Currency"
-        title="Display only. Amounts aren't converted."
         value={demoLocal.currency ?? ""}
         onchange={(e) => setDemoCurrency((e.currentTarget.value || null) as CurrencyPresetId | null)}
       >
@@ -669,7 +668,6 @@
       <select
         class="demo-control"
         aria-label="User mode"
-        title="Display only. It doesn't change which account you can sign in as."
         value={demoLocal.userMode}
         onchange={(e) => setDemoUserMode(e.currentTarget.value as UserModeChoice)}
       >

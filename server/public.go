@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // The public listener: a second HTTP server, enabled only when PUBLIC_PORT is set, reachable only
@@ -106,6 +107,26 @@ func plainEmailForMailto(email string) bool {
 	}
 	return true
 }
+
+// plausiblePublicEmail reports whether email looks like name@example.com: exactly one @, a non-empty local
+// part, and a domain that contains a dot which is neither first nor last. Whitespace is rejected too. It is a
+// shape check (the visitor still has to type a reachable address), applied to the public estimate and item
+// order forms alongside plainEmailForMailto; web/src/lib/publicFormLimits.ts mirrors it.
+func plausiblePublicEmail(email string) bool {
+	local, domain, ok := strings.Cut(email, "@")
+	if !ok || local == "" || strings.Contains(domain, "@") {
+		return false
+	}
+	if strings.ContainsFunc(email, unicode.IsSpace) {
+		return false
+	}
+	dot := strings.Index(domain, ".")
+	return dot > 0 && !strings.HasSuffix(domain, ".")
+}
+
+// publicEmailFormatProblem is the 422 message for an email that fails plausiblePublicEmail; the web forms show
+// the same sentence.
+const publicEmailFormatProblem = "email: enter an email address like name@example.com"
 
 // handlePublicHealthz is a bare liveness check, deliberately cheaper than the admin handleHealthz: it
 // touches neither the database nor CONFIG_DIR. The full readiness probe is not exposed here: it
@@ -533,8 +554,8 @@ func handlePublicItemOrder(db *sql.DB, store *ConfigStore, rl *rateLimiter, trus
 			problems = append(problems, "email: required")
 		} else if len(email) > quoteRequestsEmailMaxLen {
 			problems = append(problems, fmt.Sprintf("email: max %d characters", quoteRequestsEmailMaxLen))
-		} else if !strings.Contains(email, "@") {
-			problems = append(problems, "email: must contain @")
+		} else if !plausiblePublicEmail(email) {
+			problems = append(problems, publicEmailFormatProblem)
 		} else if !plainEmailForMailto(email) {
 			problems = append(problems, "email: contains characters that are not allowed")
 		}
@@ -1277,8 +1298,8 @@ func handlePublicQuoteRequest(db *sql.DB, store *ConfigStore, configDir string, 
 			problems = append(problems, "email: required")
 		} else if len(email) > quoteRequestsEmailMaxLen {
 			problems = append(problems, fmt.Sprintf("email: max %d characters", quoteRequestsEmailMaxLen))
-		} else if !strings.Contains(email, "@") {
-			problems = append(problems, "email: must contain @")
+		} else if !plausiblePublicEmail(email) {
+			problems = append(problems, publicEmailFormatProblem)
 		} else if !plainEmailForMailto(email) {
 			problems = append(problems, "email: contains characters that are not allowed")
 		}

@@ -1196,7 +1196,7 @@ func TestPublicQuoteRequestValidation(t *testing.T) {
 		{"missing name", func(f map[string]string) { f["name"] = "" }, false, "name: required"},
 		{"overlong name", func(f map[string]string) { f["name"] = strings.Repeat("x", 201) }, false, "name: max"},
 		{"missing email", func(f map[string]string) { f["email"] = "" }, false, "email: required"},
-		{"email without at", func(f map[string]string) { f["email"] = "visitor" }, false, "email: must contain @"},
+		{"email without at", func(f map[string]string) { f["email"] = "visitor" }, false, publicEmailFormatProblem},
 		{"overlong note", func(f map[string]string) { f["note"] = strings.Repeat("x", 2001) }, false, "note: max"},
 		{"quantity zero", func(f map[string]string) { f["quantity"] = "0" }, false, "quantity:"},
 		{"quantity too big", func(f map[string]string) { f["quantity"] = "1001" }, false, "quantity:"},
@@ -2133,6 +2133,19 @@ func TestPlainEmailForMailto(t *testing.T) {
 	}
 	for _, bad := range []string{"a@x.com?cc=evil@x.com", "a@x.com&bcc=e@x.com", "a%0d@x.com", "a@x.com\r\nBcc: e@x.com", "a b@x.com", "a@x.com,e@x.com", "<a@x.com>"} {
 		if plainEmailForMailto(bad) {
+			t.Errorf("%q accepted, want rejected", bad)
+		}
+	}
+}
+
+func TestPlausiblePublicEmail(t *testing.T) {
+	for _, ok := range []string{"a@b.c", "a@gmail.com", "first.last+tag@sub.example.co", "a@b.c.d"} {
+		if !plausiblePublicEmail(ok) {
+			t.Errorf("%q rejected, want accepted", ok)
+		}
+	}
+	for _, bad := range []string{"", "jo@", "@gmail.com", "a@b", "a@.com", "a@b.", "a@.", "a b@c.d", "a@b .c", " a@b.c", "a@b.c\n", "a@@b.c", "a@b@c.d", "visitor"} {
+		if plausiblePublicEmail(bad) {
 			t.Errorf("%q accepted, want rejected", bad)
 		}
 	}

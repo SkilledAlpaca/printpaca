@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMAIL_MAX_BYTES, NAME_MAX_BYTES, NOTE_MAX_BYTES, noteByteBudget, utf8ByteLength } from "./publicFormLimits";
+import { EMAIL_MAX_BYTES, isPlausibleEmail, NAME_MAX_BYTES, NOTE_MAX_BYTES, noteByteBudget, utf8ByteLength } from "./publicFormLimits";
 
 describe("utf8ByteLength", () => {
   it("ASCII: byte length equals code-unit length", () => {
@@ -49,5 +49,17 @@ describe("noteByteBudget", () => {
 
   it("EMAIL_MAX_BYTES matches server/public.go's handlePublicQuoteRequest cap", () => {
     expect(EMAIL_MAX_BYTES).toBe(200);
+  });
+});
+
+describe("isPlausibleEmail", () => {
+  it("accepts name@domain.tld shapes", () => {
+    for (const ok of ["a@b.c", "a@gmail.com", "first.last+tag@sub.example.co"]) expect(isPlausibleEmail(ok), ok).toBe(true);
+  });
+
+  it("rejects a missing local part, domain, or dot, extra @, and whitespace", () => {
+    for (const bad of ["", "jo@", "@gmail.com", "a@b", "a@.com", "a@b.", "a b@c.d", "a@b .c", "a@@b.c", "a@b@c.d", "visitor"]) {
+      expect(isPlausibleEmail(bad), bad).toBe(false);
+    }
   });
 });

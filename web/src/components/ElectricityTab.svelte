@@ -16,6 +16,7 @@
   import { focusAfterUpdate } from "../lib/a11y.svelte";
   import SettingsEditor from "./settings/SettingsEditor.svelte";
   import EnergySettings from "./settings/EnergySettings.svelte";
+  import { scheduleProblemUi } from "../lib/scheduleUi";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
   let watts = $state<number | null>(250);
@@ -78,7 +79,7 @@
   const scheduleProblem = $derived.by(() => {
     if (!scheduleMode) return "";
     const p = validateEnergySchedule(cfg.energy.schedule, true);
-    if (p.length > 0) return `The saved schedule isn't usable yet: ${p[0]}`;
+    if (p.length > 0) return `The saved schedule isn't usable yet. ${scheduleProblemUi(p[0]!).text}`;
     if (start === "" || parseWallStart(start, zone) === null) return "Enter the print start.";
     return "";
   });
@@ -108,7 +109,7 @@
         <div class="field">
           <label for="elec-start">Print start</label>
           <input id="elec-start" type="datetime-local" bind:value={start} aria-describedby="elec-start-help" aria-invalid={scheduleProblem !== ""} />
-          <small id="elec-start-help" class="field-hint">Your {zone} time. Starts at the next {cfg.energy.schedule.defaultStartTime} until you change it.</small>
+          <small id="elec-start-help" class="field-hint">Times are in your shop time zone ({zone}). Starts at the next {cfg.energy.schedule.defaultStartTime} until you change it.</small>
         </div>
       {:else if cfg.energy.mode === "tou"}
         <LabeledNumber label="Peak rate" suffix="per kWh" step={0.01} bind:value={peakRate} warn={warnFor(warnings, "peakRate")} onchanged={() => (rateOverridden = true)} />

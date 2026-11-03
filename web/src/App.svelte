@@ -41,6 +41,7 @@
   } from "./lib/demoLocal.svelte";
   import { preloadPrintLogo } from "./lib/printLogo.svelte";
   import { settingsDirty } from "./lib/settingsDirty.svelte";
+  import { pageSave, runPageSave } from "./lib/pageShortcuts.svelte";
   import { unsavedForm } from "./lib/unsavedForm.svelte";
   import { unreadRequests, refreshUnread } from "./lib/requestsBadge.svelte";
   import { fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab } from "./lib/navFilter";
@@ -453,29 +454,60 @@
     invoicePrintJob.current = null;
   }
 
+  // The id of each tab's list filter, the target of Ctrl/Cmd+K. A tab with no entry has no filter. The
+  // footer hint lists the shortcut only while the element exists (filterPresent below), so a filter that is
+  // conditional (Spoolman's spool list, Recent prints) doesn't advertise a no-op.
+  const FILTER_IDS: Partial<Record<Tab, string>> = {
+    quote: "recent-prints-filter",
+    quotes: "quotes-filter",
+    clients: "clients-filter",
+    invoices: "invoices-filter",
+    requests: "requests-filter",
+    items: "items-filter",
+    filament: "spool-filter",
+  };
+  let filterPresent = $state(false);
+  $effect(() => {
+    const id = FILTER_IDS[tab];
+    const root = mainEl;
+    filterPresent = false;
+    if (!id || !root) return;
+    const check = () => (filterPresent = document.getElementById(id) instanceof HTMLInputElement);
+    check();
+    const mo = new MutationObserver(check);
+    mo.observe(root, { childList: true, subtree: true });
+    return () => mo.disconnect();
+  });
+
   function isTextEntryTarget(target: EventTarget | null): boolean {
     if (!(target instanceof HTMLElement)) return false;
     const tag = target.tagName;
     return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
   }
 
-  // Ctrl+S/Cmd+S (no Shift/Alt) is scoped to the Quote tab: it triggers HistoryPanel's primary save action
-  // and always preventDefaults, even in the label input; the action no-ops when saving isn't possible
-  // (saveRowDisabled). Ctrl+K/Cmd+K focuses the tab's own list filter (#quotes-filter, #clients-filter or
-  // #invoices-filter); with none rendered it is a silent no-op. It needs a modifier (WCAG 2.1.4: no bare
-  // character-key shortcut) and is ignored while focus is in a text field, select or contenteditable.
+  // Ctrl+S/Cmd+S (no Shift/Alt) saves the page's editor and always preventDefaults, even in a text field.
+  // The Quote tab triggers HistoryPanel's primary save action (quoteActions.save); every other editor
+  // registers its save through lib/pageShortcuts.svelte.ts (SettingsEditor, the item editor, ...). The
+  // actions no-op when saving isn't possible. With no editor registered the browser's own Save runs.
+  // Ctrl+K/Cmd+K focuses the tab's own filter (FILTER_IDS); with none rendered it is a silent no-op. It
+  // needs a modifier (WCAG 2.1.4: no bare character-key shortcut) and is ignored while focus is in a text
+  // field, select or contenteditable.
   function handleGlobalKeydown(e: KeyboardEvent) {
     // Browser autofill dispatches keydown events with no `key`, so check the modifiers first and read the key defensively.
     if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
     const isKey = (code: string, letter: string) => e.code === code || e.key?.toLowerCase() === letter;
-    if (tab === "quote" && isKey("KeyS", "s")) {
-      e.preventDefault();
-      quoteActions.save?.();
+    if (isKey("KeyS", "s")) {
+      if (tab === "quote") {
+        e.preventDefault();
+        quoteActions.save?.();
+      } else if (pageSave.active) {
+        e.preventDefault();
+        runPageSave();
+      }
       return;
     }
     if (!isKey("KeyK", "k")) return;
-    const filterId =
-      tab === "quotes" ? "quotes-filter" : tab === "clients" ? "clients-filter" : tab === "invoices" ? "invoices-filter" : null;
+    const filterId = FILTER_IDS[tab];
     if (!filterId) return;
     if (isTextEntryTarget(e.target)) return;
     const filterInput = document.getElementById(filterId);
@@ -549,6 +581,9 @@
     .toUpperCase()
     .includes("MAC");
   const shortcutMod = isMac ? "Cmd" : "Ctrl";
+  const shortcutHints = $derived(
+    [filterPresent ? `${shortcutMod}+K filter` : "", tab === "quote" || pageSave.active ? `${shortcutMod}+S save` : ""].filter(Boolean),
+  );
 
   // Demo banner height -> --demo-banner-h, so html's scroll-padding-top keeps a focused field from sitting
   // behind the sticky banner when the window scrolls (below 900px; at >=900px the banner is its own grid
@@ -809,11 +844,10 @@
         <button type="button" class="guide-footer-link" onclick={signOutNow}>{signOut.label}</button>
       {/if}
       <div class="version-line">{versionLabel}</div>
-      <!-- {shortcutMod}+S does something only on the New quote tab (handleGlobalKeydown gates it on tab
-           === "quote"); advertising it elsewhere trained users to press a no-op. The Ctrl/Cmd+K filter works only on
-           the Quotes, Clients, and Invoices lists, so it is listed only there. -->
-      {#if ["quotes", "clients", "invoices"].includes(tab) || tab === "quote"}
-        <div class="shortcuts-line">Shortcuts: {["quotes", "clients", "invoices"].includes(tab) ? `${shortcutMod}+K filter` : ""}{tab === "quote" ? `${shortcutMod}+S save` : ""}</div>
+      <!-- Lists only the shortcuts that work on the current page: {shortcutMod}+S where an editor registered
+           a save, {shortcutMod}+K where the page has a filter input (see FILTER_IDS). -->
+      {#if shortcutHints.length > 0}
+        <div class="shortcuts-line">Shortcuts: {shortcutHints.join(", ")}</div>
       {/if}
     {:else}
       {#if !disabledTabs.has("guide")}

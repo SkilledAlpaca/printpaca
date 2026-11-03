@@ -17,6 +17,8 @@
   import { findFieldByLabel, errorLabel, type ErrorTarget } from "../../lib/fieldErrors";
   import { fieldLabel, hasFieldLabel } from "../../lib/format";
   import { refocusIfLost } from "../../lib/a11yFocus";
+  import { registerPageSave } from "../../lib/pageShortcuts.svelte";
+  import { scheduleProblems, splitOvernightWindows } from "../../lib/scheduleUi";
 
   // Reusable form-editing shell for SettingsTab and every tab that embeds a settings card (ElectricityTab,
   // FilamentTab, PrintersTab, ...). Only one instance is mounted at a time (tabs unmount on switch), so there
@@ -69,6 +71,14 @@
     settingsDirty.current = false;
   });
 
+  // Ctrl/Cmd+S saves the draft (App.svelte's handler); a no-op while there is nothing to save.
+  $effect(() => registerPageSave(() => { if (dirty) void save(); }));
+
+  // The time-of-use schedule is validated here as well as on the server, so Save stays blocked (with the
+  // reason) instead of posting a request that comes back 422. Overnight windows pass: they are split below.
+  const scheduleBlockers = $derived(form ? scheduleProblems(form.energy.schedule, form.energy.mode === "schedule") : []);
+  const blocked = $derived(dirty && scheduleBlockers.length > 0);
+
   function hasError(section: string): boolean {
     return errors.some((e) => errorSection(e) === section);
   }
@@ -94,6 +104,13 @@
 
   async function save() {
     if (!form || saving) return;
+    if (blocked) {
+      announce("Fix the highlighted energy schedule problems before saving.");
+      return;
+    }
+    // Windows that run past midnight are stored as two windows (the server requires start before end).
+    const { schedule: normalized, split } = splitOvernightWindows(form.energy.schedule);
+    if (split > 0) form.energy.schedule = normalized;
     saving = true;
     savedNotice = "";
     // $state.snapshot, not cloneConfig: form is a $state deep proxy and structuredClone throws DataCloneError
@@ -104,7 +121,7 @@
     if (result.ok) {
       original = snapshot;
       errors = [];
-      savedNotice = "Settings saved.";
+      savedNotice = split > 0 ? `Settings saved. ${split === 1 ? "A window that ran past midnight was" : `${split} windows that ran past midnight were`} split at midnight.` : "Settings saved.";
       // The save bar unmounts now that the form is clean; keep focus on the saved notice (WCAG 2.4.3).
       void refocusIfLost("[data-settings-status]");
       // Refresh appConfig so every mounted tab sees what /api/config now serves (the server applies a saved
@@ -164,9 +181,12 @@
     {#if dirty || errors.length > 0}
       <div class="save-bar" use:stickyInset={{ edge: "bottom" }}>
         <ErrorSummary {errors} resolve={resolveSettingsError} />
+        {#if blocked}
+          <p class="warn-text" id="save-blocked">Fix the highlighted problems in the energy schedule to save ({scheduleBlockers.length} to fix).</p>
+        {/if}
         <div class="save-actions">
           <button type="button" onclick={() => { if (!saving) discard(); }} disabled={!dirty} aria-disabled={saving} aria-busy={saving}>Discard changes</button>
-          <button type="button" class="primary" onclick={save} aria-disabled={saving} aria-busy={saving}>{saving ? "Saving…" : "Save changes"}</button>
+          <button type="button" class="primary" onclick={save} aria-disabled={saving || blocked} aria-describedby={blocked ? "save-blocked" : undefined} aria-busy={saving}>{saving ? "Saving…" : "Save changes"}</button>
         </div>
       </div>
     {/if}

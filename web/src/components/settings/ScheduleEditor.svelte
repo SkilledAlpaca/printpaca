@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { ServerConfig } from "../../lib/settings";
   import { blankSchedule, sceExampleSchedule } from "../../lib/scheduleExamples";
-  import { validateEnergySchedule, type TouDay, type TouSeason } from "../../lib/engine/schedule";
+  import type { TouDay, TouSeason } from "../../lib/engine/schedule";
+  import { describePath, marksPath, overnightWindowPaths, scheduleProblems } from "../../lib/scheduleUi";
   import { announce, focusAfterUpdate } from "../../lib/a11y.svelte";
   import { confirmFocus, focusAfterRowRemoval, keySelector } from "../../lib/a11yFocus";
 
@@ -10,7 +11,11 @@
   let { form }: { form: ServerConfig } = $props();
 
   const schedule = $derived(form.energy.schedule);
-  const problems = $derived(validateEnergySchedule(schedule, form.energy.mode === "schedule"));
+  // Overnight windows are not a problem: they are split at midnight when you save (scheduleUi.ts).
+  const problems = $derived(scheduleProblems(schedule, form.energy.mode === "schedule"));
+  const overnight = $derived(overnightWindowPaths(schedule));
+  // aria-invalid + the warn style for the input at `path` (a server path under energy.schedule).
+  const bad = (path: string) => marksPath(problems, path);
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const DAY_TYPES = [
     { key: "weekday", label: "Weekday" },
@@ -80,7 +85,7 @@
   <div class="field-rows">
     <label class="field">
       <span>Default print start (HH:MM)</span>
-      <input type="text" inputmode="numeric" placeholder="22:00" aria-describedby="sched-start-help" bind:value={schedule.defaultStartTime} />
+      <input type="text" inputmode="numeric" placeholder="22:00" aria-describedby="sched-start-help" bind:value={schedule.defaultStartTime} class:warn={bad("defaultStartTime")} aria-invalid={bad("defaultStartTime")} />
       <small id="sched-start-help" class="field-hint">Public quotes and new orders start at the next time this clock time comes round.</small>
     </label>
     <label class="field">
@@ -108,8 +113,14 @@
 
   {#if problems.length > 0}
     <ul class="problems warn-text" id="sched-problems" aria-label="Schedule problems">
-      {#each problems as p, pi (pi)}<li>{p.replace(/^energy\.schedule\./, "")}</li>{/each}
+      {#each problems as p, pi (pi)}<li>{p.text}</li>{/each}
     </ul>
+  {/if}
+  {#if overnight.length > 0}
+    <p class="hint" id="sched-overnight">
+      {overnight.map(describePath).join("; ")} run{overnight.length === 1 ? "s" : ""} past midnight. A window can't cross midnight, so when you save,
+      each one is split into two windows with the same name and rate: one up to 24:00 and one from 00:00.
+    </p>
   {/if}
 
   {#each schedule.seasons as season, si (si)}
@@ -118,10 +129,10 @@
       <div class="field-rows">
         <label class="field">
           <span>Season name</span>
-          <input aria-label={`Season ${si + 1} name`} bind:value={season.name} />
+          <input aria-label={`Season ${si + 1} name`} bind:value={season.name} class:warn={bad(`seasons[${si}].name`)} aria-invalid={bad(`seasons[${si}].name`)} />
         </label>
       </div>
-      <fieldset class="months">
+      <fieldset class="months" class:danger-border={bad(`seasons[${si}].months`) || bad("seasons")} aria-describedby={problems.length > 0 ? "sched-problems" : undefined}>
         <legend>Months in season {si + 1}</legend>
         {#each MONTHS as name, mi (mi)}
           <label class="month"><input type="checkbox" checked={season.months.includes(mi + 1)} onchange={(e) => toggleMonth(season, mi + 1, e.currentTarget.checked)} />{name}</label>
@@ -136,25 +147,26 @@
           <div class="field-rows">
             <label class="field">
               <span>Base period name</span>
-              <input aria-label={`Season ${si + 1} ${dt.label} base name`} bind:value={day.baseName} />
+              <input aria-label={`Season ${si + 1} ${dt.label} base name`} bind:value={day.baseName} class:warn={bad(`seasons[${si}].${dt.key}.baseName`)} aria-invalid={bad(`seasons[${si}].${dt.key}.baseName`)} />
             </label>
             <label class="field">
               <span>Base rate (per kWh)</span>
-              <input type="number" min="0" step="0.001" aria-label={`Season ${si + 1} ${dt.label} base rate`} bind:value={day.baseRate} />
+              <input type="number" min="0" step="0.001" aria-label={`Season ${si + 1} ${dt.label} base rate`} bind:value={day.baseRate} class:warn={bad(`seasons[${si}].${dt.key}.baseRate`)} aria-invalid={bad(`seasons[${si}].${dt.key}.baseRate`)} />
             </label>
           </div>
           {#if day.windows.length > 0}
-            <div class="table-scroll">
+            <div class="table-scroll windows">
               <table>
                 <thead><tr><th>Window name</th><th>Start</th><th>End</th><th>Rate (per kWh)</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
                 <tbody>
                   {#each day.windows as w, wi (wi)}
+                    {@const wp = `seasons[${si}].${dt.key}.windows[${wi}]`}
                     <tr>
-                      <td><input data-win={`${prefix}-${wi}`} aria-label={`Season ${si + 1} ${dt.label} window ${wi + 1} name`} bind:value={w.name} /></td>
-                      <td><input class="time" inputmode="numeric" placeholder="16:00" aria-label={`Season ${si + 1} ${dt.label} window ${wi + 1} start`} bind:value={w.start} /></td>
-                      <td><input class="time" inputmode="numeric" placeholder="21:00" aria-label={`Season ${si + 1} ${dt.label} window ${wi + 1} end`} bind:value={w.end} /></td>
-                      <td><input type="number" min="0" step="0.001" aria-label={`Season ${si + 1} ${dt.label} window ${wi + 1} rate`} bind:value={w.rate} /></td>
-                      <td><button type="button" aria-label={`Remove window ${w.name}`} data-focus-key={`${prefix}-${wi}`} onclick={() => removeWindow(day, wi, prefix)}>Remove</button></td>
+                      <td data-label="Window name"><input data-win={`${prefix}-${wi}`} aria-label={`Season ${si + 1} ${dt.label} window ${wi + 1} name`} bind:value={w.name} class:warn={bad(`${wp}.name`)} aria-invalid={bad(`${wp}.name`)} /></td>
+                      <td data-label="Start"><input class="time" inputmode="numeric" placeholder="16:00" aria-label={`Season ${si + 1} ${dt.label} window ${wi + 1} start`} bind:value={w.start} class:warn={bad(`${wp}.start`)} aria-invalid={bad(`${wp}.start`)} /></td>
+                      <td data-label="End"><input class="time" inputmode="numeric" placeholder="21:00" aria-label={`Season ${si + 1} ${dt.label} window ${wi + 1} end`} bind:value={w.end} class:warn={bad(`${wp}.end`)} aria-invalid={bad(`${wp}.end`)} /></td>
+                      <td data-label="Rate (per kWh)"><input type="number" min="0" step="0.001" aria-label={`Season ${si + 1} ${dt.label} window ${wi + 1} rate`} bind:value={w.rate} class:warn={bad(`${wp}.rate`)} aria-invalid={bad(`${wp}.rate`)} /></td>
+                      <td data-label=""><button type="button" aria-label={`Remove window ${w.name}`} data-focus-key={`${prefix}-${wi}`} onclick={() => removeWindow(day, wi, prefix)}>Remove</button></td>
                     </tr>
                   {/each}
                 </tbody>
@@ -173,15 +185,25 @@
 
 <style>
   .schedule { display: flex; flex-direction: column; gap: 0.9rem; margin-top: 0.8rem; }
-  .season { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.8rem; display: flex; flex-direction: column; gap: 0.8rem; }
+  .season { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); padding: 0.8rem; display: flex; flex-direction: column; gap: 0.8rem; }
   .season > legend { font-weight: 600; padding: 0 0.3rem; }
-  .months { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; }
+  .months { min-width: 0; border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; }
   .months > legend { padding: 0; font-size: var(--text-sm); color: var(--muted); }
   .month { display: inline-flex; align-items: center; gap: 0.3rem; min-height: 24px; }
   .day { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
   .day h4 { margin: 0; }
   .problems { margin: 0; padding-left: 1.2rem; }
   .time { width: 6rem; }
+  .months.danger-border { border-left: 3px solid var(--danger); padding-left: 0.6rem; }
   td, th { white-space: nowrap; }
+  /* Phones: a window's fields stack inside the card instead of scrolling sideways out of sight. */
+  @media (max-width: 600px) {
+    .windows :global(table), .windows :global(tbody), .windows :global(tr), .windows :global(td) { display: block; }
+    .windows :global(thead) { display: none; }
+    .windows :global(tr) { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.5rem; margin-bottom: 0.6rem; }
+    .windows :global(td) { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; white-space: normal; border: 0; padding: 0.2rem 0; }
+    .windows :global(td[data-label])::before { content: attr(data-label); color: var(--muted); font-size: var(--text-sm); }
+    .windows :global(td input) { max-width: 60%; }
+  }
   .example .hint { margin-top: 0.5rem; }
 </style>

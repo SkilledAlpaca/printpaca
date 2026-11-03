@@ -201,14 +201,12 @@
   // gallery heading when that card is gone.
   let lastSelectedId: string | null = null;
   let itemOpenedInApp = false;
-  let refocusCardOnReturn = false;
   function openItem(item: PublicItem) {
     lastSelectedId = item.id;
     itemOpenedInApp = true;
     navigate({ name: "item", id: item.id });
   }
   function closeItem() {
-    refocusCardOnReturn = true;
     if (itemOpenedInApp) {
       // The item was opened from the gallery in this tab, so the previous history entry is the gallery.
       itemOpenedInApp = false;
@@ -217,9 +215,14 @@
       navigate({ name: "gallery" }, { replace: true });
     }
   }
+  // Returning from an item to the gallery by any means (Back to gallery, Escape, the browser's Back button)
+  // refocuses the card that was open.
+  let previousRouteName: Route["name"] = "gallery";
   $effect(() => {
-    if (route.name !== "gallery" || !refocusCardOnReturn || phase !== "ready") return;
-    refocusCardOnReturn = false;
+    const name = route.name;
+    const wasItem = previousRouteName === "item";
+    previousRouteName = name;
+    if (name !== "gallery" || !wasItem || phase !== "ready") return;
     const id = lastSelectedId;
     void focusAfterUpdate(() => {
       const card = id === null ? null : document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(id)}"]`);
@@ -1060,7 +1063,9 @@
             max={MAX_QUOTE_QUANTITY}
             step="1"
             bind:value={quantity}
-            oninput={() => (quantityClampNotice = "")}
+            oninput={(e) => {
+              if (Number(e.currentTarget.value) <= MAX_QUOTE_QUANTITY) quantityClampNotice = "";
+            }}
             required
             aria-invalid={marked("quantity") ? "true" : undefined}
             aria-describedby="quote-qty-notice"

@@ -394,6 +394,6 @@ test("admin reorders option groups and options, and the order persists and reach
     .toBe("Engraving,Color");
   await page.goto(`${PUBLIC_URL}order`);
   await page.getByRole("button", { name: new RegExp(ITEM_NAME) }).click();
-  const labels = await page.locator("form .field > span").allTextContents();
-  expect(labels.slice(0, 2)).toEqual(["Engraving (optional)", "Color"]);
+  const labels = await page.locator("form .field > label, form .field > span").allTextContents();
+  expect(labels.slice(0, 2)).toEqual(["Engraving (optional)", "Color (required)"]);
 });

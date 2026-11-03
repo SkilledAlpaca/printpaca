@@ -306,7 +306,11 @@
         max={maxQuantity}
         step="1"
         bind:value={quantity}
-        oninput={() => (quantityClampNotice = "")}
+        oninput={(e) => {
+          // Keep the notice the clamp just set (its effect runs between the bind and this handler); clear it on
+          // the next in-range edit.
+          if (Number(e.currentTarget.value) <= maxQuantity) quantityClampNotice = "";
+        }}
         required
         aria-invalid={quantityInvalid ? "true" : undefined}
         aria-describedby="item-qty-notice"

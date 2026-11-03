@@ -268,8 +268,12 @@
 
   {#if !cfg.integrations.spoolman}
     <p class="hint">
-      Connect Spoolman to see and manage your spools here and to pick a spool on New quote. Enter your Spoolman URL
-      under Integrations in <a href="#/settings">Settings</a>; it applies as soon as you save.
+      Connect Spoolman to see and manage your spools here and to pick a spool on New quote.
+      {#if cfg.user.isAdmin}
+        Enter your Spoolman URL under Integrations in <a href="#/settings">Settings</a>; it applies as soon as you save.
+      {:else}
+        Ask an admin to connect it.
+      {/if}
     </p>
   {:else}
     {#if cfg.demoMode}
@@ -372,7 +376,7 @@
               <th scope="col">Material</th>
               <th scope="col">Colour</th>
               <th scope="col">Remaining (g)</th>
-              <th scope="col">Price</th>
+              <th scope="col">Price (per spool)</th>
               <th scope="col">Location</th>
               <th scope="col">State</th>
               {#if canWrite}<th scope="col"><span class="visually-hidden">Actions</span></th>{/if}

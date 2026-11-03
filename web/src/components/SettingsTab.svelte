@@ -76,7 +76,7 @@
     { id: "quotes", label: "Quotes" },
     { id: "requests", label: "Requests" },
     { id: "invoices", label: "Invoices" },
-    { id: "items", label: "Items" },
+    { id: "items", label: "Shop items" },
     { id: "clients", label: "Clients" },
     { id: "dashboard", label: "Dashboard" },
     { id: "filament", label: "Filament" },
@@ -172,7 +172,7 @@
             maxlength={3}
             bind:value={form.currency.code}
             warn={warnFor(warnings, "currency.code")}
-            hint="Optional ISO 4217 code, such as USD. Only used to put the amount in the PayPal.me link."
+            hint="Optional three-letter code for your currency, such as USD or EUR. Only used to put the amount in the PayPal.me link."
           />
           <LabeledNumber
             label="Decimals"
@@ -269,7 +269,7 @@
             <datalist id="timezone-options">
               {#each timezoneOptions as tz (tz)}<option value={tz}></option>{/each}
             </datalist>
-            <small id="timezone-hint" class="field-hint">An IANA name, such as UTC or America/New_York.</small>
+            <small id="timezone-hint" class="field-hint">Type the name of a city or region, such as America/New_York or Europe/London. UTC means no offset. Times in printpaca are shown in this time zone.</small>
             {#if warnFor(warnings, "timezone")}<small id="timezone-warn" class="warn-text">{warnFor(warnings, "timezone")}</small>{/if}
           </div>
         </div>
@@ -281,7 +281,7 @@
         {#each Object.entries(form.feeSchedules) as [key, fs] (key)}
           <div class="subcard">
             <div class="subhead">
-              <h3>{key}</h3>
+              <h3>{presetDisplayName(key)}</h3>
               {#if builtinFeeScheduleKeys.has(key)}
                 <span class="pill">built-in</span>
               {:else}

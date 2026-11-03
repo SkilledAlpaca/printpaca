@@ -804,6 +804,7 @@
 <!-- tabindex 0 on the Guide only: its scroll container has no focusable content, so keyboard users could not scroll it (WCAG 2.1.1). -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <main class="app-main" id="main" tabindex={tab === "guide" ? 0 : -1} inert={drawerOpen && !isDesktop} aria-label={TABS[tab].label} bind:this={mainEl}>
+  <div class="main-inner">
   {#if accessWatch.revoked}
     <!-- Global 403 handling: a permission that worked just answered 403 (accessWatch.svelte.ts), most
          likely because an admin revoked a grant or turned multi-user mode off mid-session. Reloading
@@ -860,6 +861,7 @@
   <footer>
     <span>printpaca, an open-source 3D print cost and quote calculator.</span>
   </footer>
+  </div>
 </main>
 
 {#if printJob.current && config}
@@ -1041,7 +1043,10 @@
     scroll-padding-top: calc(var(--demo-banner-h, 0px) + var(--sticky-top-h, 0px) + 1rem);
     scroll-padding-bottom: calc(var(--sticky-bottom-h, 0px) + 1rem);
   }
-  main { max-width: 1280px; margin: 0 auto; padding: 1rem clamp(1rem, 2vw, 2rem); }
+  /* <main> spans its whole grid cell so a wheel or a scrollbar works anywhere across the width; the 1280px cap,
+   * centring and padding live on this inner wrapper. <main> has no padding of its own, so a sticky bar at
+   * top: 0 sits flush with the scrollport edge instead of 1rem below it. */
+  .main-inner { max-width: 1280px; margin: 0 auto; padding: 1rem clamp(1rem, 2vw, 2rem); }
   /* theme.css's global :focus-visible outline draws outside the element (outline-offset: 2px); #app clips
    * overflow, so on <main> (the skip-link target and scroll container) it gets cut into a stray partial
    * line. Pull the ring inward. */
@@ -1229,10 +1234,9 @@
      * here. */
     .sidebar.collapsed .side-nav button, .sidebar.collapsed .side-nav a.nav-external { justify-content: center; padding: 0.4rem; }
     /* The scrolling region: everything taller than the viewport (the tab's content, then the page footer)
-     * scrolls inside <main> instead of the page, which keeps the sidebar pinned. width: 100% matters: main
-     * is a grid item with auto inline margins, which override the default stretch and shrink-wrap it to its
-     * content's max-content width; a definite width restores full-width pages while max-width: 1280px still
-     * caps and centers it. */
-    main { grid-area: main; overflow-y: auto; width: 100%; }
+     * scrolls inside <main> instead of the page, which keeps the sidebar pinned. <main> fills its grid
+     * cell (the scrollbar sits at the window edge); .main-inner caps and centres the content. min-width: 0
+     * lets wide content scroll inside the cell instead of widening the grid column. */
+    main { grid-area: main; overflow-y: auto; min-width: 0; }
   }
 </style>

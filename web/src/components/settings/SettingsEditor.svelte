@@ -176,8 +176,10 @@
 <style>
   .settings-editor { display: flex; flex-direction: column; gap: 1.5rem; }
 
-  /* Sticky to the viewport bottom, not a `.page` wrapper: this component doesn't own the page layout (each
-   * embedding tab does), so it is self-contained with its own top border and padding, no negative margins. */
+  /* Sticky to the bottom of the scroll container (<main> at >=900px, the window below that), flush with its
+   * edge because <main> has no padding. It spans the same content column as the tab's jump nav. This component
+   * doesn't own the page layout (each embedding tab does), so it is self-contained with its own top border and
+   * padding, no negative margins. */
   .save-bar {
     position: sticky;
     bottom: 0;

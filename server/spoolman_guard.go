@@ -138,7 +138,8 @@ const (
 
 type spoolField struct {
 	kind   spoolFieldKind
-	maxLen int // runes, for strings
+	maxLen int  // runes, for strings
+	null   bool // JSON null allowed: clears an optional field (PATCH price and location only)
 }
 
 // Field allowlists per method (spec item 11). Anything else is a 400.
@@ -153,8 +154,8 @@ var (
 	}
 	spoolUpdateFields = map[string]spoolField{
 		"remaining_weight": {kind: fieldWeight},
-		"price":            {kind: fieldWeight},
-		"location":         {kind: fieldString, maxLen: 128},
+		"price":            {kind: fieldWeight, null: true},
+		"location":         {kind: fieldString, maxLen: 128, null: true},
 		"archived":         {kind: fieldBool},
 		"comment":          {kind: fieldString, maxLen: 1024},
 	}
@@ -163,7 +164,7 @@ var (
 const spoolMaxNumber = 1e7
 
 // sanitizeSpoolWrite validates raw against the allowlist for method and returns a freshly encoded body that
-// holds only the validated fields. Unknown or duplicate-shadowed keys, nulls, wrong types, out-of-range
+// holds only the validated fields. Unknown or duplicate-shadowed keys, nulls (except price and location on PATCH), wrong types, out-of-range
 // numbers, and trailing data are errors.
 func sanitizeSpoolWrite(method string, raw []byte) ([]byte, error) {
 	fields := spoolUpdateFields
@@ -188,6 +189,10 @@ func sanitizeSpoolWrite(method string, raw []byte) ([]byte, error) {
 		spec, ok := fields[key]
 		if !ok {
 			return nil, fmt.Errorf("%s: field not allowed", key)
+		}
+		if val == nil && spec.null {
+			out[key] = nil
+			continue
 		}
 		switch spec.kind {
 		case fieldID:

@@ -65,6 +65,16 @@ test("edit location and price", async ({ page }) => {
   await expect(row(card, 2)).toContainText("$18.25");
 });
 
+test("clearing the price removes it from the spool", async ({ page }) => {
+  const card = await openInventory(page);
+  await row(card, 2).getByRole("button", { name: "Edit location and price for spool 2" }).click();
+  await card.getByLabel("Price ($)", { exact: true }).fill("");
+  await card.getByRole("button", { name: "Save details" }).click();
+  await expect(page.getByText("Updated spool #2.")).toBeVisible();
+  await expect(row(card, 2)).not.toContainText("$18.25");
+  await openInventory(page).then((c) => expect(row(c, 2)).not.toContainText("$18.25"));
+});
+
 test("add spool for an existing filament", async ({ page }) => {
   const card = await openInventory(page);
   await card.getByRole("button", { name: "Add spool" }).click();

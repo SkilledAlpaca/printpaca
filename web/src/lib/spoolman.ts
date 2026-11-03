@@ -212,8 +212,9 @@ export interface NewSpoolBody {
 /** Fields PATCH /api/v1/spool/{id} accepts through the proxy. */
 export interface SpoolPatchBody {
   remaining_weight?: number;
-  price?: number;
-  location?: string;
+  /** null clears the price: Spoolman keeps the old value when the key is omitted. */
+  price?: number | null;
+  location?: string | null;
   archived?: boolean;
 }
 

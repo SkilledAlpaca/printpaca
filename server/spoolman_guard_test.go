@@ -197,7 +197,13 @@ func TestSpoolmanWriteBodyAllowlist(t *testing.T) {
 		{"update empty object", "PATCH", "/api/v1/spool/5", `{}`, 400},
 		{"update negative weight", "PATCH", "/api/v1/spool/5", `{"remaining_weight":-1}`, 400},
 		{"update huge weight", "PATCH", "/api/v1/spool/5", `{"remaining_weight":1e12}`, 400},
-		{"update null", "PATCH", "/api/v1/spool/5", `{"location":null}`, 400},
+		{"update null location", "PATCH", "/api/v1/spool/5", `{"location":null}`, 200},
+		{"update null price", "PATCH", "/api/v1/spool/5", `{"price":null}`, 200},
+		{"update null remaining_weight", "PATCH", "/api/v1/spool/5", `{"remaining_weight":null}`, 400},
+		{"update null comment", "PATCH", "/api/v1/spool/5", `{"comment":null}`, 400},
+		{"update null archived", "PATCH", "/api/v1/spool/5", `{"archived":null}`, 400},
+		{"create null price", "POST", "/api/v1/spool", `{"filament_id":3,"price":null}`, 400},
+		{"create null location", "POST", "/api/v1/spool", `{"filament_id":3,"location":null}`, 400},
 		{"update string weight", "PATCH", "/api/v1/spool/5", `{"remaining_weight":"5"}`, 400},
 		{"update archived string", "PATCH", "/api/v1/spool/5", `{"archived":"yes"}`, 400},
 		{"update long location", "PATCH", "/api/v1/spool/5", `{"location":"` + strings.Repeat("x", 129) + `"}`, 400},
@@ -343,6 +349,17 @@ func TestSpoolmanUnitSanitizeKeepsNumbersExact(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(out) != `{"filament_id":12,"price":19.99}` {
+		t.Errorf("out = %s", out)
+	}
+}
+
+// A cleared price reaches Spoolman as an explicit null, which its API reads as "no price".
+func TestSanitizeSpoolWriteForwardsNull(t *testing.T) {
+	out, err := sanitizeSpoolWrite("PATCH", []byte(`{"price":null,"location":null}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != `{"location":null,"price":null}` {
 		t.Errorf("out = %s", out)
 	}
 }

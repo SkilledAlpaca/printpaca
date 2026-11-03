@@ -217,8 +217,8 @@
       return;
     }
     const id = editor.id;
-    const body: SpoolPatchBody = { location: editLocation.trim() };
-    if (editPrice !== null) body.price = editPrice;
+    // A cleared price goes as null; omitting the key would leave Spoolman's old value in place.
+    const body: SpoolPatchBody = { location: editLocation.trim(), price: editPrice };
     void submitPatch(id, body, `Updated spool #${id}.`, `spool-${id}-details`);
   }
 

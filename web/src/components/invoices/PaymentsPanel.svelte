@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { EffectiveConfig } from "../../lib/engine/index";
+  import { toCents, type EffectiveConfig } from "../../lib/engine/index";
   import { type Invoice } from "../../lib/invoicesApi";
-  import type { PaymentForm } from "../../lib/invoiceForm";
+  import { overpaidCents, overpaymentQuestion, recordPaymentLabel, type PaymentForm } from "../../lib/invoiceForm";
   import { money, formatDate } from "../../lib/format";
   import { appConfig } from "../../lib/state.svelte";
   import { demoLocal } from "../../lib/demoLocal.svelte";
@@ -16,8 +16,8 @@
     extractRealMultiUser(appConfig.current) && (!(appConfig.current?.demoMode === true) || demoLocal.userMode === "multi"),
   );
 
-  // Rendered only for a loaded invoice with status "sent" or "paid" (InvoiceDetail's #if guards it), so
-  // `detail` is a plain Invoice here.
+  // Rendered only for a loaded invoice that is a draft, sent or paid (InvoiceDetail's #if guards it), so
+  // `detail` is a plain Invoice here. A draft shows the form too: recording a payment sends it.
   let {
     detail,
     cfg,
@@ -25,6 +25,11 @@
     paymentErrors,
     paymentSaving,
     confirmingPaymentDelete,
+    today,
+    dirty,
+    confirmingOverpay,
+    onConfirmOverpay,
+    onCancelOverpay,
     onAddPayment,
     onAskDeletePayment,
     onCancelDeletePaymentConfirm,
@@ -36,11 +41,23 @@
     paymentErrors: string[];
     paymentSaving: boolean;
     confirmingPaymentDelete: string | null;
+    /** Today in the shop's time zone: the Record payment button says "today" for it. */
+    today: string;
+    /** The invoice editor holds unsaved changes (a draft can't record a payment until they are saved). */
+    dirty: boolean;
+    confirmingOverpay: boolean;
+    onConfirmOverpay: () => void;
+    onCancelOverpay: () => void;
     onAddPayment: () => void;
     onAskDeletePayment: (id: string) => void;
     onCancelDeletePaymentConfirm: () => void;
     onConfirmDeletePayment: (id: string) => void;
   } = $props();
+
+  const amountCents = $derived(toCents(paymentForm.amount ?? 0));
+  const excessCents = $derived(Math.max(0, amountCents - detail.balanceCents));
+  const overpaid = $derived(overpaidCents(detail));
+  const recordLabel = $derived(recordPaymentLabel(money(amountCents, cfg), paymentForm.method, paymentForm.paidDate, today));
 </script>
 
 <div class="subcard payments-card">
@@ -73,7 +90,7 @@
               {#if showAttribution}<td class="hint">{p.createdBy || "-"}</td>{/if}
               <td>
                 {#if confirmingPaymentDelete === p.id}
-                  <button type="button" class="danger quiet" aria-label={`Delete? payment of ${money(p.amountCents, cfg)}`} onclick={() => onConfirmDeletePayment(p.id)} use:confirmFocus={{ restore: keySelector(`delete-payment-${p.id}`), cancel: onCancelDeletePaymentConfirm }}>Delete?</button>
+                  <button type="button" class="danger quiet" aria-label={`Yes, delete payment of ${money(p.amountCents, cfg)}`} onclick={() => onConfirmDeletePayment(p.id)} use:confirmFocus={{ restore: keySelector(`delete-payment-${p.id}`), cancel: onCancelDeletePaymentConfirm }}>Yes, delete</button>
                   <button type="button" class="quiet" onclick={onCancelDeletePaymentConfirm}>Cancel</button>
                 {:else}
                   <button
@@ -96,9 +113,25 @@
 
   <p class="balance-line">
     Paid {money(detail.paidCents, cfg)} of {money(detail.totalCents, cfg)}, balance {money(detail.balanceCents, cfg)}
+    {#if overpaid > 0}<span class="pill overpaid">Overpaid {money(overpaid, cfg)}</span>{/if}
   </p>
 
-  {#if detail.status === "sent"}
+  {#if detail.status === "draft" || detail.status === "sent"}
+    <form
+      onsubmit={(e) => {
+        e.preventDefault();
+        onAddPayment();
+      }}
+    >
+    {#if detail.status === "draft"}
+      <p class="hint">
+        {#if dirty}
+          Save your changes to the invoice before recording a payment.
+        {:else}
+          This invoice is still a draft. Recording a payment marks it sent and fills in today's issue date and the due date.
+        {/if}
+      </p>
+    {/if}
     <div class="field-rows">
       <label class="field">
         <span>Date</span>
@@ -128,10 +161,17 @@
       </label>
     </div>
     <div class="form-actions">
-      <button type="button" class="primary" onclick={onAddPayment} aria-disabled={paymentSaving} aria-busy={paymentSaving}>
-        {paymentSaving ? "Recording…" : "Record payment"}
-      </button>
+      {#if confirmingOverpay}
+        <span class="overpay-question" role="status">{overpaymentQuestion(money(excessCents, cfg))}</span>
+        <button type="button" class="primary" onclick={onConfirmOverpay} use:confirmFocus={{ restore: keySelector("record-payment"), cancel: onCancelOverpay }}>Yes, record {money(amountCents, cfg)}</button>
+        <button type="button" onclick={onCancelOverpay}>Cancel</button>
+      {:else}
+        <button type="submit" class="primary" data-focus-key="record-payment" aria-disabled={paymentSaving} aria-busy={paymentSaving}>
+          {paymentSaving ? "Recording…" : recordLabel}
+        </button>
+      {/if}
     </div>
+    </form>
   {/if}
 </div>
 
@@ -141,4 +181,6 @@
   .payments-card { margin-top: var(--space-5); }
   .payments-card h3 { margin-top: 0; }
   .balance-line { font-weight: 600; font-variant-numeric: tabular-nums; margin: 0.6rem 0; }
+  .overpaid { margin-left: 0.4rem; font-weight: 600; }
+  .overpay-question { font-size: var(--text-sm); }
 </style>

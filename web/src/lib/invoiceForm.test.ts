@@ -13,6 +13,13 @@ import {
   formatSentAt,
   linkLineToItem,
   unlinkLine,
+  hasAtMostTwoDecimals,
+  invoiceFormProblems,
+  paymentFormProblems,
+  overpaidCents,
+  recordPaymentLabel,
+  overpaymentQuestion,
+  totalsRows,
   type InvoiceForm,
   type LineForm,
 } from "./invoiceForm";
@@ -49,6 +56,7 @@ function makeInvoice(overrides: Partial<Invoice> = {}): Invoice {
     sends: [],
     createdBy: "",
     updatedBy: "",
+    version: 1,
     ...overrides,
   };
 }
@@ -484,5 +492,93 @@ describe("item links on lines", () => {
       expect(line).toMatchObject({ itemId: "it1", optionName: "Red" });
       expect(line).not.toHaveProperty("stockTaken");
     }
+  });
+});
+
+describe("money validation", () => {
+  const line = (over: Partial<LineForm> = {}): LineForm => ({
+    description: "Clip",
+    quantity: 1,
+    unitPrice: 1,
+    discount: 0,
+    quoteId: "",
+    kind: "item",
+    itemId: "",
+    optionName: "",
+    ...over,
+  });
+  const form = (lines: LineForm[], discount = 0): InvoiceForm => ({ ...emptyForm(0), clientName: "A", discount, lines });
+
+  it("accepts two decimals and float noise, refuses a third", () => {
+    expect(hasAtMostTwoDecimals(0.33)).toBe(true);
+    expect(hasAtMostTwoDecimals(0.1 + 0.2)).toBe(true);
+    expect(hasAtMostTwoDecimals(19.99)).toBe(true);
+    expect(hasAtMostTwoDecimals(0.333)).toBe(false);
+    expect(hasAtMostTwoDecimals(Number.NaN)).toBe(false);
+  });
+  it("names the line and field for a sub-cent price, discount and invoice discount", () => {
+    expect(invoiceFormProblems(form([line({ unitPrice: 0.333 }), line({ discount: 1.005 })], 2.505))).toEqual([
+      "Invoice discount: use at most two decimal places.",
+      "Line 1 unit price: use at most two decimal places.",
+      "Line 2 discount: use at most two decimal places.",
+    ]);
+  });
+  it("rejects a zero or negative quantity and a negative price", () => {
+    expect(invoiceFormProblems(form([line({ quantity: -1 }), line({ quantity: 0, unitPrice: -2 })]))).toEqual([
+      "Line 1 quantity: must be greater than zero.",
+      "Line 2 quantity: must be greater than zero.",
+      "Line 2 unit price: can't be negative.",
+    ]);
+  });
+  it("passes a clean form, treating a cleared price as zero", () => {
+    expect(invoiceFormProblems(form([line({ unitPrice: null as unknown as number })]))).toEqual([]);
+  });
+  it("checks the payment amount and date", () => {
+    const pay = { paidDate: "2026-11-03", amount: 7.35, method: "cash", note: "", reference: "" };
+    expect(paymentFormProblems(pay)).toEqual([]);
+    expect(paymentFormProblems({ ...pay, amount: 0 })).toEqual(["Amount: must be greater than zero."]);
+    expect(paymentFormProblems({ ...pay, amount: 1.234 })).toEqual(["Amount: use at most two decimal places."]);
+    expect(paymentFormProblems({ ...pay, paidDate: "" })).toEqual(["Date: choose the day the payment was received."]);
+  });
+});
+
+describe("payment wording", () => {
+  it("states what the button records", () => {
+    expect(recordPaymentLabel("$7.35", "Cash", "2026-11-03", "2026-11-03")).toBe("Record $7.35 cash, today");
+    expect(recordPaymentLabel("$7.35", "", "2026-11-03", "2026-11-03")).toBe("Record $7.35 today");
+    expect(recordPaymentLabel("$7.35", "Check", "2026-10-01", "2026-11-03")).toBe("Record $7.35 check, on Oct 1, 2026");
+  });
+  it("words the overpayment question with the excess", () => {
+    expect(overpaymentQuestion("$10.17")).toBe("This is $10.17 more than the balance. Record anyway?");
+  });
+  it("reports only the part of the payments above the total as overpaid", () => {
+    expect(overpaidCents({ paidCents: 2501, totalCents: 1484 })).toBe(1017);
+    expect(overpaidCents({ paidCents: 1000, totalCents: 1484 })).toBe(0);
+  });
+});
+
+describe("totalsRows", () => {
+  it("adds up: subtotal, shipping, discount and tax equal the total", () => {
+    // Lines 10.09 item + 4.00 shipping, discount 1.00, tax 8.25% on the 9.09 taxable item amount.
+    const rows = totalsRows({
+      lineKinds: ["item", "shipping"],
+      lineAmountsCents: [1009, 400],
+      subtotalCents: 1409,
+      discountCents: 100,
+      taxCents: 75,
+      totalCents: 1384,
+    });
+    expect(rows.map((r) => [r.key, r.cents])).toEqual([
+      ["subtotal", 1009],
+      ["shipping", 400],
+      ["discount", -100],
+      ["tax", 75],
+      ["total", 1384],
+    ]);
+    expect(rows.slice(0, 4).reduce((sum, r) => sum + r.cents, 0)).toBe(1384);
+  });
+  it("omits shipping and discount when there are none", () => {
+    const rows = totalsRows({ lineKinds: ["item"], lineAmountsCents: [500], subtotalCents: 500, discountCents: 0, taxCents: 0, totalCents: 500 });
+    expect(rows.map((r) => r.key)).toEqual(["subtotal", "tax", "total"]);
   });
 });

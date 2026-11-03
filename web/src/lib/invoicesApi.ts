@@ -76,6 +76,9 @@ export interface Invoice {
   /** Who created/last wrote this invoice (server/invoices.go). "" when unattributed. */
   createdBy: string;
   updatedBy: string;
+  /** Concurrency token: starts at 1 and every write bumps it. Send it back on a PUT; a stale one is a 409
+   * (see VersionConflictError). */
+  version: number;
 }
 
 /** The list endpoint's shape: every Invoice field except lines, payments and sends. */
@@ -115,6 +118,11 @@ export interface InvoiceInput {
   discountCents?: number;
   notes?: string;
   lines: InvoiceLineInput[];
+  /** PUT only: the version the editor loaded. A different current version makes the server answer 409. */
+  version?: number;
+  /** POST only: converts this quote request. The server links it to the new invoice and finalizes it in the
+   * same transaction, so Convert to invoice leaves the request "Invoiced". */
+  requestId?: string;
 }
 
 /** Sales tax travels as a float percent in the UI and converts to integer basis points only at the API
@@ -160,6 +168,15 @@ export async function createInvoice(input: InvoiceInput): Promise<Invoice> {
   return (await res.json()) as Invoice;
 }
 
+/** A save sent with a stale version: the invoice was changed in another tab or by another user. The editor
+ * offers Reload and Overwrite instead of an error line. */
+export class VersionConflictError extends Error {
+  constructor() {
+    super("This was changed in another tab or by another user.");
+    this.name = "VersionConflictError";
+  }
+}
+
 export async function updateInvoice(id: string, input: InvoiceInput): Promise<Invoice> {
   const res = await fetch(`api/invoices/${encodeURIComponent(id)}`, {
     method: "PUT",
@@ -167,6 +184,13 @@ export async function updateInvoice(id: string, input: InvoiceInput): Promise<In
     body: JSON.stringify(input),
     signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS),
   });
+  if (res.status === 409) {
+    // Only the version conflict becomes the typed error; "only draft invoices can be edited" keeps its text.
+    const body = (await res.clone().json().catch(() => ({}))) as { errors?: unknown };
+    if (Array.isArray(body.errors) && body.errors.some((e) => typeof e === "string" && e.includes("changed in another tab"))) {
+      throw new VersionConflictError();
+    }
+  }
   if (!res.ok) throw await errorsFrom(res);
   return (await res.json()) as Invoice;
 }

@@ -1,7 +1,7 @@
 /** Pure helpers behind InvoicesTab's detail/edit and payment forms, so the money/units boundary (dollars in
  * the form, cents and basis points in the API) and draft-vs-sent email gating are unit-testable. */
 
-import { formatDateTime } from "./format";
+import { formatDate, formatDateTime } from "./format";
 import { toCents, invoiceTotals, type InvoiceTotals } from "./engine/index";
 import { pctToBp, bpToPct, type Invoice, type InvoiceInput, type InvoiceLineKind } from "./invoicesApi";
 import { todayInTimezone } from "./invoiceStatus";
@@ -221,4 +221,101 @@ export function emailDisabledReason(smtpHost: string, inv: Invoice): InvoiceEmai
 // YYYY-MM-DD issueDate/dueDate.
 export function formatSentAt(iso: string): string {
   return formatDateTime(iso);
+}
+
+// Money validation. The form keeps currency units in number inputs; toCents() would round a third decimal
+// away silently ($0.333 becomes $0.33), so a value with more than two decimals is refused before it is sent.
+
+/** True when `value` has at most two decimal places once float noise is ignored (0.1 + 0.2 passes). */
+export function hasAtMostTwoDecimals(value: number): boolean {
+  return Number.isFinite(value) && Math.abs(value * 100 - Math.round(value * 100)) < 1e-6;
+}
+
+/** A cleared number input binds as null; money fields treat that as zero, as toCents(0) does on save. */
+function amountOf(value: number | null | undefined): number {
+  return typeof value === "number" ? value : 0;
+}
+
+function moneyProblem(label: string, value: number | null | undefined): string | null {
+  const v = amountOf(value);
+  if (!Number.isFinite(v)) return `${label}: enter a number.`;
+  if (v < 0) return `${label}: can't be negative.`;
+  if (!hasAtMostTwoDecimals(v)) return `${label}: use at most two decimal places.`;
+  return null;
+}
+
+/** The problems that stop an invoice save, one sentence each, naming the line (1-based) and field. The server
+ * checks the same bounds; this runs first so a sub-cent price never reaches it. */
+export function invoiceFormProblems(form: InvoiceForm): string[] {
+  const problems: string[] = [];
+  const add = (p: string | null) => {
+    if (p) problems.push(p);
+  };
+  add(moneyProblem("Invoice discount", form.discount));
+  form.lines.forEach((l, i) => {
+    const n = i + 1;
+    const qty = amountOf(l.quantity);
+    if (!Number.isFinite(qty) || qty <= 0) problems.push(`Line ${n} quantity: must be greater than zero.`);
+    add(moneyProblem(`Line ${n} unit price`, l.unitPrice));
+    add(moneyProblem(`Line ${n} discount`, l.discount));
+  });
+  return problems;
+}
+
+/** The problems that stop a payment from being recorded. */
+export function paymentFormProblems(form: PaymentForm): string[] {
+  const problems: string[] = [];
+  const amount = amountOf(form.amount);
+  if (!Number.isFinite(amount) || amount <= 0) problems.push("Amount: must be greater than zero.");
+  else if (!hasAtMostTwoDecimals(amount)) problems.push("Amount: use at most two decimal places.");
+  if (form.paidDate === "") problems.push("Date: choose the day the payment was received.");
+  return problems;
+}
+
+/** The overpayment, in cents: how far the payments on an invoice exceed its total (0 when they don't). The
+ * Dashboard counts at most the total as revenue, so this is the part that never reaches it. */
+export function overpaidCents(inv: Pick<Invoice, "paidCents" | "totalCents">): number {
+  return Math.max(0, inv.paidCents - inv.totalCents);
+}
+
+/** "Record $7.35 cash, today": the button states what it will record. `amount` is the formatted money
+ * string; the method is lowercased and omitted when empty; the date reads "today" when it is. */
+export function recordPaymentLabel(amount: string, method: string, paidDate: string, today: string): string {
+  const parts = [method.trim().toLowerCase(), paidDate === today ? "today" : `on ${formatDate(paidDate)}`].filter(Boolean);
+  return `Record ${amount} ${parts.join(", ")}`.replace(/\s+/g, " ");
+}
+
+/** The confirm question for a payment above the balance. */
+export function overpaymentQuestion(excess: string): string {
+  return `This is ${excess} more than the balance. Record anyway?`;
+}
+
+export type TotalsRowKey = "subtotal" | "shipping" | "discount" | "tax" | "total";
+export interface TotalsRow {
+  key: TotalsRowKey;
+  label: string;
+  /** Signed: the discount row is negative, so it renders as "-$1.00" and the rows add up to the total. */
+  cents: number;
+}
+
+/** The rows under an invoice's lines, shared by the editor, the sent view and the print view so they can't
+ * disagree. Shipping lines are shown apart from the item subtotal and the invoice discount gets its own row,
+ * so subtotal + shipping - discount + tax equals the total. Shipping and Discount appear only when non-zero.
+ * (When the discount exceeds the subtotal the server clamps the total at tax-only, so the rows can then
+ * overshoot; that is an edge a real invoice doesn't reach.) */
+export function totalsRows(t: {
+  lineKinds: string[];
+  lineAmountsCents: number[];
+  subtotalCents: number;
+  discountCents: number;
+  taxCents: number;
+  totalCents: number;
+}): TotalsRow[] {
+  const shipping = t.lineAmountsCents.reduce((sum, c, i) => sum + (t.lineKinds[i] === "shipping" ? c : 0), 0);
+  const rows: TotalsRow[] = [{ key: "subtotal", label: "Subtotal", cents: t.subtotalCents - shipping }];
+  if (shipping !== 0) rows.push({ key: "shipping", label: "Shipping", cents: shipping });
+  if (t.discountCents > 0) rows.push({ key: "discount", label: "Discount", cents: -t.discountCents });
+  rows.push({ key: "tax", label: "Tax", cents: t.taxCents });
+  rows.push({ key: "total", label: "Total", cents: t.totalCents });
+  return rows;
 }

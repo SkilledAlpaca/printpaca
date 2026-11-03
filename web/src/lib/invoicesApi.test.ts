@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listInvoices, type InvoiceSummary } from "./invoicesApi";
+import { listInvoices, updateInvoice, VersionConflictError, type InvoiceSummary } from "./invoicesApi";
 
 function invoiceSummary(overrides: Partial<InvoiceSummary> = {}): InvoiceSummary {
   return {
@@ -25,6 +25,7 @@ function invoiceSummary(overrides: Partial<InvoiceSummary> = {}): InvoiceSummary
     balanceCents: 0,
     createdBy: "",
     updatedBy: "",
+    version: 1,
     ...overrides,
   };
 }
@@ -63,5 +64,27 @@ describe("listInvoices", () => {
     const result = await listInvoices({ limit: 100, offset: 0 });
     expect(fetchMock.mock.calls[0]?.[0]).toBe("api/invoices?limit=100&offset=0");
     expect(result).toEqual({ items: [invoiceSummary()], total: 9 });
+  });
+});
+
+describe("updateInvoice", () => {
+  const input = { lines: [], version: 1 };
+  const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
+
+  it("throws the typed conflict error for a stale version", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply(409, { errors: ["This was changed in another tab or by another user."] })));
+    await expect(updateInvoice("i1", input)).rejects.toBeInstanceOf(VersionConflictError);
+  });
+  it("keeps the server text for the other 409, a non-draft invoice", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply(409, { errors: ["only draft invoices can be edited"] })));
+    const err = await updateInvoice("i1", input).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(VersionConflictError);
+  });
+  it("sends the version in the PUT body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(reply(200, { id: "i1" }));
+    vi.stubGlobal("fetch", fetchMock);
+    await updateInvoice("i1", input);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body as string)).toMatchObject({ version: 1 });
   });
 });

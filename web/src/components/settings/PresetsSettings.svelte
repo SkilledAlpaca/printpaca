@@ -2,7 +2,7 @@
   import { presetDisplayName } from "../../lib/format";
   import { nextKey, type ServerConfig } from "../../lib/settings";
   import { focusAfterUpdate } from "../../lib/a11y.svelte";
-  import { keySelector } from "../a11yFocus";
+  import { keySelector } from "../../lib/a11yFocus";
 
   let {
     form,

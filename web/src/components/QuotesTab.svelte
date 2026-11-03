@@ -40,7 +40,7 @@
   import LoadMoreRow from "./LoadMoreRow.svelte";
   import BackfillStatus from "./BackfillStatus.svelte";
   import { focusAfterUpdate } from "../lib/a11y.svelte";
-  import { confirmFocus, focusOnMount, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "./a11yFocus";
+  import { confirmFocus, focusOnMount, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "../lib/a11yFocus";
 
   let { cfg, user = null }: { cfg: EffectiveConfig; user?: ConfigUser | null } = $props();
   const canManageClients = $derived(canManageClientsFor(user));

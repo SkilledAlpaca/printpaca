@@ -21,7 +21,7 @@
   import CardHelp from "./CardHelp.svelte";
   import { helpState, setAllHelp } from "../lib/help.svelte";
   import { TILE_HELP, TILE_IDS, type TileId } from "../lib/guideContent";
-  import { focusAfterRowRemoval } from "./a11yFocus";
+  import { focusAfterRowRemoval } from "../lib/a11yFocus";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 

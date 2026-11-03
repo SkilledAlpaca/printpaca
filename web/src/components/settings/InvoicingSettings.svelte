@@ -4,7 +4,7 @@
   import { warnFor } from "../../lib/format";
   import LabeledNumber from "../LabeledNumber.svelte";
   import LabeledText from "../LabeledText.svelte";
-  import { focusAfterRowRemoval } from "../a11yFocus";
+  import { focusAfterRowRemoval } from "../../lib/a11yFocus";
 
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 

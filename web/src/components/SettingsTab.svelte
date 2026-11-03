@@ -16,7 +16,7 @@
   import LabeledText from "./LabeledText.svelte";
   import { focusAfterUpdate } from "../lib/a11y.svelte";
   import { stickyInset } from "../lib/stickyInset";
-  import { focusAfterRowRemoval, keySelector } from "./a11yFocus";
+  import { focusAfterRowRemoval, keySelector } from "../lib/a11yFocus";
 
   // Server-asserted demoMode from appConfig (as in IntegrationsSettings.svelte), used to disable the
   // Diagnostics export button in a read-only demo; the server blocks the request anyway (GET

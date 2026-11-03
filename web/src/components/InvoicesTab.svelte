@@ -38,7 +38,7 @@
   import InvoiceList from "./invoices/InvoiceList.svelte";
   import InvoiceDetail from "./invoices/InvoiceDetail.svelte";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
-  import { focusAfterRowRemoval, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "./a11yFocus";
+  import { focusAfterRowRemoval, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "../lib/a11yFocus";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 

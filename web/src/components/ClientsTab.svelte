@@ -24,7 +24,7 @@
   import BackfillStatus from "./BackfillStatus.svelte";
   import DetailTitle from "./DetailTitle.svelte";
   import { announce } from "../lib/a11y.svelte";
-  import { confirmFocus, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "./a11yFocus";
+  import { confirmFocus, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "../lib/a11yFocus";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 

@@ -24,7 +24,7 @@
   import AttributionLine from "../AttributionLine.svelte";
   import DetailTitle from "../DetailTitle.svelte";
   import ScrollRegion from "../ScrollRegion.svelte";
-  import { confirmFocus, keySelector } from "../a11yFocus";
+  import { confirmFocus, keySelector } from "../../lib/a11yFocus";
 
   let {
     cfg,

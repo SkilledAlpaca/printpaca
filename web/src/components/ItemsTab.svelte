@@ -24,7 +24,7 @@
   import AttributionLine from "./AttributionLine.svelte";
   import DetailTitle from "./DetailTitle.svelte";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
-  import { confirmFocus, focusAfterRowRemoval, focusRowOrHeading, keySelector, neighborId } from "./a11yFocus";
+  import { confirmFocus, focusAfterRowRemoval, focusRowOrHeading, keySelector, neighborId } from "../lib/a11yFocus";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 

@@ -3,7 +3,7 @@
   import { quote, addPart, duplicatePart, removePart, setActivePart, partLabel, type PartForm } from "../lib/state.svelte";
   import { money } from "../lib/format";
   import { focusAfterUpdate } from "../lib/a11y.svelte";
-  import { confirmFocus, keySelector, neighborId, rowSelector } from "./a11yFocus";
+  import { confirmFocus, keySelector, neighborId, rowSelector } from "../lib/a11yFocus";
 
   let { cfg, order }: { cfg: EffectiveConfig; order: OrderBreakdown } = $props();
 

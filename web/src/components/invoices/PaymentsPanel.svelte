@@ -6,7 +6,7 @@
   import { appConfig } from "../../lib/state.svelte";
   import { demoLocal } from "../../lib/demoLocal.svelte";
   import { extractRealMultiUser } from "../../lib/attribution";
-  import { confirmFocus, keySelector } from "../a11yFocus";
+  import { confirmFocus, keySelector } from "../../lib/a11yFocus";
 
   // Same visibility rule as AttributionLine.svelte (single-user mode and the demo's user-mode toggle hide
   // attribution), reimplemented inline: a payment has no separate updated_by (createdBy and updatedBy are

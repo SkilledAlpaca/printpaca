@@ -45,8 +45,8 @@
   import PublicQuotesSettings from "./settings/PublicQuotesSettings.svelte";
   import LoadMoreRow from "./LoadMoreRow.svelte";
   import DetailTitle from "./DetailTitle.svelte";
-  import { announce } from "../lib/a11y.svelte";
-  import { confirmFocus, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "./a11yFocus";
+  import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
+  import { confirmFocus, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "../lib/a11yFocus";
 
   let {
     cfg,

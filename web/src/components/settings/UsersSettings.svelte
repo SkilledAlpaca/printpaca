@@ -5,7 +5,7 @@
   import { appConfig } from "../../lib/state.svelte";
   import { demoLocal } from "../../lib/demoLocal.svelte";
   import { announce, focusAfterUpdate } from "../../lib/a11y.svelte";
-  import { confirmFocus, focusOnMount, keySelector, neighborId } from "../a11yFocus";
+  import { confirmFocus, focusOnMount, keySelector, neighborId } from "../../lib/a11yFocus";
 
   // Admin-only card (SettingsTab mounts the settings form only for the admin identity). `original`, not
   // `form`, gates the employee list and add-user UI: `form.users.multiUser` is the still-unsaved draft, but

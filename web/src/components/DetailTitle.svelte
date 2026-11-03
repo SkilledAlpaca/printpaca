@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import { focusOnMount } from "./a11yFocus";
+  import { focusOnMount } from "../lib/a11yFocus";
   import { pageTitle } from "../lib/pageTitle.svelte";
 
   // The one h1 of a record's detail view (WCAG 1.3.1, 2.4.6). It takes focus when the view opens (2.4.3), so a

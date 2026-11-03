@@ -4,7 +4,7 @@
   import { settingsWarnings } from "../../lib/settingsRules";
   import { warnFor } from "../../lib/format";
   import { rowProblems, warnId } from "../../lib/rowIssues";
-  import { focusAfterRowRemoval } from "../a11yFocus";
+  import { focusAfterRowRemoval } from "../../lib/a11yFocus";
 
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 

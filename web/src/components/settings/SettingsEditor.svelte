@@ -16,7 +16,7 @@
   import ErrorSummary from "../ErrorSummary.svelte";
   import { findFieldByLabel, errorLabel, type ErrorTarget } from "../../lib/fieldErrors";
   import { fieldLabel, hasFieldLabel } from "../../lib/format";
-  import { refocusIfLost } from "../a11yFocus";
+  import { refocusIfLost } from "../../lib/a11yFocus";
 
   // Reusable form-editing shell for SettingsTab and every tab that embeds a settings card (ElectricityTab,
   // FilamentTab, PrintersTab, ...). Only one instance is mounted at a time (tabs unmount on switch), so there

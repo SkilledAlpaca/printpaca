@@ -235,6 +235,21 @@ func validateF(field string, value F, rule fieldRule) []FieldWarning {
 	return warnings
 }
 
+// missingTimeMessage is the copy for a print time that was left blank. A blank field reaches the server as
+// null (what a browser's JSON.stringify(NaN) emits), which F decodes to NaN, so "missing" is the only
+// non-finite state a print time can arrive in over the wire.
+const missingTimeMessage = "Enter the print time"
+
+// validateTime is validateF for the print-time halves: a blank (null/NaN) time is a "required" error reading
+// "Enter the print time" instead of the generic non-finite "nan" copy; Inf and every range check are
+// unchanged.
+func validateTime(field string, value F, rule fieldRule) []FieldWarning {
+	if math.IsNaN(float64(value)) {
+		return []FieldWarning{{Field: field, Code: "required", Message: missingTimeMessage, Severity: "error"}}
+	}
+	return validateF(field, value, rule)
+}
+
 // validateEnum guards a string field that must be one of a set: an unknown value would silently take the
 // default branch (a "Margin" quote priced by markup yet labeled "Priced by Margin"). Code "invalid-enum"
 // is outside validate.ts's FieldCode union; format.ts falls back to the raw message.
@@ -438,8 +453,8 @@ func ComputeQuote(inputs QuoteInputs, options EngineOptions) CostBreakdown {
 	warnings = append(warnings, validateF("weightG", inputs.WeightG, fieldRule{min: fmin(0), max: fmin(maxWeightG)})...)
 	warnings = append(warnings, validateF("pricePerKg", inputs.PricePerKg, fieldRule{min: fmin(0), max: new(maxMoneyAmount)})...)
 	warnings = append(warnings, validateF("wastePct", inputs.WastePct, fieldRule{min: fmin(0), max: fmin(100)})...)
-	warnings = append(warnings, validateF("timeHours", inputs.TimeHours, fieldRule{min: fmin(0), max: fmin(maxHoursInput)})...)
-	warnings = append(warnings, validateF("timeMinutes", inputs.TimeMinutes, fieldRule{min: fmin(0), max: fmin(59)})...)
+	warnings = append(warnings, validateTime("timeHours", inputs.TimeHours, fieldRule{min: fmin(0), max: fmin(maxHoursInput)})...)
+	warnings = append(warnings, validateTime("timeMinutes", inputs.TimeMinutes, fieldRule{min: fmin(0), max: fmin(59)})...)
 	warnings = append(warnings, validateF("watts", inputs.Watts, fieldRule{min: fmin(0), max: fmin(maxPrinterWatts)})...)
 	warnings = append(warnings, validateEnum("mode", inputs.Energy.Mode, "flat", "tou")...)
 	if inputs.Energy.Mode == "flat" {

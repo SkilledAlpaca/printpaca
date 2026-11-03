@@ -214,7 +214,7 @@
             data-moonraker-test={kind === "moonraker" ? "" : undefined}
             onclick={() => { if (testable) void runTest(kind, testUrl(row)); }}
             disabled={demoMode}
-            aria-disabled={testing[kind] === true || !testable}
+            aria-disabled={demoMode || testing[kind] === true || !testable}
             aria-describedby={!testable && !demoMode ? `test-help-${kind}` : undefined}
             aria-busy={testing[kind] === true}
           >

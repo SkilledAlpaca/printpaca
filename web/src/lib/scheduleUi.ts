@@ -107,7 +107,8 @@ function splitDay(day: TouDay): number {
 /** Splits every window that runs past midnight (start later than end) into two windows at midnight, which
  * is the only form the server accepts. Returns a copy and the number of windows split. */
 export function splitOvernightWindows(schedule: EnergySchedule): { schedule: EnergySchedule; split: number } {
-  const copy = structuredClone(schedule);
+  // JSON, not structuredClone: the editor passes a Svelte $state proxy, which structuredClone rejects.
+  const copy = JSON.parse(JSON.stringify(schedule)) as EnergySchedule;
   let split = 0;
   for (const season of copy.seasons) {
     split += splitDay(season.weekday);

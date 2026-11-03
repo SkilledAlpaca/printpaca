@@ -32,6 +32,12 @@ describe("overnight windows", () => {
     ]);
     expect(scheduleProblems(s, true)).toEqual([]);
   });
+  it("accepts a proxied schedule like the editor's $state form", () => {
+    const s = sceExampleSchedule();
+    const proxied = new Proxy(s, {});
+    expect(splitOvernightWindows(proxied).split).toBe(0);
+    expect(scheduleProblems(proxied, true)).toEqual([]);
+  });
   it("treats an end of 00:00 as the end of the day", () => {
     const s = sceExampleSchedule();
     s.seasons[0]!.weekday.windows = [{ name: "Late", start: "21:00", end: "00:00", rate: 0.2 }];

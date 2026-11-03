@@ -104,7 +104,7 @@ test("add spool requires a filament", async ({ page }) => {
 test("archive asks first, hides the spool, and unarchive brings it back", async ({ page }) => {
   const card = await openInventory(page);
   await row(card, 2).getByRole("button", { name: "Archive spool 2" }).click();
-  const confirm = card.getByRole("button", { name: "Archive spool 2?" });
+  const confirm = card.getByRole("button", { name: "Yes, archive spool 2" });
   await expect(confirm).toBeFocused();
 
   // Cancel leaves the spool alone.

@@ -101,10 +101,10 @@ test("a held Enter on a Delete button does not confirm the delete", async ({ pag
   try {
     await page.goto("/admin/#/items");
     await page.locator("button.row-open", { hasText: name }).click();
-    const trigger = page.getByRole("button", { name: "Delete item", exact: true });
+    const trigger = page.getByRole("button", { name: "Delete shop item", exact: true });
     await trigger.focus();
     await page.keyboard.down("Enter"); // activates the trigger; the confirm button takes focus
-    const confirm = page.getByRole("button", { name: "Delete item?" });
+    const confirm = page.getByRole("button", { name: /^Yes, delete / });
     await expect(confirm).toBeFocused();
     for (let i = 0; i < 6; i++) await page.keyboard.down("Enter"); // auto-repeat while the key stays down
     await page.keyboard.up("Enter");

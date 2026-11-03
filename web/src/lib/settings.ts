@@ -121,3 +121,9 @@ export function nextKey(existing: string[], base: string): string {
   while (existing.includes(`${base}-${n}`)) n++;
   return `${base}-${n}`;
 }
+
+/** A printer row with the starting values the Printers card's "Add printer" uses. */
+export function newPrinter(existingIds: string[], name: string): ServerConfig["printers"][number] {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "new-printer";
+  return { id: nextKey(existingIds, slug), name, watts: 250, purchaseCost: 400, lifespanHours: 4000, filamentDiameterMm: 1.75 };
+}

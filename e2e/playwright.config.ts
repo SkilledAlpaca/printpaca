@@ -14,8 +14,10 @@ export default defineConfig({
   use: { baseURL: "http://127.0.0.1:8099" },
   // The main port serves the shop (/ and /order) and the admin app (/admin/); the specs reach
   // the admin app under /admin/.
-  // Three servers, each with its own throwaway CONFIG_DIR: 8099 (baseURL), 9099 with ADMIN_PASSWORD set
-  // (auth.spec.ts), and 9199 with MOONRAKER_URL/FLUIDD_URL (moonraker.spec.ts). PUBLIC_PORT is set on
+  // Four servers, each with its own throwaway CONFIG_DIR: 8099 (baseURL), 9099 with ADMIN_PASSWORD set
+  // (auth.spec.ts), 9199 with MOONRAKER_URL/SPOOLMAN_URL/FLUIDD_URL (moonraker.spec.ts,
+  // spoolman-inventory.spec.ts), and 9299 with no integration URLs (integrations.spec.ts, which saves and
+  // tests them from Settings). PUBLIC_PORT is set on
   // all so the default 8098 never collides. The 8099 and 9199 servers set ADMIN_PASSWORD="" explicitly,
   // because an unset password makes the server generate and enforce a random one.
   webServer: [
@@ -46,9 +48,27 @@ export default defineConfig({
         PUBLIC_PORT: "9198",
         ADMIN_PASSWORD: "",
         MOONRAKER_URL: "http://127.0.0.1:9125",
+        SPOOLMAN_URL: "http://127.0.0.1:9127",
         FLUIDD_URL: "http://127.0.0.1:9126",
       },
       timeout: 180_000,
+      reuseExistingServer: !process.env.CI,
+    },
+    // No integration URLs: integrations.spec.ts types them into Settings, tests them, and relies on a
+    // saved URL taking effect without a restart. Its own server keeps the printer it adds out of 8099.
+    {
+      command: "bash ../scripts/e2e-server.sh",
+      url: "http://127.0.0.1:9299/healthz",
+      env: { PORT: "9299", PUBLIC_PORT: "9298", ADMIN_PASSWORD: "", SPOOLMAN_URL: "", MOONRAKER_URL: "", FLUIDD_URL: "" },
+      timeout: 180_000,
+      reuseExistingServer: !process.env.CI,
+    },
+    // The stateful Spoolman stub on 9127 (Spoolman's usual port is 7912).
+    {
+      command: "node ../scripts/e2e-spoolman-stub.mjs",
+      url: "http://127.0.0.1:9127/healthz",
+      env: { PORT: "9127" },
+      timeout: 30_000,
       reuseExistingServer: !process.env.CI,
     },
     // 9125 is distinct from every other port and from Spoolman's usual 7912.

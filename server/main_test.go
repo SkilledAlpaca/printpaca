@@ -261,11 +261,13 @@ func TestHandleConfigGoldenBody(t *testing.T) {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	store := NewConfigStore(cfg)
-	integ := Integrations{Spoolman: false}
+	t.Setenv("SPOOLMAN_URL", "")
+	t.Setenv("MOONRAKER_URL", "http://moonraker.local:7125")
+	t.Setenv("FLUIDD_URL", "http://fluidd.local:9000")
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
-	handleConfig(store, integ, configExtras{authEnabled: false, moonraker: true, fluiddURL: "http://fluidd.local:9000"}, newAuthState("", nil))(rr, req)
+	handleConfig(store, configExtras{authEnabled: false}, newAuthState("", nil))(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
@@ -382,7 +384,7 @@ func TestHandleConfigIntegrationsReflectEnv(t *testing.T) {
 			store := NewConfigStore(cfg)
 			rr := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
-			handleConfig(store, got, configExtras{}, newAuthState("", nil))(rr, req)
+			handleConfig(store, configExtras{}, newAuthState("", nil))(rr, req)
 
 			var body struct {
 				Integrations Integrations `json:"integrations"`
@@ -432,7 +434,7 @@ func TestHandleConfigMoonrakerFluiddReflectEnv(t *testing.T) {
 			store := NewConfigStore(cfg)
 			rr := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
-			handleConfig(store, Integrations{}, configExtras{moonraker: gotMoonraker, fluiddURL: gotFluidd}, newAuthState("", nil))(rr, req)
+			handleConfig(store, configExtras{}, newAuthState("", nil))(rr, req)
 
 			var body struct {
 				Moonraker bool   `json:"moonraker"`
@@ -462,12 +464,11 @@ func TestHandleConfigIntegrationSourcesReflectEnvAndConfig(t *testing.T) {
 		MoonrakerURL: "http://moonraker-config.local",
 		// FluiddURL left empty: exercises "unset".
 	}}
-	sources := deriveIntegrationSources(cfg)
 
 	store := NewConfigStore(cfg)
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
-	handleConfig(store, Integrations{}, configExtras{integrationSources: sources}, newAuthState("", nil))(rr, req)
+	handleConfig(store, configExtras{}, newAuthState("", nil))(rr, req)
 
 	var body struct {
 		IntegrationSources IntegrationSources `json:"integrationSources"`

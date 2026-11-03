@@ -120,7 +120,7 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, cfgStore *ConfigStore, auth 
 	// The handler has its own demo-mode block (GET is never seen by demoWriteGuard).
 	mux.HandleFunc("GET /api/logs/errors", adminOnly(handleLogsErrors(appLogRing, demoMode)))
 
-	registerProxies(mux, demoMode, cfgStore.Get(), db) // proxy.go; permission-gated internally
+	registerProxies(mux, demoMode, cfgStore, db) // proxy.go; permission-gated internally
 
 	// Probes a Spoolman/Moonraker URL before it is saved. Hard admin-only; demoWriteGuard blocks it in demo.
 	mux.HandleFunc("POST /api/integrations/test", adminOnly(handleIntegrationsTest))

@@ -11,6 +11,7 @@
 <script lang="ts">
   import { formatDateTime } from "../lib/format";
   import { onDestroy, onMount } from "svelte";
+  import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
   import { resolveGcode, type EffectiveConfig } from "../lib/engine/index";
   import { currentDensity, currentDiameter, type PartForm } from "../lib/state.svelte";
   import { splitSeconds } from "../lib/gcodeTime";
@@ -18,12 +19,14 @@
   import { DEFAULT_FETCH_TIMEOUT_MS } from "../lib/fetchTimeouts";
   import { applyResolvedPrefill, clearPrefillIfOwnedBy, isPrefillStale, prefillFor } from "../lib/prefill.svelte";
   import {
+    HISTORY_PAGE_SIZE,
+    filterJobs,
     isValidMetadata,
     moonrakerHistoryUrl,
     moonrakerJobToRawMeta,
     moonrakerMetadataUrl,
     moonrakerTimeSource,
-    parseCompletedJobs,
+    parseHistoryPage,
     parseMetadata,
     type MoonrakerJob,
     type MoonrakerMetadata,
@@ -35,6 +38,11 @@
   type ApplyMessage = GcodeMessage | { kind: "error"; text: string };
 
   let jobs = $state<MoonrakerJob[]>([]);
+  // Jobs of any status fetched so far: the `start` offset of the next page, since only completed ones are kept.
+  let fetchedRaw = $state(0);
+  let hasMore = $state(false);
+  let loadingMore = $state(false);
+  let filter = $state("");
   let status = $state<Status>("loading");
   let errorDetail = $state("");
   let applying = $state(false);
@@ -49,20 +57,53 @@
   // earlier response can't land after a later one.
   let controller: AbortController | null = null;
 
+  async function fetchPage(start: number) {
+    const res = await fetch(moonrakerHistoryUrl(HISTORY_PAGE_SIZE, start), { signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data: unknown = await res.json();
+    return parseHistoryPage(data);
+  }
+
+  // A full page may be followed by more; a short page, or reaching Moonraker's reported total, is the end.
+  function moreAfter(page: { rawCount: number; total: number | null }, fetchedTotal: number): boolean {
+    if (page.rawCount < HISTORY_PAGE_SIZE) return false;
+    return page.total === null || fetchedTotal < page.total;
+  }
+
   async function load() {
     status = "loading";
     errorDetail = "";
     applyMessage = null;
     try {
-      const res = await fetch(moonrakerHistoryUrl(), { signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: unknown = await res.json();
-      jobs = parseCompletedJobs(data);
-      status = jobs.length > 0 ? "ok" : "empty";
+      const page = await fetchPage(0);
+      jobs = page.jobs;
+      fetchedRaw = page.rawCount;
+      hasMore = moreAfter(page, fetchedRaw);
+      status = jobs.length > 0 || hasMore ? "ok" : "empty";
     } catch (e) {
       jobs = [];
+      fetchedRaw = 0;
+      hasMore = false;
       errorDetail = e instanceof Error ? e.message : "unknown error";
       status = "error";
+    }
+  }
+
+  async function loadMore() {
+    if (loadingMore) return;
+    loadingMore = true;
+    try {
+      const page = await fetchPage(fetchedRaw);
+      const seen = new Set(jobs.map((j) => j.job_id));
+      jobs = [...jobs, ...page.jobs.filter((j) => !seen.has(j.job_id))];
+      fetchedRaw += page.rawCount;
+      hasMore = moreAfter(page, fetchedRaw);
+      announce(`Loaded ${page.jobs.length} more ${page.jobs.length === 1 ? "print" : "prints"}.`);
+      if (!hasMore) void focusAfterUpdate("#recent-prints-filter");
+    } catch (e) {
+      announce(`Couldn't load more prints: ${e instanceof Error ? e.message : "unknown error"}.`, "assertive");
+    } finally {
+      loadingMore = false;
     }
   }
 
@@ -72,8 +113,8 @@
   function whenFinished(j: MoonrakerJob): string {
     // > 0, not just !== undefined: Moonraker's zero value is the Unix epoch, which would render as a real,
     // wrong date.
-    if (j.end_time === undefined || j.end_time <= 0) return "unknown finish time";
-    return formatDateTime(new Date(j.end_time * 1000).toISOString());
+    if (j.end_time === undefined || j.end_time <= 0) return "end time unknown";
+    return `ended ${formatDateTime(new Date(j.end_time * 1000).toISOString())}`;
   }
 
   // Labels use the same merged (job, inline metadata) figures moonrakerJobToRawMeta feeds resolveGcode, so
@@ -169,6 +210,16 @@
   );
   const assertive = $derived(status === "error");
 
+  const visibleJobs = $derived(filterJobs(jobs, filter));
+  // One always-present live region: the match count updates as the filter changes.
+  const matchText = $derived(
+    status !== "ok"
+      ? ""
+      : filter.trim() === ""
+        ? `${jobs.length} completed ${jobs.length === 1 ? "print" : "prints"} loaded.`
+        : `${visibleJobs.length} of ${jobs.length} loaded ${jobs.length === 1 ? "print matches" : "prints match"}.`,
+  );
+
   // The form's weight/time may reflect this picker's last apply or a later GcodeDrop parse
   // (prefill.svelte.ts). Claim the apply message and its staleness suffix only while this picker still owns
   // the values.
@@ -199,6 +250,11 @@
   {/if}
 
   {#if status === "ok"}
+    <label class="field field-inline recent-filter">
+      <span>Filter recent prints by file name</span>
+      <input id="recent-prints-filter" type="search" bind:value={filter} autocomplete="off" />
+    </label>
+    <p class="advisory-text match-text" role="status" aria-live="polite">{matchText}</p>
     <label class="field field-inline recent">
       <span>Recent print (from Moonraker)</span>
       <select
@@ -214,11 +270,16 @@
         }}
       >
         <option value="">Pick a completed print…</option>
-        {#each jobs as j (j.job_id)}
-          <option value={j.job_id}>{j.filename} · {whenFinished(j)} · {filamentLabel(j)} · {durationLabel(j)}</option>
+        {#each visibleJobs as j (j.job_id)}
+          <option value={j.job_id}>{j.filename} · {j.status} · {whenFinished(j)} · {filamentLabel(j)} · {durationLabel(j)}</option>
         {/each}
       </select>
     </label>
+    {#if hasMore}
+      <button type="button" class="quiet load-more" onclick={loadMore} aria-disabled={loadingMore} aria-busy={loadingMore}>
+        {loadingMore ? "Loading…" : `Load more prints (${jobs.length} loaded)`}
+      </button>
+    {/if}
 
     {#if displayedApplyMessage}
       <p
@@ -233,6 +294,9 @@
 <style>
   .recent-prints { margin-top: 0.6rem; }
   .recent { margin-top: 0.4rem; }
+  .recent-filter { margin-top: 0.4rem; }
+  .match-text { margin: 0.2rem 0 0; }
+  .load-more { margin-top: 0.4rem; }
   .status-line { margin: 0 0 0.4rem; }
   .status-line.error { color: var(--danger); }
   .apply-status.ok { color: var(--ok); }

@@ -303,7 +303,7 @@ func TestSettingsPutHotApplies(t *testing.T) {
 	running := loadTestConfig(t, dir)
 	store := NewConfigStore(running)
 	mux := newSettingsMux(dir, store)
-	mux.HandleFunc("GET /api/config", handleConfig(store, Integrations{}, configExtras{}, newAuthState("", nil)))
+	mux.HandleFunc("GET /api/config", handleConfig(store, configExtras{}, newAuthState("", nil)))
 
 	getMarginPct := func() float64 {
 		rec := serveReq(mux, httptest.NewRequest("GET", "/api/config", nil))

@@ -36,6 +36,30 @@ test("Recent Prints picker prefills weight/time from Moonraker history, and a la
   await expect(page.getByText(/from Moonraker history, slicer-estimated time/)).toBeVisible();
 });
 
+test("Recent Prints shows 50 jobs with end time and status, filters by file name, and loads more", async ({ page }) => {
+  await page.goto(MOONRAKER_URL);
+  const picker = page.getByLabel(RECENT_PRINTS_LABEL);
+  await expect(picker).toBeVisible();
+
+  // 60 jobs in the stub: the first page holds 50.
+  await expect(picker.locator("option")).toHaveCount(51); // 50 jobs plus the placeholder
+  await expect(picker.locator("option", { hasText: "calibration_cube.gcode" })).toContainText("completed");
+  await expect(picker.locator("option", { hasText: "calibration_cube.gcode" })).toContainText("ended ");
+  await expect(page.getByText("50 completed prints loaded.")).toBeVisible();
+
+  await page.getByRole("button", { name: /Load more prints/ }).click();
+  await expect(picker.locator("option")).toHaveCount(61);
+  await expect(page.getByText("60 completed prints loaded.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Load more prints/ })).toHaveCount(0);
+
+  const filter = page.getByLabel("Filter recent prints by file name");
+  await filter.fill("VASE");
+  await expect(picker.locator("option")).toHaveCount(2);
+  await expect(page.getByText("1 of 60 loaded prints match.")).toBeVisible();
+  await picker.selectOption("job-vase");
+  await expect(page.getByLabel(/Model weight/)).toHaveValue(/^11\.9/);
+});
+
 test("Fluidd link is present in the sidebar, pointing at FLUIDD_URL and opening in a new tab", async ({ page }) => {
   await page.goto(MOONRAKER_URL);
   const link = fluiddLink(page);

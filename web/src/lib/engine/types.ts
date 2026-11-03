@@ -1,5 +1,6 @@
 import type { CurrencyConfig } from "./money";
 import type { ConfigUser } from "../permissions";
+import type { EnergySchedule } from "./schedule";
 
 interface MaterialConfig {
   id: string;
@@ -28,9 +29,11 @@ export interface HardwareConfig {
 }
 
 export interface EnergyConfig {
-  mode: "flat" | "tou";
+  mode: "flat" | "tou" | "schedule";
   flatRate: number;
   tou: { peakRate: number; offPeakRate: number; defaultOffPeakFrac: number };
+  /** Used when mode is "schedule"; server/energy_schedule.go validates it. */
+  schedule: EnergySchedule;
 }
 
 export interface FeeSchedule {

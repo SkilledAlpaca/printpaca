@@ -117,7 +117,6 @@
       }
     } else {
       errors = result.errors;
-      announce("Couldn't save settings. See the errors in the save bar.", "assertive");
     }
   }
 
@@ -164,9 +163,7 @@
 
     {#if dirty || errors.length > 0}
       <div class="save-bar" use:stickyInset={{ edge: "bottom" }}>
-        {#if errors.length > 0}
-          <ErrorSummary {errors} resolve={resolveSettingsError} />
-        {/if}
+        <ErrorSummary {errors} resolve={resolveSettingsError} />
         <div class="save-actions">
           <button type="button" onclick={() => { if (!saving) discard(); }} disabled={!dirty} aria-disabled={saving} aria-busy={saving}>Discard changes</button>
           <button type="button" class="primary" onclick={save} aria-disabled={saving} aria-busy={saving}>{saving ? "Saving…" : "Save changes"}</button>

@@ -41,8 +41,9 @@
   });
 </script>
 
-{#if errors.length > 0}
-  <div role="alert">
+<!-- The alert container stays mounted and only its content changes, so assistive tech announces each new list. -->
+<div role="alert">
+  {#if errors.length > 0}
     <ul class="errors">
       {#each errors as e, i (e)}
         <li id={`${uid}-err-${i}`}>
@@ -54,8 +55,8 @@
         </li>
       {/each}
     </ul>
-  </div>
-{/if}
+  {/if}
+</div>
 
 <style>
   .error-link {

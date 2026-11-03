@@ -362,7 +362,6 @@
       announce(`Invoice ${result.number} saved.`);
     } catch (err) {
       formErrors = [err instanceof Error ? err.message : "Couldn't save invoice."];
-      announce("Couldn't save the invoice. See the errors above the form.", "assertive");
     } finally {
       saving = false;
     }
@@ -521,7 +520,6 @@
       await refresh();
     } catch (err) {
       paymentErrors = [err instanceof Error ? err.message : "Couldn't record payment."];
-      announce("Couldn't record the payment. See the errors in the Payments section.", "assertive");
     } finally {
       paymentSaving = false;
     }

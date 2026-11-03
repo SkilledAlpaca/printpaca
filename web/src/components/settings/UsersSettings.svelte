@@ -74,7 +74,6 @@
       return true;
     } catch (err) {
       rowError = { ...rowError, [id]: err instanceof Error ? err.message : "Couldn't update the user." };
-      announce(rowError[id] ?? "Couldn't update the user.", "assertive");
       return false;
     } finally {
       rowSaving = { ...rowSaving, [id]: false };

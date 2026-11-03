@@ -346,7 +346,6 @@
       announce(`${result.name || "Client"} saved.`);
     } catch (err) {
       formErrors = [err instanceof Error ? err.message : "Couldn't save client."];
-      announce("Couldn't save the client. See the errors above the form.", "assertive");
     } finally {
       saving = false;
     }

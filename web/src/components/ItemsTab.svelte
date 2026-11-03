@@ -308,7 +308,6 @@
       announce(`${result.name} saved.`);
     } catch (err) {
       formErrors = [err instanceof Error ? err.message : "Couldn't save item."];
-      announce("Couldn't save the item. See the errors above the form.", "assertive");
     } finally {
       saving = false;
     }
@@ -516,7 +515,7 @@
         {#if detailId === null}
           <p class="hint">Save the item first to add a photo.</p>
         {:else}
-          <input type="file" aria-label="Upload photo" accept="image/jpeg,image/png,image/webp" onchange={handleFileChange} aria-disabled={uploadingImage} aria-busy={uploadingImage} />
+          <input type="file" aria-label="Upload photo" accept="image/jpeg,image/png,image/webp" onchange={handleFileChange} disabled={uploadingImage} aria-busy={uploadingImage} />
           <p class="status-line" role="status">{uploadingImage ? "Uploading…" : ""}</p>
           {#if imageError}<p class="banner-warn" role="alert">{imageError}</p>{/if}
         {/if}

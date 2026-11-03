@@ -683,6 +683,16 @@ func buildPublicQuoteInputs(cfg *Config, material Material, quantity int, weight
 			OffPeakRate: OptF{Value: cfg.Energy.Tou.OffPeakRate, Present: true},
 			OffPeakFrac: OptF{Value: cfg.Energy.Tou.DefaultOffPeakFrac, Present: true},
 		}
+	} else if cfg.Energy.Mode == "schedule" {
+		// A visitor can't choose a start, so the quote prices from the next occurrence of the shop's default
+		// start time at request time.
+		sched := cfg.Energy.Schedule
+		energy = EnergyInputs{
+			Mode:     "schedule",
+			Schedule: &sched,
+			Timezone: cfg.Timezone,
+			Start:    nextStartWall(sched.DefaultStartTime, cfg.Location(), time.Now()),
+		}
 	} else {
 		energy = EnergyInputs{Mode: "flat", FlatRate: OptF{Value: cfg.Energy.FlatRate, Present: true}}
 	}

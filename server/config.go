@@ -175,6 +175,8 @@ type Energy struct {
 	Mode     string  `yaml:"mode" json:"mode"`
 	FlatRate float64 `yaml:"flatRate" json:"flatRate"`
 	Tou      Tou     `yaml:"tou" json:"tou"`
+	// Schedule is the time-of-use tariff used when Mode is "schedule" (energy_schedule.go).
+	Schedule EnergySchedule `yaml:"schedule" json:"schedule"`
 }
 
 type Preset struct {
@@ -407,6 +409,7 @@ func normalizeConfig(c *Config) {
 	normalizeFeeSchedules(c)
 	normalizeUI(c)
 	normalizeHardware(c)
+	normalizeEnergySchedule(&c.Energy.Schedule)
 	c.Users.AccessAdminEmail = foldEmail(c.Users.AccessAdminEmail)
 }
 
@@ -575,9 +578,10 @@ func validate(c *Config) []string {
 			p = append(p, fmt.Sprintf("hardware[%d] (%s): unitCost must be >= 0", i, hw.Name))
 		}
 	}
-	if c.Energy.Mode != "flat" && c.Energy.Mode != "tou" {
-		p = append(p, "energy.mode: must be flat or tou")
+	if c.Energy.Mode != "flat" && c.Energy.Mode != "tou" && c.Energy.Mode != "schedule" {
+		p = append(p, "energy.mode: must be flat, tou, or schedule")
 	}
+	p = append(p, validateEnergySchedule(c.Energy.Schedule, c.Energy.Mode == "schedule")...)
 	if !seen[c.Defaults.Material] {
 		p = append(p, fmt.Sprintf("defaults.material: %q not in materials", c.Defaults.Material))
 	}

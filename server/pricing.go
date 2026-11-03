@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // pricing.go is the sole quote pricing implementation (web/src/lib/engine/quote.ts holds only the request and
@@ -289,6 +290,12 @@ type EnergyInputs struct {
 	PeakRate    OptF   `json:"peakRate,omitzero"`
 	OffPeakRate OptF   `json:"offPeakRate,omitzero"`
 	OffPeakFrac OptF   `json:"offPeakFrac,omitzero"`
+	// Schedule mode carries a snapshot of the tariff, the time zone it is read in, and the print's resolved
+	// start as wall-clock "YYYY-MM-DDTHH:MM" in that zone, so a saved quote reprices identically after the
+	// shop's settings change.
+	Schedule *EnergySchedule `json:"schedule,omitempty"`
+	Timezone string          `json:"timezone,omitempty"`
+	Start    string          `json:"start,omitempty"`
 }
 
 // PricingFee* is the fee-schedule input shape of PricingInputs.FeeSchedule. It doesn't reuse config.go's
@@ -387,6 +394,8 @@ type LineItem struct {
 	Formula  string         `json:"formula"`
 	Inputs   map[string]any `json:"inputs"`
 	Warnings []FieldWarning `json:"warnings"`
+	// Periods is the electricity line's split by named tariff period (schedule mode only).
+	Periods []EnergyPeriod `json:"periods,omitempty"`
 }
 
 type CostBreakdown struct {
@@ -441,10 +450,16 @@ func ComputeQuote(inputs QuoteInputs, options EngineOptions) CostBreakdown {
 	warnings = append(warnings, validateF("timeHours", inputs.TimeHours, fieldRule{min: fmin(0), max: fmin(maxHoursInput)})...)
 	warnings = append(warnings, validateF("timeMinutes", inputs.TimeMinutes, fieldRule{min: fmin(0), max: fmin(59)})...)
 	warnings = append(warnings, validateF("watts", inputs.Watts, fieldRule{min: fmin(0), max: fmin(maxPrinterWatts)})...)
-	warnings = append(warnings, validateEnum("mode", inputs.Energy.Mode, "flat", "tou")...)
-	if inputs.Energy.Mode == "flat" {
+	warnings = append(warnings, validateEnum("mode", inputs.Energy.Mode, "flat", "tou", "schedule")...)
+	scheduleLoc := time.UTC
+	switch inputs.Energy.Mode {
+	case "flat":
 		warnings = append(warnings, validateOpt("flatRate", inputs.Energy.FlatRate, fieldRule{min: fmin(0), required: true})...)
-	} else {
+	case "schedule":
+		var sw []FieldWarning
+		scheduleLoc, sw = scheduleInputWarnings(inputs.Energy)
+		warnings = append(warnings, sw...)
+	default:
 		warnings = append(warnings, validateOpt("peakRate", inputs.Energy.PeakRate, fieldRule{min: fmin(0), required: true})...)
 		warnings = append(warnings, validateOpt("offPeakRate", inputs.Energy.OffPeakRate, fieldRule{min: fmin(0), required: true})...)
 		warnings = append(warnings, validateOpt("offPeakFrac", inputs.Energy.OffPeakFrac, fieldRule{min: fmin(0), max: fmin(1), required: true})...)
@@ -481,9 +496,27 @@ func ComputeQuote(inputs QuoteInputs, options EngineOptions) CostBreakdown {
 	if qtyRaw >= 1 && !math.IsInf(qtyRaw, 0) {
 		qty = qtyRaw
 	}
+	// Schedule mode: the batch runs back to back from the start, so electricity is priced for the whole span
+	// and the per-unit figure is its share. batchElectricity is the exact batch cost.
+	var periods []EnergyPeriod
+	scheduleOK := false
+	scheduleBatch := 0.0
+	if inputs.Energy.Mode == "schedule" && inputs.Energy.Schedule != nil {
+		kW := float64(inputs.Watts) / 1000
+		periods, scheduleBatch, scheduleOK = scheduleEnergy(*inputs.Energy.Schedule, scheduleLoc, inputs.Energy.Start, hours*qty, kW)
+		if scheduleOK && hours*qty > 0 && kW > 0 {
+			rate = scheduleBatch / (hours * qty * kW)
+		}
+	}
 
 	material := (float64(inputs.WeightG) * (1 + float64(inputs.WastePct)/100) * float64(inputs.PricePerKg)) / 1000
 	electricity := hours * (float64(inputs.Watts) / 1000) * rate
+	if inputs.Energy.Mode == "schedule" {
+		electricity = 0
+		if scheduleOK {
+			electricity = scheduleBatch / qty
+		}
+	}
 	depreciation := 0.0
 	if float64(inputs.MachineLifeHours) > 0 {
 		depreciation = hours * (float64(inputs.MachineCost) / float64(inputs.MachineLifeHours))
@@ -552,7 +585,7 @@ func ComputeQuote(inputs QuoteInputs, options EngineOptions) CostBreakdown {
 
 	failureFields := []string{
 		"failureRatePct", "weightG", "pricePerKg", "wastePct", "watts", "mode", "flatRate", "peakRate",
-		"offPeakRate", "offPeakFrac", "timeHours", "timeMinutes", "machineCost", "machineLifeHours",
+		"offPeakRate", "offPeakFrac", "schedule", "printStart", "timeHours", "timeMinutes", "machineCost", "machineLifeHours",
 	}
 	// The failure line's warnings scope in the hardware that feeds failureBase: only LostOnFailure entries.
 	for i, hw := range inputs.Hardware {
@@ -580,10 +613,11 @@ func ComputeQuote(inputs QuoteInputs, options EngineOptions) CostBreakdown {
 			Warnings: pickWarnings(warnings, "weightG", "pricePerKg", "wastePct"),
 		},
 		{
-			ID: "electricity", Label: "Electricity", Amount: lineAmount(electricity * qty),
-			Formula:  formatf(round2(hours)) + " h × " + formatf(inputs.Watts) + " W ÷ 1000 × " + formatf(rate) + "/kWh",
-			Inputs:   map[string]any{"hours": round2(hours), "watts": float64(inputs.Watts), "rate": rate},
-			Warnings: pickWarnings(warnings, "watts", "mode", "flatRate", "peakRate", "offPeakRate", "offPeakFrac", "timeHours", "timeMinutes"),
+			ID: "electricity", Label: "Electricity", Amount: lineAmount(electricityBatch(inputs.Energy.Mode, electricity, qty, scheduleBatch)),
+			Formula:  electricityFormula(inputs, hours, rate, periods),
+			Inputs:   electricityInputs(inputs, hours, rate),
+			Warnings: pickWarnings(warnings, "watts", "mode", "flatRate", "peakRate", "offPeakRate", "offPeakFrac", "schedule", "printStart", "timeHours", "timeMinutes"),
+			Periods:  periods,
 		},
 		{
 			ID: "depreciation", Label: "Depreciation", Amount: lineAmount(depreciation * qty), Formula: depreciationFormula,

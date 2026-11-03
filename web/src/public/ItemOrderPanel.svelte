@@ -304,7 +304,8 @@
       {/if}
     </div>
 
-    <button type="submit" class="primary" class:busy={submitting} aria-disabled={submitting ? "true" : undefined}>
+    <p id="order-submit-note" class="submit-note">You won't be charged now. We'll review your order and follow up by email.</p>
+    <button type="submit" class="primary" class:busy={submitting} aria-disabled={submitting ? "true" : undefined} aria-describedby="order-submit-note">
       {submitting ? "Submitting…" : "Place order"}
     </button>
   </form>
@@ -358,5 +359,6 @@
   .error-list { list-style: none; margin: 0; padding: 0; }
   .error-list li { margin: 0.2rem 0; }
   /* In flight: aria-disabled keeps focus on the button, so the busy look is visual only. */
+  .submit-note { color: var(--muted); font-size: var(--text-sm); margin: 0; }
   button.busy { opacity: 0.6; cursor: progress; }
 </style>

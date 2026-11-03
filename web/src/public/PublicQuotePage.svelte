@@ -1021,25 +1021,14 @@
           {/if}
         </div>
 
-        <button type="submit" class="primary" class:busy={submitting} aria-disabled={submitting ? "true" : undefined}>
+        <p id="estimate-submit-note" class="submit-note">You won't be charged now. We'll review your request and follow up by email.</p>
+        <button type="submit" class="primary" class:busy={submitting} aria-disabled={submitting ? "true" : undefined} aria-describedby="estimate-submit-note">
           {submitting ? "Submitting…" : "Request an estimate"}
         </button>
       </form>
     {/if}
 
-    {#if cfg.branding.email || cfg.branding.phone || cfg.branding.address}
-      <footer class="shop-footer">
-        {#if cfg.branding.email || cfg.branding.phone}
-          <p>
-            Questions?
-            {#if cfg.branding.email}<a href="mailto:{cfg.branding.email}">{cfg.branding.email}</a>{/if}
-            {#if cfg.branding.email && cfg.branding.phone}&middot;{/if}
-            {cfg.branding.phone}
-          </p>
-        {/if}
-        {#if cfg.branding.address}<p class="shop-address">{cfg.branding.address}</p>{/if}
-      </footer>
-    {/if}
+    <PublicFooter branding={cfg.branding} />
   {/if}
 </main>
 
@@ -1184,8 +1173,9 @@
   .error-list li { margin: 0.2rem 0; }
   .view-heading { margin: 0; }
   /* Long unbroken strings (an email in "We'll follow up at ...", a reference id) must wrap at 320px. */
-  .confirmation p, .shop-footer { overflow-wrap: anywhere; }
+  .confirmation p { overflow-wrap: anywhere; }
   /* In flight: aria-disabled keeps focus on the button, so the busy look is visual only. */
   button.busy { opacity: 0.6; cursor: progress; }
+  .submit-note { color: var(--muted); font-size: var(--text-sm); margin: 0; }
   .per-unit { color: var(--muted); font-weight: 400; }
 </style>

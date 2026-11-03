@@ -259,6 +259,20 @@ var migrations = []string{
 	    FROM json_each(items.options_json)))
 	))
 	WHERE option_label != '' AND json_array_length(options_json) > 0;
+
+	-- Stored option names change shape with the groups: a v1.0.5 order or invoice line recorded the bare
+	-- option ("Red"), and the new code reads "Color: Red" (itemoptions.go optionSummaryDelta). Rewrite each
+	-- row linked to an item that was just converted, when its option_name is one of that item's legacy
+	-- option names. This lives in migration 2 (unreleased) so an upgrade is one consistent step.
+	UPDATE invoice_lines SET option_name = (SELECT i.option_label || ': ' || invoice_lines.option_name FROM items i WHERE i.id = invoice_lines.item_id)
+	WHERE option_name != '' AND item_id != '' AND EXISTS (SELECT 1 FROM items i, json_each(i.options_json) o
+	  WHERE i.id = invoice_lines.item_id AND i.option_label != '' AND json_extract(o.value, '$.name') = invoice_lines.option_name);
+	UPDATE quote_requests SET option_name = (SELECT i.option_label || ': ' || quote_requests.option_name FROM items i WHERE i.id = quote_requests.item_id)
+	WHERE option_name != '' AND item_id != '' AND EXISTS (SELECT 1 FROM items i, json_each(i.options_json) o
+	  WHERE i.id = quote_requests.item_id AND i.option_label != '' AND json_extract(o.value, '$.name') = quote_requests.option_name);
+	UPDATE item_sales SET option_name = (SELECT i.option_label || ': ' || item_sales.option_name FROM items i WHERE i.id = item_sales.item_id)
+	WHERE option_name != '' AND item_id != '' AND EXISTS (SELECT 1 FROM items i, json_each(i.options_json) o
+	  WHERE i.id = item_sales.item_id AND i.option_label != '' AND json_extract(o.value, '$.name') = item_sales.option_name);
 	`,
 }
 

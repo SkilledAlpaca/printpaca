@@ -16,10 +16,10 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { announce } from "../lib/a11y.svelte";
-  import { visitor } from "./visitor.svelte";
+  import { clearVisitor, visitor } from "./visitor.svelte";
   import { formatMoney, type CurrencyConfig } from "../lib/engine/index";
   import { itemTotalCents } from "../lib/itemMath";
-  import { NAME_MAX_BYTES, NOTE_MAX_BYTES, ITEM_ORDER_EMAIL_MAX_BYTES, utf8ByteLength } from "../lib/publicFormLimits";
+  import { NAME_MAX_BYTES, NOTE_MAX_BYTES, ITEM_ORDER_EMAIL_MAX_BYTES, utf8ByteLength, isPlausibleEmail, EMAIL_FORMAT_ERROR } from "../lib/publicFormLimits";
   import { clampQuantity, perUnitCents } from "./publicPricing";
   import { submitItemOrder, type PublicItem } from "./api";
 
@@ -97,7 +97,7 @@
     if (email.trim() === "") out.email = "Email is required.";
     else if (utf8ByteLength(email) > ITEM_ORDER_EMAIL_MAX_BYTES)
       out.email = `Email must be ${ITEM_ORDER_EMAIL_MAX_BYTES} characters or fewer.`;
-    else if (!email.includes("@")) out.email = "Enter a valid email address.";
+    else if (!isPlausibleEmail(email.trim())) out.email = EMAIL_FORMAT_ERROR;
     if (utf8ByteLength(note) > NOTE_MAX_BYTES) out.note = `Note must be ${NOTE_MAX_BYTES} characters or fewer.`;
     if (item.options.length > 0 && optionName === "") out.other.push(`Choose ${item.optionLabel || "an option"}.`);
     if (quantity === null || !Number.isInteger(quantity) || quantity < 1 || quantity > maxQuantity) {
@@ -109,6 +109,7 @@
     (fieldErrors.name ? 1 : 0) + (fieldErrors.email ? 1 : 0) + (fieldErrors.note ? 1 : 0) + fieldErrors.other.length,
   );
   let showErrors = $state(false);
+  let formEl: HTMLFormElement | undefined = $state();
   const nameError = $derived(showErrors ? fieldErrors.name : undefined);
   const emailError = $derived(showErrors ? fieldErrors.email : undefined);
   const noteError = $derived(showErrors ? fieldErrors.note : undefined);
@@ -122,7 +123,7 @@
       showErrors = true;
       submitErrors = fieldErrors.other;
       await tick();
-      document.querySelector<HTMLElement>("form [aria-invalid='true']")?.focus();
+      formEl?.querySelector<HTMLElement>("[aria-invalid='true']")?.focus();
       return;
     }
 
@@ -142,6 +143,9 @@
     submitting = false;
 
     if (result.ok && result.id !== undefined && result.priceCents !== undefined) {
+      // The order is placed: a shared device shouldn't keep the visitor's name and email around.
+      const sentEmail = email.trim();
+      clearVisitor();
       onordered({
         id: result.id,
         priceCents: result.priceCents,
@@ -149,7 +153,7 @@
         optionLabel: item.optionLabel,
         optionName,
         quantity,
-        email: email.trim(),
+        email: sentEmail,
       });
       return;
     }
@@ -184,6 +188,7 @@
 
   <!-- novalidate: the panel validates itself and shows the messages inline (WCAG 3.3.1). -->
   <form
+    bind:this={formEl}
     class="card"
     novalidate
     onsubmit={(e) => {

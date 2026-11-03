@@ -37,7 +37,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from "svelte";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
-  import { visitor } from "./visitor.svelte";
+  import { clearVisitor, visitor } from "./visitor.svelte";
   import {
     formatMoney,
     parseGcodeStream,
@@ -67,6 +67,8 @@
     NOTE_MAX_BYTES,
     noteByteBudget,
     utf8ByteLength,
+    isPlausibleEmail,
+    EMAIL_FORMAT_ERROR,
   } from "../lib/publicFormLimits";
   import ItemGallery from "./ItemGallery.svelte";
   import projectLogoUrl from "../assets/alpaca-logo.svg";
@@ -166,6 +168,7 @@
   let quoteConfirmationHeading: HTMLElement | undefined = $state();
   let itemConfirmationHeading: HTMLElement | undefined = $state();
   let estimateFormHeading: HTMLElement | undefined = $state();
+  let formEl: HTMLFormElement | undefined = $state();
 
   // Mirror server/public.go's bounds on weightG/timeSeconds so a manual entry the server would reject is
   // flagged first.
@@ -548,7 +551,7 @@
     else if (utf8ByteLength(name) > NAME_MAX_BYTES) out.name = `Name must be ${NAME_MAX_BYTES} characters or fewer.`;
     if (email.trim() === "") out.email = "Email is required.";
     else if (utf8ByteLength(email) > EMAIL_MAX_BYTES) out.email = `Email must be ${EMAIL_MAX_BYTES} characters or fewer.`;
-    else if (!email.includes("@")) out.email = "Enter a valid email address.";
+    else if (!isPlausibleEmail(email.trim())) out.email = EMAIL_FORMAT_ERROR;
     if (utf8ByteLength(note.trim()) > noteBudget) {
       out.note =
         modelFileNote.length > 0
@@ -598,7 +601,7 @@
       showErrors = true;
       submitErrors = fieldErrors.other;
       await tick();
-      document.querySelector<HTMLElement>("form [aria-invalid='true']")?.focus();
+      formEl?.querySelector<HTMLElement>("[aria-invalid='true']")?.focus();
       return;
     }
     // Gated on a resolved preview: a form submit (Enter in a text field) must not fire before the server has
@@ -642,7 +645,8 @@
       fileStoredCaveat = caveat;
       saveConfirmation(QUOTE_CONFIRMATION_KEY, submitted);
       showErrors = false;
-      announce("Your estimate request was sent.");
+      // The request is sent: a shared device shouldn't keep the visitor's name and email around.
+      clearVisitor();
       await focusAfterUpdate(() => quoteConfirmationHeading);
       return;
     }
@@ -671,7 +675,6 @@
     clearConfirmation(QUOTE_CONFIRMATION_KEY);
     materialName = "";
     quantity = 1;
-    // Name and email stay: the visitor just typed them and may well send another request (WCAG 3.3.7).
     note = "";
     showErrors = false;
     clearFile();
@@ -750,7 +753,6 @@
               orderItem = null;
               itemOrderConfirmation = confirmation;
               saveConfirmation(ITEM_ORDER_CONFIRMATION_KEY, confirmation);
-              announce("Your order was placed.");
               void focusAfterUpdate(() => itemConfirmationHeading);
             }}
           />
@@ -780,6 +782,7 @@
       <!-- novalidate: the page validates itself and shows the messages inline, instead of the browser's
            transient bubble, which is announced inconsistently and disappears (WCAG 3.3.1). -->
       <form
+        bind:this={formEl}
         class="card"
         novalidate
         onsubmit={(e) => {

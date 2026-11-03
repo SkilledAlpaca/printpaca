@@ -71,6 +71,7 @@
     EMAIL_FORMAT_ERROR,
   } from "../lib/publicFormLimits";
   import ItemGallery from "./ItemGallery.svelte";
+  import PublicFooter from "./PublicFooter.svelte";
   import projectLogoUrl from "../assets/alpaca-logo.svg";
   import ItemOrderPanel, { type ItemOrderConfirmation } from "./ItemOrderPanel.svelte";
   import ModelPreview from "./ModelPreview.svelte";
@@ -1175,14 +1176,6 @@
 
   /* Shop-identity footer, shown only when config carries email, phone or address (all optional, see
    * api.ts's PublicConfig.branding). Quiet: a courtesy footer, not another call to action. */
-  .shop-footer {
-    text-align: center;
-    color: var(--muted);
-    font-size: var(--text-sm);
-    margin-top: var(--space-2);
-  }
-  .shop-footer p { margin: 0.2rem 0; }
-  .shop-footer a { color: inherit; }
 
   .clamp-notice { color: var(--warn); font-size: var(--text-sm); margin: 0.3rem 0 0; }
   /* The persistent live regions render empty most of the time; drop their margins then so they take no room. */

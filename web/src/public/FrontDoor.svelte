@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import projectLogoUrl from "../assets/alpaca-logo.svg";
+  import PublicFooter from "./PublicFooter.svelte";
   import { loadPublicConfig, type PublicConfig } from "./api";
 
   // The page a customer lands on at "/": who you are, an Order button, and (when the server offers one) a
@@ -40,6 +41,7 @@
       <a class="action primary" href="/order">Order or get an estimate</a>
       {#if cfg.staffUrl}<a class="action" href={cfg.staffUrl}>Staff sign-in</a>{/if}
     </div>
+    <PublicFooter branding={cfg.branding} />
   {/if}
 </main>
 

@@ -178,7 +178,7 @@ Each rejected request also appears as a `403` in the access log (`access admin "
 
 On the New quote page, turn on **Set a selling price**, then type the client's name in **Client (optional)**. The same name appears in the save row's client field, prints on the client quote, and is saved with the quote. When you save, a name that matches no client creates one, so repeat clients are linked automatically.
 
-To email the quote, open the quote's row menu on the Quotes page and choose **Email quote**. If the quote has no client, or its client has no email on file, printpaca asks for an address, creates the client (or fills in the linked client's email), and sends the quote. This needs the Clients permission; without it the menu explains that you need Clients access to add an email. Converting the quote to an invoice keeps the client's name.
+To email the quote, open the quote's row menu on the Quotes page and choose **Email quote**. If the quote has no client, or its client has no email on file, printpaca asks for an address, creates the client (or fills in the linked client's email), and sends the quote after you confirm. printpaca also asks you to confirm before it changes a quote's status (Mark sent, Mark accepted, or Mark declined), emails an invoice, or marks an invoice sent. This needs the Clients permission; without it the menu explains that you need Clients access to add an email. Converting the quote to an invoice keeps the client's name.
 
 ## Quote a multi-part order
 

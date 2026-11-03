@@ -39,6 +39,8 @@ A Svelte 5 (runes) single-page app. Vite builds two entry points into one `dist/
 
 The Go binary embeds that `dist/` at build time (`//go:embed all:embedded/dist` in `server/static.go`).
 
+Accessibility helpers are shared by both entries. `web/src/lib/a11y.svelte.ts` exports `announce()` and `focusAfterUpdate()`, and `web/src/components/LiveAnnouncer.svelte` renders the hidden live regions `announce()` writes to. `App.svelte` mounts `LiveAnnouncer` for the admin app, and `public/PublicApp.svelte` mounts it for the customer pages. `web/src/lib/a11yFocus.ts` holds the focus helpers for two-step confirms and lists, and `ErrorSummary` and `DetailTitle` in `web/src/components/` give forms and detail views their shared error list and `h1`. See [Accessibility](accessibility.md#contributor-guidance).
+
 The admin app is an installable Progressive Web App with a hand-rolled service worker (`web/public/sw.js`, no Workbox) that precaches the app shell. `api/*` and `healthz` are never cached, and the worker's scope is `/admin/`, so it never controls the front door or the shop. Registration runs only in a secure context (HTTPS or `localhost`), so it silently no-ops on a plain-HTTP LAN deployment.
 
 ### server/
@@ -86,6 +88,6 @@ Test layers, fastest to slowest:
 
 - Vitest unit tests (`web/src`)
 - Go unit tests (`cd server && go test ./... -race`), including the golden-vector pricing suite
-- Playwright end-to-end tests (`e2e/`) against a real built binary
+- Playwright end-to-end tests (`e2e/`) against a real built binary, including the axe-core accessibility gate (`e2e/a11y.spec.ts`)
 
 See the README's [Development](../README.md#development) section for the commands.

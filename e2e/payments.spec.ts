@@ -26,6 +26,7 @@ test("record a full payment on a sent invoice and see it reflected on the Dashbo
   await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
 
   await page.getByRole("button", { name: "Mark sent" }).click();
+  await page.getByRole("button", { name: /^Mark INV-.* as sent\?$/ }).click();
   await expect(page.getByText("sent", { exact: true })).toBeVisible();
 
   // The form defaults to today and the open balance ($40.00), so recording as-is fully pays the invoice.

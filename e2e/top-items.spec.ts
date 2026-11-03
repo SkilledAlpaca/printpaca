@@ -35,6 +35,7 @@ test("a finalized gallery order is listed in Top items and survives deleting the
   await navButton(page, "Requests").click();
   await page.locator(".plain-list li", { hasText: BUYER_NAME }).getByRole("button").first().click();
   await page.getByRole("button", { name: "Finalize", exact: true }).click();
+  await page.getByRole("button", { name: /^Finalize request from/ }).click();
   await expect(page.getByRole("button", { name: "Finalize", exact: true })).toHaveCount(0);
 
   const topItemsRow = () => page.locator(".top-items tbody tr", { hasText: ITEM_NAME });
@@ -103,6 +104,7 @@ test("a counter sale on a sent invoice is counted and takes stock; canceling res
     expect(await stockQty()).toBe(5);
 
     await page.getByRole("button", { name: "Mark sent" }).click();
+    await page.getByRole("button", { name: /^Mark INV-.* as sent\?$/ }).click();
     await expect(page.getByText("sent", { exact: true })).toBeVisible();
     expect(await stockQty()).toBe(3);
 

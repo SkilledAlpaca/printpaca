@@ -126,6 +126,8 @@
       cancelDeletePaymentConfirm();
     } else if (confirmingMarkSent) {
       confirmingMarkSent = false;
+    } else if (confirmingEmail) {
+      confirmingEmail = false;
     } else {
       requestBack();
     }
@@ -205,9 +207,10 @@
 
   let confirmingCancel = $state(false);
   let confirmingDelete = $state(false);
-  // Two-click confirm before marking an invoice with no lines (or a zero total) sent: it is almost certainly
-  // an unfinished draft, and sending burns a sequential invoice-number transition.
+  // Two-click confirms (WCAG 3.3.4) before the two actions a user can't take back: marking a draft sent (a
+  // sent invoice never returns to draft; it takes stock and records a delivery) and emailing it to the client.
   let confirmingMarkSent = $state(false);
+  let confirmingEmail = $state(false);
   // Shared result line for every status-action button (errors, and the "Email to client" result): the same
   // status-line/aria-live pattern as QuotesTab's action-status, carrying success messages too.
   let statusActionMessage = $state("");
@@ -239,6 +242,7 @@
     confirmingDelete = false;
     confirmingLineRemove = null;
     confirmingMarkSent = false;
+    confirmingEmail = false;
     statusActionMessage = "";
     statusActionFailed = false;
   }
@@ -279,6 +283,7 @@
     confirmingDelete = false;
     confirmingLineRemove = null;
     confirmingMarkSent = false;
+    confirmingEmail = false;
     statusActionMessage = "";
     statusActionFailed = false;
     paymentErrors = [];
@@ -396,15 +401,17 @@
     }
   }
 
-  // "Mark sent" on a draft with no lines (or zero total) gets the same two-click confirm as
-  // void/cancel/delete, since it would burn an invoice number on an unfinished draft.
+  // "Mark sent" always asks first: a sent invoice can't go back to draft.
   function markSentClick() {
     if (!detail) return;
-    if (detail.lines.length === 0 || detail.totalCents === 0) {
-      confirmingMarkSent = true;
-    } else {
-      changeStatus("sent");
-    }
+    confirmingMarkSent = true;
+  }
+  function askSendEmail() {
+    if (emailing) return;
+    confirmingEmail = true;
+  }
+  function cancelSendEmail() {
+    confirmingEmail = false;
   }
   function cancelMarkSent() {
     confirmingMarkSent = false;
@@ -446,6 +453,7 @@
   async function sendInvoiceEmailAction() {
     if (!detail || emailing) return;
     emailing = true;
+    confirmingEmail = false;
     statusActionMessage = "";
     statusActionFailed = false;
     try {
@@ -593,6 +601,7 @@
       {confirmingMarkSent}
       {confirmingCancel}
       {confirmingDelete}
+      {confirmingEmail}
       {emailing}
       {paymentForm}
       {paymentErrors}
@@ -614,6 +623,8 @@
       onAskDelete={askDelete}
       onCancelDeleteConfirm={cancelDeleteConfirm}
       onConfirmDeleteInvoice={confirmDeleteInvoice}
+      onAskSendEmail={askSendEmail}
+      onCancelSendEmail={cancelSendEmail}
       onSendEmail={sendInvoiceEmailAction}
       onPrint={printInvoice}
       onAddPayment={addPaymentSubmit}

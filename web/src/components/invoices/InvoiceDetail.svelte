@@ -40,6 +40,7 @@
     statusActionMessage,
     statusActionFailed,
     confirmingMarkSent,
+    confirmingEmail,
     confirmingCancel,
     confirmingDelete,
     emailing,
@@ -63,6 +64,8 @@
     onAskDelete,
     onCancelDeleteConfirm,
     onConfirmDeleteInvoice,
+    onAskSendEmail,
+    onCancelSendEmail,
     onSendEmail,
     onPrint,
     onAddPayment,
@@ -83,6 +86,7 @@
     statusActionMessage: string;
     statusActionFailed: boolean;
     confirmingMarkSent: boolean;
+    confirmingEmail: boolean;
     confirmingCancel: boolean;
     confirmingDelete: boolean;
     emailing: boolean;
@@ -106,6 +110,8 @@
     onAskDelete: () => void;
     onCancelDeleteConfirm: () => void;
     onConfirmDeleteInvoice: () => void;
+    onAskSendEmail: () => void;
+    onCancelSendEmail: () => void;
     onSendEmail: () => void;
     onPrint: () => void;
     onAddPayment: () => void;
@@ -345,7 +351,7 @@
       <div class="status-actions">
         {#if detail.status === "draft"}
           {#if confirmingMarkSent}
-            <button type="button" class="danger" onclick={() => onChangeStatus("sent")} use:confirmFocus={{ restore: keySelector("mark-sent"), cancel: onCancelMarkSent }}>Mark an empty invoice as sent?</button>
+            <button type="button" class="danger" onclick={() => onChangeStatus("sent")} use:confirmFocus={{ restore: keySelector("mark-sent"), cancel: onCancelMarkSent }}>Mark {detail.number} as sent?</button>
             <button type="button" onclick={onCancelMarkSent}>Cancel</button>
           {:else}
             <button type="button" data-focus-key="mark-sent" onclick={onMarkSentClick}>Mark sent</button>
@@ -373,16 +379,22 @@
                reopening, is its only action. -->
           <button type="button" onclick={() => onDuplicate(detail)}>Duplicate</button>
         {/if}
-        <button
-          type="button"
-          onclick={onSendEmail}
-          disabled={emailReason !== null}
-          aria-disabled={emailing} aria-busy={emailing}
-          aria-label={emailReason ? "Email to client (unavailable)" : undefined}
-          aria-describedby={emailReason ? "email-disabled-reason" : undefined}
-        >
-          {emailing ? "Sending…" : "Email to client"}
-        </button>
+        {#if confirmingEmail && emailReason === null}
+          <button type="button" class="danger" onclick={onSendEmail} use:confirmFocus={{ restore: keySelector("email-invoice"), cancel: onCancelSendEmail }}>Send {detail.number} to {detail.clientName || detail.clientEmail}?</button>
+          <button type="button" onclick={onCancelSendEmail}>Cancel</button>
+        {:else}
+          <button
+            type="button"
+            data-focus-key="email-invoice"
+            onclick={onAskSendEmail}
+            disabled={emailReason !== null}
+            aria-disabled={emailing} aria-busy={emailing}
+            aria-label={emailReason ? "Email to client (unavailable)" : undefined}
+            aria-describedby={emailReason ? "email-disabled-reason" : undefined}
+          >
+            {emailing ? "Sending…" : "Email to client"}
+          </button>
+        {/if}
         <button type="button" class="primary" onclick={onPrint}>Print</button>
       </div>
       {#if emailReason}

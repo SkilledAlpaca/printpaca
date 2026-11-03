@@ -168,6 +168,10 @@
       cancelDelete();
       return;
     }
+    if (confirmingFinalize) {
+      cancelFinalize();
+      return;
+    }
     backToList();
   }
 
@@ -207,6 +211,7 @@
     detailError = null;
     verifyOutcome = null;
     confirmingDelete = false;
+    confirmingFinalize = false;
   }
 
   // Reacts to hash changes while mounted: back/forward between detail and list (or two ids), or a manual edit
@@ -363,6 +368,7 @@
     // drives.
     verifying = false;
     confirmingDelete = false;
+    confirmingFinalize = false;
     const wasNew = requests.find((r) => r.id === id)?.status === "new";
     try {
       const loaded = await loadRequest(id); // GET flips new -> viewed server-side
@@ -401,8 +407,17 @@
   // Actions
 
   let finalizing = $state(false);
+  // Finalizing can't be undone (no way back to "viewed") and records a sale for gallery orders, so it asks first (3.3.4).
+  let confirmingFinalize = $state(false);
+  function askFinalize() {
+    confirmingFinalize = true;
+  }
+  function cancelFinalize() {
+    confirmingFinalize = false;
+  }
   async function finalize() {
     if (!detail || finalizing) return;
+    confirmingFinalize = false;
     finalizing = true;
     actionError = null;
     try {
@@ -709,7 +724,12 @@
         </p>
         <div class="status-actions">
           {#if detail.status === "viewed"}
-            <button type="button" class="primary" title="Mark this request as handled" aria-disabled={finalizing} onclick={finalize}>Finalize</button>
+            {#if confirmingFinalize}
+              <button type="button" class="primary" onclick={finalize} use:confirmFocus={{ restore: keySelector("finalize-request"), cancel: cancelFinalize }}>Finalize request from {detail.name}?</button>
+              <button type="button" onclick={cancelFinalize}>Cancel</button>
+            {:else}
+              <button type="button" class="primary" data-focus-key="finalize-request" aria-disabled={finalizing} onclick={askFinalize}>Finalize</button>
+            {/if}
           {/if}
           {#if detail.kind !== "item"}
             <button type="button" onclick={openInQuoteTab}>Open in new quote</button>

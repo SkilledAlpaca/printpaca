@@ -25,7 +25,7 @@
 
 <main class="page">
   {#if phase === "loading"}
-    <p class="muted center">Loading…</p>
+    <p class="muted center" role="status">Loading…</p>
   {:else if phase === "failed"}
     <p class="muted center">This page is temporarily unavailable.</p>
   {:else if cfg}

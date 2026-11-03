@@ -46,7 +46,7 @@
   import LoadMoreRow from "./LoadMoreRow.svelte";
   import DetailTitle from "./DetailTitle.svelte";
   import { announce } from "../lib/a11y.svelte";
-  import { confirmFocus, focusRowOrHeading, keySelector, neighborId, refocusIfLost } from "./a11yFocus";
+  import { confirmFocus, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "./a11yFocus";
 
   let {
     cfg,
@@ -99,8 +99,11 @@
     loadingMore = true;
     const result = await loadRequests({ limit: INITIAL_PAGE_LIMIT, offset: requests.length });
     if (result !== null) {
+      const firstNew = result.items[0];
       requests = [...requests, ...result.items];
       total = result.total;
+      // The button that was focused goes away when this page exhausts the list: land on the first new row.
+      if (firstNew) void refocusIfLost(rowSelector(firstNew.id));
     }
     loadingMore = false;
   }
@@ -543,7 +546,7 @@
     <div class="card">
       <ul class="plain-list">
         {#if loading}
-          <li class="empty-state">Loading…</li>
+          <li class="empty-state"><span role="status">Loading…</span></li>
         {:else}
           {#each requests as r (r.id)}
             <li>
@@ -585,7 +588,7 @@
     </div>
 
     {#if detailLoading}
-      <p>Loading…</p>
+      <p role="status">Loading…</p>
     {:else if detailError}
       <p class="banner-warn" role="alert">{detailError}</p>
     {:else if detail}
@@ -647,7 +650,7 @@
         <div class="subcard">
           <h3>Verification</h3>
           {#if verifying}
-            <p class="status-line">Verifying…</p>
+            <p class="status-line" role="status">Verifying…</p>
           {:else if verifyOutcome === null}
             <button type="button" onclick={verifyRequest}>Verify</button>
           {:else if verifyOutcome.status === "verified"}

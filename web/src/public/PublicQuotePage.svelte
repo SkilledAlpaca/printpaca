@@ -688,7 +688,7 @@
 
 <main class="page">
   {#if phase === "loading"}
-    <p class="muted center">Loading…</p>
+    <p class="muted center" role="status">Loading…</p>
   {:else if phase === "failed"}
     <p class="muted center">Estimates are temporarily unavailable.</p>
     <p class="center"><button type="button" onclick={() => location.reload()}>Try again</button></p>

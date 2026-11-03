@@ -244,7 +244,7 @@
   {#if demoSingle}
     <p class="hint">Switch the demo banner's User mode to "multi" to see example employee accounts here.</p>
   {:else if usersState.status === "loading"}
-    <p class="status-line">Loading employee accounts…</p>
+    <p class="status-line" role="status">Loading employee accounts…</p>
   {:else if usersState.status === "off"}
     <p class="hint">Turn on multi-user mode above and save changes to create and manage employee accounts here.</p>
   {:else if usersState.status === "error"}

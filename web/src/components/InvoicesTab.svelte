@@ -38,7 +38,7 @@
   import InvoiceList from "./invoices/InvoiceList.svelte";
   import InvoiceDetail from "./invoices/InvoiceDetail.svelte";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
-  import { focusAfterRowRemoval, focusRowOrHeading, keySelector, neighborId, refocusIfLost } from "./a11yFocus";
+  import { focusAfterRowRemoval, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "./a11yFocus";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 
@@ -90,8 +90,11 @@
     loadingMore = true;
     const result = await listInvoices({ limit: INITIAL_PAGE_LIMIT, offset: invoices.length });
     if (result !== null) {
+      const firstNew = result.items[0];
       invoices = [...invoices, ...result.items];
       total = result.total;
+      // The button that was focused goes away when this page exhausts the list: land on the first new row.
+      if (firstNew) void refocusIfLost(rowSelector(firstNew.id));
     }
     loadingMore = false;
   }

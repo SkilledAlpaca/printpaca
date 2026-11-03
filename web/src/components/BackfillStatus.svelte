@@ -14,7 +14,7 @@
 </script>
 
 {#if backfilling}
-  <p class="status-line">Loading the rest of the list to {verb}…</p>
+  <p class="status-line" role="status">Loading the rest of the list to {verb}…</p>
 {:else if backfillFailed}
   <p class="banner-warn" role="alert">
     {verb === "search"

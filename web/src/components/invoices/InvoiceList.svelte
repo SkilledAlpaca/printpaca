@@ -109,7 +109,7 @@
 </div>
 
 {#if backfilling}
-  <p class="status-line">Loading the rest of the list to filter…</p>
+  <p class="status-line" role="status">Loading the rest of the list to filter…</p>
 {:else if backfillFailed}
   <p class="banner-warn" role="alert">
     Couldn't load the rest of the list; the filter may be missing some results.
@@ -131,7 +131,7 @@
       </thead>
       <tbody>
         {#if loading}
-          <tr><td colspan="6" class="empty-state">Loading invoices…</td></tr>
+          <tr><td colspan="6" class="empty-state"><span role="status">Loading invoices…</span></td></tr>
         {:else}
           {#each filteredInvoices as inv (inv.id)}
             <tr class="clickable-row" onclick={() => onOpenDetail(inv.id)}>

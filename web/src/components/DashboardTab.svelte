@@ -170,7 +170,7 @@
   <h1>Dashboard</h1>
 
   {#if loading}
-    <p>Loading…</p>
+    <p role="status">Loading…</p>
   {:else}
     {#if unavailable}
       <p class="banner-warn" role="alert">Couldn't load the dashboard. The server couldn't be reached.</p>
@@ -308,7 +308,7 @@
       </p>
 
       {#if topItemsLoading && topItems === null}
-        <p class="empty-state">Loading…</p>
+        <p class="empty-state" role="status">Loading…</p>
       {:else if topItemsUnavailable}
         <p class="banner-warn" role="alert">Couldn't load top items. The server couldn't be reached.</p>
       {:else if topItems}

@@ -94,8 +94,11 @@
     loadingMore = true;
     const result = await listQuotes({ limit: INITIAL_PAGE_LIMIT, offset: quotes.length });
     if (result !== null) {
+      const firstNew = result.items[0];
       quotes = [...quotes, ...result.items];
       total = result.total;
+      // The button that was focused goes away when this page exhausts the list: land on the first new row.
+      if (firstNew) void refocusIfLost(rowSelector(firstNew.id));
     }
     loadingMore = false;
   }
@@ -787,7 +790,7 @@
         </thead>
         <tbody>
           {#if loading}
-            <tr><td colspan="6" class="empty-state">Loading…</td></tr>
+            <tr><td colspan="6" class="empty-state"><span role="status">Loading…</span></td></tr>
           {:else}
             {#each sortedQuotes as q (q.id)}
               {@const stats = quoteRowStats(q)}
@@ -1011,7 +1014,9 @@
 <style>
   .parts-badge { margin-left: 0.4rem; color: var(--muted); font-size: var(--text-sm); }
   .head-row h1 { margin: 0; }
-  .head-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
+  /* Wraps at 320 CSS px (WCAG 1.4.10): New quote, Export, and Import no longer fit beside the heading. */
+  .head-row { flex-wrap: wrap; }
+  .head-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
   .lede { color: var(--muted); font-size: var(--text-sm); margin: 0; }
 
   /* .status-line's app-wide min-height reserves room against layout shift, but before any action sets

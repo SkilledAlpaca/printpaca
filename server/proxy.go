@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,8 +15,12 @@ import (
 	"os"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
+	"unicode/utf8"
 )
 
 // proxyTransport bounds dial and response waits so a dead Spoolman can't tie up goroutines.
@@ -175,10 +180,11 @@ func registerMethodRoutes(mux *http.ServeMux, pattern string, allowedMethods map
 }
 
 // moonrakerAllowedPaths is an exact-match allowlist. Moonraker also exposes printer control and file
-// download; this app only reads job history and slicer metadata.
+// download; this app only reads job history, slicer metadata, and the printer's hostname and state.
 var moonrakerAllowedPaths = map[string]bool{
 	"/server/history/list":   true,
 	"/server/files/metadata": true,
+	"/printer/info":          true,
 }
 
 // moonrakerPathAllowed matches exactly; "/server/history/list/extra" is rejected.
@@ -215,20 +221,9 @@ func guardMoonrakerMetadataFilename(stripPrefix string, inner http.Handler) http
 	})
 }
 
-// spoolmanAllowedPaths is an exact-match allowlist (the UI calls only /api/v1/spool once the prefix
-// is stripped), so Spoolman's other endpoints and any other service SPOOLMAN_URL points at are unreachable.
-var spoolmanAllowedPaths = map[string]bool{
-	"/api/v1/spool": true,
-}
-
-// spoolmanPathAllowed matches exactly, like moonrakerPathAllowed.
-func spoolmanPathAllowed(escapedTrimmed string) bool {
-	return spoolmanAllowedPaths[escapedTrimmed]
-}
-
 // resolveIntegrationURL applies env-wins-over-config for the three integration URLs and returns the
-// raw URL plus a source label ("env", "config", "unset") shown in Settings. Resolved once at boot, so
-// a Settings change takes effect after restart.
+// raw URL plus a source label ("env", "config", "unset") shown in Settings. Callers resolve it per
+// request from the live ConfigStore, so a Settings save applies without a restart.
 func resolveIntegrationURL(envVal, configVal string) (raw, source string) {
 	if envVal != "" {
 		return envVal, "env"
@@ -239,34 +234,95 @@ func resolveIntegrationURL(envVal, configVal string) (raw, source string) {
 	return "", "unset"
 }
 
+// liveProxy caches the reverse proxy built for the last resolved URL, so a Settings change swaps the target on
+// the next request while an unchanged URL reuses one handler.
+type liveProxy struct {
+	mu    sync.Mutex
+	raw   string
+	inner http.Handler
+}
+
+// handlerFor returns the proxy for raw, rebuilding it when raw changed. A raw value that fails validProxyURL
+// returns the error; Settings validates saved values, so this only trips on a bad environment value.
+func (l *liveProxy) handlerFor(envVar, raw string, build func(*url.URL) http.Handler) (http.Handler, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.inner != nil && l.raw == raw {
+		return l.inner, nil
+	}
+	target, err := validProxyURL(envVar, raw)
+	if err != nil {
+		return nil, err
+	}
+	l.raw, l.inner = raw, build(target)
+	return l.inner, nil
+}
+
 // registerProxies wires the opt-in Spoolman and Moonraker reverse proxies, so the browser needs no
-// CORS or token. URLs resolve once from the boot-time cfg (env wins). When a URL is unset and demoMode
-// is on, a fake handler (demo.go) takes the mount point; a real URL always wins.
-// Routes are gated on "filament" (Spoolman) and "quote" (Moonraker) via requirePermission.
-func registerProxies(mux *http.ServeMux, demoMode bool, cfg *Config, db *sql.DB) {
-	spoolmanRaw, _ := resolveIntegrationURL(os.Getenv("SPOOLMAN_URL"), cfg.IntegrationsUrls.SpoolmanURL)
-	if spoolmanRaw != "" {
-		target := mustValidProxyURL("SPOOLMAN_URL", spoolmanRaw)
-		// GET/HEAD only: a simple-request POST needs no preflight, so any open page could otherwise mutate
-		// inventory. spoolmanPathAllowed also blocks other GET endpoints as an SSRF pivot.
-		spoolmanMethods := map[string]bool{http.MethodGet: true, http.MethodHead: true}
-		handler := requirePermission(db, "filament", newProxyHandler(target, "/api/spoolman", spoolmanMethods, spoolmanPathAllowed, nil).ServeHTTP)
-		registerMethodRoutes(mux, "/api/spoolman/", spoolmanMethods, handler)
-	} else if demoMode {
-		registerDemoSpoolman(mux, db)
+// CORS or token. The URL resolves on every request from the env var (wins) or the live config, so a
+// Settings save applies at once. With no URL and demoMode on, a fake handler (demo.go) answers; a real URL
+// always wins. Without either, the mount point is a plain 404.
+// Spoolman is gated on "filament" for reads and admin for writes (spoolman_guard.go); Moonraker on "quote".
+func registerProxies(mux *http.ServeMux, demoMode bool, store *ConfigStore, db *sql.DB) {
+	// An invalid environment value still fails fast at boot, as before.
+	for _, name := range []string{"SPOOLMAN_URL", "MOONRAKER_URL"} {
+		if raw := os.Getenv(name); raw != "" {
+			mustValidProxyURL(name, raw)
+		}
 	}
 
-	moonrakerRaw, _ := resolveIntegrationURL(os.Getenv("MOONRAKER_URL"), cfg.IntegrationsUrls.MoonrakerURL)
-	if moonrakerRaw != "" {
-		target := mustValidProxyURL("MOONRAKER_URL", moonrakerRaw)
-		// GET/HEAD only, plus moonrakerPathAllowed, since some Moonraker GETs (gcode download) are too broad.
-		moonrakerMethods := map[string]bool{http.MethodGet: true, http.MethodHead: true}
-		proxied := newProxyHandler(target, "/api/moonraker", moonrakerMethods, moonrakerPathAllowed, nil)
-		handler := requirePermission(db, "quote", guardMoonrakerMetadataFilename("/api/moonraker", proxied).ServeHTTP)
-		registerMethodRoutes(mux, "/api/moonraker/", moonrakerMethods, handler)
-	} else if demoMode {
-		registerDemoMoonraker(mux, db)
-	}
+	demoSpoolman := http.NewServeMux()
+	registerDemoSpoolman(demoSpoolman, db)
+	spoolmanLive := &liveProxy{}
+	spoolman := requirePermission(db, "filament", func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := resolveIntegrationURL(os.Getenv("SPOOLMAN_URL"), store.Get().IntegrationsUrls.SpoolmanURL)
+		if raw == "" {
+			if demoMode {
+				demoSpoolman.ServeHTTP(w, r)
+				return
+			}
+			http.NotFound(w, r)
+			return
+		}
+		inner, err := spoolmanLive.handlerFor("SPOOLMAN_URL", raw, func(target *url.URL) http.Handler {
+			return newProxyHandler(target, "/api/spoolman", spoolmanAllMethods, nil, nil)
+		})
+		if err != nil {
+			log.Printf("spoolman proxy: %v", err)
+			http.Error(w, "integration URL invalid", http.StatusBadGateway)
+			return
+		}
+		guardSpoolman("/api/spoolman", demoMode, inner).ServeHTTP(w, r)
+	})
+	registerMethodRoutes(mux, "/api/spoolman/", spoolmanAllMethods, spoolman)
+
+	demoMoonraker := http.NewServeMux()
+	registerDemoMoonraker(demoMoonraker, db)
+	moonrakerMethods := map[string]bool{http.MethodGet: true, http.MethodHead: true}
+	moonrakerLive := &liveProxy{}
+	moonraker := requirePermission(db, "quote", func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := resolveIntegrationURL(os.Getenv("MOONRAKER_URL"), store.Get().IntegrationsUrls.MoonrakerURL)
+		if raw == "" {
+			if demoMode {
+				demoMoonraker.ServeHTTP(w, r)
+				return
+			}
+			http.NotFound(w, r)
+			return
+		}
+		inner, err := moonrakerLive.handlerFor("MOONRAKER_URL", raw, func(target *url.URL) http.Handler {
+			// GET/HEAD only, plus moonrakerPathAllowed, since some Moonraker GETs (gcode download) are too broad.
+			return guardMoonrakerMetadataFilename("/api/moonraker",
+				newProxyHandler(target, "/api/moonraker", moonrakerMethods, moonrakerPathAllowed, nil))
+		})
+		if err != nil {
+			log.Printf("moonraker proxy: %v", err)
+			http.Error(w, "integration URL invalid", http.StatusBadGateway)
+			return
+		}
+		inner.ServeHTTP(w, r)
+	})
+	registerMethodRoutes(mux, "/api/moonraker/", moonrakerMethods, moonraker)
 }
 
 // integrationsTestMaxBytes bounds the POST body: one kind, one URL.
@@ -275,8 +331,8 @@ const integrationsTestMaxBytes = 4 * 1024
 // integrationsTestTimeout bounds the whole probe so the waiting operator fails fast.
 const integrationsTestTimeout = 4 * time.Second
 
-// integrationsTestBodyCap bounds the probe body; only the status is kept, the rest is drained for keep-alive.
-const integrationsTestBodyCap = 4096
+// integrationsTestBodyCap bounds the probe body that is parsed for counts and the hostname.
+const integrationsTestBodyCap = 2 << 20
 
 // integrationsTestClient reuses proxyTransport with a tighter per-call deadline. CheckRedirect stops
 // at the first response so the result describes the target, not a redirect destination.
@@ -294,33 +350,167 @@ func integrationsTestPath(kind string) string {
 	case "spoolman":
 		return "/api/v1/spool"
 	case "moonraker":
-		return "/server/history/list"
+		return "/server/history/list?limit=20&order=desc"
 	}
 	return ""
 }
 
-// probeIntegration GETs kind's allowlisted path and returns ok (2xx) plus a detail string: "HTTP <code>
-// from <path>" or the raw dial/timeout error. Showing errors verbatim is safe: only an authenticated
-// admin can trigger it, and demoWriteGuard blocks it in demo mode.
-func probeIntegration(ctx context.Context, target *url.URL, kind string) (ok bool, detail string) {
-	probePath := integrationsTestPath(kind)
+// probeGet GETs target+path and returns the status, the response header, and up to integrationsTestBodyCap
+// bytes of body. The rest is drained for keep-alive reuse.
+func probeGet(ctx context.Context, target *url.URL, path string) (status int, header http.Header, body []byte, err error) {
 	probeURL := *target
-	probeURL.Path = strings.TrimSuffix(target.Path, "/") + probePath
+	pathOnly, query, _ := strings.Cut(path, "?")
+	probeURL.Path = strings.TrimSuffix(target.Path, "/") + pathOnly
 	probeURL.RawPath = ""
+	probeURL.RawQuery = query
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, probeURL.String(), nil)
 	if err != nil {
-		return false, err.Error()
+		return 0, nil, nil, err
 	}
 	resp, err := integrationsTestClient.Do(req)
 	if err != nil {
-		return false, err.Error()
+		return 0, nil, nil, err
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, integrationsTestBodyCap)) //nolint:errcheck // draining only, for keep-alive reuse
+	body, err = io.ReadAll(io.LimitReader(resp.Body, integrationsTestBodyCap))
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	io.Copy(io.Discard, io.LimitReader(resp.Body, integrationsTestBodyCap)) //nolint:errcheck // draining only
+	return resp.StatusCode, resp.Header, body, nil
+}
 
-	ok = resp.StatusCode >= 200 && resp.StatusCode < 300
-	return ok, fmt.Sprintf("HTTP %d from %s", resp.StatusCode, probePath)
+// failureHint turns a transport error into plain words about what to check. The raw error is never shown:
+// it can carry resolver or socket detail that helps nobody at the Settings page.
+func failureHint(name string, err error) string {
+	var dnsErr *net.DNSError
+	var netErr net.Error
+	switch {
+	case errors.As(err, &dnsErr):
+		return fmt.Sprintf("Couldn't find %s at that address. Check the host name in the URL.", name)
+	case errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()):
+		return fmt.Sprintf("%s didn't answer in time. Check the URL and port, and that printpaca can reach that network.", name)
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return fmt.Sprintf("%s refused the connection. Check the port in the URL and that %s is running.", name, name)
+	}
+	return fmt.Sprintf("Couldn't connect to %s. Check the URL, the port, and the network between printpaca and it.", name)
+}
+
+// statusHint explains a non-2xx answer in plain words.
+func statusHint(name string, status int) string {
+	switch {
+	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		return fmt.Sprintf("%s answered but refused access (HTTP %d). printpaca sends no credentials, so allow it through any proxy or login in front of %s.", name, status, name)
+	case status == http.StatusNotFound:
+		return fmt.Sprintf("Something answered, but it isn't %s (HTTP 404). Check the URL and port, and any path prefix.", name)
+	case status >= 300 && status < 400:
+		return fmt.Sprintf("The URL redirects (HTTP %d) instead of reaching %s. Use the final address, including http or https.", status, name)
+	}
+	return fmt.Sprintf("%s answered with an error (HTTP %d). Check that it is running and that the URL is its API address.", name, status)
+}
+
+// cleanHostname trims and bounds a hostname reported by an upstream, dropping control characters. The value
+// is untrusted: it ends up in a prompt and, if accepted, a printer name.
+func cleanHostname(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(s))
+	if utf8.RuneCountInString(s) > 64 {
+		s = string([]rune(s)[:64])
+	}
+	return s
+}
+
+// pluralize returns "1 job" or "14 jobs".
+func pluralize(n int, singular, plural string) string {
+	if n == 1 {
+		return fmt.Sprintf("1 %s", singular)
+	}
+	return fmt.Sprintf("%d %s", n, plural)
+}
+
+// probeIntegration checks kind at target and returns the outcome. detail is a sentence for the operator
+// that says what was found or what to check; hostname is set for a Moonraker that reported one. Showing
+// detail is safe: only an authenticated admin can trigger it, and demoWriteGuard blocks it in demo mode.
+func probeIntegration(ctx context.Context, target *url.URL, kind string) (res integrationsTestResponse) {
+	switch kind {
+	case "spoolman":
+		return probeSpoolman(ctx, target)
+	case "moonraker":
+		return probeMoonraker(ctx, target)
+	}
+	return integrationsTestResponse{Detail: "Unknown integration."}
+}
+
+func probeSpoolman(ctx context.Context, target *url.URL) integrationsTestResponse {
+	status, header, body, err := probeGet(ctx, target, integrationsTestPath("spoolman"))
+	if err != nil {
+		return integrationsTestResponse{Detail: failureHint("Spoolman", err)}
+	}
+	if status < 200 || status >= 300 {
+		return integrationsTestResponse{Detail: statusHint("Spoolman", status)}
+	}
+	// Spoolman's list excludes archived spools by default, so the count is "active spools".
+	count := -1
+	if n, err := strconv.Atoi(header.Get("X-Total-Count")); err == nil && n >= 0 {
+		count = n
+	}
+	var spools []json.RawMessage
+	if err := json.Unmarshal(body, &spools); err != nil {
+		return integrationsTestResponse{Detail: "Something answered, but not like Spoolman: the spool list isn't JSON. Check the URL and port."}
+	}
+	if count < 0 {
+		count = len(spools)
+	}
+	return integrationsTestResponse{Ok: true, Count: &count, Detail: fmt.Sprintf("Connected. %s.", pluralize(count, "active spool", "active spools"))}
+}
+
+func probeMoonraker(ctx context.Context, target *url.URL) integrationsTestResponse {
+	status, _, body, err := probeGet(ctx, target, integrationsTestPath("moonraker"))
+	if err != nil {
+		return integrationsTestResponse{Detail: failureHint("Moonraker", err)}
+	}
+	if status < 200 || status >= 300 {
+		return integrationsTestResponse{Detail: statusHint("Moonraker", status)}
+	}
+	var history struct {
+		Result struct {
+			Jobs []json.RawMessage `json:"jobs"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &history); err != nil {
+		return integrationsTestResponse{Detail: "Something answered, but not like Moonraker: the job history isn't JSON. Check the URL and port."}
+	}
+	count := len(history.Result.Jobs)
+	jobs := pluralize(count, "recent job", "recent jobs")
+
+	// The printer info is best-effort: Moonraker answers history even while Klipper is down.
+	res := integrationsTestResponse{Ok: true, Count: &count}
+	infoStatus, _, infoBody, infoErr := probeGet(ctx, target, "/printer/info")
+	var info struct {
+		Result struct {
+			Hostname string `json:"hostname"`
+			State    string `json:"state"`
+		} `json:"result"`
+	}
+	if infoErr == nil && infoStatus >= 200 && infoStatus < 300 && json.Unmarshal(infoBody, &info) == nil {
+		res.Hostname = cleanHostname(info.Result.Hostname)
+		state := cleanHostname(info.Result.State)
+		switch {
+		case res.Hostname != "" && state != "":
+			res.Detail = fmt.Sprintf("Connected to %s (Klipper %s). %s.", res.Hostname, state, jobs)
+		case res.Hostname != "":
+			res.Detail = fmt.Sprintf("Connected to %s. %s.", res.Hostname, jobs)
+		}
+	}
+	if res.Detail == "" {
+		res.Detail = fmt.Sprintf("Connected to Moonraker, but Klipper isn't reporting its state. %s.", jobs)
+	}
+	return res
 }
 
 // integrationsTestRequest is POST /api/integrations/test's body.
@@ -329,10 +519,13 @@ type integrationsTestRequest struct {
 	URL  string `json:"url"`
 }
 
-// integrationsTestResponse is POST /api/integrations/test's success body.
+// integrationsTestResponse is POST /api/integrations/test's success body. Count is the number of active
+// spools or recent jobs found; Hostname is the Moonraker host name, when it reported one.
 type integrationsTestResponse struct {
-	Ok     bool   `json:"ok"`
-	Detail string `json:"detail"`
+	Ok       bool   `json:"ok"`
+	Detail   string `json:"detail"`
+	Count    *int   `json:"count,omitempty"`
+	Hostname string `json:"hostname,omitempty"`
 }
 
 // handleIntegrationsTest implements POST /api/integrations/test: validates kind and url (validProxyURL
@@ -359,9 +552,9 @@ func handleIntegrationsTest(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), integrationsTestTimeout)
 	defer cancel()
-	ok, detail := probeIntegration(ctx, target, in.Kind)
+	res := probeIntegration(ctx, target, in.Kind)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	json.NewEncoder(w).Encode(integrationsTestResponse{Ok: ok, Detail: detail})
+	json.NewEncoder(w).Encode(res)
 }

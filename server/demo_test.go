@@ -40,7 +40,7 @@ func TestHandleConfigSurfacesDemoMode(t *testing.T) {
 	store := NewConfigStore(cfg)
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
-	handleConfig(store, Integrations{}, configExtras{demoMode: true}, newAuthState("", nil))(rr, req)
+	handleConfig(store, configExtras{demoMode: true}, newAuthState("", nil))(rr, req)
 
 	var body struct {
 		DemoMode bool `json:"demoMode"`

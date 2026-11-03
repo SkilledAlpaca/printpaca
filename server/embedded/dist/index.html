@@ -1,3 +1,22 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>printpaca</title></head>
-<body><p>printpaca placeholder. The real web app is built into the Docker image; for local development see the README's Development section.</p></body></html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="./alpaca-logo.svg">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <meta name="theme-color" content="#e06020">
+    <title>printpaca - 3D print cost & quote calculator</title>
+    <script type="module" crossorigin src="./assets/main-kERY2uUv.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/theme-Ys5wF3pH.js">
+    <link rel="stylesheet" crossorigin href="./assets/theme-SbkyCdUl.css">
+    <link rel="stylesheet" crossorigin href="./assets/main-DyG6XELp.css">
+  </head>
+  <body>
+    <div id="app"></div>
+    <!-- Operator CSS (customCss, served by server/static.go here too). Placed after the entry script: Vite
+         hoists its own links into <head> but leaves this one as authored, so it wins the cascade.
+         media="print" limits it to printed output (#print-view.quote/.invoice), not the admin UI. -->
+    <link rel="stylesheet" href="custom.css" media="print" />
+  </body>
+</html>

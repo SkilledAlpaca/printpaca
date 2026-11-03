@@ -205,6 +205,9 @@ type QuoteBranding struct {
 	PaymentInstructions string `yaml:"paymentInstructions" json:"paymentInstructions"`
 	TermsText           string `yaml:"termsText" json:"termsText"`
 	ValidDays           int    `yaml:"validDays" json:"validDays"`
+	// ReferencePrefix is the prefix of the short order reference customers see ("HL-1001"). Blank derives it
+	// from the business name's initials (reference.go).
+	ReferencePrefix string `yaml:"referencePrefix" json:"referencePrefix"`
 }
 
 // Invoicing holds invoice numbering, default terms, and the payment method list.
@@ -593,6 +596,9 @@ func validate(c *Config) []string {
 	}
 	if c.Defaults.Quantity < 1 {
 		p = append(p, "defaults.quantity: must be ≥ 1")
+	}
+	if c.Quote.ReferencePrefix != "" && !isAlnumPrefix(c.Quote.ReferencePrefix) {
+		p = append(p, "quote.referencePrefix: must be 1-10 letters/digits, or blank to use your business initials")
 	}
 	if !isAlnumPrefix(c.Invoicing.NumberPrefix) {
 		p = append(p, "invoicing.numberPrefix: must be 1-10 letters/digits")

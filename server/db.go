@@ -274,6 +274,17 @@ var migrations = []string{
 	WHERE option_name != '' AND item_id != '' AND EXISTS (SELECT 1 FROM items i, json_each(i.options_json) o
 	  WHERE i.id = item_sales.item_id AND i.option_label != '' AND json_extract(o.value, '$.name') = item_sales.option_name);
 	`,
+
+	// 2 -> 3: public usability fixes.
+	// needs_print_time marks a public estimate submitted without a print time (an unsliced STL or 3MF the visitor
+	// cannot time): price_cents is 0 and means "to be confirmed", not free. The owner enters the time when quoting.
+	// reference is the short, per-shop order reference the visitor sees (for example "HL-1001"); the hex id stays
+	// the primary key. Rows created before this migration keep reference ''. The counter behind it lives in
+	// app_state under 'request_ref_seq' (server/reference.go) and needs no schema.
+	`
+	ALTER TABLE quote_requests ADD COLUMN needs_print_time INTEGER NOT NULL DEFAULT 0 CHECK (needs_print_time IN (0, 1));
+	ALTER TABLE quote_requests ADD COLUMN reference TEXT NOT NULL DEFAULT '';
+	`,
 }
 
 // openDB opens the SQLite database in configDir, creating it on first run, and runs pending migrations.

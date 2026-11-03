@@ -207,7 +207,8 @@
         "taxId": { "type": "string" },
         "paymentInstructions": { "type": "string", "maxLength": 2000 },
         "termsText": { "type": "string", "maxLength": 2000 },
-        "validDays": { "type": "integer", "minimum": 0 }
+        "validDays": { "type": "integer", "minimum": 0 },
+        "referencePrefix": { "type": "string", "pattern": "^([A-Za-z0-9]{1,10})?$" }
       }
     },
     "invoicing": {

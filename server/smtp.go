@@ -111,14 +111,23 @@ func buildRequestNotification(cfg *Config, req QuoteRequest) (subject, body stri
 		fmt.Fprintf(&b, "Material: %s\n", req.Material)
 		fmt.Fprintf(&b, "Quantity: %d\n", req.Quantity)
 		fmt.Fprintf(&b, "Weight: %.2f g\n", req.WeightG)
-		fmt.Fprintf(&b, "Print time: %d h %d min\n", hours, minutes)
-		fmt.Fprintf(&b, "Price: %s\n", price)
+		if req.NeedsPrintTime {
+			// No print time was sent (an unsliced STL or 3MF), so there is no price yet.
+			fmt.Fprintf(&b, "Print time: not provided (needs a print time before it can be priced)\n")
+			fmt.Fprintf(&b, "Price: to be confirmed\n")
+		} else {
+			fmt.Fprintf(&b, "Print time: %d h %d min\n", hours, minutes)
+			fmt.Fprintf(&b, "Price: %s\n", price)
+		}
 	}
 
 	if req.Note != "" {
 		fmt.Fprintf(&b, "\nNote: %s\n", req.Note)
 	}
-	fmt.Fprintf(&b, "\nRequest ID: %s\n", req.ID)
+	if req.Reference != "" {
+		fmt.Fprintf(&b, "\nReference: %s\n", req.Reference)
+	}
+	fmt.Fprintf(&b, "Request ID: %s\n", req.ID)
 
 	return subject, b.String()
 }

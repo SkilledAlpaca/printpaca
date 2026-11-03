@@ -892,13 +892,13 @@ func TestPublicQuotePreviewWorksInDemoMode(t *testing.T) {
 	}
 }
 
-// Preview has its OWN per-IP bucket (publicPreviewRateLimit = 60/min), not the 5/hour submission limiter, or a few debounced keystrokes would starve a visitor's real submission budget.
+// Preview has its OWN per-IP bucket (publicPreviewRateLimit = 60/min), not the per-hour submission limiter, or a few debounced keystrokes would starve a visitor's real submission budget.
 func TestPublicQuotePreviewRateLimitSeparateFromSubmissions(t *testing.T) {
 	dir := t.TempDir()
 	_, publicMux, _, _ := newRequestsTestSetup(t, dir)
 
-	// Exhaust the 5/hour submission budget first.
-	for i := range 5 {
+	// Exhaust the per-hour submission budget first.
+	for i := range publicRateLimit {
 		rec := postPublicQuoteRequest(t, publicMux, publicQuoteRequestFields("PLA"), "", nil)
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("submission %d: status = %d, want 201, body = %s", i+1, rec.Code, rec.Body.String())
@@ -906,7 +906,7 @@ func TestPublicQuotePreviewRateLimitSeparateFromSubmissions(t *testing.T) {
 	}
 	rec := postPublicQuoteRequest(t, publicMux, publicQuoteRequestFields("PLA"), "", nil)
 	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("6th submission: status = %d, want 429", rec.Code)
+		t.Fatalf("over-limit submission: status = %d, want 429", rec.Code)
 	}
 
 	// Preview must still work: it has its own bucket, untouched by the
@@ -1468,7 +1468,7 @@ func TestPublicQuoteRequestRateLimit(t *testing.T) {
 	dir := t.TempDir()
 	_, publicMux, _, _ := newRequestsTestSetup(t, dir)
 
-	for i := range 5 {
+	for i := range publicRateLimit {
 		rec := postPublicQuoteRequest(t, publicMux, publicQuoteRequestFields("PLA"), "model.gcode", []byte("G1\n"))
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("submission %d: status = %d, want 201, body = %s", i+1, rec.Code, rec.Body.String())
@@ -1477,7 +1477,7 @@ func TestPublicQuoteRequestRateLimit(t *testing.T) {
 
 	rec := postPublicQuoteRequest(t, publicMux, publicQuoteRequestFields("PLA"), "model.gcode", []byte("G1\n"))
 	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("6th submission: status = %d, want 429, body = %s", rec.Code, rec.Body.String())
+		t.Fatalf("over-limit submission: status = %d, want 429, body = %s", rec.Code, rec.Body.String())
 	}
 
 	// A different IP is not affected by the first IP's limit.
@@ -1495,7 +1495,7 @@ func TestPublicQuoteRequestSpoofedForwardedForCannotEvadeLimit(t *testing.T) {
 
 	// Without PUBLIC_TRUST_PROXY, X-Forwarded-For is attacker-controlled
 	// noise: rotating it must not mint fresh rate-limit keys.
-	for i := range 5 {
+	for i := range publicRateLimit {
 		req := newPublicQuoteRequest(t, publicQuoteRequestFields("PLA"), "model.gcode", []byte("G1\n"))
 		req.Header.Set("X-Forwarded-For", fmt.Sprintf("203.0.113.%d", i))
 		rec := serveReq(publicMux, req)
@@ -1507,7 +1507,7 @@ func TestPublicQuoteRequestSpoofedForwardedForCannotEvadeLimit(t *testing.T) {
 	req.Header.Set("X-Forwarded-For", "203.0.113.99")
 	rec := serveReq(publicMux, req)
 	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("6th spoofed submission: status = %d, want 429", rec.Code)
+		t.Fatalf("over-limit spoofed submission: status = %d, want 429", rec.Code)
 	}
 }
 
@@ -1544,12 +1544,9 @@ func TestPublicQuoteRequestIPv6Slash64SharesRateLimitBudget(t *testing.T) {
 	dir := t.TempDir()
 	_, publicMux, _, _ := newRequestsTestSetup(t, dir)
 
-	addrs := []string{
-		"[2001:db8:1234:5678::1]:1111",
-		"[2001:db8:1234:5678::2]:2222",
-		"[2001:db8:1234:5678::3]:3333",
-		"[2001:db8:1234:5678::4]:4444",
-		"[2001:db8:1234:5678::5]:5555",
+	var addrs []string
+	for i := range publicRateLimit {
+		addrs = append(addrs, fmt.Sprintf("[2001:db8:1234:5678::%x]:%d", i+1, 1111+i))
 	}
 	for i, addr := range addrs {
 		req := newPublicQuoteRequest(t, publicQuoteRequestFields("PLA"), "model.gcode", []byte("G1\n"))
@@ -1560,13 +1557,13 @@ func TestPublicQuoteRequestIPv6Slash64SharesRateLimitBudget(t *testing.T) {
 		}
 	}
 
-	// A 6th distinct address still within the same /64: the shared budget is
+	// One more distinct address still within the same /64: the shared budget is
 	// exhausted.
 	req := newPublicQuoteRequest(t, publicQuoteRequestFields("PLA"), "model.gcode", []byte("G1\n"))
-	req.RemoteAddr = "[2001:db8:1234:5678::6]:6666"
+	req.RemoteAddr = "[2001:db8:1234:5678::ff]:6666"
 	rec := serveReq(publicMux, req)
 	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("6th address in the same /64: status = %d, want 429, body = %s", rec.Code, rec.Body.String())
+		t.Fatalf("over-limit address in the same /64: status = %d, want 429, body = %s", rec.Code, rec.Body.String())
 	}
 
 	// An address in a DIFFERENT /64 is unaffected.
@@ -1588,7 +1585,7 @@ func TestPublicQuoteRequestXFFIPv6Slash64Aggregates(t *testing.T) {
 	// trustProxy=true so X-Forwarded-For is honored (see clientIP's doc).
 	publicMux, _ := buildPublicMux(NewConfigStore(cfg), db, dir, true, false)
 
-	for i := range 5 {
+	for i := range publicRateLimit {
 		req := newPublicQuoteRequest(t, publicQuoteRequestFields("PLA"), "model.gcode", []byte("G1\n"))
 		req.Header.Set("X-Forwarded-For", fmt.Sprintf("2001:db8:abcd:ef01::%x", i+1))
 		rec := serveReq(publicMux, req)
@@ -1600,7 +1597,7 @@ func TestPublicQuoteRequestXFFIPv6Slash64Aggregates(t *testing.T) {
 	req.Header.Set("X-Forwarded-For", "2001:db8:abcd:ef01::99")
 	rec := serveReq(publicMux, req)
 	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("6th XFF address in the same /64: status = %d, want 429, body = %s", rec.Code, rec.Body.String())
+		t.Fatalf("over-limit XFF address in the same /64: status = %d, want 429, body = %s", rec.Code, rec.Body.String())
 	}
 }
 

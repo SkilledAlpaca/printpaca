@@ -4,8 +4,8 @@ This project follows the [Code of Conduct](CODE_OF_CONDUCT.md). Report vulnerabi
 
 ## Dev setup
 
-- Node 26 (npm workspace: `web`)
-- Go 1.26.9 or later (the floor declared in `server/go.mod`)
+- Node 26 (pinned in `.nvmrc` and `package.json`; npm workspace: `web`)
+- Go 1.26.10 or later (the floor declared in `server/go.mod`)
 
 ```bash
 npm install
@@ -19,7 +19,7 @@ Run these before opening a PR: they're the same gates CI runs.
 ```bash
 npx vitest run                       # the full vitest suite
 npm run check -w web                 # svelte-check (0 errors required)
-npm run e2e                          # the Playwright suite (real Go binary on :8099)
+npm run e2e                          # the Playwright suite (real Go binary on :8099), including the axe accessibility gate
 cd server && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race -count=1
 ```
 
@@ -36,6 +36,15 @@ To regenerate the documentation screenshots after a UI change, run `node --exper
 3. **Update `THIRD_PARTY_NOTICES.md` when a runtime dependency changes.** Adding, removing, or upgrading a Go module in `server`'s build graph, or an npm package whose code or data is bundled into `web/dist` (not a build-only devDependency such as Vite or TypeScript), needs a matching update in the same PR. The file explains how to re-derive the list and verify license text.
 
 4. **The database baseline is fixed.** `migrations[0]` in `server/db.go` is the complete baseline schema at `user_version` 1, and `testdata/schema-v1.sql` is the `sqlite_master` dump `TestBaselineMatchesSchemaFixture` compares it against. A new schema change appends a migration after the baseline and never edits the baseline or the fixture; add a test for the new migration alongside it.
+
+5. **UI changes must pass the accessibility gate and follow the accessibility conventions.** printpaca targets WCAG 2.2 Level AA, and `e2e/a11y.spec.ts` fails the build on any axe violation. In brief:
+   - Report results with `announce()` and move focus with `focusAfterUpdate()` (`web/src/lib/a11y.svelte.ts`), and use `confirmFocus` and `refocusIfLost` (`web/src/lib/a11yFocus.ts`) for two-step confirms.
+   - Use `ErrorSummary` for form errors and `DetailTitle` for a detail view's single `h1`.
+   - Keep an in-flight button focusable: use `aria-disabled` plus an early-return guard in the handler, not `disabled`.
+   - Use the theme tokens (`--control-border`, `--focus-ring`, `--muted`) and no new hex colors.
+   - Check the new UI with the keyboard, and with a screen reader if you have one. Add new pages or detail views to the gate.
+
+   [Accessibility](docs/accessibility.md#contributor-guidance) has the details. Run just the gate with `npx playwright test -c e2e a11y.spec.ts`.
 
 ## Pull requests
 

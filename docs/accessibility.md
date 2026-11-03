@@ -41,9 +41,10 @@ Every control works from the keyboard, and the focus indicator is visible on eve
 | Key | Action |
 |---|---|
 | Tab and Shift+Tab | Move through controls. A **Skip to content** link is the first stop in the admin app; it moves focus to the main content. |
-| Ctrl+K (⌘K on macOS) | On the Quotes, Clients, and Invoices tabs, focus the list filter. It's ignored while focus is in a text field, select, or editable area. |
-| Ctrl+S (⌘S on macOS) | On the New quote tab, save the quote. |
-| Escape | Close the mobile menu, a Quotes row menu, or an open record's detail view (Clients, Invoices, and Requests). When a two-step confirm is armed, Escape cancels the confirm first and leaves the record open. Inside a text field or select, Escape keeps its normal meaning and doesn't close the record. |
+| Ctrl+K (⌘K on macOS) | On the Quotes, Clients, Invoices, and Requests tabs, focus the list filter. It's ignored while focus is in a text field, select, or editable area. |
+| Ctrl+S (⌘S on macOS) | On the New quote tab, save the quote. On an invoice draft, save the invoice. On a client's detail view, save the client. It works from inside a field. |
+| Arrow Up, Arrow Down, Home, End | In an open row menu (a Quotes row, or More on Requests), move between its items. Arrow keys wrap at the ends. Tab closes the menu and puts focus on its toggle, so the next Tab continues from there. |
+| Escape | Close the mobile menu, a row menu, or an open record's detail view (Clients, Invoices, and Requests). When a two-step confirm is armed, Escape cancels the confirm first and leaves the record open. Inside a text field or select, Escape keeps its normal meaning and doesn't close the record. |
 
 Ctrl+K and Ctrl+S need a modifier key, so no single-key shortcut can fire by accident (WCAG 2.1.4). Before 1.0.4 the filter shortcut was a bare `/`; it no longer does anything.
 
@@ -78,7 +79,7 @@ These behaviors are built in, but see the note about [testing](#how-its-tested):
 - **Cost breakdown.** The legend shows each segment's percentage in text, so color isn't the only cue.
 - **Names.** Visible text is part of every control's accessible name, so speech-input users can say what they see (WCAG 2.5.3). Help text, hints, warnings, and counters are linked to their fields as descriptions and are not part of the name.
 - **Unread requests.** The sidebar item and the mobile menu button both include the unread count in their names.
-- **Confirmations before consequential actions.** printpaca asks before it marks an invoice sent, emails an invoice or a quote, changes a quote's status, or finalizes a request.
+- **Confirmations before consequential actions.** printpaca asks before it marks an invoice sent, emails an invoice or a quote, changes a quote's status, finalizes requests, records a payment above the balance, or deletes all new requests. The confirm button names the action ("Yes, mark as sent", "Yes, delete 8 requests") and only a destructive confirm is red. The delete-all confirm states the count and that the stored files go too, and focus starts on Cancel.
 
 ## Theme and contrast
 
@@ -110,7 +111,7 @@ These are the gaps left in 1.0.4:
 - **No screen-reader or assistive-technology testing.** See [How it's tested](#how-its-tested).
 - **Print views and emails.** The printed quote, cost audit, and invoice views were scanned in emulated print media during review but aren't in the automated gate. The HTML and plain-text emails (quotes, invoices, and request notifications) weren't audited.
 - **Gate coverage is partial.** See [What the gate doesn't cover](#what-the-gate-doesnt-cover).
-- **Ctrl+S works only on New quote.** Other tabs have no save shortcut.
+- **Ctrl+S doesn't work everywhere yet.** It saves the quote, an invoice draft, and a client; other editors have no save shortcut.
 - **User content.** Logos, item photos, custom CSS, and text you enter aren't checked. Item photos and logos are treated as decorative, because the name is always next to them.
 - **Browsers.** The gate runs in Chromium. Firefox and Safari aren't tested automatically.
 

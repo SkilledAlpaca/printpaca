@@ -44,6 +44,7 @@
   import { unsavedForm } from "./lib/unsavedForm.svelte";
   import { unreadRequests, refreshUnread } from "./lib/requestsBadge.svelte";
   import { fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab } from "./lib/navFilter";
+  import { loadPublicConfig } from "./public/api";
   import { splitHash } from "./lib/hashRoute";
   import { focusAfterUpdate } from "./lib/a11y.svelte";
   import { pageTitle as pageTitleState } from "./lib/pageTitle.svelte";
@@ -575,10 +576,50 @@
   const pageTitle = $derived(
     loginRequired || accessWatch.sessionExpired ? "Sign in" : pageTitleState.record ? `${pageTitleState.record} · ${TABS[tab].label}` : TABS[tab].label,
   );
+
+  // Branding: the business name and logo from Settings (config.quote), falling back to printpaca and the
+  // bundled mark, including when the logo URL fails to load. appConfig is refreshed after every Settings save,
+  // so a change shows without a reload. The login screen has no config yet and uses the public branding
+  // (GET /api/public/config) when the server offers it, else the fallbacks.
+  const onLoginScreen = $derived(loginRequired || accessWatch.sessionExpired);
+  let publicBranding = $state<{ businessName: string; logoUrl: string } | null>(null);
+  $effect(() => {
+    if (!onLoginScreen || publicBranding) return;
+    let cancelled = false;
+    void loadPublicConfig().then((c) => {
+      if (!cancelled && c) publicBranding = { businessName: c.branding.businessName, logoUrl: c.branding.logoUrl };
+    });
+    return () => (cancelled = true);
+  });
+  const brandSource = $derived(onLoginScreen ? publicBranding : (config?.quote ?? null));
+  const businessName = $derived(brandSource?.businessName.trim() || "printpaca");
+  // The URL that last failed to load, so the fallback holds for that URL only and a corrected URL is retried.
+  let failedLogoUrl = $state("");
+  const brandLogoSrc = $derived(brandSource?.logoUrl && brandSource.logoUrl !== failedLogoUrl ? brandSource.logoUrl : logoUrl);
+
+  // The brand link goes to the first tab in the nav (New quote for most people), like the Home link on a site.
+  const homeTab = $derived(firstNavTab(navSections) ?? "quote");
+  // Moves focus to the view's h1 (tabindex -1 so it can take script focus), the same landing spot a screen
+  // reader user gets from the skip link's neighbours. activate() has already closed the drawer and queued its
+  // own focus on <main>; this runs after the new tab has rendered and refines it.
+  async function goHome(e: MouseEvent) {
+    // Let the browser handle a modified click (open in a new tab or window) as a plain link.
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    activate(homeTab);
+    if (tab !== homeTab) return; // the unsaved-changes confirm was declined: stay put
+    await tick();
+    await tick();
+    const h1 = mainEl?.querySelector<HTMLElement>("h1");
+    if (h1) {
+      h1.tabIndex = -1;
+      h1.focus({ preventScroll: true });
+    }
+  }
 </script>
 
 <svelte:head>
-  <title>{pageTitle} · printpaca</title>
+  <title>{pageTitle} · {businessName}</title>
 </svelte:head>
 
 <LiveAnnouncer />
@@ -586,10 +627,12 @@
 <svelte:window onhashchange={syncTabFromHash} onafterprint={clearPrintJob} onkeydown={handleGlobalKeydown} />
 
 {#snippet brand(showName: boolean)}
-  <div class="brand">
-    <img class="logo" src={logoUrl} alt="" />
-    {#if showName}<p class="brand-name">printpaca</p>{/if}
-  </div>
+  <!-- The accessible name is set on the link, so a collapsed sidebar (logo only) still names it. It contains
+       the visible name (WCAG 2.5.3). -->
+  <a class="brand" href={TABS[homeTab].hash} aria-label={`${businessName} home`} onclick={goHome}>
+    <img class="logo" src={brandLogoSrc} alt="" onerror={() => (failedLogoUrl = brandLogoSrc)} />
+    {#if showName}<span class="brand-name">{businessName}</span>{/if}
+  </a>
 {/snippet}
 
 {#snippet navButton(id: Tab, collapsed: boolean)}
@@ -628,7 +671,7 @@
 {/snippet}
 
 {#if loginRequired || accessWatch.sessionExpired}
-  <LoginScreen onLoggedIn={handleLoggedIn} notice={accessWatch.sessionExpired ? SESSION_EXPIRED_NOTICE : undefined} />
+  <LoginScreen onLoggedIn={handleLoggedIn} {businessName} logoSrc={brandLogoSrc} onLogoError={() => (failedLogoUrl = brandLogoSrc)} notice={accessWatch.sessionExpired ? SESSION_EXPIRED_NOTICE : undefined} />
 {:else}
 <a class="skip-link" href="#main" onclick={skipToMain}>Skip to content</a>
 
@@ -941,8 +984,9 @@
     background: var(--surface);
     border-bottom: 1px solid var(--border);
   }
-  .brand { display: flex; align-items: center; gap: 0.5rem; }
-  .brand .brand-name { font-size: 1.25rem; font-weight: 700; margin: 0; }
+  .brand { display: flex; align-items: center; gap: 0.5rem; color: inherit; text-decoration: none; min-width: 0; border-radius: var(--radius); }
+  .brand .brand-name { font-size: 1.25rem; font-weight: 700; margin: 0; overflow-wrap: anywhere; }
+  .brand:hover .brand-name { text-decoration: underline; }
   .logo { height: 40px; width: auto; display: block; }
 
   /* Mobile top bar's menu button. position: relative anchors .hamburger-badge; min-width matches the global

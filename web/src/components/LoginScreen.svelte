@@ -7,7 +7,14 @@
   // Rendered by App.svelte in place of the app shell when GET /api/config 401s (ADMIN_PASSWORD set, no valid
   // session) or a mid-session request 401s (accessWatch.sessionExpired). onLoggedIn re-runs App.svelte's boot
   // flow after a successful POST /api/login. `notice` renders only for the sessionExpired case.
-  let { onLoggedIn, notice }: { onLoggedIn: () => void; notice?: string } = $props();
+  // businessName/logoSrc are the public branding (or printpaca and the bundled mark), resolved by App.svelte.
+  let {
+    onLoggedIn,
+    notice,
+    businessName = "printpaca",
+    logoSrc = logoUrl,
+    onLogoError = () => {},
+  }: { onLoggedIn: () => void; notice?: string; businessName?: string; logoSrc?: string; onLogoError?: () => void } = $props();
 
   let username = $state("");
   let password = $state("");
@@ -103,8 +110,8 @@
 
 <main class="login-shell">
   <form class="card login-card" onsubmit={submit}>
-    <img class="logo" src={logoUrl} alt="" />
-    <h1>printpaca</h1>
+    <img class="logo" src={logoSrc} alt="" onerror={onLogoError} />
+    <h1>{businessName}</h1>
     {#if notice}
       <!-- Set only for the mid-session-401 case (App passes accessWatch.sessionExpired). A plain
            informational note, not `.warn-text`, which is reserved for the submit-time error that can show

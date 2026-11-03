@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -191,8 +192,8 @@ func TestMonthlyRevenueSumsExcludesPaymentsBeforeSince(t *testing.T) {
 	db := openTestDB(t, dir)
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	if _, err := db.Exec(`INSERT INTO invoices (id, number, number_year, number_seq, client_name, created_at, updated_at)
-		VALUES ('inv1', 'INV-1', 2025, 1, 'A', ?, ?)`, now, now); err != nil {
+	if _, err := db.Exec(`INSERT INTO invoices (id, number, number_year, number_seq, client_name, total_cents, created_at, updated_at)
+		VALUES ('inv1', 'INV-1', 2025, 1, 'A', 1000, ?, ?)`, now, now); err != nil {
 		t.Fatalf("seed invoice: %v", err)
 	}
 	// One payment exactly on the boundary date, one the day before it.
@@ -406,5 +407,93 @@ func TestMarkPaidBalancingPaymentUsesConfiguredTimezone(t *testing.T) {
 	got := mustUnmarshalInvoice(t, rec)
 	if len(got.Payments) != 1 || (got.Payments[0].PaidDate != before && got.Payments[0].PaidDate != after) {
 		t.Errorf("payments = %+v, want one dated %s", got.Payments, before)
+	}
+}
+
+// Revenue counts a payment only up to the invoice total (decision 9): an overpayment's excess never reaches
+// the dashboard, whichever month it lands in.
+func TestDashboardRevenueCapsOverpayment(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, dir)
+	cfg := loadTestConfig(t, dir)
+	cfg.Timezone = "UTC"
+	d := newDashboard(db, NewConfigStore(cfg))
+	d.clock = func() time.Time { return time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC) }
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := db.Exec(`INSERT INTO invoices (id, number, number_year, number_seq, status, client_name, total_cents, created_at, updated_at)
+		VALUES ('inv1', 'INV-1', 2026, 1, 'paid', 'A', 1484, ?, ?)`, now, now); err != nil {
+		t.Fatalf("seed invoice: %v", err)
+	}
+	for _, p := range []struct {
+		id, date string
+		cents    int
+	}{{"p1", "2026-02-10", 501}, {"p2", "2026-03-05", 2000}} {
+		if _, err := db.Exec(`INSERT INTO payments (id, invoice_id, paid_date, amount_cents, created_at) VALUES (?, 'inv1', ?, ?, ?)`, p.id, p.date, p.cents, now); err != nil {
+			t.Fatalf("seed payment: %v", err)
+		}
+	}
+
+	rec := serveReq(http.HandlerFunc(d.handleGet), httptest.NewRequest("GET", "/api/dashboard", nil))
+	var resp dashboardResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v (%s)", err, rec.Body.String())
+	}
+	if resp.RevenueMonthCents != 983 {
+		t.Errorf("revenueMonthCents = %d, want 983 (1484 total - 501 earlier)", resp.RevenueMonthCents)
+	}
+	if resp.RevenueYearCents != 1484 {
+		t.Errorf("revenueYearCents = %d, want 1484 (capped at the invoice total)", resp.RevenueYearCents)
+	}
+}
+
+func TestDashboardNeedsAttention(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, dir)
+	cfg := loadTestConfig(t, dir)
+	cfg.Timezone = "UTC"
+	d := newDashboard(db, NewConfigStore(cfg))
+	d.clock = func() time.Time { return time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC) }
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	inv := func(id string, seq int, status, due string, total int) {
+		t.Helper()
+		if _, err := db.Exec(`INSERT INTO invoices (id, number, number_year, number_seq, status, client_name, due_date, total_cents, created_at, updated_at)
+			VALUES (?, ?, 2026, ?, ?, 'Casey', ?, ?, ?, ?)`, id, fmt.Sprintf("INV-%d", seq), seq, status, due, total, now, now); err != nil {
+			t.Fatalf("seed invoice: %v", err)
+		}
+	}
+	inv("overdue", 1, "sent", "2026-03-01", 1000)
+	inv("notdue", 2, "sent", "2026-04-01", 1000)
+	inv("draft", 3, "draft", "", 700)
+	req := func(id, status string, needsTime int) {
+		t.Helper()
+		if _, err := db.Exec(`INSERT INTO quote_requests (id, status, name, email, material, quantity, created_at, needs_print_time)
+			VALUES (?, ?, 'Visitor', 'v@example.com', 'PLA', 1, ?, ?)`, id, status, now, needsTime); err != nil {
+			t.Fatalf("seed request: %v", err)
+		}
+	}
+	req("r-new", "new", 0)
+	req("r-time", "viewed", 1)
+	req("r-done", "finalized", 0)
+
+	rec := serveReq(http.HandlerFunc(d.handleGet), httptest.NewRequest("GET", "/api/dashboard", nil))
+	var resp dashboardResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	var kinds []string
+	for _, it := range resp.NeedsAttention {
+		kinds = append(kinds, it.Kind+":"+it.ID)
+	}
+	want := "new-request:r-new print-time-request:r-time overdue-invoice:overdue draft-invoice:draft"
+	if got := strings.Join(kinds, " "); got != want {
+		t.Errorf("needsAttention = %q, want %q", got, want)
+	}
+	if c := resp.AttentionCounts; c.NewRequests != 1 || c.PrintTimeRequests != 1 || c.OverdueInvoices != 1 || c.DraftInvoices != 1 {
+		t.Errorf("attentionCounts = %+v, want one of each", c)
+	}
+	if resp.NeedsAttention[2].Number != "INV-1" || resp.NeedsAttention[2].AmountCents != 1000 {
+		t.Errorf("overdue row = %+v, want INV-1 with its 1000 balance", resp.NeedsAttention[2])
 	}
 }

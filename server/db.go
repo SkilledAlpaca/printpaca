@@ -274,6 +274,23 @@ var migrations = []string{
 	WHERE option_name != '' AND item_id != '' AND EXISTS (SELECT 1 FROM items i, json_each(i.options_json) o
 	  WHERE i.id = item_sales.item_id AND i.option_label != '' AND json_extract(o.value, '$.name') = item_sales.option_name);
 	`,
+
+	// 2 -> 3: invoice concurrency token and the request-to-invoice link (v1.1.0 usability fixes).
+	// invoices.version starts at 1 and every write to the invoices row bumps it; a PUT that carries a stale
+	// version is a 409. quote_requests.invoice_id is the invoice a request was converted to ('' while not
+	// converted); the invoice's number is read through it, so there is no second column to keep in sync.
+	`
+	ALTER TABLE invoices ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE quote_requests ADD COLUMN invoice_id TEXT NOT NULL DEFAULT '';
+	`,
+
+	// 3 -> 4: STOPGAP from the money-requests lane. The public lane owns quote_requests.needs_print_time (a
+	// public estimate submitted with no print time) and its migration; this copy exists only so the admin
+	// display and the dashboard list can be built and tested before the lanes merge. Drop this entry when
+	// the public lane's migration lands.
+	`
+	ALTER TABLE quote_requests ADD COLUMN needs_print_time INTEGER NOT NULL DEFAULT 0 CHECK (needs_print_time IN (0, 1));
+	`,
 }
 
 // openDB opens the SQLite database in configDir, creating it on first run, and runs pending migrations.

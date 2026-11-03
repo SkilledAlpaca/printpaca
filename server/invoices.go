@@ -9,12 +9,17 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 )
 
 const invoicesMaxBytes = 256 * 1024 // 256 KiB
+
+// invoiceVersionConflictMessage is the 409 body for a PUT that carries a stale version. The web app shows it
+// beside Reload and Overwrite buttons, so keep it a full sentence.
+const invoiceVersionConflictMessage = "This was changed in another tab or by another user."
 
 // invoiceStatusTransitions enumerates every allowed status transition. Any other pair is a 409.
 var invoiceStatusTransitions = map[string]map[string]bool{
@@ -91,6 +96,9 @@ type InvoiceSummary struct {
 	// handleStatus, and handleSend on draft->sent).
 	CreatedBy string `json:"createdBy"`
 	UpdatedBy string `json:"updatedBy"`
+	// Version is the optimistic-concurrency token: it starts at 1 and every write to the invoice row bumps it.
+	// A PUT that carries a different version is a 409 (handlePut).
+	Version int `json:"version"`
 }
 
 // Invoice is the shape served by GET (single), POST, PUT, and the status endpoint.
@@ -104,10 +112,10 @@ type Invoice struct {
 	Sends []InvoiceSend `json:"sends"`
 }
 
-// invoiceColumns lists the 20 invoices columns every read selects, in scanInvoiceSummary's order, so the
+// invoiceColumns lists the 21 invoices columns every read selects, in scanInvoiceSummary's order, so the
 // SELECT and the Scan can't drift.
 const invoiceColumns = `id, number, status, client_id, client_name, client_email, client_billing_address, client_shipping_address,
-	issue_date, due_date, tax_bp, discount_cents, notes, subtotal_cents, tax_cents, total_cents, created_at, updated_at, created_by, updated_by`
+	issue_date, due_date, tax_bp, discount_cents, notes, subtotal_cents, tax_cents, total_cents, created_at, updated_at, created_by, updated_by, version`
 
 // rowScanner is satisfied by both *sql.Row and *sql.Rows.
 type rowScanner interface {
@@ -121,7 +129,7 @@ func scanInvoiceSummary(row rowScanner, extra ...any) (InvoiceSummary, error) {
 	dest := append([]any{
 		&s.ID, &s.Number, &s.Status, &s.ClientID, &s.ClientName, &s.ClientEmail, &s.ClientBillingAddress, &s.ClientShippingAddress,
 		&s.IssueDate, &s.DueDate, &s.TaxBp, &s.DiscountCents, &s.Notes, &s.SubtotalCents, &s.TaxCents, &s.TotalCents, &s.CreatedAt, &s.UpdatedAt,
-		&s.CreatedBy, &s.UpdatedBy,
+		&s.CreatedBy, &s.UpdatedBy, &s.Version,
 	}, extra...)
 	err := row.Scan(dest...)
 	return s, err
@@ -153,6 +161,12 @@ type invoiceInput struct {
 	DiscountCents int                `json:"discountCents"`
 	Notes         string             `json:"notes"`
 	Lines         []invoiceLineInput `json:"lines"`
+	// Version is the invoice version the editor loaded (PUT only). Absent skips the check; a different value
+	// is a 409 so a save never silently overwrites another tab's or user's change.
+	Version *int `json:"version"`
+	// RequestID, on POST only, converts that quote request: the new invoice is linked to it and the request is
+	// finalized in the same transaction (see linkRequestToInvoice).
+	RequestID string `json:"requestId"`
 }
 
 type invoiceStatusInput struct {
@@ -619,7 +633,20 @@ func (iv *invoices) handlePost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	in.RequestID = strings.TrimSpace(in.RequestID)
 	problems := validateInvoiceInput(&in)
+	if in.RequestID != "" {
+		status, msg, err := prepareRequestConversion(iv.db, &in)
+		if err != nil {
+			log.Printf("invoices request conversion: %v", err)
+			http.Error(w, "invoices unavailable", http.StatusInternalServerError)
+			return
+		}
+		if msg != "" {
+			writeAPIError(w, status, msg)
+			return
+		}
+	}
 	if !iv.linksValid(w, in.Lines) {
 		return
 	}
@@ -634,6 +661,19 @@ func (iv *invoices) handlePost(w http.ResponseWriter, r *http.Request) {
 	if len(problems) > 0 {
 		writeAPIError(w, http.StatusUnprocessableEntity, problems...)
 		return
+	}
+
+	// A conversion (from a saved quote, whose lines carry a quoteId, or from a request) starts with the issue
+	// date today and the due date from the default terms, the same dates a draft gets on Mark sent. A manual
+	// invoice keeps the dates the editor sent.
+	if in.RequestID != "" || slices.ContainsFunc(in.Lines, func(l invoiceLineInput) bool { return l.QuoteID != "" }) {
+		var err error
+		in.IssueDate, in.DueDate, err = fillSentDates(cfg, in.IssueDate, in.DueDate)
+		if err != nil {
+			problems = append(problems, "issueDate: must be YYYY-MM-DD")
+			writeAPIError(w, http.StatusUnprocessableEntity, problems...)
+			return
+		}
 	}
 
 	// taxBp is the caller's explicit value (a manual invoice, or a quote whose price baked in tax:
@@ -687,6 +727,18 @@ func (iv *invoices) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if in.RequestID != "" {
+		if err := linkRequestToInvoice(tx, in.RequestID, id, by, now); err != nil {
+			if errors.Is(err, errRequestAlreadyInvoiced) {
+				writeAPIError(w, http.StatusConflict, "this request was already converted to an invoice; reload to see it")
+				return
+			}
+			log.Printf("invoices link request: %v", err)
+			http.Error(w, "invoices not writable", http.StatusInternalServerError)
+			return
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		log.Printf("invoices commit: %v", err)
 		http.Error(w, "invoices not writable", http.StatusInternalServerError)
@@ -728,6 +780,10 @@ func (iv *invoices) handlePut(w http.ResponseWriter, r *http.Request) {
 
 	in, ok := decodeJSONBody[invoiceInput](w, r, invoicesMaxBytes)
 	if !ok {
+		return
+	}
+	if in.Version != nil && *in.Version != existing.Version {
+		writeAPIError(w, http.StatusConflict, invoiceVersionConflictMessage)
 		return
 	}
 	problems := validateInvoiceInput(&in)
@@ -783,15 +839,24 @@ func (iv *invoices) handlePut(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
+	// A version the editor loaded is part of the WHERE, so a competing write that lands between the check
+	// above and this statement still loses.
+	versionClause := ""
+	args := []any{
+		snap.ClientID, snap.ClientName, snap.ClientEmail, snap.ClientBillingAddress, snap.ClientShippingAddress,
+		in.IssueDate, in.DueDate, taxBp, in.DiscountCents, in.Notes,
+		totals.SubtotalCents, totals.TaxCents, totals.TotalCents, now, identityFor(r).username, id,
+	}
+	if in.Version != nil {
+		versionClause = " AND version = ?"
+		args = append(args, *in.Version)
+	}
 	res, err := tx.Exec(`
 		UPDATE invoices SET
 			client_id = ?, client_name = ?, client_email = ?, client_billing_address = ?, client_shipping_address = ?,
 			issue_date = ?, due_date = ?, tax_bp = ?, discount_cents = ?, notes = ?,
-			subtotal_cents = ?, tax_cents = ?, total_cents = ?, updated_at = ?, updated_by = ?
-		WHERE id = ? AND status = 'draft'`,
-		snap.ClientID, snap.ClientName, snap.ClientEmail, snap.ClientBillingAddress, snap.ClientShippingAddress,
-		in.IssueDate, in.DueDate, taxBp, in.DiscountCents, in.Notes,
-		totals.SubtotalCents, totals.TaxCents, totals.TotalCents, now, identityFor(r).username, id)
+			subtotal_cents = ?, tax_cents = ?, total_cents = ?, updated_at = ?, updated_by = ?, version = version + 1
+		WHERE id = ? AND status = 'draft'`+versionClause, args...)
 	if err != nil {
 		log.Printf("invoices update: %v", err)
 		http.Error(w, "invoices not writable", http.StatusInternalServerError)
@@ -800,6 +865,11 @@ func (iv *invoices) handlePut(w http.ResponseWriter, r *http.Request) {
 	// The draft check above ran before this transaction; a send that landed in between left lines that
 	// carry stock_taken, which the delete below would drop.
 	if n, _ := res.RowsAffected(); n != 1 {
+		var status string
+		if err := tx.QueryRow(`SELECT status FROM invoices WHERE id = ?`, id).Scan(&status); err == nil && status == "draft" {
+			writeAPIError(w, http.StatusConflict, invoiceVersionConflictMessage)
+			return
+		}
 		writeAPIError(w, http.StatusConflict, "only draft invoices can be edited")
 		return
 	}
@@ -905,7 +975,7 @@ func (iv *invoices) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if status == "canceled" {
 		noPayments = " AND NOT EXISTS (SELECT 1 FROM payments WHERE invoice_id = invoices.id)"
 	}
-	res, err := tx.Exec(`UPDATE invoices SET status = ?, issue_date = ?, due_date = ?, updated_at = ?, updated_by = ? WHERE id = ? AND status = ?`+noPayments,
+	res, err := tx.Exec(`UPDATE invoices SET status = ?, issue_date = ?, due_date = ?, updated_at = ?, updated_by = ?, version = version + 1 WHERE id = ? AND status = ?`+noPayments,
 		status, issueDate, dueDate, now, by, id, existing.Status)
 	if err != nil {
 		log.Printf("invoices status update: %v", err)
@@ -1109,7 +1179,7 @@ func (iv *invoices) handleSend(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invoices not writable", http.StatusInternalServerError)
 			return
 		}
-		res, err := tx.Exec(`UPDATE invoices SET status = 'sent', issue_date = ?, due_date = ?, updated_at = ?, updated_by = ? WHERE id = ? AND status = 'draft'`,
+		res, err := tx.Exec(`UPDATE invoices SET status = 'sent', issue_date = ?, due_date = ?, updated_at = ?, updated_by = ?, version = version + 1 WHERE id = ? AND status = 'draft'`,
 			issueDate, dueDate, now, identityFor(r).username, id)
 		if err != nil {
 			log.Printf("invoices status update: %v", err)
@@ -1161,8 +1231,26 @@ func (iv *invoices) handleDelete(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusConflict, "only draft invoices can be deleted; cancel instead")
 		return
 	}
-	if _, err := iv.db.Exec(`DELETE FROM invoices WHERE id = ?`, id); err != nil {
+	// The request that was converted to this draft goes back to "not invoiced" so it can be converted again.
+	tx, err := iv.db.Begin()
+	if err != nil {
+		log.Printf("invoices begin: %v", err)
+		http.Error(w, "invoices not writable", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE quote_requests SET invoice_id = '' WHERE invoice_id = ?`, id); err != nil {
+		log.Printf("invoices unlink request: %v", err)
+		http.Error(w, "invoices not writable", http.StatusInternalServerError)
+		return
+	}
+	if _, err := tx.Exec(`DELETE FROM invoices WHERE id = ?`, id); err != nil {
 		log.Printf("invoices delete: %v", err)
+		http.Error(w, "invoices not writable", http.StatusInternalServerError)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		log.Printf("invoices delete commit: %v", err)
 		http.Error(w, "invoices not writable", http.StatusInternalServerError)
 		return
 	}

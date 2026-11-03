@@ -1169,3 +1169,85 @@ func TestInvoiceStatusRejectsBritishSpelling(t *testing.T) {
 		t.Fatalf("status cancelled: %d %s, want 422", rec.Code, rec.Body.String())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Optimistic concurrency (decision 5)
+// ---------------------------------------------------------------------------
+
+func TestInvoicePutWithStaleVersionIs409(t *testing.T) {
+	mux := newTestMux(t, t.TempDir())
+	rec := postInvoice(t, mux, `{"clientName":"A","lines":[{"description":"X","quantity":1,"unitPriceCents":100}]}`)
+	inv := mustUnmarshalInvoice(t, rec)
+	if inv.Version != 1 {
+		t.Fatalf("new invoice version = %d, want 1", inv.Version)
+	}
+
+	body := func(note string, version int) string {
+		return fmt.Sprintf(`{"clientName":"A","notes":%q,"version":%d,"lines":[{"description":"X","quantity":1,"unitPriceCents":100}]}`, note, version)
+	}
+	rec = putInvoice(t, mux, inv.ID, body("tab one", inv.Version))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first save: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+	saved := mustUnmarshalInvoice(t, rec)
+	if saved.Version != 2 {
+		t.Errorf("version after save = %d, want 2", saved.Version)
+	}
+
+	// The second tab still holds version 1.
+	rec = putInvoice(t, mux, inv.ID, body("tab two", inv.Version))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("stale save: want 409, got %d %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "changed in another tab") {
+		t.Errorf("409 body %q should say the invoice was changed elsewhere", rec.Body.String())
+	}
+	got := mustUnmarshalInvoice(t, getInvoice(t, mux, inv.ID))
+	if got.Notes != "tab one" {
+		t.Errorf("notes = %q, want the first tab's save to stand", got.Notes)
+	}
+
+	// Overwrite: the UI reloads the version and saves again.
+	rec = putInvoice(t, mux, inv.ID, body("tab two", got.Version))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("overwrite with the current version: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+
+	// A body with no version still saves (API callers that predate the field).
+	rec = putInvoice(t, mux, inv.ID, `{"clientName":"A","lines":[{"description":"X","quantity":1,"unitPriceCents":100}]}`)
+	if rec.Code != http.StatusOK {
+		t.Errorf("no version: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestInvoiceVersionBumpsOnStatusChange(t *testing.T) {
+	mux := newTestMux(t, t.TempDir())
+	inv := newSentInvoice(t, mux, 500)
+	if inv.Version != 2 {
+		t.Errorf("version after Mark sent = %d, want 2", inv.Version)
+	}
+	rec := postPayment(t, mux, inv.ID, `{"paidDate":"2026-01-15","amountCents":500}`)
+	paid := mustUnmarshalInvoice(t, rec)
+	if paid.Version != 3 {
+		t.Errorf("version after the payment flips it to paid = %d, want 3", paid.Version)
+	}
+}
+
+// Converting a saved quote (a line with a quoteId) fills the issue date with today and the due date from the
+// default terms; a manual invoice keeps what the editor sent.
+func TestInvoiceFromQuoteDefaultsDates(t *testing.T) {
+	mux := newTestMux(t, t.TempDir())
+	rec := postInvoice(t, mux, `{"clientName":"A","lines":[{"description":"X","quantity":1,"unitPriceCents":100,"quoteId":"q1"}]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("convert: %d %s", rec.Code, rec.Body.String())
+	}
+	inv := mustUnmarshalInvoice(t, rec)
+	if inv.IssueDate == "" || inv.DueDate == "" || inv.DueDate <= inv.IssueDate {
+		t.Errorf("dates = %q / %q, want issue today and a later due date", inv.IssueDate, inv.DueDate)
+	}
+	rec = postInvoice(t, mux, `{"clientName":"A","lines":[{"description":"X","quantity":1,"unitPriceCents":100}]}`)
+	manual := mustUnmarshalInvoice(t, rec)
+	if manual.IssueDate != "" || manual.DueDate != "" {
+		t.Errorf("manual invoice dates = %q / %q, want them left blank", manual.IssueDate, manual.DueDate)
+	}
+}

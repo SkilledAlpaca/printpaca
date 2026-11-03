@@ -457,3 +457,20 @@ func TestMigratedDraftInvoiceSaves(t *testing.T) {
 		t.Fatalf("stored lines = %+v", inv.Lines)
 	}
 }
+
+// The v1.1 migrations give every existing invoice version 1 and every existing request no invoice link and no
+// needs-print-time mark.
+func TestMigrationAddsInvoiceVersionAndRequestLink(t *testing.T) {
+	dir := t.TempDir()
+	seedV105OptionRows(t, dir)
+	db := openTestDB(t, dir)
+	var version int
+	if err := db.QueryRow(`SELECT version FROM invoices WHERE id = 'inv'`).Scan(&version); err != nil || version != 1 {
+		t.Errorf("invoice version = %d (err %v), want 1", version, err)
+	}
+	var invoiceID string
+	var needs int
+	if err := db.QueryRow(`SELECT invoice_id, needs_print_time FROM quote_requests WHERE id = 'r1'`).Scan(&invoiceID, &needs); err != nil || invoiceID != "" || needs != 0 {
+		t.Errorf("request invoice_id %q needs_print_time %d (err %v), want '' and 0", invoiceID, needs, err)
+	}
+}

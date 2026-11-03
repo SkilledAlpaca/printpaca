@@ -97,7 +97,7 @@ test("a counter sale on a sent invoice is counted and takes stock; canceling res
     await expect(page.getByLabel("Line 1 unit price")).toHaveValue("25");
     await page.getByLabel("Line 1 quantity").fill("2");
     await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByText(/^Invoice INV-/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
 
     // A draft reserves nothing.
     expect(await stockQty()).toBe(5);

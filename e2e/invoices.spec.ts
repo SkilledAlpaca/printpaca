@@ -26,7 +26,7 @@ test("create a draft invoice, mark it sent, then cancel it", async ({ page }) =>
   await expect(page.getByText("$25.00").first()).toBeVisible();
 
   await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText(/^Invoice INV-/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
   await expect(page.getByText("draft", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Mark sent" }).click();
@@ -47,7 +47,7 @@ test("canceling an invoice that has payments shows the server's message until th
   await page.getByLabel("Line 1 quantity").fill("1");
   await page.getByLabel("Line 1 unit price").fill("50.00");
   await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText(/^Invoice INV-/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
   await page.getByRole("button", { name: "Mark sent" }).click();
   await expect(page.getByText("sent", { exact: true })).toBeVisible();
 

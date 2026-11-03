@@ -61,6 +61,14 @@ async function scanAll(page: Page, name: string): Promise<void> {
   expect(problems, `a11y problems on ${name}`).toEqual([]);
 }
 
+/** A detail view has exactly one h1, and its text is the record segment of the document title (WCAG 1.3.1, 2.4.2). */
+async function expectOneH1AndRecordTitle(page: Page): Promise<void> {
+  await expect(page.locator("main h1")).toHaveCount(1);
+  const heading = ((await page.locator("main h1").innerText()) ?? "").trim();
+  expect(heading).not.toBe("");
+  await expect(page).toHaveTitle(new RegExp(`^${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} · [^·]+ · printpaca$`));
+}
+
 let originalConfig: Record<string, unknown> & { materials: Array<{ name: string; public?: boolean }> };
 const created: { clients: string[]; items: string[]; invoices: string[]; requests: string[] } = {
   clients: [],
@@ -272,7 +280,7 @@ test.describe("admin detail views", () => {
     test.setTimeout(120_000);
     await page.goto(`/admin/#/invoices#${invoiceId}`);
     await expect(page.locator("main h1, main h2").first()).toBeVisible();
-    expect.soft(await page.locator("main h1").count(), "a detail view has exactly one h1").toBe(1);
+    await expectOneH1AndRecordTitle(page);
     await scanAll(page, "admin invoice detail");
   });
 
@@ -280,7 +288,7 @@ test.describe("admin detail views", () => {
     test.setTimeout(120_000);
     await page.goto(`/admin/#/clients#${clientId}`);
     await expect(page.locator("main h1, main h2").first()).toBeVisible();
-    expect.soft(await page.locator("main h1").count(), "a detail view has exactly one h1").toBe(1);
+    await expectOneH1AndRecordTitle(page);
     await scanAll(page, "admin client detail");
   });
 
@@ -288,7 +296,7 @@ test.describe("admin detail views", () => {
     test.setTimeout(120_000);
     await page.goto(`/admin/#/requests#${requestId}`);
     await expect(page.locator("main h1, main h2").first()).toBeVisible();
-    expect.soft(await page.locator("main h1").count(), "a detail view has exactly one h1").toBe(1);
+    await expectOneH1AndRecordTitle(page);
     await scanAll(page, "admin request detail");
   });
 
@@ -297,18 +305,73 @@ test.describe("admin detail views", () => {
     await page.goto("/admin/#/items");
     await page.locator("main").getByRole("button", { name: new RegExp(ITEM_NAME) }).first().click();
     await expect(page.locator("main h1, main h2").first()).toBeVisible();
-    expect.soft(await page.locator("main h1").count(), "a detail view has exactly one h1").toBe(1);
+    await expectOneH1AndRecordTitle(page);
     await scanAll(page, "admin item detail");
   });
 
   test("a delete confirm keeps focus on a control inside the page", async ({ page }) => {
     await page.goto(`/admin/#/clients#${clientId}`);
     await expect(page.locator("main h1, main h2").first()).toBeVisible();
-    expect.soft(await page.locator("main h1").count(), "a detail view has exactly one h1").toBe(1);
+    await expectOneH1AndRecordTitle(page);
     await page.getByRole("button", { name: /^Delete client/ }).click();
     // The trigger is replaced by the confirm and cancel buttons; focus must land on one of them, not <body>.
     await expect(page.locator("main :focus")).toHaveCount(1);
     await expect(page.locator("main :focus")).toHaveText(/Delete client\?|Cancel/);
+  });
+});
+
+test.describe("sticky bars (2.4.11)", () => {
+  /** The visible, enabled, tabbable controls inside <main>, in DOM order, as selectors the page can re-find. */
+  async function tag(page: Page): Promise<number> {
+    return page.evaluate(() => {
+      const sel = "a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]):not([tabindex='-1']), select:not([disabled]), textarea:not([disabled]), summary, [tabindex='0']";
+      const els = [...document.querySelectorAll<HTMLElement>(`#main ${sel}`)].filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden" && !el.closest(".save-bar, .jump-nav");
+      });
+      els.forEach((el, i) => el.setAttribute("data-walk", String(i)));
+      return els.length;
+    });
+  }
+  const rect = (page: Page, sel: string) =>
+    page.evaluate((s) => { const r = document.querySelector(s)!.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; }, sel);
+
+  test("Settings: the field Tab reaches above the save bar stays clear of it, and Shift+Tab clears the jump nav", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 700 });
+    await page.goto("/admin/#/settings");
+    await expect(page.locator(".jump-nav")).toBeVisible();
+    // Make the editor dirty so the sticky save bar shows; the original symbol is restored by the next reload.
+    const symbol = page.getByLabel("Symbol");
+    await symbol.fill("#");
+    await expect(page.locator(".save-bar")).toBeVisible();
+    // The bar's measured height reaches the scroll container's padding.
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector("#main")!).scrollPaddingBottom)).not.toBe("16px");
+
+    const count = await tag(page);
+    expect(count).toBeGreaterThan(10);
+    // Bottom edge: from the second-to-last control, Tab onto the last one above the save bar.
+    await page.evaluate((i) => (document.querySelector(`[data-walk="${i}"]`) as HTMLElement).focus({ preventScroll: true }), count - 2);
+    await page.evaluate((i) => {
+      document.querySelector("#main")!.scrollTop = 0;
+      (document.querySelector(`[data-walk="${i}"]`) as HTMLElement).focus({ preventScroll: true });
+    }, count - 2);
+    await page.keyboard.press("Tab");
+    const last = await rect(page, `[data-walk="${count - 1}"]`);
+    const bar = await rect(page, ".save-bar");
+    expect(last.bottom, "the last field above the save bar is not under it").toBeLessThanOrEqual(bar.top + 0.5);
+
+    // Top edge: scroll a control above the viewport, focus the next one, and Shift+Tab back to it.
+    const mid = Math.floor(count / 2);
+    await page.evaluate((i) => {
+      const main = document.querySelector("#main") as HTMLElement;
+      const el = document.querySelector(`[data-walk="${i}"]`) as HTMLElement;
+      main.scrollTop += el.getBoundingClientRect().top - main.getBoundingClientRect().top + 300;
+      (document.querySelector(`[data-walk="${i + 1}"]`) as HTMLElement).focus({ preventScroll: true });
+    }, mid);
+    await page.keyboard.press("Shift+Tab");
+    const field = await rect(page, `[data-walk="${mid}"]`);
+    const nav = await rect(page, ".jump-nav");
+    expect(field.top, "the field Shift+Tab reaches is not under the jump nav").toBeGreaterThanOrEqual(nav.bottom - 0.5);
   });
 });
 

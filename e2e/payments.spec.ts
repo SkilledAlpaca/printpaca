@@ -23,7 +23,7 @@ test("record a full payment on a sent invoice and see it reflected on the Dashbo
   await page.getByLabel("Line 1 unit price").fill("40.00");
 
   await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText(/^Invoice INV-/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
 
   await page.getByRole("button", { name: "Mark sent" }).click();
   await expect(page.getByText("sent", { exact: true })).toBeVisible();

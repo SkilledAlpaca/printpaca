@@ -86,7 +86,7 @@ test("a PayPal.me handle and currency code put a pay link and QR on a sent invoi
   await page.getByLabel("Line 1 quantity").fill("1");
   await page.getByLabel("Line 1 unit price").fill("40.00");
   await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText(/^Invoice INV-/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
   await page.getByRole("button", { name: "Mark sent" }).click();
   await expect(page.getByText("sent", { exact: true })).toBeVisible();
 
@@ -108,7 +108,7 @@ test("a fully paid invoice's print view has no pay block", async ({ page }) => {
   await page.getByLabel("Line 1 quantity").fill("1");
   await page.getByLabel("Line 1 unit price").fill("15.00");
   await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText(/^Invoice INV-/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
   await page.getByRole("button", { name: "Mark sent" }).click();
   await expect(page.getByText("sent", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Record payment" }).click();

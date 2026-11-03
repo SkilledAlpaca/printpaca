@@ -484,6 +484,10 @@ func electricityFormula(in QuoteInputs, hours, rate float64, periods []EnergyPer
 		return formatf(round2(hours)) + " h × " + formatf(in.Watts) + " W ÷ 1000 × " + formatf(rate) + "/kWh"
 	}
 	if len(periods) == 0 {
+		// Name the missing start rather than blaming the schedule: an empty start is the common cause.
+		if strings.TrimSpace(in.Energy.Start) == "" {
+			return "needs a print start"
+		}
 		return "schedule not usable"
 	}
 	parts := make([]string, len(periods))

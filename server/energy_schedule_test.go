@@ -391,3 +391,15 @@ func TestWallToInstantClampsSpringForwardGap(t *testing.T) {
 		t.Errorf("wallToInstant(02:00) = %v, want %v (03:00 PDT)", got, want)
 	}
 }
+
+// A blank print start is the user's omission, so the Electricity line says so instead of blaming the schedule.
+func TestElectricityFormulaNamesMissingPrintStart(t *testing.T) {
+	missing := ComputeQuote(scheduleQuoteInputs(t, ""), DefaultEngineOptions)
+	if got := missing.PerUnit[1].Formula; got != "needs a print start" {
+		t.Errorf("blank start formula = %q, want %q", got, "needs a print start")
+	}
+	bad := ComputeQuote(scheduleQuoteInputs(t, "not-a-date"), DefaultEngineOptions)
+	if got := bad.PerUnit[1].Formula; got != "schedule not usable" {
+		t.Errorf("invalid start formula = %q, want %q", got, "schedule not usable")
+	}
+}

@@ -71,7 +71,7 @@ export const GUIDE_TOPICS: GuideTopic[] = [
 /** Keyboard shortcuts, shown in the Guide. Each works only on the pages named here; the sidebar footer lists
  * the ones that work on the page you are on. */
 export const SHORTCUTS: { keys: string; action: string; where: string }[] = [
-  { keys: "Ctrl+S (Cmd+S on Mac)", action: "Save", where: "New quote, Shop items (item editor), Settings, Filament materials, Electricity, Printers" },
+  { keys: "Ctrl+S (Cmd+S on Mac)", action: "Save", where: "New quote, invoice drafts, client details, Shop items (item editor), Settings, Filament materials, Electricity, Printers" },
   { keys: "Ctrl+K (Cmd+K on Mac)", action: "Jump to the page's filter box", where: "Quotes, Invoices, Clients, Requests, Shop items, Filament spools, Recent prints on New quote" },
   { keys: "Esc", action: "Close the open menu or the sidebar drawer", where: "Everywhere" },
 ];

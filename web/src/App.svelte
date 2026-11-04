@@ -1006,7 +1006,7 @@
             onclick={openIntegrations}
           >
             <span class="dot ok" aria-hidden="true"></span>
-            {#if !navCollapsed}<span aria-hidden="true">{name}: configured</span>{/if}
+            {#if !navCollapsed}<span aria-hidden="true">{name}</span>{/if}
           </button>
         {:else}
           <span
@@ -1017,14 +1017,18 @@
             title={navCollapsed ? `${name}: configured. ${detail}` : undefined}
           >
             <span class="dot ok" aria-hidden="true"></span>
-            {#if !navCollapsed}<span aria-hidden="true">{name}: configured</span>{/if}
+            {#if !navCollapsed}<span aria-hidden="true">{name}</span>{/if}
           </span>
         {/if}
         <span class="badge-detail" id={`int-${kind}-detail`} role="presentation">{detail}{canOpenSettings ? " Opens Settings, Integrations." : ""}</span>
       </div>
     {/snippet}
-    {#if spoolmanEnabled && showSpoolmanLine}{@render integrationBadge("spoolman", "Spoolman")}{/if}
-    {#if moonrakerConfigured && showMoonrakerLine}{@render integrationBadge("moonraker", "Moonraker")}{/if}
+    {#if (spoolmanEnabled && showSpoolmanLine) || (moonrakerConfigured && showMoonrakerLine)}
+      <div class="badges" class:rail={navCollapsed}>
+        {#if spoolmanEnabled && showSpoolmanLine}{@render integrationBadge("spoolman", "Spoolman")}{/if}
+        {#if moonrakerConfigured && showMoonrakerLine}{@render integrationBadge("moonraker", "Moonraker")}{/if}
+      </div>
+    {/if}
     <div class="footer-actions" class:rail={navCollapsed}>
       {#if !disabledTabs.has("guide")}
         <button
@@ -1466,19 +1470,27 @@
   /* Integration badges (D42): a pill with a status dot and "Name: configured". A link-badge is a button; a
    * static one (no Settings access) is a span with the same look. Contrast: --text on --surface-2 in both
    * themes; the dot is decoration. The detail panel is an overlay above the badge, inside the sidebar. */
-  .badge-wrap { position: relative; }
+  /* D47: small chips side by side in one row, wrapping only if they must. The visible text is the integration's
+   * name; "configured" is the accessible name and the green dot. The detail panel anchors to the row, so it spans
+   * the sidebar rather than one chip. */
+  .badges { position: relative; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
+  .badges.rail { flex-direction: column; flex-wrap: nowrap; }
+  .badge-wrap { display: contents; }
+  .badge-wrap.rail { display: block; }
   .int-badge {
+    position: relative;
     display: inline-flex;
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--space-1);
     max-width: 100%;
-    min-height: var(--tap-sm);
-    padding: 0 var(--space-3);
+    min-height: 0;
+    padding: var(--space-1) var(--space-2);
+    line-height: 1.2;
     border: none;
     border-radius: 999px;
     background: var(--surface-2);
     color: var(--text);
-    font-size: var(--text-xs);
+    font-size: var(--type-caption);
     white-space: nowrap;
   }
   button.int-badge { cursor: pointer; }
@@ -1486,8 +1498,8 @@
   .int-badge.static { cursor: default; }
   .badge-wrap.rail .int-badge { width: 100%; justify-content: center; padding: 0; }
   .dot {
-    width: var(--space-2);
-    height: var(--space-2);
+    width: calc(var(--space-2) * 0.75);
+    height: calc(var(--space-2) * 0.75);
     border-radius: 50%;
     background: var(--border);
     flex-shrink: 0;
@@ -1545,12 +1557,15 @@
   .signout-split .footer-btn { flex: 1 1 0; min-width: 0; justify-content: center; font-weight: 600; border: 1px solid currentColor; }
   .signout-split .cancel { color: var(--danger); }
   .signout-split .confirm { color: var(--ok); }
-  .about { display: flex; flex-direction: column; gap: 0; color: var(--muted); font-size: var(--text-xs); line-height: 1.3; }
+  /* D48: the footer line and the version are caption type in the muted color. */
+  .about { display: flex; flex-direction: column; gap: 0; color: var(--muted); font-size: var(--type-caption); line-height: 1.3; }
   .version-rail { align-self: center; color: var(--muted); display: inline-flex; padding: var(--space-1); }
   .version-line { font-variant-numeric: tabular-nums; }
   /* Phone drawer: every footer control is a 44px touch target (D26). */
   @media (max-width: 600px) {
-    .footer-btn, .int-badge { min-height: 44px; }
+    .footer-btn { min-height: 44px; }
+    /* The chip keeps its small look; its 44px hit area is a pseudo-element centered on it (D47, D26). */
+    .int-badge::after { content: ""; position: absolute; inset-block: calc((100% - 44px) / 2); inset-inline: 0; }
     .collapse-toggle { min-height: 44px; }
   }
   /* Short windows (1366x768 and 1366x860 laptops): tighter nav rows and footer so every destination, Settings included,

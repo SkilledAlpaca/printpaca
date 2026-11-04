@@ -440,6 +440,7 @@ test("an estimate's name and email carry over to Request another estimate", asyn
   await page.getByRole("button", { name: "Request an estimate" }).click();
   await expect(page.getByRole("heading", { name: "Request received" })).toBeVisible();
   createdRefs.push(((await page.locator(".confirmation .ref").textContent()) ?? "").replace("Reference: ", "").trim());
+  await page.waitForTimeout(600); // taps right after a confirmation appears are ignored
   await page.getByRole("button", { name: "Request another estimate" }).click();
   await expect(page.getByLabel("Name")).toHaveValue(`${PREFIX} Again`);
   await expect(page.getByLabel("Email")).toHaveValue("again@example.com");

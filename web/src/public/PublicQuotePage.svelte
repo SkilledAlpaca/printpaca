@@ -1609,6 +1609,7 @@
 </main>
 
 <style>
+  .copy-ref { align-self: center; }
   .page {
     /* The narrow reading column (D10): the record measure plus the card padding, so a card's text keeps the
      * same line length as a record view. Narrower than the viewport on a phone, where the padding constrains it. */

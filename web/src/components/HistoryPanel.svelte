@@ -4,7 +4,7 @@
   import type { EffectiveConfig, OrderBreakdown } from "../lib/engine/index";
   import type { SavedQuote } from "../lib/api";
   import { sortQuotes } from "../lib/quotesFile";
-  import { listQuotes, getQuote, createQuote, updateQuote, toSavedQuote, QuoteConflictError, type QuoteInputMeta } from "../lib/quotesApi";
+  import { listQuotes, getQuote, createQuote, updateQuote, toSavedQuote, adoptServerQuote, QuoteConflictError, type QuoteInputMeta } from "../lib/quotesApi";
   import {
     consumePendingOpen,
     quoteActions,
@@ -331,6 +331,9 @@
       setStatus("Couldn't update: this quote has been deleted.", true);
       return;
     }
+    // update() carries status, log, link and client over from the cached row; refresh that row first so
+    // Overwrite replaces the content but keeps a link or status change made elsewhere.
+    quotes = adoptServerQuote(quotes, fresh);
     quoteSession.version = fresh.savedAt;
     quoteSession.conflict = false;
     await update();

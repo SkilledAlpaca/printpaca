@@ -145,6 +145,13 @@ export async function updateQuoteGuarded(raw: ServerQuote, build: (current: Serv
   return updateQuote(fresh.id, retry, fresh.savedAt);
 }
 
+/** The list with the quote of fresh.id replaced by the server's current row; a quote absent from the list stays
+ * absent. Used before a save so cached status, log and link never go stale. */
+export function adoptServerQuote(list: SavedQuote[], fresh: ServerQuote): SavedQuote[] {
+  const mapped = toSavedQuote(fresh);
+  return list.map((q) => (q.id === fresh.id ? mapped : q));
+}
+
 export async function deleteQuote(id: string): Promise<void> {
   const res = await fetch(`api/quotes/${encodeURIComponent(id)}`, {
     method: "DELETE",

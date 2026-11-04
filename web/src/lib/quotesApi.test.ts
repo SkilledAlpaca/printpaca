@@ -8,6 +8,7 @@ import {
   toSavedQuote,
   updateQuote,
   updateQuoteGuarded,
+  adoptServerQuote,
   type ServerQuote,
 } from "./quotesApi";
 
@@ -355,5 +356,20 @@ describe("updateQuoteGuarded", () => {
       .mockResolvedValueOnce(jsonResponse({}, 409));
     vi.stubGlobal("fetch", fetchMock);
     await expect(updateQuoteGuarded(serverQuote(), (cur) => input(cur))).rejects.toThrow(/changed in another tab/);
+  });
+});
+
+describe("adoptServerQuote", () => {
+  it("replaces the cached row so status, log and link come from the server", () => {
+    const stale = toSavedQuote(serverQuote({ invoicedAs: null }));
+    const other = toSavedQuote(serverQuote({ id: "q2" }));
+    const fresh = serverQuote({ invoicedAs: "inv-1", status: "accepted" });
+    const list = adoptServerQuote([stale, other], fresh);
+    expect(list[0]!.invoicedAs).toBe("inv-1");
+    expect(list[0]!.status).toBe("accepted");
+    expect(list[1]).toBe(other);
+  });
+  it("leaves a quote that isn't in the list absent", () => {
+    expect(adoptServerQuote([], serverQuote())).toEqual([]);
   });
 });

@@ -114,3 +114,22 @@ test.describe("A3: weight and print time come before the Recent prints picker", 
   });
 });
 
+test.describe("A4: a saved quote says so", () => {
+  test("after Save the hint reads saved, the sidebar stays on New quote, and an edit brings back the warning", async ({ page, request }) => {
+    await page.goto("/admin/");
+    await fillCanonicalQuote(page);
+    await page.getByLabel("Label for this quote").fill(`A4 ${Date.now()}`);
+    await page.getByRole("button", { name: "Save quote" }).click();
+    await expect(page.locator(".action-status")).toContainText("saved.");
+    await expect(page.getByText("This quote is saved. Change anything, then press Update")).toBeVisible();
+    await expect(page.getByText("Your changes aren't saved until you update it")).toHaveCount(0);
+    await expect(navButton(page, "New quote")).toHaveAttribute("aria-current", "page");
+    await expect(navButton(page, "Quotes")).not.toHaveAttribute("aria-current", "page");
+    await page.getByLabel(/Model weight/).fill("51");
+    await expect(page.getByText("Your changes aren't saved until you update it")).toBeVisible();
+    // Leave no trace: the saved quote goes again.
+    const id = new URL(page.url()).hash.replace("#/quote/", "");
+    expect((await request.delete(`/admin/api/quotes/${id}`)).ok()).toBe(true);
+  });
+});
+

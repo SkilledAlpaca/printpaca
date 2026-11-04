@@ -558,9 +558,9 @@
   const navHidden = $derived(new Set([...disabledTabs, ...ungrantedTabs(Object.keys(TABS) as Tab[], configUser)]));
   const navSections = $derived(filterNavSections(NAV_SECTIONS, navHidden));
 
-  // The sidebar item that is "you are here". A saved quote open in the editor belongs to Quotes, not to New
-  // quote, so the highlight (and aria-current) follows the quote's home when that item is in the nav.
-  const navCurrent = $derived<Tab>(tab === "quote" && quoteSession.loadedId !== null && !navHidden.has("quotes") ? "quotes" : tab);
+  // The sidebar item that is "you are here": the tab the address is on. A saved quote open in the editor is
+  // still at #/quote/<id>, so the highlight stays on New quote after a save instead of jumping to Quotes (A4).
+  const navCurrent = $derived<Tab>(tab);
 
   // The sidebar's New quote starts a blank quote (asking first when the open one has unsaved edits), then goes
   // to the editor. Other ways into the editor (Back, the Requests tab's Open in quote, a saved quote's link)

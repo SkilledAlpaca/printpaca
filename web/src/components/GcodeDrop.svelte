@@ -296,7 +296,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
-  class="card drop"
+  class="drop"
   class:dragging
   role="group"
   aria-label="Model file drop zone"
@@ -357,6 +357,9 @@
 <style>
   .drop {
     border: 2px dashed var(--control-border);
+    border-radius: var(--radius);
+    background: var(--inset-bg);
+    padding: var(--space-3) var(--space-4);
     text-align: center;
     min-height: 44px;
   }
@@ -371,10 +374,10 @@
   .drop label {
     display: block;
     cursor: pointer;
-    padding: 0.5rem 0;
-    /* Capped measure, centered: the card spans the page, so uncapped this sentence ran ~110 characters and
+    padding: var(--space-2) 0;
+    /* Capped measure, centered: the zone spans its column, so uncapped this sentence ran ~110 characters and
      * the zone read as a paragraph with a border, not a target. */
-    max-width: 60ch;
+    max-width: var(--measure-prose);
     margin: 0 auto;
   }
   .solidity-field {
@@ -383,13 +386,13 @@
     color: var(--muted);
   }
   .solidity-field input {
-    width: 4rem;
-    margin: 0 0.3rem;
+    width: var(--field-xs);
+    margin: 0 var(--space-1);
   }
   /* Two lines tall even when empty, so a parse result replacing "Parsing…" (or clearing) doesn't reflow the
    * fields below. A longer message at a narrow width may still wrap onto a third line. */
   .status-line {
-    margin: 0.5rem 0 0;
+    margin: var(--space-2) 0 0;
     min-height: 3em;
   }
   .status-line.ok {

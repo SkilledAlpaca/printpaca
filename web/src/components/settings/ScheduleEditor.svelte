@@ -187,7 +187,7 @@
   {/if}
 
   {#snippet timeField(w: TouWindow, which: "start" | "end", fid: string, aria: string, path: string)}
-    <Field id={fid} label={which === "start" ? "Start" : "End"} size="xs">
+    <Field id={fid} label={which === "start" ? "Start" : "End"} size="s">
       {#snippet children(f)}
         <input
           id={f.id}

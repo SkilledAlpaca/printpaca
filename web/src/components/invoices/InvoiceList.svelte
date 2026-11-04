@@ -8,7 +8,8 @@
   import StatusBadge from "../StatusBadge.svelte";
   import SettingsEditor from "../settings/SettingsEditor.svelte";
   import InvoicingSettings from "../settings/InvoicingSettings.svelte";
-  import LoadMoreRow from "../LoadMoreRow.svelte";
+  import DataTable, { type DataColumn } from "../ui/DataTable.svelte";
+  import Field from "../ui/Field.svelte";
 
   let {
     invoices,
@@ -44,6 +45,15 @@
      * allow a retry) from "still active", which filterActive alone can't. */
     onFilterActive: (filterKey: string) => void;
   } = $props();
+
+  const COLUMNS: DataColumn[] = [
+    { key: "number", label: "Number" },
+    { key: "client", label: "Client" },
+    { key: "issued", label: "Issued" },
+    { key: "due", label: "Due" },
+    { key: "status", label: "Status" },
+    { key: "amount", label: "Amount", num: true },
+  ];
 
   type StatusFilter = "all" | "draft" | "sent" | "paid" | "overdue" | "canceled";
   const STATUS_CHIPS: { key: StatusFilter; label: string }[] = [
@@ -88,27 +98,6 @@
   <p class="banner-warn" role="alert">Couldn't load invoices. The server couldn't be reached.</p>
 {/if}
 
-{#if invoices.length > 0}
-  <input
-    id="invoices-filter"
-    class="search-input"
-    placeholder="Filter by invoice number or client name"
-    aria-label="Filter invoices"
-    bind:value={filterText}
-  />
-{/if}
-
-<div class="chips" role="group" aria-label="Filter by status">
-  {#each STATUS_CHIPS as chip (chip.key)}
-    <button
-      type="button"
-      class:active={statusFilter === chip.key}
-      aria-pressed={statusFilter === chip.key}
-      onclick={() => (statusFilter = chip.key)}
-    >{chip.label}</button>
-  {/each}
-</div>
-
 {#if backfilling}
   <p class="status-line" role="status">Loading the rest of the list to filter…</p>
 {:else if backfillFailed}
@@ -117,53 +106,57 @@
   </p>
 {/if}
 
-<div class="card">
-  <div class="table-scroll stack">
-    <table>
-      <thead>
-        <tr>
-          <th>Number</th>
-          <th>Client</th>
-          <th>Issued</th>
-          <th>Due</th>
-          <th>Status</th>
-          <th class="num">Amount</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#if loading}
-          <tr><td colspan="6" class="empty-state"><span role="status">Loading invoices…</span></td></tr>
-        {:else}
-          {#each filteredInvoices as inv (inv.id)}
-            <tr class="clickable-row" onclick={() => onOpenDetail(inv.id)}>
-              <td class="nowrap c-num">
-                <button type="button" class="open-btn" data-row-id={inv.id} onclick={(e) => { e.stopPropagation(); onOpenDetail(inv.id); }}>{inv.number}</button>
-              </td>
-              <td class="c-client">{inv.clientName}</td>
-              <td class="nowrap c-issued" data-label="Issued">{inv.issueDate ? formatDate(inv.issueDate) : "-"}</td>
-              <td class="nowrap c-due" data-label="Due">{inv.dueDate ? formatDate(inv.dueDate) : "-"}</td>
-              <td class="c-status">
-                <StatusBadge status={inv.status} dueDate={inv.dueDate} />
-                {#if inv.status === "sent" && inv.paidCents > 0 && inv.paidCents < inv.totalCents}
-                  <span class="pill">Partially paid</span>
-                {/if}
-                {#if overpaidCents(inv) > 0}
-                  <span class="pill">Overpaid {money(overpaidCents(inv), cfg)}</span>
-                {/if}
-              </td>
-              <td class="num c-amount">{money(inv.totalCents, cfg)}</td>
-            </tr>
-          {:else}
-            <tr><td colspan="6" class="empty-state">{invoices.length === 0 ? "No invoices yet. Convert a saved quote from the Quotes page, or press New invoice." : "No invoices match the filter."}</td></tr>
-          {/each}
-        {/if}
-      </tbody>
-    </table>
-  </div>
-  {#if !loading && !filterActive}
-    <LoadMoreRow shown={invoices.length} {total} {loadingMore} {onLoadMore} />
+<DataTable
+  label="Invoices"
+  columns={COLUMNS}
+  loadMore={!loading && !filterActive ? { shown: invoices.length, total, loadingMore, onLoadMore } : null}
+>
+  {#snippet filters()}
+    {#if invoices.length > 0}
+      <Field id="invoices-filter" label="Filter invoices" size="l">
+        {#snippet children(f)}
+          <input id={f.id} type="search" placeholder="Invoice number or client name" bind:value={filterText} />
+        {/snippet}
+      </Field>
+    {/if}
+    <div class="chips" role="group" aria-label="Filter by status">
+      {#each STATUS_CHIPS as chip (chip.key)}
+        <button
+          type="button"
+          class:active={statusFilter === chip.key}
+          aria-pressed={statusFilter === chip.key}
+          onclick={() => (statusFilter = chip.key)}
+        >{chip.label}</button>
+      {/each}
+    </div>
+  {/snippet}
+  {#if loading}
+    <tr><td colspan="6" class="empty-state"><span role="status">Loading invoices…</span></td></tr>
+  {:else}
+    {#each filteredInvoices as inv (inv.id)}
+      <tr class="clickable-row" onclick={() => onOpenDetail(inv.id)}>
+        <td class="nowrap c-num">
+          <button type="button" class="open-btn" data-row-id={inv.id} onclick={(e) => { e.stopPropagation(); onOpenDetail(inv.id); }}>{inv.number}</button>
+        </td>
+        <td class="c-client">{inv.clientName}</td>
+        <td class="nowrap c-issued" data-label="Issued">{inv.issueDate ? formatDate(inv.issueDate) : "-"}</td>
+        <td class="nowrap c-due" data-label="Due">{inv.dueDate ? formatDate(inv.dueDate) : "-"}</td>
+        <td class="c-status">
+          <StatusBadge status={inv.status} dueDate={inv.dueDate} />
+          {#if inv.status === "sent" && inv.paidCents > 0 && inv.paidCents < inv.totalCents}
+            <span class="pill">Partially paid</span>
+          {/if}
+          {#if overpaidCents(inv) > 0}
+            <span class="pill">Overpaid {money(overpaidCents(inv), cfg)}</span>
+          {/if}
+        </td>
+        <td class="num c-amount">{money(inv.totalCents, cfg)}</td>
+      </tr>
+    {:else}
+      <tr><td colspan="6" class="empty-state">{invoices.length === 0 ? "No invoices yet. Convert a saved quote from the Quotes page, or press New invoice." : "No invoices match the filter."}</td></tr>
+    {/each}
   {/if}
-</div>
+</DataTable>
 
 {#if canEditInvoicingSettings}
   <SettingsEditor>
@@ -178,15 +171,10 @@
    * with the New invoice button, so the base margin is zeroed locally. */
   .head-row h1 { margin: 0; }
 
-  /* Same rule as ClientsTab's .search-input (scoped styles don't share): a full-width text filter above the
-   * chips. */
-  .search-input { width: 100%; margin-bottom: 0.75rem; }
-
-  /* List table baseline comes from theme.css's shared table styles; this adds the click-to-open affordance
-   * and centers the empty/loading row, which theme's .empty-state doesn't assume. */
+  /* The click-to-open affordance, and the centered empty/loading row that theme's .empty-state does not
+   * assume. DataTable owns the scroll region, the sticky header and the phone card conversion. */
   .clickable-row { cursor: pointer; }
   td.empty-state { text-align: center; }
-  /* Number/Issued/Due scroll horizontally via .table-scroll instead of wrapping mid-token. */
   .nowrap { white-space: nowrap; }
 
   /* Flat link treatment, not button.quiet: the invoice number is the row's primary link. min-height: 0
@@ -202,44 +190,32 @@
   .open-btn:hover { text-decoration: underline; }
 
   /* Uniform-width status pills: theme.css's .chips sizes each to its text, right for QuotesTab's preset
-   * chips (untouched; the rule is scoped) but uneven across All/Draft/Sent/Paid/Overdue/Canceled.
-   * min-width in rem so it scales with root font size and doesn't clip "Canceled". */
-  .chips button { min-width: 6.5rem; }
+   * chips but uneven across All/Draft/Sent/Paid/Overdue/Canceled. min-width in rem so it scales with root
+   * font size and doesn't clip "Canceled". */
+  .chips button { min-width: var(--field-xs); }
 
   /* "Partially paid" and "Overpaid $x" never break mid-phrase; they sit under the status badge, not beside it. */
-  .c-status .pill { display: inline-block; white-space: nowrap; margin-top: 0.25rem; }
+  .c-status .pill { display: inline-block; white-space: nowrap; margin-top: var(--space-1); }
 
   /* Phones: each row becomes a stacked card with the number and amount on top, then client and status, then
-   * the two dates, so nothing is clipped behind a horizontal scroll. The header row stays in the DOM, hidden
-   * with the visually-hidden clip (not display: none), and the table elements keep their table semantics.
-   * 600px matches the rest of the app's narrow breakpoint. */
+   * the two dates. DataTable hides the header row and turns the table into a block list; the card layout of a
+   * row is this screen's. 600px matches the rest of the app's narrow breakpoint. */
   @media (max-width: 600px) {
-    .stack { overflow-x: visible; }
-    .stack table, .stack tbody { display: block; }
-    .stack thead {
-      position: absolute;
-      width: 1px; height: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
-    }
-    .stack tr.clickable-row {
+    tr.clickable-row {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       grid-template-areas: "num amount" "client status" "issued due";
-      gap: 0.15rem 0.75rem;
-      padding: 0.6rem 0;
+      gap: var(--space-1) var(--space-3);
+      padding: var(--space-3) 0;
       border-bottom: 1px solid var(--border);
     }
-    .stack td { display: block; padding: 0; border: none; min-width: 0; }
     .c-num { grid-area: num; }
     .c-amount { grid-area: amount; text-align: right; font-weight: 600; }
     .c-client { grid-area: client; overflow-wrap: anywhere; }
-    .stack td.c-status { grid-area: status; display: flex; flex-direction: column; align-items: flex-end; }
+    td.c-status { grid-area: status; display: flex; flex-direction: column; align-items: flex-end; }
     .c-issued { grid-area: issued; }
     .c-due { grid-area: due; text-align: right; }
     .c-issued, .c-due { color: var(--muted); font-size: var(--text-sm); }
     .c-issued::before, .c-due::before { content: attr(data-label) " "; }
-    .stack td.empty-state { display: block; }
   }
 </style>

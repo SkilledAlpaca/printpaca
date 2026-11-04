@@ -45,7 +45,7 @@ test("below 1100px one column, with a compact summary pinned to the bottom that 
   await page.getByLabel("Set a selling price").check();
 
   const summary = page.getByRole("group", { name: "Quote summary" });
-  const expand = summary.getByRole("button", { name: /^Expand/ });
+  const expand = summary.locator("button.expand");
   await expect(expand).toBeVisible();
   await expect(expand).toHaveAttribute("aria-expanded", "false");
   // The bar shows the price, profit and Save, and sits on the bottom edge of the viewport.

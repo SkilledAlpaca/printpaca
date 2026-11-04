@@ -32,7 +32,7 @@
     type Selected,
   } from "../lib/itemOptions";
   import { NAME_MAX_BYTES, NOTE_MAX_BYTES, ITEM_ORDER_EMAIL_MAX_BYTES, utf8ByteLength, isPlausibleEmail, EMAIL_FORMAT_ERROR } from "../lib/publicFormLimits";
-  import { DEFAULT_MAX_ORDER_QTY, isValidQuantity, normalizedQuantityText, overCapMessage } from "./publicPricing";
+  import { DEFAULT_MAX_ORDER_QTY, fromUnitCents, isValidQuantity, normalizedQuantityText, overCapMessage, unitBreakdown } from "./publicPricing";
   import type { OrderDraft } from "./orderDraft";
   import VisitorReset from "./VisitorReset.svelte";
   import FormErrorSummary from "./FormErrorSummary.svelte";
@@ -138,6 +138,13 @@
   const totalCents = $derived(
     isValidQuantity(quantity, maxQuantity) ? itemTotalCents(item.priceCents, selectedDeltaCents, quantity) : null,
   );
+  // "$22.00 + Large $4.00" under the total, and the lowest price still open while a required choice that changes
+  // the price is unanswered, so the panel never shows a plain base price that the next choice would raise.
+  const breakdown = $derived(unitBreakdown(item.priceCents, item.optionGroups, selected, (c) => formatMoney(c, currency)));
+  const fromCents = $derived.by(() => {
+    const unit = fromUnitCents(item.priceCents, item.optionGroups, selected);
+    return unit === null || !isValidQuantity(quantity, maxQuantity) ? null : unit * quantity;
+  });
   const stockLine = $derived.by(() => {
     if (item.stock.mode !== "in_stock") return "Made to order.";
     const qty = item.stock.qty ?? 0;
@@ -433,11 +440,16 @@
         <div aria-live="polite" aria-atomic="true">
           {#if totalCents !== null}
             <p class="price">
-              {formatMoney(totalCents, currency)}
+              {#if fromCents !== null}<span class="from">from&nbsp;</span>{formatMoney(fromCents, currency)}{:else}{formatMoney(totalCents, currency)}{/if}
               {#if quantity !== null && quantity > 1}
                 <span class="per-unit"> &middot; {formatMoney(unitPriceCents, currency)} each</span>
               {/if}
             </p>
+            {#if fromCents !== null}
+              <p class="muted breakdown">Choose {missingGroups.map((g) => g.label).join(" and ")} to see the exact total.</p>
+            {:else if breakdown}
+              <p class="muted breakdown">{breakdown}{quantity !== null && quantity > 1 ? ` each, \u00d7 ${quantity}` : ""}</p>
+            {/if}
           {:else}
             <p class="muted">Enter a whole number from 1 to {maxQuantity.toLocaleString("en-US")} to see a total.</p>
           {/if}
@@ -548,6 +560,7 @@
    * dominant. */
   .per-unit { font-weight: 400; font-size: var(--text-base); color: var(--muted); }
 
+  .from { font-size: var(--text-base); font-weight: 400; color: var(--muted); }
   .qty-error { margin: var(--space-1) 0 0; }
   .error-list { list-style: none; margin: 0; padding: 0; text-align: left; }
   .error-list li { margin: var(--space-1) 0; }

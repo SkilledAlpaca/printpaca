@@ -396,3 +396,24 @@ test.describe("P4: a submit refused because the shop closed", () => {
   });
 });
 
+test.describe("P6: the total itemizes option surcharges", () => {
+  test("from price while a required option is unchosen, then the base plus the surcharge", async ({ page }) => {
+    await page.setExtraHTTPHeaders(xff());
+    await openItem(page, TRAY);
+    const total = page.locator("#item-total-label + div");
+    await expect(total).toContainText("from $22.00");
+    await expect(page.getByText("Choose Size to see the exact total.")).toBeVisible();
+    await page.getByLabel("Size (required)").selectOption({ label: "Large (+$4.00)" });
+    await expect(total).toContainText("$26.00");
+    await expect(total).not.toContainText("from");
+    await expect(page.getByText("$22.00 + Large $4.00")).toBeVisible();
+    await page.getByLabel("Quantity").fill("2");
+    await expect(total).toContainText("$52.00");
+    await expect(total).toContainText("$26.00 each");
+    await page.getByLabel("Size (required)").selectOption({ label: "Small" });
+    await expect(total).toContainText("$44.00");
+    // No surcharge, nothing to itemize.
+    await expect(page.locator(".breakdown")).toHaveCount(0);
+  });
+});
+

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -111,7 +112,11 @@ func TestRequestConversionItemLinkAvoidsDoubleCounting(t *testing.T) {
 		t.Errorf("stock after convert = %d, want 5 (the send takes it)", qty)
 	}
 
-	finalized := insertItemOrderRequest(t, db, item.ID, item.Name, 1, "finalized")
+	// A request the Finalize button handled has its sale in item_sales; that, not the status, drops the link.
+	finalized := insertItemOrderRequest(t, db, item.ID, item.Name, 1, "viewed")
+	if rec := setRequestStatus(t, adminMux, finalized, "finalized"); rec.Code != http.StatusOK {
+		t.Fatalf("finalize: %d %s", rec.Code, rec.Body.String())
+	}
 	rec = postInvoice(t, adminMux, convertBody(finalized, line))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("convert finalized item order: %d %s", rec.Code, rec.Body.String())
@@ -166,5 +171,118 @@ func TestRequestPrintTimeFlow(t *testing.T) {
 	}
 	if rec := postInvoice(t, adminMux, convertBody(id, "")); rec.Code != http.StatusCreated {
 		t.Errorf("convert after time: want 201, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func salesAndStock(t *testing.T, db *sql.DB, itemID string) (sales, stock int) {
+	t.Helper()
+	if err := db.QueryRow(`SELECT COUNT(*) FROM invoice_lines l JOIN invoices i ON i.id = l.invoice_id WHERE l.item_id = ? AND i.status IN ('sent','paid')`, itemID).Scan(&sales); err != nil {
+		t.Fatalf("count sales: %v", err)
+	}
+	_, stock = itemStock(t, db, itemID)
+	return sales, stock
+}
+
+// Conversion finalizes the request without recording a sale, so a deleted draft or a canceled invoice leaves
+// a "finalized" request that is still uncounted: the re-conversion must keep the item link, and sending it
+// counts the sale and takes the stock exactly once.
+func TestRequestReconversionKeepsItemLinkAfterDeleteOrCancel(t *testing.T) {
+	adminMux, _, db, _ := newRequestsTestSetup(t, t.TempDir())
+	rec := postItem(t, adminMux, `{"name":"Benchy","priceCents":1500,"public":true,"stockMode":"in_stock","stockQty":5}`)
+	var item Item
+	if err := json.Unmarshal(rec.Body.Bytes(), &item); err != nil {
+		t.Fatalf("unmarshal item: %v", err)
+	}
+	line := fmt.Sprintf(`,"itemId":%q`, item.ID)
+	id := insertItemOrderRequest(t, db, item.ID, item.Name, 1, "viewed")
+
+	// convert -> delete draft -> reconvert -> send
+	first := mustUnmarshalInvoice(t, postInvoice(t, adminMux, convertBody(id, line)))
+	if rec := deleteInvoice(t, adminMux, first.ID); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete draft: %d", rec.Code)
+	}
+	rec = postInvoice(t, adminMux, convertBody(id, line))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("reconvert: %d %s", rec.Code, rec.Body.String())
+	}
+	second := mustUnmarshalInvoice(t, rec)
+	if second.Lines[0].ItemID != item.ID {
+		t.Fatalf("reconverted line itemId = %q, want the link kept", second.Lines[0].ItemID)
+	}
+	setInvoiceStatus(t, adminMux, second.ID, "sent")
+	if sales, stock := salesAndStock(t, db, item.ID); sales != 1 || stock != 4 {
+		t.Errorf("after delete+reconvert+send: sales %d stock %d, want 1 and 4", sales, stock)
+	}
+
+	// send -> cancel -> reconvert -> send: the cancel restored the stock, the second send takes it once.
+	setInvoiceStatus(t, adminMux, second.ID, "canceled")
+	if _, stock := salesAndStock(t, db, item.ID); stock != 5 {
+		t.Fatalf("stock after cancel = %d, want 5", stock)
+	}
+	rec = postInvoice(t, adminMux, convertBody(id, line))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("reconvert after cancel: %d %s", rec.Code, rec.Body.String())
+	}
+	third := mustUnmarshalInvoice(t, rec)
+	if third.Lines[0].ItemID != item.ID {
+		t.Fatalf("line itemId after cancel = %q, want the link kept", third.Lines[0].ItemID)
+	}
+	setInvoiceStatus(t, adminMux, third.ID, "sent")
+	if sales, stock := salesAndStock(t, db, item.ID); sales != 1 || stock != 4 {
+		t.Errorf("after cancel+reconvert+send: sales %d stock %d, want 1 and 4", sales, stock)
+	}
+}
+
+// A Finalize that commits between prepareRequestConversion and the link transaction records the sale; the
+// link transaction then drops the new invoice's item links, and a Finalize that loses the other way (the
+// conversion committed first) is refused by the conditional UPDATE.
+func TestRequestFinalizeRaceIsGuarded(t *testing.T) {
+	adminMux, _, db, _ := newRequestsTestSetup(t, t.TempDir())
+	rec := postItem(t, adminMux, `{"name":"Benchy","priceCents":1500,"public":true,"stockMode":"in_stock","stockQty":5}`)
+	var item Item
+	if err := json.Unmarshal(rec.Body.Bytes(), &item); err != nil {
+		t.Fatalf("unmarshal item: %v", err)
+	}
+
+	// Finalize landed after prepare: simulate by recording the sale, then running the link in a transaction.
+	id := insertItemOrderRequest(t, db, item.ID, item.Name, 1, "viewed")
+	invID := newID()
+	if _, err := db.Exec(`INSERT INTO invoices (id, number, number_year, number_seq, status, client_name, issue_date, due_date, tax_bp, discount_cents, notes, subtotal_cents, tax_cents, total_cents, created_at, updated_at, created_by, updated_by)
+	  VALUES (?, 'X-1', 2026, 1, 'draft', 'V', '2026-01-01', '2026-01-02', 0, 0, '', 0, 0, 0, '', '', '', '')`, invID); err != nil {
+		t.Fatalf("insert invoice: %v", err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := insertInvoiceLines(tx, invID, []invoiceLineInput{{Description: "x", Quantity: 1, UnitPriceCents: 100, ItemID: item.ID}}); err != nil {
+		t.Fatalf("lines: %v", err)
+	}
+	if _, err := tx.Exec(`INSERT INTO item_sales (request_id, item_id, item_name, quantity, revenue_cents, sold_at) VALUES (?, ?, 'Benchy', 1, 0, 'now')`, id, item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := linkRequestToInvoice(tx, id, invID, "bob", "now"); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var linked int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM invoice_lines WHERE invoice_id = ? AND item_id != ''`, invID).Scan(&linked); err != nil || linked != 0 {
+		t.Errorf("linked lines after racing finalize = %d (err %v), want 0", linked, err)
+	}
+
+	// Conversion won: a stale Finalize (status loaded before) cannot double-record. Drive the handler against a
+	// request already finalized by a conversion: transition table gives 409 for finalized.
+	id2 := insertItemOrderRequest(t, db, item.ID, item.Name, 1, "viewed")
+	if rec := postInvoice(t, adminMux, convertBody(id2, fmt.Sprintf(`,"itemId":%q`, item.ID))); rec.Code != http.StatusCreated {
+		t.Fatalf("convert: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := setRequestStatus(t, adminMux, id2, "finalized"); rec.Code != http.StatusConflict {
+		t.Errorf("finalize after conversion: want 409, got %d", rec.Code)
+	}
+	var sales int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM item_sales WHERE request_id = ?`, id2).Scan(&sales); err != nil || sales != 0 {
+		t.Errorf("item_sales for converted request = %d (err %v), want 0", sales, err)
 	}
 }

@@ -331,9 +331,16 @@ func (qr *quoteRequests) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(`UPDATE quote_requests SET status = ?, finalized_at = ?, updated_by = ? WHERE id = ?`, status, now, by, id); err != nil {
+	// Conditional on the status loaded above: a conversion (or another Finalize) that committed since then
+	// has finalized the request already, and recording its sale now would count it twice.
+	res, err := tx.Exec(`UPDATE quote_requests SET status = ?, finalized_at = ?, updated_by = ? WHERE id = ? AND status = ?`, status, now, by, id, req.Status)
+	if err != nil {
 		log.Printf("requests status update: %v", err)
 		http.Error(w, "requests not writable", http.StatusInternalServerError)
+		return
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		writeAPIError(w, http.StatusConflict, "this request changed while you were finalizing it; reload to see the latest status")
 		return
 	}
 
@@ -495,10 +502,12 @@ func requestInvoiceLinkLive(invoiceID, invoiceStatus string) bool {
 // no print time yet) and otherwise adjusts in.Lines in place:
 //   - A line's item link is dropped when the item was deleted, and its option when the item's groups no longer
 //     contain that summary, so a request for a changed item still converts.
-//   - Every item link is dropped when the request was already finalized: finalize recorded that sale in
-//     item_sales and took the stock, and a linked line would count it again when the invoice is sent. An
-//     unfinalized request converts with its links, and linkRequestToInvoice finalizes it WITHOUT the sale
-//     record, so sending the invoice is the one place the sale and the stock are counted.
+//   - Every item link is dropped when item_sales already holds this request's sale: Finalize recorded it and
+//     took the stock, and a linked line would count it again when the invoice is sent. The status alone is no
+//     proxy: a conversion also finalizes the request, without a sale record, so a request whose draft was
+//     deleted or canceled is "finalized" yet uncounted and must convert with its links. linkRequestToInvoice
+//     finalizes WITHOUT the sale record, so sending the invoice is the one place the sale and the stock are
+//     counted.
 //
 // A non-nil error means a lookup failed (500).
 func prepareRequestConversion(db *sql.DB, in *invoiceInput) (int, string, error) {
@@ -515,12 +524,16 @@ func prepareRequestConversion(db *sql.DB, in *invoiceInput) (int, string, error)
 	if req.NeedsPrintTime {
 		return http.StatusConflict, "this request needs a print time before it can be invoiced; enter the print time first", nil
 	}
+	saleRecorded, err := requestSaleRecorded(db, req.ID)
+	if err != nil {
+		return 0, "", err
+	}
 	for i := range in.Lines {
 		l := &in.Lines[i]
 		if l.ItemID == "" {
 			continue
 		}
-		if req.Status == "finalized" {
+		if saleRecorded {
 			l.ItemID, l.OptionName = "", ""
 			continue
 		}
@@ -546,6 +559,17 @@ func prepareRequestConversion(db *sql.DB, in *invoiceInput) (int, string, error)
 	return 0, "", nil
 }
 
+// requestSaleRecorded reports whether item_sales holds a sale for the request (the Finalize button wrote it).
+type queryRower interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+func requestSaleRecorded(q queryRower, requestID string) (bool, error) {
+	var n int
+	err := q.QueryRow(`SELECT EXISTS (SELECT 1 FROM item_sales WHERE request_id = ?)`, requestID).Scan(&n)
+	return n == 1, err
+}
+
 // loadRequestRow reads one request outside a quoteRequests receiver, for the invoice handlers.
 func loadRequestRow(db *sql.DB, id string) (*QuoteRequest, bool, error) {
 	return (&quoteRequests{db: db}).load(id)
@@ -555,7 +579,20 @@ func loadRequestRow(db *sql.DB, id string) (*QuoteRequest, bool, error) {
 // and finalizes it, so Convert to invoice leaves the request "Invoiced" in one step. It writes no item_sales
 // row and takes no stock; see prepareRequestConversion. The WHERE refuses a request another conversion linked
 // in the meantime.
+//
+// A Finalize that committed after prepareRequestConversion's check is caught here: when item_sales now holds
+// the request's sale, the new invoice's item links are dropped in the same transaction so the send can't
+// count the sale or take the stock a second time.
 func linkRequestToInvoice(tx *sql.Tx, requestID, invoiceID, by, now string) error {
+	sold, err := requestSaleRecorded(tx, requestID)
+	if err != nil {
+		return err
+	}
+	if sold {
+		if _, err := tx.Exec(`UPDATE invoice_lines SET item_id = '', option_name = '' WHERE invoice_id = ?`, invoiceID); err != nil {
+			return err
+		}
+	}
 	res, err := tx.Exec(`
 		UPDATE quote_requests
 		SET invoice_id = ?, updated_by = ?,

@@ -230,6 +230,9 @@ export function followBalanceAmount(
 // Disabled reason for "Email to client", from cfg.smtpConfigured (already loaded). "to" is never overridden here:
 // the server defaults it to the invoice's frozen client-snapshot email, which emailDisabledReason checks
 // exists.
+/** Why Record payment waits on a draft with unsaved edits. The payments panel shows it once, as its hint. */
+export const SAVE_BEFORE_PAYMENT = "Save your changes to the invoice before recording a payment.";
+
 export type InvoiceEmailDisabledReason = "unconfigured" | "no-email" | null;
 export function emailDisabledReason(smtpConfigured: boolean, inv: Invoice): InvoiceEmailDisabledReason {
   if (!smtpConfigured) return "unconfigured";

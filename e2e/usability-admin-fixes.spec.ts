@@ -215,3 +215,48 @@ test.describe("A8 and A9: the Dashboard tiles say what they count and look press
   });
 });
 
+async function seedDraftInvoice(request: APIRequestContext): Promise<{ id: string; number: string }> {
+  const res = await request.post("/admin/api/invoices", { data: { clientName: "A10 Customer", lines: [{ description: "Widget", quantity: 1, unitPriceCents: 5200 }] } });
+  expect(res.status(), await res.text()).toBe(201);
+  return (await res.json()) as { id: string; number: string };
+}
+
+test.describe("A10 and A11: the payment panel", () => {
+  test("unsaved edits replace the balance with a prompt shown once; recording a payment keeps focus", async ({ page, request }) => {
+    const inv = await seedDraftInvoice(request);
+    try {
+      await page.goto("/admin/");
+      await navButton(page, "Invoices").click();
+      await page.getByRole("button", { name: inv.number, exact: true }).click();
+      await expect(page.getByRole("heading", { name: `Invoice ${inv.number}` })).toBeVisible();
+      const panel = page.locator(".payments-card");
+      await expect(panel.locator(".balance-line")).toContainText("balance $52.00");
+
+      // An unsaved price change: the old balance goes, and the warning appears once even after a blocked click.
+      await page.getByLabel("Line 1 unit price").fill("60");
+      await expect(panel.locator(".balance-line")).toHaveText("Save to update the balance.");
+      await panel.getByRole("button", { name: /^Record/ }).click();
+      await expect(panel.getByText("Save your changes to the invoice before recording a payment.")).toHaveCount(1);
+
+      // Save, then record a partial payment: focus stays on the Record payment button.
+      await page.keyboard.press("Control+s");
+      await expect(panel.locator(".balance-line")).toContainText("balance $60.00");
+      await panel.getByLabel(/^Amount/).fill("10");
+      await panel.getByRole("button", { name: /^Record/ }).click();
+      await expect(panel.locator(".balance-line")).toContainText("balance $50.00");
+      await expect(panel.getByRole("button", { name: /^Record/ })).toBeFocused();
+    } finally {
+      // Leave no trace: other specs expect an empty shop (no revenue, no clients).
+      const detail = await request.get(`/admin/api/invoices/${inv.id}`);
+      if (detail.ok()) {
+        for (const pay of ((await detail.json()) as { payments?: { id: string }[] }).payments ?? []) {
+          await request.delete(`/admin/api/invoices/${inv.id}/payments/${pay.id}`);
+        }
+      }
+      await request.delete(`/admin/api/invoices/${inv.id}`);
+      const clients = ((await (await request.get("/admin/api/clients")).json()) as { clients: { id: string; name: string }[] }).clients;
+      for (const c of clients.filter((x) => x.name === "A10 Customer")) await request.delete(`/admin/api/clients/${c.id}`);
+    }
+  });
+});
+

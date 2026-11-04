@@ -47,7 +47,7 @@ test("the Settings section rail stays in view at 1366x768, scrolls on its own, a
     const id = { Storefront: "#section-storefront", Hardware: "#section-hardware", Diagnostics: "#section-diagnostics" }[name]!;
     await expect
       .poll(async () => {
-        const heading = (await page.locator(`${id} h2`).boundingBox())!;
+        const heading = (await page.locator(`${id} h2`).first().boundingBox())!;
         return heading.y >= 0 && heading.y + heading.height <= 768;
       })
       .toBe(true);

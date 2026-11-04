@@ -5,6 +5,8 @@
     fetchDashboard,
     fetchTopItems,
     optionsLine,
+    attentionGroups,
+    attentionListHash,
     sourceSplit,
     TOP_ITEMS_WINDOWS,
     type AttentionItem,
@@ -99,11 +101,16 @@
     pendingOpen.current = { tab: "requests", id };
     location.hash = "#/requests";
   }
+  function openQuote(id: string) {
+    pendingOpen.current = { tab: "quote", id };
+    location.hash = "#/quote";
+  }
   const ATTENTION_LABELS: Record<AttentionKind, string> = {
     "new-request": "New request",
     "print-time-request": "Needs a print time",
     "overdue-invoice": "Overdue invoice",
     "draft-invoice": "Draft invoice",
+    "sent-quote": "Quote awaiting reply",
   };
   function attentionDetail(item: AttentionItem): string {
     switch (item.kind) {
@@ -115,24 +122,22 @@
         return `${item.number} · ${money(item.amountCents, cfg)} due ${formatDate(item.date)}`;
       case "draft-invoice":
         return `${item.number} · ${money(item.amountCents, cfg)} · not sent yet`;
+      case "sent-quote":
+        return `Sent ${formatDate(item.date)}${item.amountCents > 0 ? ` · ${money(item.amountCents, cfg)}` : ""}`;
     }
   }
   function openAttention(item: AttentionItem) {
     if (item.kind === "new-request" || item.kind === "print-time-request") openRequest(item.id);
+    else if (item.kind === "sent-quote") openQuote(item.id);
     else openInvoice(item.id);
   }
-  // What the list leaves out, per kind: "and 4 more new requests".
-  const attentionMore = $derived.by(() => {
-    if (!dashboard) return [] as string[];
-    const shown = (kind: AttentionKind) => dashboard!.needsAttention.filter((i) => i.kind === kind).length;
-    const c = dashboard.attentionCounts;
-    const rows: [AttentionKind, number, string][] = [
-      ["new-request", c.newRequests, "new requests"],
-      ["print-time-request", c.printTimeRequests, "requests needing a print time"],
-      ["overdue-invoice", c.overdueInvoices, "overdue invoices"],
-      ["draft-invoice", c.draftInvoices, "draft invoices"],
-    ];
-    return rows.filter(([kind, count]) => count > shown(kind)).map(([kind, count, noun]) => `and ${count - shown(kind)} more ${noun}`);
+  // Items grouped in display order (the server already sorts them), each with a "View all N" link when the
+  // list is cut short.
+  const attentionGrouped = $derived.by(() => {
+    if (!dashboard) return [];
+    return attentionGroups(dashboard.attentionCounts)
+      .map((g) => ({ ...g, items: dashboard!.needsAttention.filter((i) => i.kind === g.kind) }))
+      .filter((g) => g.items.length > 0);
   });
 
   const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -226,48 +231,52 @@
         <p class="empty-state">Nothing needs your attention. New requests, overdue invoices, and draft invoices show up here.</p>
       {:else}
         <ul class="plain-list">
-          {#each dashboard.needsAttention as item (`${item.kind}-${item.id}`)}
-            <li>
-              <button type="button" class="row-link attention-row" onclick={() => openAttention(item)}>
-                <span class="attention-kind" class:overdue={item.kind === "overdue-invoice"}>{ATTENTION_LABELS[item.kind]}</span>
-                <span class="attention-name">{item.name}</span>
-                <span class="attention-detail">{attentionDetail(item)}</span>
-              </button>
-            </li>
+          {#each attentionGrouped as g (g.kind)}
+            {#each g.items as item (`${item.kind}-${item.id}`)}
+              <li>
+                <button type="button" class="row-link attention-row" onclick={() => openAttention(item)}>
+                  <span class="attention-kind" class:overdue={item.kind === "overdue-invoice"}>{ATTENTION_LABELS[item.kind]}</span>
+                  <span class="attention-name">{item.name}</span>
+                  <span class="attention-detail">{attentionDetail(item)}</span>
+                </button>
+              </li>
+            {/each}
+            {#if g.count > g.items.length}
+              <li class="attention-more"><a href={attentionListHash(g.kind)}>View all {g.count} {g.noun}</a></li>
+            {/if}
           {/each}
         </ul>
-        {#each attentionMore as line (line)}<p class="hint">{line}</p>{/each}
       {/if}
     </section>
 
     <div class="tiles">
-      <div class="card tile">
+      <a class="card tile tile-link" href="#/invoices">
         <span class="section-label tile-label">Revenue this month</span>
         <span class="tile-value">{money(dashboard.revenueMonthCents, cfg)}</span>
-      </div>
-      <div class="card tile">
+      </a>
+      <a class="card tile tile-link" href="#/invoices">
         <span class="section-label tile-label">Revenue this year</span>
         <span class="tile-value">{money(dashboard.revenueYearCents, cfg)}</span>
-      </div>
-      <div class="card tile">
+      </a>
+      <a class="card tile tile-link" href="#/invoices">
         <span class="section-label tile-label">Outstanding</span>
         <span class="tile-value">{money(dashboard.outstandingCents, cfg)}</span>
-      </div>
-      <div class="card tile">
+      </a>
+      <a class="card tile tile-link" href="#/invoices">
         <span class="section-label tile-label">Overdue invoices</span>
         <span class="tile-value">{dashboard.overdueCount}</span>
-      </div>
-      <div class="card tile">
+      </a>
+      <a class="card tile tile-link" href="#/quotes">
         <span class="section-label tile-label">Quotes this month</span>
         <span class="tile-value">{dashboard.quotesSavedThisMonth}</span>
         {#if dashboard.quotesInvoicedSharePct !== null}
           <span class="tile-caption">{dashboard.quotesInvoicedSharePct.toFixed(0)}% invoiced</span>
         {/if}
-      </div>
-      <div class="card tile">
+      </a>
+      <a class="card tile tile-link" href="#/quotes">
         <span class="section-label tile-label">Average margin (invoiced)</span>
         <span class="tile-value">{dashboard.quotesAvgMarginPct !== null ? `${dashboard.quotesAvgMarginPct.toFixed(0)}%` : "-"}</span>
-      </div>
+      </a>
     </div>
 
     <div class="cards">
@@ -456,6 +465,9 @@
   /* Font, color and spacing come from the shared .section-label utility; this adds only tile-specific
    * vertical placement. */
   .tile-label { line-height: 1.2; }
+  .tile-link { color: inherit; text-decoration: none; }
+  .tile-link:hover { border-color: var(--accent, currentColor); }
+  .attention-more { padding: 0.25rem 0.6rem 0.5rem; font-size: var(--text-sm); }
   .tile-value { font-size: var(--text-xl); font-weight: 700; font-variant-numeric: tabular-nums; }
   .tile-caption { color: var(--muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
 

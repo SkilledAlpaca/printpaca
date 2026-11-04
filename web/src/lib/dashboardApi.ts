@@ -21,13 +21,13 @@ export interface Dashboard {
   quotesInvoicedSharePct: number | null;
   /** Mean achieved margin percent over every invoiced quote, any month; null when there are none. */
   quotesAvgMarginPct: number | null;
-  /** The "Needs attention" rows (server/dashboard.go): up to 10 per kind, requests only for callers who may
+  /** The "Needs attention" rows (server/dashboard.go): up to 3 per kind, money items first, requests only for callers who may
    * open Requests and invoices only for those who may open Invoices. */
   needsAttention: AttentionItem[];
   attentionCounts: AttentionCounts;
 }
 
-export type AttentionKind = "new-request" | "print-time-request" | "overdue-invoice" | "draft-invoice";
+export type AttentionKind = "new-request" | "print-time-request" | "overdue-invoice" | "draft-invoice" | "sent-quote";
 
 /** One "Needs attention" row. name is the requester or client; number is the invoice number (invoices only);
  * amountCents is the request price or the invoice balance (overdue) or total (draft); date is the due date
@@ -47,6 +47,7 @@ export interface AttentionCounts {
   printTimeRequests: number;
   overdueInvoices: number;
   draftInvoices: number;
+  sentQuotes: number;
 }
 
 /** A network failure returns null so the page can show an offline note. */
@@ -118,4 +119,29 @@ export function optionsLine(options: TopItemOption[]): string {
 /** The muted shop-order/in-person split: "9 shop orders · 5 in person". */
 export function sourceSplit(galleryUnits: number, inPersonUnits: number): string {
   return `${galleryUnits} shop orders · ${inPersonUnits} in person`;
+}
+
+/** The tab that lists every row of a "Needs attention" kind: where "View all N" goes. */
+export function attentionListHash(kind: AttentionKind): string {
+  switch (kind) {
+    case "new-request":
+    case "print-time-request":
+      return "#/requests";
+    case "overdue-invoice":
+    case "draft-invoice":
+      return "#/invoices";
+    case "sent-quote":
+      return "#/quotes";
+  }
+}
+
+/** The kinds in display order, with the count and plural noun behind each "View all N" link. */
+export function attentionGroups(c: AttentionCounts): { kind: AttentionKind; count: number; noun: string }[] {
+  return [
+    { kind: "overdue-invoice", count: c.overdueInvoices, noun: "overdue invoices" },
+    { kind: "draft-invoice", count: c.draftInvoices, noun: "draft invoices" },
+    { kind: "print-time-request", count: c.printTimeRequests, noun: "requests needing a print time" },
+    { kind: "new-request", count: c.newRequests, noun: "new requests" },
+    { kind: "sent-quote", count: c.sentQuotes, noun: "quotes awaiting a reply" },
+  ];
 }

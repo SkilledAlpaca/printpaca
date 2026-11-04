@@ -18,6 +18,7 @@
     record = false,
     status,
     subtitle,
+    actions,
   }: {
     title?: string;
     onback?: () => void;
@@ -25,6 +26,8 @@
     record?: boolean;
     status?: Snippet;
     subtitle?: Snippet;
+    /** The view's own buttons (Add item, Save), right-aligned beside the title; they wrap under it at narrow widths. */
+    actions?: Snippet;
   } = $props();
 </script>
 
@@ -40,6 +43,7 @@
         <h1 tabindex="-1">{title}</h1>
       {/if}
       {#if status}{@render status()}{/if}
+      {#if actions}<div class="page-actions">{@render actions()}</div>{/if}
     </div>
     {#if subtitle}{@render subtitle()}{/if}
   {/if}
@@ -48,6 +52,13 @@
 <style>
   .page-header { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
   .back { display: inline-flex; align-items: center; gap: var(--space-1); }
-  .title-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); }
+  .title-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); align-self: stretch; }
+  /* Right-aligned beside the title; once the row is too narrow the actions wrap to their own line (still at the
+   * end on a wide-enough line, full-width stack on a phone). */
+  .page-actions { margin-inline-start: auto; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  @media (max-width: 600px) {
+    .page-actions { margin-inline-start: 0; width: 100%; }
+    .page-actions > :global(button) { flex: 1 1 auto; }
+  }
   h1 { margin: 0; font-size: var(--type-title); }
 </style>

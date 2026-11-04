@@ -212,3 +212,16 @@ export async function openMorePricing(page: Page): Promise<void> {
   const details = page.locator("details.more-pricing");
   if ((await details.getAttribute("open")) === null) await details.locator("summary").click();
 }
+
+/** Opens a catalog row's ⋯ menu (ui/RowEditor) from its accessible name and presses one of its actions. `row` is
+ * the part of the name after "More actions for": "Hardware 1: e2e magnet", or a RegExp for it. */
+export async function rowAction(page: Page, row: string | RegExp, action: string | RegExp): Promise<void> {
+  const trigger = page.getByRole("button", { name: typeof row === "string" ? `More actions for ${row}` : new RegExp(`^More actions for ${row.source}`) });
+  await trigger.click();
+  await page.getByRole("button", { name: action, exact: typeof action === "string" }).click();
+}
+
+/** Presses the direct Remove button of a row whose only action is Remove (ui/RowEditor): "Remove <row>". */
+export async function removeRow(page: Page, row: string | RegExp): Promise<void> {
+  await page.getByRole("button", { name: typeof row === "string" ? `Remove ${row}` : new RegExp(`^Remove ${row.source}`) }).click();
+}

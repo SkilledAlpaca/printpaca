@@ -51,7 +51,17 @@
     "web/src/components/settings/SettingsEditor.svelte",
     "web/src/components/settings/PublicQuotesSettings.svelte",
     "web/src/components/settings/StorefrontSettings.svelte",
-    "web/src/components/settings/FieldRow.svelte"
+    "web/src/components/settings/FieldRow.svelte",
+    "web/src/components/ItemsTab.svelte",
+    "web/src/components/ItemCategories.svelte",
+    "web/src/components/FilamentTab.svelte",
+    "web/src/components/SpoolmanInventory.svelte",
+    "web/src/components/ElectricityTab.svelte",
+    "web/src/components/PrintersTab.svelte",
+    "web/src/components/settings/ScheduleEditor.svelte",
+    "web/src/components/settings/EnergySettings.svelte",
+    "web/src/components/settings/PrintersSettings.svelte",
+    "web/src/components/settings/HardwareSettings.svelte"
   ],
   "scan": [
     ".svelte",

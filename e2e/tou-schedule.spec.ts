@@ -37,7 +37,7 @@ test.describe.serial("time-of-use schedule", () => {
 
     await expect(page.getByText(/rates are examples, not SCE's published rates/)).toBeVisible();
     await page.getByRole("button", { name: "Load SCE TOU-D-4-9PM example" }).click();
-    await expect(page.getByRole("group", { name: "Season 1 Weekday" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Season 1 Weekday", exact: true })).toBeVisible();
     await expect(page.getByLabel("Season 1 Weekday window 1 name")).toHaveValue("On-peak");
     await expect(page.getByRole("list", { name: "Schedule problems" })).toHaveCount(0);
 
@@ -62,7 +62,7 @@ test.describe.serial("time-of-use schedule", () => {
     await page.getByLabel("Print time (h)").fill("8");
     await page.getByLabel("Print start", { exact: true }).fill("2026-07-03T14:00");
     // Friday in July: 3 h off-peak at 0.33 and 5 h on-peak at 0.55 on a 1 kW printer = 3.74.
-    await expect(page.locator("dl.out")).toContainText("3.740");
+    await expect(page.locator('dl[aria-label="Electricity results"]')).toContainText("3.740");
     const split = page.getByRole("table", { name: "Hours and cost by tariff period" });
     await expect(split.getByRole("row", { name: /Off-peak/ })).toContainText("3");
     await expect(split.getByRole("row", { name: /On-peak/ })).toContainText("2.750");

@@ -5,6 +5,11 @@
   import LabeledNumber from "../LabeledNumber.svelte";
   import LabeledText from "../LabeledText.svelte";
   import { focusAfterRowRemoval } from "../../lib/a11yFocus";
+  import { cardClass } from "../../lib/settings";
+  import Card from "../ui/Card.svelte";
+  import Field from "../ui/Field.svelte";
+  import FormGrid from "../ui/FormGrid.svelte";
+  import FieldRow from "./FieldRow.svelte";
 
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 
@@ -28,13 +33,12 @@
   }
 </script>
 
-<div id="section-invoicing" class="card roomy" class:danger-border={hasError("invoicing")}>
-  <p class="section-label">Settings</p>
-  <h2>Invoicing</h2>
+<Card id="section-invoicing" class={cardClass(hasError("invoicing"))} heading="Invoicing">
   <p class="hint">Invoice numbering, default sales tax, and payment terms new invoices start with.</p>
-  <div class="field-rows">
+  <FormGrid align="controls">
     <LabeledText
       label="Number prefix"
+      size="xs"
       maxlength={10}
       bind:value={form.invoicing.numberPrefix}
       warn={warnFor(warnings, "invoicing.numberPrefix")}
@@ -51,6 +55,7 @@
     />
     <LabeledText
       label="PayPal.me handle"
+      size="s"
       maxlength={20}
       bind:value={form.invoicing.paypalMe}
       warn={warnFor(warnings, "invoicing.paypalMe")}
@@ -65,47 +70,44 @@
       bind:value={form.invoicing.dueDays}
       warn={warnFor(warnings, "invoicing.dueDays")}
     />
-  </div>
+  </FormGrid>
 
   <h3 class="section-label">Payment methods</h3>
   <p class="hint">Offered as a dropdown when recording a payment on an invoice.</p>
   {#each form.invoicing.paymentMethods as _method, i (i)}
     {@const methodWarn = warnFor(warnings, `invoicing.paymentMethods[${i}]`)}
-    {@const rowWarn = methodWarn !== "" && (touched[i] ?? false)}
-    <div class="charge-row">
-      <label class="field field-inline">
-        <span>Method {i + 1}</span>
-        <input
-          aria-label={`Payment method ${i + 1}`}
-          bind:value={form.invoicing.paymentMethods[i]}
-          class:warn={rowWarn}
-          oninput={() => { touched[i] = true; }}
-          onblur={() => { if (form.invoicing.paymentMethods[i] !== "") touched[i] = true; }}
-          aria-invalid={rowWarn}
-          aria-describedby={rowWarn ? `payment-method-${i}-warn` : undefined}
-        />
-        {#if rowWarn}<small id={`payment-method-${i}-warn`} class="warn-text">{methodWarn}</small>{/if}
-      </label>
-      <button
-        type="button"
-        aria-label={`Remove payment method ${i + 1}`}
-        data-focus-key={`remove-payment-method-${i}`}
-        disabled={form.invoicing.paymentMethods.length <= 1}
-        onclick={() => removePaymentMethod(i)}
-      >Remove</button>
-    </div>
+    <FieldRow
+      removeLabel={`Remove payment method ${i + 1}`}
+      focusKey={`remove-payment-method-${i}`}
+      disabled={form.invoicing.paymentMethods.length <= 1}
+      onremove={() => removePaymentMethod(i)}
+    >
+      <FormGrid>
+        <Field id={`payment-method-${i}`} label={`Payment method ${i + 1}`} size="m" error={methodWarn !== "" && (touched[i] ?? false) ? methodWarn : undefined}>
+          {#snippet children(a)}
+            <input
+              id={a.id}
+              bind:value={form.invoicing.paymentMethods[i]}
+              class:warn={methodWarn !== "" && (touched[i] ?? false)}
+              oninput={() => { touched[i] = true; }}
+              onblur={() => { if (form.invoicing.paymentMethods[i] !== "") touched[i] = true; }}
+              aria-invalid={a.invalid ?? "false"}
+              aria-describedby={a.describedby}
+            />
+          {/snippet}
+        </Field>
+      </FormGrid>
+    </FieldRow>
   {/each}
   {#if warnFor(warnings, "invoicing.paymentMethods") !== ""}
     <small class="warn-text">{warnFor(warnings, "invoicing.paymentMethods")}</small>
   {/if}
-  <button type="button" data-focus-key="add-payment-method" onclick={addPaymentMethod}>Add payment method</button>
-</div>
+  <div class="row-actions">
+    <button type="button" data-focus-key="add-payment-method" onclick={addPaymentMethod}>Add payment method</button>
+  </div>
+</Card>
 
 <style>
-  .section-label { margin: 0.6rem 0 0.3rem; }
-
-  /* .charge-row is also rendered by SettingsTab.svelte's fee-schedule rows. Svelte scopes <style> per
-   * component, so each copy stays local; it was deliberately not promoted to theme.css. */
-  .charge-row { display: flex; align-items: end; gap: 0.5rem; margin-bottom: 0.4rem; flex-wrap: wrap; }
-  .charge-row .field { flex: 1 1 100px; min-width: 90px; }
+  .section-label { margin: var(--space-4) 0 var(--space-1); }
+  .row-actions { margin-block-start: var(--space-3); }
 </style>

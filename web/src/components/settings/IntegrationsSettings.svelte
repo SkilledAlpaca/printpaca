@@ -5,6 +5,10 @@
   import { testIntegration } from "../../lib/sendApi";
   import { appConfig } from "../../lib/state.svelte";
   import { announce, focusAfterUpdate } from "../../lib/a11y.svelte";
+  import { cardClass } from "../../lib/settings";
+  import Card from "../ui/Card.svelte";
+  import Field from "../ui/Field.svelte";
+  import FormGrid from "../ui/FormGrid.svelte";
 
   // Saved URLs apply at once: the server resolves them on every request (server/proxy.go's registerProxies).
   let {
@@ -162,8 +166,7 @@
   }
 </script>
 
-<div id="section-integrationsUrls" class="card roomy" class:danger-border={hasError("integrationsUrls")}>
-  <h2>Integrations</h2>
+<Card id="section-integrationsUrls" class={cardClass(hasError("integrationsUrls"))} heading="Integrations">
   <p class="hint">
     Spoolman, Moonraker, and Fluidd URLs. Saved changes apply right away, with no restart. An environment variable
     on the container always overrides the value here.
@@ -175,95 +178,102 @@
     </p>
   {/if}
 
-  {#each ROWS as row (row.kind)}
-    <div class="subcard">
-      <div class="subhead">
-        <h3>{row.label}</h3>
-        <span class="pill" class:pill-ok={badgeOk(row.kind)}>{badgeFor(row.kind)}</span>
-      </div>
-      <label class="field">
-        <span>URL</span>
-        <input
-          aria-label={`${row.label} URL`}
-          bind:value={form.integrationsUrls[row.field]}
-          placeholder={row.placeholder}
-          disabled={locked(row.kind)}
-          aria-describedby={sourceFor(row.kind) === "env" ? `env-${row.kind}` : undefined}
-        />
-        {#if sourceFor(row.kind) === "env"}
-          <small id={`env-${row.kind}`} class="field-hint">{row.envVar} is set on the container and overrides this field. Test checks that URL. Remove the variable to manage the URL here.</small>
-        {/if}
-      </label>
-      <p class="used-in">
-        Used for:
-        {#if row.kind === "spoolman"}
-          <a href="#/quote">Spool picker on New quote</a> and <a href="#/filament">Spool inventory on the Filament tab</a>.
-        {:else if row.kind === "moonraker"}
-          <a href="#/quote">Recent prints on New quote</a>.
-        {:else}
-          A link to Fluidd in the sidebar.
-        {/if}
-      </p>
-      {#if row.testable}
-        {@const kind = row.kind as "spoolman" | "moonraker"}
-        {@const result = visibleResult(kind, testUrl(row))}
-        {@const testable = canTest(row)}
-        <div class="test-row">
-          <button
-            type="button"
-            data-moonraker-test={kind === "moonraker" ? "" : undefined}
-            onclick={() => { if (testable) void runTest(kind, testUrl(row)); }}
-            disabled={demoMode}
-            aria-disabled={demoMode || testing[kind] === true || !testable}
-            aria-describedby={!testable && !demoMode ? `test-help-${kind}` : undefined}
-            aria-busy={testing[kind] === true}
-          >
-            {testing[kind] ? "Testing…" : "Test"}
-          </button>
-          {#if !testable && !demoMode}<small id={`test-help-${kind}`} class="field-hint">Enter a URL to test it.</small>{/if}
-          <span
-            class="status-line"
-            class:test-ok={result?.ok}
-            role={result && !result.ok ? "alert" : "status"}
-            aria-live={result && !result.ok ? "assertive" : "polite"}
-          >
-            {result?.detail ?? ""}
-          </span>
+  <div class="stack">
+    {#each ROWS as row (row.kind)}
+      <Card tone="inset">
+        <div class="subhead">
+          <h3>{row.label}</h3>
+          <span class="pill" class:pill-ok={badgeOk(row.kind)}>{badgeFor(row.kind)}</span>
         </div>
-        {#if kind === "moonraker"}
-          {#if hostnameToAdd !== ""}
-            <div class="printer-prompt" role="group" aria-label="Add printer from Moonraker">
-              <p>Add printer '{hostnameToAdd}' to your printers?</p>
-              <div class="prompt-actions">
-                <button type="button" class="primary" onclick={addPrinterFromMoonraker} aria-disabled={addingPrinter} aria-busy={addingPrinter}>
-                  {addingPrinter ? "Adding…" : "Add printer"}
-                </button>
-                <button type="button" onclick={dismissPrinterPrompt}>Not now</button>
-              </div>
-              {#if addError}<p class="warn-text" role="alert">{addError}</p>{/if}
-            </div>
+        <FormGrid>
+          <Field
+            id={`integration-${row.kind}-url`}
+            label={`${row.label} URL`}
+            size="l"
+            hint={sourceFor(row.kind) === "env" ? `${row.envVar} is set on the container and overrides this field. Test checks that URL. Remove the variable to manage the URL here.` : undefined}
+          >
+            {#snippet children(a)}
+              <input
+                id={a.id}
+                bind:value={form.integrationsUrls[row.field]}
+                placeholder={row.placeholder}
+                disabled={locked(row.kind)}
+                aria-describedby={a.describedby}
+              />
+            {/snippet}
+          </Field>
+        </FormGrid>
+        <p class="used-in">
+          Used for:
+          {#if row.kind === "spoolman"}
+            <a href="#/quote">Spool picker on New quote</a> and <a href="#/filament">Spool inventory on the Filament tab</a>.
+          {:else if row.kind === "moonraker"}
+            <a href="#/quote">Recent prints on New quote</a>.
+          {:else}
+            A link to Fluidd in the sidebar.
           {/if}
-          {#if addedName !== ""}
-            <p class="printer-added" role="status" tabindex="-1" data-printer-added>
-              Added printer '{addedName}'. It starts with default values, so check its wattage, cost, and lifespan on
-              the <a href="#/printers">Printers tab</a>.
-            </p>
+        </p>
+        {#if row.testable}
+          {@const kind = row.kind as "spoolman" | "moonraker"}
+          {@const result = visibleResult(kind, testUrl(row))}
+          {@const testable = canTest(row)}
+          <div class="test-row">
+            <button
+              type="button"
+              data-moonraker-test={kind === "moonraker" ? "" : undefined}
+              onclick={() => { if (testable) void runTest(kind, testUrl(row)); }}
+              disabled={demoMode}
+              aria-disabled={demoMode || testing[kind] === true || !testable}
+              aria-describedby={!testable && !demoMode ? `test-help-${kind}` : undefined}
+              aria-busy={testing[kind] === true}
+            >
+              {testing[kind] ? "Testing…" : "Test"}
+            </button>
+            {#if !testable && !demoMode}<small id={`test-help-${kind}`} class="field-hint">Enter a URL to test it.</small>{/if}
+            <span
+              class="status-line"
+              class:test-ok={result?.ok}
+              role={result && !result.ok ? "alert" : "status"}
+              aria-live={result && !result.ok ? "assertive" : "polite"}
+            >
+              {result?.detail ?? ""}
+            </span>
+          </div>
+          {#if kind === "moonraker"}
+            {#if hostnameToAdd !== ""}
+              <div class="printer-prompt" role="group" aria-label="Add printer from Moonraker">
+                <p>Add printer '{hostnameToAdd}' to your printers?</p>
+                <div class="prompt-actions">
+                  <button type="button" class="primary" onclick={addPrinterFromMoonraker} aria-disabled={addingPrinter} aria-busy={addingPrinter}>
+                    {addingPrinter ? "Adding…" : "Add printer"}
+                  </button>
+                  <button type="button" onclick={dismissPrinterPrompt}>Not now</button>
+                </div>
+                {#if addError}<p class="warn-text" role="alert">{addError}</p>{/if}
+              </div>
+            {/if}
+            {#if addedName !== ""}
+              <p class="printer-added" role="status" tabindex="-1" data-printer-added>
+                Added printer '{addedName}'. It starts with default values, so check its wattage, cost, and lifespan on
+                the <a href="#/printers">Printers tab</a>.
+              </p>
+            {/if}
           {/if}
         {/if}
-      {/if}
-    </div>
-  {/each}
-</div>
+      </Card>
+    {/each}
+  </div>
+</Card>
 
 <style>
-  .test-row { display: flex; align-items: center; gap: 0.6rem; margin-top: var(--space-2); }
+  .stack { display: flex; flex-direction: column; gap: var(--gap); margin-block-start: var(--space-3); }
+  .test-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-2); }
   .used-in { margin: var(--space-2) 0 0; color: var(--muted); font-size: var(--text-sm); }
   .test-ok { color: var(--ok); }
-  .printer-prompt { margin-top: var(--space-2); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); }
+  .printer-prompt { margin-top: var(--space-2); padding: var(--space-3); background: var(--card-bg); border-radius: var(--radius); }
   .printer-prompt p { margin: 0 0 var(--space-2); }
-  .prompt-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .prompt-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
   .printer-added { margin: var(--space-2) 0 0; }
-  .subcard:not(:last-child) { margin-bottom: 1rem; }
 
   /* .pill (theme.css) is neutral by default; this card tints "something answers here" (env, config or the
    * demo's fake data) against "not configured", mirroring StatusBadge's --ok color-mix formula rather than

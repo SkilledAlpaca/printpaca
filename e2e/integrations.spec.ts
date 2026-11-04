@@ -13,7 +13,7 @@ const SPOOLMAN = "http://127.0.0.1:9127";
 const MOONRAKER = "http://127.0.0.1:9125";
 
 function integration(page: Page, name: string): Locator {
-  return page.locator(".subcard").filter({ has: page.getByRole("heading", { name, exact: true }) });
+  return page.locator("#section-integrationsUrls .card").filter({ has: page.getByRole("heading", { name, exact: true }) });
 }
 
 test("Test reports what Spoolman and Moonraker found, in plain words", async ({ page }) => {

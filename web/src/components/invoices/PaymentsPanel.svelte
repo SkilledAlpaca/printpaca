@@ -7,6 +7,9 @@
   import { demoLocal } from "../../lib/demoLocal.svelte";
   import { extractRealMultiUser } from "../../lib/attribution";
   import { confirmFocus, keySelector } from "../../lib/a11yFocus";
+  import Card from "../ui/Card.svelte";
+  import Field from "../ui/Field.svelte";
+  import FormGrid from "../ui/FormGrid.svelte";
 
   // Same visibility rule as AttributionLine.svelte (single-user mode and the demo's user-mode toggle hide
   // attribution), reimplemented inline: a payment has no separate updated_by (createdBy and updatedBy are
@@ -60,7 +63,8 @@
   const recordLabel = $derived(recordPaymentLabel(money(amountCents, cfg), paymentForm.method, paymentForm.paidDate, today));
 </script>
 
-<div class="subcard payments-card">
+<div class="payments-card">
+<Card tone="inset">
   <h3>Payments</h3>
   {#if paymentErrors.length > 0}
     <div role="alert">
@@ -132,33 +136,35 @@
         {/if}
       </p>
     {/if}
-    <div class="field-rows">
-      <label class="field">
-        <span>Date</span>
-        <input type="date" bind:value={paymentForm.paidDate} />
-      </label>
-      <label class="field">
-        <span>Amount ({cfg.currency.symbol})</span>
-        <input type="number" min="0.01" step="0.01" bind:value={paymentForm.amount} />
-      </label>
-      <label class="field">
-        <span>Method</span>
-        <select bind:value={paymentForm.method}>
-          {#each cfg.invoicing.paymentMethods as m (m)}<option value={m}>{m}</option>{/each}
-        </select>
-      </label>
-      <label class="field">
-        <span>Note</span>
-        <input bind:value={paymentForm.note} />
-      </label>
-      <label class="field">
-        <span>Reference (optional)</span>
-        <input
-          placeholder="Square #4821"
-          bind:value={paymentForm.reference}
-        />
-      </label>
-    </div>
+    <FormGrid>
+      <Field id="payment-date" label="Date" size="s">
+        {#snippet children(f)}
+          <input id={f.id} type="date" bind:value={paymentForm.paidDate} />
+        {/snippet}
+      </Field>
+      <Field id="payment-amount" label={`Amount (${cfg.currency.symbol})`} size="xs">
+        {#snippet children(f)}
+          <input id={f.id} type="number" min="0.01" step="0.01" bind:value={paymentForm.amount} />
+        {/snippet}
+      </Field>
+      <Field id="payment-method" label="Method" size="s">
+        {#snippet children(f)}
+          <select id={f.id} bind:value={paymentForm.method}>
+            {#each cfg.invoicing.paymentMethods as m (m)}<option value={m}>{m}</option>{/each}
+          </select>
+        {/snippet}
+      </Field>
+      <Field id="payment-note" label="Note" size="m">
+        {#snippet children(f)}
+          <input id={f.id} bind:value={paymentForm.note} />
+        {/snippet}
+      </Field>
+      <Field id="payment-reference" label="Reference (optional)" size="m">
+        {#snippet children(f)}
+          <input id={f.id} placeholder="Square #4821" bind:value={paymentForm.reference} />
+        {/snippet}
+      </Field>
+    </FormGrid>
     <div class="form-actions">
       {#if confirmingOverpay}
         <span class="overpay-question" role="status">{overpaymentQuestion(money(excessCents, cfg))}</span>
@@ -172,14 +178,15 @@
     </div>
     </form>
   {/if}
+</Card>
 </div>
 
 <style>
-  /* .subcard (theme.css) supplies the separator; the extra space above the Payments block and the h3's top
+  /* An inset card inside the invoice card (D6: tint, no separator line); the space above it and the h3's top
    * margin stay local. */
   .payments-card { margin-top: var(--space-5); }
   .payments-card h3 { margin-top: 0; }
-  .balance-line { font-weight: 600; font-variant-numeric: tabular-nums; margin: 0.6rem 0; }
-  .overpaid { margin-left: 0.4rem; font-weight: 600; }
+  .balance-line { font-weight: 600; font-variant-numeric: tabular-nums; margin: var(--space-3) 0; }
+  .overpaid { margin-left: var(--space-2); font-weight: 600; }
   .overpay-question { font-size: var(--text-sm); }
 </style>

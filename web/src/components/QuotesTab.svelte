@@ -39,7 +39,9 @@
   import { createBackfillController } from "../lib/backfillController.svelte";
   import StatusBadge from "./StatusBadge.svelte";
   import AttributionLine from "./AttributionLine.svelte";
-  import LoadMoreRow from "./LoadMoreRow.svelte";
+  import DataTable, { type DataColumn } from "./ui/DataTable.svelte";
+import Field from "./ui/Field.svelte";
+import FormGrid from "./ui/FormGrid.svelte";
   import BackfillStatus from "./BackfillStatus.svelte";
   import { focusAfterUpdate } from "../lib/a11y.svelte";
   import { confirmFocus, focusOnMount, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "../lib/a11yFocus";
@@ -763,9 +765,17 @@
       input.value = "";
     }
   }
+const COLUMNS: DataColumn[] = [
+  { key: "label", label: "Label" },
+  { key: "client", label: "Client" },
+  { key: "price", label: "Price", num: true },
+  { key: "status", label: "Status" },
+  { key: "saved", label: "Saved" },
+  { key: "actions", label: "Actions", hideLabel: true },
+];
 </script>
 
-<!-- onscrollcapture: a scroll on .table-scroll itself (a nested container) must be caught; scroll events don't
+<!-- onscrollcapture: a scroll on the DataTable scroll region (a nested container) must be caught; scroll events don't
      bubble, only the capture phase reaches an ancestor listener. -->
 <svelte:window onpointerdown={handleWindowPointerDown} onkeydown={handleWindowKeydown} onscrollcapture={handleWindowScroll} />
 
@@ -813,39 +823,6 @@
     {actionStatus}
   </p>
 
-  {#if showFilter}
-    <div class="filter-row">
-      <input
-        id="quotes-filter"
-        class="filter-input"
-        placeholder="Filter by label or client"
-        aria-label="Filter by label or client"
-        bind:value={filterText}
-      />
-      <select class="sort-select" aria-label="Sort saved quotes" bind:value={sortOrder}>
-        <option value="newest">Newest first</option>
-        <option value="oldest">Oldest first</option>
-        <option value="price-desc">Price high to low</option>
-        <option value="price-asc">Price low to high</option>
-        <option value="label">Label A to Z</option>
-        <option value="status">Status</option>
-      </select>
-    </div>
-  {/if}
-
-  {#if quotes.length > 0}
-    <div class="chips" role="group" aria-label="Filter by status">
-      {#each QUOTE_STATUS_CHIPS as chip (chip.key)}
-        <button
-          type="button"
-          class:active={statusFilter === chip.key}
-          aria-pressed={statusFilter === chip.key}
-          onclick={() => (statusFilter = chip.key)}
-        >{chip.label}</button>
-      {/each}
-    </div>
-  {/if}
-
   <BackfillStatus backfilling={backfill.backfilling} backfillFailed={backfill.backfillFailed} verb="filter" />
 
   {#if cfg.smtp.host === ""}
@@ -855,20 +832,46 @@
     </p>
   {/if}
 
-  <div class="card">
-    <div class="table-scroll stack">
-      <table>
-        <thead>
-          <tr>
-            <th>Label</th>
-            <th>Client</th>
-            <th class="num">Price</th>
-            <th>Status</th>
-            <th>Saved</th>
-            <th><span class="visually-hidden">Actions</span></th>
-          </tr>
-        </thead>
-        <tbody>
+  <DataTable
+    label="Saved quotes"
+    columns={COLUMNS}
+    loadMore={!loading && !filterActive ? { shown: quotes.length, total, loadingMore, onLoadMore: loadMore } : null}
+  >
+    {#snippet filters()}
+      {#if showFilter}
+        <FormGrid>
+          <Field id="quotes-filter" label="Filter by label or client" size="l">
+            {#snippet children(f)}
+              <input id={f.id} type="search" placeholder="Label or client" bind:value={filterText} />
+            {/snippet}
+          </Field>
+          <Field id="quotes-sort" label="Sort saved quotes" size="m">
+            {#snippet children(f)}
+              <select id={f.id} bind:value={sortOrder}>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="price-desc">Price high to low</option>
+                <option value="price-asc">Price low to high</option>
+                <option value="label">Label A to Z</option>
+                <option value="status">Status</option>
+              </select>
+            {/snippet}
+          </Field>
+        </FormGrid>
+      {/if}
+      {#if quotes.length > 0}
+        <div class="chips" role="group" aria-label="Filter by status">
+          {#each QUOTE_STATUS_CHIPS as chip (chip.key)}
+            <button
+              type="button"
+              class:active={statusFilter === chip.key}
+              aria-pressed={statusFilter === chip.key}
+              onclick={() => (statusFilter = chip.key)}
+            >{chip.label}</button>
+          {/each}
+        </div>
+      {/if}
+    {/snippet}
           {#if loading}
             <tr><td colspan="6" class="empty-state"><span role="status">Loading…</span></td></tr>
           {:else}
@@ -1103,21 +1106,15 @@
               </tr>
             {/each}
           {/if}
-        </tbody>
-      </table>
-    </div>
-    {#if !loading && !filterActive}
-      <LoadMoreRow shown={quotes.length} {total} {loadingMore} onLoadMore={loadMore} />
-    {/if}
-  </div>
+  </DataTable>
 </div>
 
 <style>
-  .parts-badge { margin-left: 0.4rem; color: var(--muted); font-size: var(--text-sm); }
+  .parts-badge { margin-left: var(--space-2); color: var(--muted); font-size: var(--text-sm); }
   .head-row h1 { margin: 0; }
   /* Wraps at 320 CSS px (WCAG 1.4.10): New quote, Export, and Import no longer fit beside the heading. */
   .head-row { flex-wrap: wrap; }
-  .head-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .head-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
   .lede { color: var(--muted); font-size: var(--text-sm); margin: 0; }
 
   /* .status-line's app-wide min-height reserves room against layout shift, but before any action sets
@@ -1125,15 +1122,6 @@
    * actionStatus is empty (the live region stays mounted, so its role/aria-live never toggle); once a
    * message is set it reverts to the reserved layout. */
   .action-status.collapsed { min-height: 0; margin-top: calc(var(--space-6) * -1); margin-bottom: calc(var(--space-6) * -1); }
-
-  .filter-row { display: flex; gap: 0.5rem; }
-  .filter-input { flex: 1; min-width: 0; }
-  .sort-select { min-width: 0; max-width: 100%; }
-  @media (max-width: 420px) {
-    .filter-row { flex-wrap: wrap; }
-    .filter-input { flex: 1 1 100%; }
-    .sort-select { flex: 1 1 100%; }
-  }
 
   .linkish {
     border: none; background: none; color: var(--accent-text); padding: 0; text-align: left;
@@ -1153,7 +1141,7 @@
    * wide, so auto table layout gave it barely more and the overflow toggle dropped to a second line on
    * nearly every row. Holding the cluster on one line makes the cell ask for its real width; the wrapping
    * label/client columns give up the difference. .table-scroll is the escape hatch. */
-  .row-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 0.4rem; }
+  .row-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-2); }
   .row-actions > button, .row-actions .menu-toggle { white-space: nowrap; }
   .confirm-delete { white-space: nowrap; }
   .cancel-delete { white-space: nowrap; }
@@ -1169,18 +1157,18 @@
   .menu-panel {
     position: fixed;
     z-index: 5;
-    min-width: 11rem;
+    min-width: var(--field-s);
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
-    padding: 0.3rem;
+    gap: var(--space-1);
+    padding: var(--space-1);
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: calc(var(--radius) / 2);
     box-shadow: var(--shadow);
   }
   /* The labeled button group only; the email-reason note (a sibling) stacks below via .menu-panel's gap. */
-  .menu-group { display: flex; flex-direction: column; gap: 0.1rem; }
+  .menu-group { display: flex; flex-direction: column; gap: var(--space-1); }
   .menu-item { display: block; width: 100%; text-align: left; white-space: nowrap; }
 
   /* .pill (theme) covers border, radius, font-size and padding; kept locally (like HistoryPanel's former
@@ -1193,49 +1181,38 @@
     white-space: nowrap;
   }
   .invoiced-badge:hover { color: var(--text); }
-  .c-status .invoiced-badge { display: block; margin-top: 0.25rem; }
+  .c-status .invoiced-badge { display: block; margin-top: var(--space-1); }
 
   /* Phones: each quote becomes a stacked card (label and price on top, client and status, saved date, then the
-   * actions) instead of a table that clips its status, price and actions behind a horizontal scroll. The
-   * header row stays in the DOM, hidden with the visually-hidden clip, and the elements keep their table
-   * semantics. */
+   * actions) instead of a table that clips its status, price and actions behind a horizontal scroll. DataTable
+   * hides the header row and makes the table a block list; the row layout is this screen's. */
   @media (max-width: 600px) {
-    .stack { overflow-x: visible; }
-    .stack table, .stack tbody { display: block; }
-    .stack thead {
-      position: absolute;
-      width: 1px; height: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
-    }
-    .stack tr.quote-row {
+    tr.quote-row {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       grid-template-areas: "label price" "client status" "saved saved" "actions actions";
-      gap: 0.2rem 0.75rem;
-      padding: 0.7rem 0;
+      gap: var(--space-1) var(--space-3);
+      padding: var(--space-3) 0;
       border-top: 1px solid var(--border);
     }
-    .stack td { display: block; padding: 0; border: none; min-width: 0; }
     .c-label { grid-area: label; overflow-wrap: anywhere; }
     .c-price { grid-area: price; text-align: right; font-weight: 600; }
     .c-client { grid-area: client; overflow-wrap: anywhere; color: var(--muted); }
     .c-status { grid-area: status; text-align: right; }
     .c-saved { grid-area: saved; color: var(--muted); font-size: var(--text-sm); }
     .c-saved::before { content: attr(data-label) " "; }
-    .c-actions { grid-area: actions; margin-top: 0.3rem; }
+    .c-actions { grid-area: actions; margin-top: var(--space-1); }
     .row-actions { flex-wrap: wrap; }
-    .stack td.empty-state, .stack .convert-tr td { display: block; }
+    .convert-tr td { display: block; }
   }
 
   .convert-row {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    padding: 0.3rem 0;
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
   }
-  .convert-row select { flex: 1; min-width: 140px; }
+  .convert-row select { flex: 1; min-width: var(--field-s); }
   .convert-note-plain { font-size: var(--text-sm); color: var(--muted); }
 </style>

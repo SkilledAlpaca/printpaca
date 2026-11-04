@@ -2,24 +2,14 @@
   "blocking": [
     "web/src/components/ui/**",
     "web/src/public/ItemOrderPanel.svelte",
-    "web/src/components/RequestsTab.svelte"
+    "web/src/components/RequestsTab.svelte",
+    "web/src/components/InvoicesTab.svelte",
+    "web/src/components/invoices/**",
+    "web/src/components/QuotesTab.svelte",
+    "web/src/components/ClientsTab.svelte"
   ],
   "scan": [".svelte", ".css"],
   "exceptions": [
-    {
-      "file": "web/src/components/RequestsTab.svelte",
-      "selector": ".menu-panel",
-      "property": "min-width",
-      "value": "11rem",
-      "reason": "Width of the Requests list's more-actions popout; the list view moves to ui/ components in the Money slice."
-    },
-    {
-      "file": "web/src/components/RequestsTab.svelte",
-      "selector": ".check-label input",
-      "property": "width",
-      "value": "1.25rem",
-      "reason": "Size of the row-select checkbox glyph (a control, not layout); revisit with the list-view migration."
-    },
     {
       "file": "web/src/public/ItemOrderPanel.svelte",
       "selector": ".hero",

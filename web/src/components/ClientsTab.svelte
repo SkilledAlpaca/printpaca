@@ -17,13 +17,14 @@
   import { syncDetail } from "../lib/hashRoute";
   import { resolveDetailMiss, refetchLimit, INITIAL_PAGE_LIMIT } from "../lib/pagination";
   import { createBackfillController } from "../lib/backfillController.svelte";
-  import { mdiArrowLeft } from "@mdi/js";
-  import Icon from "./Icon.svelte";
   import StatusBadge from "./StatusBadge.svelte";
   import AttributionLine from "./AttributionLine.svelte";
-  import LoadMoreRow from "./LoadMoreRow.svelte";
+  import DataTable, { type DataColumn } from "./ui/DataTable.svelte";
+  import PageHeader from "./ui/PageHeader.svelte";
+  import Card from "./ui/Card.svelte";
+  import Field from "./ui/Field.svelte";
+  import FormGrid from "./ui/FormGrid.svelte";
   import BackfillStatus from "./BackfillStatus.svelte";
-  import DetailTitle from "./DetailTitle.svelte";
   import { announce } from "../lib/a11y.svelte";
   import { confirmFocus, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "../lib/a11yFocus";
 
@@ -412,6 +413,12 @@
     return { totalInvoicedCents, totalPaidCents, outstandingCents };
   });
 
+  const COLUMNS: DataColumn[] = [
+    { key: "name", label: "Name" },
+    { key: "contact", label: "Email and phone" },
+    { key: "notes", label: "Notes" },
+  ];
+
   function openInvoice(id: string) {
     // Same cross-tab open mechanism as InvoicesTab's detail view and DashboardTab's recent invoices
     // (pendingOpen in state.svelte.ts); InvoicesTab reads and clears it on mount.
@@ -440,82 +447,93 @@
       <p class="banner-warn" role="alert">Couldn't load clients. The server couldn't be reached.</p>
     {/if}
 
-    {#if clients.length > 0}
-      <input id="clients-filter" class="search-input" placeholder="Search by name, email, or phone" aria-label="Search clients" bind:value={searchText} />
-    {/if}
-
     <BackfillStatus backfilling={backfill.backfilling} backfillFailed={backfill.backfillFailed} verb="search" />
 
-    <div class="card">
-      <ul class="plain-list">
-        {#if loading}
-          <li class="empty-state"><span role="status">Loading clients…</span></li>
-        {:else}
-          {#each filteredClients as c (c.id)}
-            <li class="client-row">
-              <button type="button" class="row-open" data-row-id={c.id} onclick={() => openDetail(c.id)}>
-                <span class="c-name">{c.name}</span>
-                <span class="c-contact">{[c.email, c.phone].filter(Boolean).join(" · ")}</span>
-                {#if c.notes}<span class="c-notes">{c.notes}</span>{/if}
-              </button>
-            </li>
-          {:else}
-            <li class="empty-state">{clients.length === 0 ? "No clients yet. Add one with the Add client button above." : "No clients match the search."}</li>
-          {/each}
+    <DataTable
+      label="Clients"
+      columns={COLUMNS}
+      loadMore={!loading && searchText.trim() === "" ? { shown: clients.length, total, loadingMore, onLoadMore: loadMore } : null}
+    >
+      {#snippet filters()}
+        {#if clients.length > 0}
+          <Field id="clients-filter" label="Search clients" size="l">
+            {#snippet children(f)}
+              <input id={f.id} type="search" placeholder="Name, email, or phone" bind:value={searchText} />
+            {/snippet}
+          </Field>
         {/if}
-      </ul>
-      {#if !loading && searchText.trim() === ""}
-        <LoadMoreRow shown={clients.length} {total} {loadingMore} onLoadMore={loadMore} />
+      {/snippet}
+      {#if loading}
+        <tr><td colspan="3" class="empty-state"><span role="status">Loading clients…</span></td></tr>
+      {:else}
+        {#each filteredClients as c (c.id)}
+          <tr class="client-row">
+            <td class="c-name"><button type="button" class="row-open" data-row-id={c.id} onclick={() => openDetail(c.id)}>{c.name}</button></td>
+            <td class="c-contact">{[c.email, c.phone].filter(Boolean).join(" · ")}</td>
+            <td class="c-notes">{c.notes}</td>
+          </tr>
+        {:else}
+          <tr><td colspan="3" class="empty-state">{clients.length === 0 ? "No clients yet. Add one with the Add client button above." : "No clients match the search."}</td></tr>
+        {/each}
       {/if}
-    </div>
+    </DataTable>
   {:else}
-    <div class="head-row">
-      <button type="button" class="back-link" onclick={requestBack}><Icon path={mdiArrowLeft} /> Back to list</button>
-    </div>
+    <PageHeader
+      record
+      title={detailLoading ? undefined : detail ? detail.name : detailError ? "Client" : "Add client"}
+      onback={requestBack}
+    >
+      {#snippet subtitle()}{#if detail}<AttributionLine createdBy={detail.createdBy} updatedBy={detail.updatedBy} />{/if}{/snippet}
+    </PageHeader>
 
-    <div class="card">
+    <Card>
       {#if detailLoading}
         <p role="status">Loading…</p>
       {:else}
-      <DetailTitle>{detail ? detail.name : detailError ? "Client" : "Add client"}</DetailTitle>
-      {#if detail}<AttributionLine createdBy={detail.createdBy} updatedBy={detail.updatedBy} />{/if}
-
       {#if detailError}
         <p class="banner-warn" role="alert">{detailError}</p>
       {:else}
         <ErrorSummary errors={formErrors} />
-        <div class="field-rows">
-          <label class="field">
-            <span>Name</span>
-            <input bind:value={form.name} autocomplete="name" />
-          </label>
-          <label class="field">
-            <span>Email</span>
-            <input type="email" bind:value={form.email} autocomplete="email" />
-          </label>
-          <label class="field">
-            <span>Phone</span>
-            <input type="tel" bind:value={form.phone} autocomplete="tel" />
-          </label>
-        </div>
-        <label class="field">
-          <span>Billing address</span>
-          <textarea rows="3" bind:value={form.billingAddress} autocomplete="street-address"></textarea>
-        </label>
-        <label class="field">
-          <span>Shipping address</span>
-          <textarea rows="3" bind:value={form.shippingAddress} autocomplete="street-address"></textarea>
-        </label>
-        <label class="field">
-          <span>Notes</span>
-          <textarea rows="3" bind:value={form.notes}></textarea>
-        </label>
+        <FormGrid>
+          <Field id="client-name" label="Name" size="m">
+            {#snippet children(f)}
+              <input id={f.id} bind:value={form.name} autocomplete="name" />
+            {/snippet}
+          </Field>
+          <Field id="client-email" label="Email" size="m">
+            {#snippet children(f)}
+              <input id={f.id} type="email" bind:value={form.email} autocomplete="email" />
+            {/snippet}
+          </Field>
+          <Field id="client-phone" label="Phone" size="s">
+            {#snippet children(f)}
+              <input id={f.id} type="tel" bind:value={form.phone} autocomplete="tel" />
+            {/snippet}
+          </Field>
+        </FormGrid>
+        <FormGrid>
+          <Field id="client-billing" label="Billing address">
+            {#snippet children(f)}
+              <textarea id={f.id} rows="3" bind:value={form.billingAddress} autocomplete="street-address"></textarea>
+            {/snippet}
+          </Field>
+          <Field id="client-shipping" label="Shipping address">
+            {#snippet children(f)}
+              <textarea id={f.id} rows="3" bind:value={form.shippingAddress} autocomplete="street-address"></textarea>
+            {/snippet}
+          </Field>
+        </FormGrid>
+        <Field id="client-notes" label="Notes">
+          {#snippet children(f)}
+            <textarea id={f.id} rows="3" bind:value={form.notes}></textarea>
+          {/snippet}
+        </Field>
         <div class="form-actions">
           <button type="button" class="primary" onclick={save} aria-disabled={saving || !dirty}>{saving ? "Saving…" : "Save"}</button>
         </div>
 
         {#if detail}
-          <div class="subcard">
+          <Card tone="inset">
             <h3>Quotes</h3>
             {#if clientQuotes.length === 0}
               <p class="empty-state">No saved quotes are linked to this client yet. Pick this client in the Saved quotes panel on the New quote page.</p>
@@ -538,9 +556,9 @@
             {#if quotesUnavailable}
               <p class="advisory-text">Saved quotes unavailable; this list may be incomplete.</p>
             {/if}
-          </div>
+          </Card>
 
-          <div class="subcard">
+          <Card tone="inset">
             <h3>Invoices</h3>
             {#if clientInvoices.length === 0}
               <p class="empty-state">No invoices for this client yet. Convert a saved quote, or create one from the Invoices page.</p>
@@ -563,9 +581,9 @@
                 <span><span class="lbl">Outstanding</span> {money(clientMoney.outstandingCents, cfg)}</span>
               </div>
             {/if}
-          </div>
+          </Card>
 
-          <div class="subcard">
+          <Card tone="inset">
             {#if confirmingDelete}
               <p class="delete-consequences">
                 Invoices keep their own copy of this client's details. Saved quotes keep the name but lose the link.
@@ -577,77 +595,60 @@
             {:else}
               <button type="button" data-focus-key="delete-client" onclick={askDelete}>Delete client</button>
             {/if}
-          </div>
+          </Card>
         {/if}
       {/if}
       {/if}
-    </div>
+    </Card>
   {/if}
 </div>
 
 <style>
-  /* .page, .banner-warn, .errors, .form-actions and .head-row's layout come from theme.css; the h1 is
-   * nested one level down, so theme's `.page > h1` doesn't reach it and this override stays. */
-  .head-row h1 { margin: 0; }
-  .back-link { display: inline-flex; align-items: center; gap: 0.35rem; }
+  /* .page, .banner-warn, .errors and .form-actions layout come from theme.css. */
+  .row-open { background: none; border: none; padding: 0; min-height: 0; font-weight: 600; color: var(--accent-text); text-align: left; overflow-wrap: anywhere; }
+  .row-open:hover { text-decoration: underline; }
+  .c-contact, .c-notes { font-size: var(--text-sm); color: var(--muted); }
+  .c-notes { overflow-wrap: anywhere; }
+  td.empty-state { text-align: center; }
 
-  .card .field { margin-bottom: 0.6rem; }
-  .card textarea { resize: vertical; }
-
-  .search-input { width: 100%; margin-bottom: 0.75rem; }
+  /* Phones: name on top, then contact, then notes, as a card in the DataTable region. */
+  @media (max-width: 600px) {
+    tr.client-row { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+  }
 
   li { border-top: 1px solid var(--border); }
   li:first-child { border-top: none; }
-  /* A plain <li onclick> trips svelte-check's a11y_no_noninteractive_element_interactions, so the row has
-   * no handlers; .row-open is a real <button> and the only thing that opens it. */
-  .row-open {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.1rem;
-    background: none;
-    border: none;
-    padding: 0.5rem 0;
-    text-align: left;
-    cursor: pointer;
-  }
-  .row-open:hover { background: var(--surface-2); }
-  .c-name { font-weight: 600; }
-  .c-contact { font-size: var(--text-sm); color: var(--muted); }
-  .c-notes { font-size: var(--text-sm); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 30rem; }
 
   h3 { margin: 0 0 var(--space-2); }
 
-  /* Quote/invoice rows: same shape as RequestsTab's .row-link (a full-width button of label/status/date
-   * columns), shared by both sections. */
+  /* Quote/invoice rows: a full-width button of label/status/date columns, shared by both sections. */
   .row-link {
     width: 100%;
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     flex-wrap: wrap;
     background: none;
     border: none;
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
     text-align: left;
-    min-height: 32px;
+    min-height: var(--tap-sm);
   }
   .row-link:hover { background: var(--surface-2); }
-  .q-label, .inv-number { flex: 1 1 8rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-  .q-price, .inv-total { font-variant-numeric: tabular-nums; min-width: 5rem; }
-  .q-date, .inv-date { color: var(--muted); font-size: var(--text-sm); min-width: 6rem; text-align: right; }
+  .q-label, .inv-number { flex: 1 1 var(--field-s); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .q-price, .inv-total { font-variant-numeric: tabular-nums; min-width: var(--field-xs); }
+  .q-date, .inv-date { color: var(--muted); font-size: var(--text-sm); min-width: var(--field-xs); text-align: right; }
 
   .money-line {
     display: flex;
     flex-wrap: wrap;
-    gap: 1.25rem;
-    margin-top: 0.75rem;
-    padding-top: 0.6rem;
+    gap: var(--space-5);
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--border);
     font-variant-numeric: tabular-nums;
   }
   .money-line .lbl { display: block; }
 
-  .delete-consequences { color: var(--muted); font-size: var(--text-sm); margin: 0 0 0.6rem; }
+  .delete-consequences { color: var(--muted); font-size: var(--text-sm); margin: 0 0 var(--space-3); }
 </style>

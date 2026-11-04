@@ -238,7 +238,7 @@ test.describe("requests and the dashboard", () => {
     await page.keyboard.press("Control+k");
     await expect(page.getByLabel("Filter requests by name, item, or file")).toBeFocused();
     await page.keyboard.type(name);
-    const row = page.locator(".plain-list li", { hasText: name });
+    const row = page.locator("tr.req-row", { hasText: name });
     await expect(row).toHaveCount(1);
     await page.getByLabel("Filter requests by name, item, or file").fill("no such requester");
     await expect(page.getByText("No requests match the filter.")).toBeVisible();
@@ -270,7 +270,7 @@ test.describe("requests and the dashboard", () => {
 
     // Back in Requests the row and the detail say Invoiced, and Convert is gone.
     await navButton(page, "Requests").click();
-    const again = page.locator(".plain-list li", { hasText: name });
+    const again = page.locator("tr.req-row", { hasText: name });
     await expect(again).toContainText("invoiced");
     await expect(again).toContainText(number);
     await again.getByRole("button", { name: new RegExp(name) }).click();
@@ -296,7 +296,7 @@ test.describe("requests and the dashboard", () => {
 
     await page.goto("/admin/");
     await navButton(page, "Requests").click();
-    const row = page.locator(".plain-list li", { hasText: name });
+    const row = page.locator("tr.req-row", { hasText: name });
     await expect(row).toContainText("Needs print time");
     await expect(row).toContainText(before.reference);
     await row.getByRole("button", { name: new RegExp(name) }).click();
@@ -332,7 +332,7 @@ test.describe("requests and the dashboard", () => {
     await navButton(page, "Requests").click();
     // Opening a request marks it viewed; only viewed rows have a checkbox.
     for (const n of [nameA, nameB]) {
-      await page.locator(".plain-list li", { hasText: n }).getByRole("button", { name: new RegExp(n) }).click();
+      await page.locator("tr.req-row", { hasText: n }).getByRole("button", { name: new RegExp(n) }).click();
       await expect(page.getByRole("heading", { name: `Estimate request from ${n}` })).toBeVisible();
       await page.getByRole("button", { name: /Back to list/ }).click();
     }
@@ -342,8 +342,8 @@ test.describe("requests and the dashboard", () => {
     await page.getByRole("button", { name: "Finalize selected" }).click();
     await page.getByRole("button", { name: "Yes, finalize 2 requests" }).click();
     await expect(page.getByText("Finalized 2 requests.")).toBeVisible();
-    await expect(page.locator(".plain-list li", { hasText: nameA })).toContainText("finalized");
-    await expect(page.locator(".plain-list li", { hasText: nameB })).toContainText("finalized");
+    await expect(page.locator("tr.req-row", { hasText: nameA })).toContainText("finalized");
+    await expect(page.locator("tr.req-row", { hasText: nameB })).toContainText("finalized");
   });
 
   test("Delete all new lives in the More menu and confirms the count and permanence", async ({ page, request }) => {
@@ -370,7 +370,7 @@ test.describe("requests and the dashboard", () => {
     await page.keyboard.press("Escape");
     await expect(group).toHaveCount(0);
     await expect(page.getByRole("button", { name: "More actions for requests" })).toBeFocused();
-    await expect(page.locator(".plain-list li", { hasText: name })).toHaveCount(1); // nothing was deleted
+    await expect(page.locator("tr.req-row", { hasText: name })).toHaveCount(1); // nothing was deleted
   });
 
   test("request detail: facts are a list, header Back keeps the filter and row focus, a confirm closes on Escape", async ({ page, request }) => {
@@ -390,6 +390,16 @@ test.describe("requests and the dashboard", () => {
     const facts = page.getByRole("list", { name: "Request details" }).or(page.locator("dl[aria-label='Request details']"));
     await expect(facts.getByText("Material", { exact: true })).toBeVisible();
     await expect(facts.getByRole("link", { name: /@example\.com$/ })).toBeVisible();
+    // D28: the table fills its card, labels share one column, and the values start at one x beside them.
+    const card = facts.locator("xpath=..");
+    const cardBox = (await card.boundingBox())!;
+    const factsBox = (await facts.boundingBox())!;
+    expect(factsBox.width / cardBox.width, "facts span the full card width").toBeGreaterThan(0.98);
+    const valueXs = await facts.locator("dd").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)));
+    expect(new Set(valueXs).size, "values share one column").toBe(1);
+    const label = (await facts.locator("dt").first().boundingBox())!;
+    const value = (await facts.locator("dd").first().boundingBox())!;
+    expect(value.x, "the value sits beside its label").toBeGreaterThan(label.x + label.width * 0.5);
     // Reading order: Back, then the single h1, then the facts.
     const order = await page.evaluate(() => {
       const back = [...document.querySelectorAll("button")].find((b) => /Back to list/.test(b.textContent ?? ""));

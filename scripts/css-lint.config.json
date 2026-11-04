@@ -33,7 +33,17 @@
     "web/src/components/LabeledNumber.svelte",
     "web/src/components/LabeledText.svelte",
     "web/src/components/PrintView.svelte",
-    "web/src/components/HistoryPanel.svelte"
+    "web/src/components/HistoryPanel.svelte",
+    "web/src/components/ItemsTab.svelte",
+    "web/src/components/ItemCategories.svelte",
+    "web/src/components/FilamentTab.svelte",
+    "web/src/components/SpoolmanInventory.svelte",
+    "web/src/components/ElectricityTab.svelte",
+    "web/src/components/PrintersTab.svelte",
+    "web/src/components/settings/ScheduleEditor.svelte",
+    "web/src/components/settings/EnergySettings.svelte",
+    "web/src/components/settings/PrintersSettings.svelte",
+    "web/src/components/settings/HardwareSettings.svelte"
   ],
   "scan": [
     ".svelte",

@@ -358,20 +358,23 @@ test("admin reorders option groups and options, and the order persists and reach
   await page.locator("main").getByRole("button", { name: new RegExp(ITEM_NAME) }).first().click();
   await expect(page.getByLabel("Group 1 choice 1", { exact: true })).toHaveValue("Black");
 
-  // Group 2 (Engraving) up: it becomes group 1, and focus stays on the button that was pressed.
-  await page.getByRole("button", { name: /^Move group 2 \(Engraving\) up$/ }).click();
-  await expect(page.getByRole("button", { name: /^Move group 1 \(Engraving\) up$/ })).toBeFocused();
+  // Group 2 (Engraving) up from its ⋯ menu: it becomes group 1, and focus follows its ⋯ button.
+  await page.getByRole("button", { name: "More actions for Option group 2: Engraving" }).click();
+  await page.getByRole("button", { name: "Move up" }).click();
+  await expect(page.getByRole("button", { name: "More actions for Option group 1: Engraving" })).toBeFocused();
   await expect(page.getByLabel("Group 1 choice 1", { exact: true })).toHaveValue("Name plate");
 
   // Color's second option (Red) up, now in group 2.
-  await page.getByRole("button", { name: /^Move group 2 choice 2 \(Red\) up$/ }).click();
-  await expect(page.getByRole("button", { name: /^Move group 2 choice 1 \(Red\) up$/ })).toBeFocused();
+  await page.getByRole("button", { name: "More actions for Group 2 choice 2: Red" }).click();
+  await page.getByRole("button", { name: "Move up" }).click();
+  await expect(page.getByRole("button", { name: "More actions for Group 2 choice 1: Red" })).toBeFocused();
   await expect(page.getByLabel("Group 2 choice 1", { exact: true })).toHaveValue("Red");
 
   // Unsaved photos note: an unsaved new option explains photos upload after saving.
   await page.getByRole("button", { name: "Add choice" }).nth(1).click();
   await expect(page.getByText("Save the item first to add a photo.").first()).toBeVisible();
-  await page.getByRole("button", { name: /^Remove group 2 choice 3$/ }).click();
+  await page.getByRole("button", { name: /^More actions for Group 2 choice 3: / }).click();
+  await page.getByRole("button", { name: "Remove", exact: true }).click();
 
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText(`${ITEM_NAME} saved.`)).toBeAttached();

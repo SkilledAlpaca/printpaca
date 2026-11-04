@@ -403,3 +403,13 @@ func TestElectricityFormulaNamesMissingPrintStart(t *testing.T) {
 		t.Errorf("invalid start formula = %q, want %q", got, "schedule not usable")
 	}
 }
+
+func TestElectricityFormulaShowsReadableStart(t *testing.T) {
+	bd := ComputeQuote(scheduleQuoteInputs(t, "2026-07-03T14:00"), DefaultEngineOptions)
+	if got := bd.PerUnit[1].Formula; !strings.Contains(got, "schedule from Jul 3, 2026 2:00 PM (") {
+		t.Errorf("formula %q should show the start as Jul 3, 2026 2:00 PM", got)
+	}
+	if got := readableStart("garbage"); got != "garbage" {
+		t.Errorf("readableStart(garbage) = %q", got)
+	}
+}

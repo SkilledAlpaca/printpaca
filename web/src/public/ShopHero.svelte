@@ -19,6 +19,10 @@
     border-radius: var(--radius);
     background: var(--surface-2);
   }
+  /* A phone shows a slim banner: the items matter more than the picture on a small first screen. */
+  @media (max-width: 600px) {
+    .shop-hero { aspect-ratio: 5 / 1; max-height: 5rem; }
+  }
   @media (max-height: 500px) {
     .shop-hero { display: none; }
   }

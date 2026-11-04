@@ -417,3 +417,38 @@ test.describe("P6: the total itemizes option surcharges", () => {
   });
 });
 
+test.describe("P7: a phone's first screen shows an item", () => {
+  test("with a hero, announcement, heading and long intro, the first card starts in the upper part of the screen; an item page drops the pitch", async ({ browser, request }) => {
+    const intro = "Everything here is printed to order on our own machines, finished by hand, and packed with care. Ask us about custom colors, sizes, and anything you can imagine.";
+    const config = await getConfig(request);
+    config.publicQuotes = { ...config.publicQuotes, introText: intro };
+    config.shop = { ...config.shop, announcement: "Spring sale: free shipping on orders over $40 until the end of the month.", heading: "Handmade 3D prints" };
+    await putConfig(request, config);
+    expect((await request.post("/admin/api/shop/hero-image?alt=Shelves%20of%20prints", { data: tinyPng(12, 34, 56), headers: { "Content-Type": "image/png" } })).ok()).toBeTruthy();
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, extraHTTPHeaders: xff() });
+    const page = await ctx.newPage();
+    try {
+      await page.goto("http://127.0.0.1:8099/");
+      await expect(page.getByRole("img", { name: "Shelves of prints" })).toBeVisible();
+      const card = page.locator("[data-item-id]").first();
+      await expect(card).toBeVisible();
+      const top = (await card.boundingBox())!.y;
+      // The review measured 565 px with this kind of header; now a card shows well within the first screen (about 460 px).
+      expect(top).toBeLessThan(844 * 0.6);
+
+      await page.getByRole("button", { name: new RegExp(TRAY) }).click();
+      await expect(page.getByRole("heading", { name: TRAY, level: 2 })).toBeVisible();
+      await expect(page.locator(".intro")).toHaveCount(0);
+      await expect(page.locator(".shop-hero")).toHaveCount(0);
+      await expect(page.locator(".shop-heading")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Custom estimate", exact: true })).toHaveCount(0);
+      // The announcement stays; the options start on the first screen.
+      await expect(page.locator(".shop-announcement")).toBeVisible();
+      expect((await page.getByLabel("Size (required)").boundingBox())!.y).toBeLessThan(844);
+    } finally {
+      await ctx.close();
+      await resetShop(request);
+    }
+  });
+});
+

@@ -1113,17 +1113,21 @@
       </p>
     {/if}
     {#if shop.announcement}<p class="shop-announcement" role="note">{shop.announcement}</p>{/if}
-    {#if shop.heroImage}<ShopHero hero={shop.heroImage} />{/if}
-    {#if shop.heading}<h2 class="shop-heading">{shop.heading}</h2>{/if}
-    <!-- The shop's own intro when it wrote one; otherwise a default that says what this page is. -->
-    <p class="intro">{introText}</p>
+    <!-- An item page drops the hero, heading and intro: the visitor chose an item, and the options belong on the
+         first screen, not below the shop's pitch. The announcement stays. -->
+    {#if !orderItem}
+      {#if shop.heroImage}<ShopHero hero={shop.heroImage} />{/if}
+      {#if shop.heading}<h2 class="shop-heading">{shop.heading}</h2>{/if}
+      <!-- The shop's own intro when it wrote one; otherwise a default that says what this page is. -->
+      <p class="intro">{introText}</p>
+    {/if}
     <!-- Persistent status region (text swapped in) for "That item is no longer available." and similar. -->
     <div class="route-note" role="status">
       {#if routeNote}<p>{routeNote}</p>{/if}
       {#if routeNote === ESTIMATES_OFF_NOTE}<ContactDetails branding={cfg.branding} />{/if}
     </div>
 
-    {#if hasGallery && shop.customEstimates && cfg.materials.length > 0}
+    {#if hasGallery && shop.customEstimates && cfg.materials.length > 0 && !orderItem}
       <div class="view-toggle" role="group" aria-label="View">
         <button
           type="button"
@@ -1763,6 +1767,13 @@
   .how-estimated p { margin: var(--space-1) 0; color: var(--muted); }
   .how-estimated :global(.ui-field) { margin-top: var(--space-2); }
   @media (max-width: 600px) {
+    /* The shop header takes less of a phone's first screen, so at least one item shows without scrolling. */
+    .page { padding: var(--space-3); }
+    .brand .logo { height: 2rem; }
+    .brand h1 { font-size: var(--type-title); }
+    .shop-heading { font-size: var(--type-heading); }
+    .intro { font-size: var(--type-secondary); }
+    .shop-announcement { padding: var(--space-2) var(--space-3); font-size: var(--type-secondary); }
     /* 44 px tap targets on phones (the app-wide quiet button is 32 px). */
     .back, .remove-file, .inline-link, .confirmation .quiet { min-height: 44px; }
     .how-estimated summary { min-height: 44px; display: flex; align-items: center; }

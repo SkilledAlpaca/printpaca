@@ -194,7 +194,7 @@ var demoHardwareCatalog = []Hardware{
 
 // demoIntroText seeds publicQuotes.introText for the demo's public page; defaults.yaml's introText is "",
 // so the intro-text feature would otherwise show nothing.
-const demoIntroText = "Upload your model for an instant estimate, or order from the gallery below — we print and ship within 5 business days."
+const demoIntroText = "Upload your 3D model for a price estimate, or order from the gallery below — we print and ship within 5 business days."
 
 // demoSeedMaterials returns defaultConfig()'s materials verbatim except "pla" and "petg" are Public, so
 // the public page has materials to offer. Built from defaultConfig(), not a literal: config.yaml's

@@ -436,12 +436,12 @@
           <FormGrid>
             <Field id={`storefront-link-label-${i}`} label={`Link ${i + 1} label`} size="m" error={linkWarn(i, "label") || undefined}>
               {#snippet children(a)}
-                <input id={a.id} bind:value={link.label} oninput={() => (linkTouched[i] = true)} onblur={() => (linkTouched[i] = true)} aria-invalid={a.invalid ?? "false"} aria-describedby={a.describedby} autocomplete="off" />
+                <input id={a.id} bind:value={link.label} oninput={() => (linkTouched[i] = true)} onblur={() => { if (link.label !== "") linkTouched[i] = true; }} aria-invalid={a.invalid ?? "false"} aria-describedby={a.describedby} autocomplete="off" />
               {/snippet}
             </Field>
             <Field id={`storefront-link-url-${i}`} label={`Link ${i + 1} address`} size="l" error={linkWarn(i, "url") || undefined}>
               {#snippet children(a)}
-                <input id={a.id} type="url" bind:value={link.url} oninput={() => (linkTouched[i] = true)} onblur={() => (linkTouched[i] = true)} placeholder="https://" aria-invalid={a.invalid ?? "false"} aria-describedby={a.describedby} autocomplete="off" />
+                <input id={a.id} type="url" bind:value={link.url} oninput={() => (linkTouched[i] = true)} onblur={() => { if (link.url !== "") linkTouched[i] = true; }} placeholder="https://" aria-invalid={a.invalid ?? "false"} aria-describedby={a.describedby} autocomplete="off" />
               {/snippet}
             </Field>
           </FormGrid>

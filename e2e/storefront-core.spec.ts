@@ -359,7 +359,7 @@ test("the Settings > Storefront card reaches the server rules", async ({ page, r
     // The both-off rule shows before saving, with the next step.
     await page.getByRole("checkbox", { name: "Item gallery" }).uncheck();
     await page.getByRole("checkbox", { name: "Custom estimates" }).uncheck();
-    await expect(page.getByText(/can't both be off/)).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: /can't both be off/ })).toBeVisible();
   } finally {
     await resetShop(request);
   }

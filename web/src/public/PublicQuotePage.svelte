@@ -1261,50 +1261,6 @@
       >
         <div class="fields">
           <h2 class="view-heading" tabindex="-1" bind:this={estimateFormHeading}>Custom estimate</h2>
-          <Field
-            id="quote-material"
-            label="Material"
-            hint={materialName ? materialDescription(materialName) : undefined}
-            error={marked("material") ? issueMessage("material") : undefined}
-          >
-            {#snippet children(f)}
-              <select
-                id={f.id}
-                bind:value={materialName}
-                required
-                aria-invalid={f.invalid}
-                aria-describedby={f.describedby}
-              >
-                <option value="" disabled>Choose a material</option>
-                {#each materials as m (m.name)}<option value={m.name}>{m.name}</option>{/each}
-              </select>
-            {/snippet}
-          </Field>
-
-          <Field id="quote-qty" label="Quantity" size="s" describedby="quote-qty-notice">
-            {#snippet children(f)}
-              <input
-                id={f.id}
-                type="number"
-                min="1"
-                max={maxQty}
-                step="1"
-                bind:value={quantity}
-                onchange={(e) => {
-                  // "1e3" stays on screen as typed; show the number it prices.
-                  const plain = normalizedQuantityText(e.currentTarget.value);
-                  if (plain !== null) e.currentTarget.value = plain;
-                }}
-                required
-                aria-invalid={quantityMessage !== "" ? "true" : undefined}
-                aria-describedby={f.describedby}
-              />
-            {/snippet}
-          </Field>
-          <!-- Outside the field so the message isn't part of its name, and always mounted so the live region
-               announces its text changes (WCAG 1.3.1, 4.1.3). The only place the quantity message appears. -->
-          <p class="clamp-notice" id="quote-qty-notice" role="status">{quantityMessage}</p>
-
           <div
             class="drop"
             class:dragging
@@ -1369,6 +1325,51 @@
           {#if modelBoundsWarning}
             <p class="warn-text" role="status">{modelBoundsWarning}</p>
           {/if}
+
+          <Field
+            id="quote-material"
+            label="Material"
+            hint={materialName ? materialDescription(materialName) : undefined}
+            error={marked("material") ? issueMessage("material") : undefined}
+          >
+            {#snippet children(f)}
+              <select
+                id={f.id}
+                bind:value={materialName}
+                required
+                aria-invalid={f.invalid}
+                aria-describedby={f.describedby}
+              >
+                <option value="" disabled>Choose a material</option>
+                {#each materials as m (m.name)}<option value={m.name}>{m.name}</option>{/each}
+              </select>
+            {/snippet}
+          </Field>
+
+          <Field id="quote-qty" label="Quantity" size="s" describedby="quote-qty-notice">
+            {#snippet children(f)}
+              <input
+                id={f.id}
+                type="number"
+                min="1"
+                max={maxQty}
+                step="1"
+                bind:value={quantity}
+                onchange={(e) => {
+                  // "1e3" stays on screen as typed; show the number it prices.
+                  const plain = normalizedQuantityText(e.currentTarget.value);
+                  if (plain !== null) e.currentTarget.value = plain;
+                }}
+                required
+                aria-invalid={quantityMessage !== "" ? "true" : undefined}
+                aria-describedby={f.describedby}
+              />
+            {/snippet}
+          </Field>
+          <!-- Outside the field so the message isn't part of its name, and always mounted so the live region
+               announces its text changes (WCAG 1.3.1, 4.1.3). The only place the quantity message appears. -->
+          <p class="clamp-notice" id="quote-qty-notice" role="status">{quantityMessage}</p>
+
 
           {#if hasExactParse}
             {#if weightG !== null && timeSeconds !== null}
@@ -1451,7 +1452,13 @@
             <button type="button" class="quiet remove-file" onclick={clearFile}>Remove file and enter values manually</button>
           {:else}
             <div class="manual-entry">
-              <Field id="quote-weight" label="Model weight (g)" size="s" error={marked("weight") ? issueMessage("weight") : undefined}>
+              <Field
+                id="quote-weight"
+                label="Model weight (g)"
+                size="s"
+                hint="Optional if you upload a 3D file above."
+                error={marked("weight") ? issueMessage("weight") : undefined}
+              >
                 {#snippet children(f)}
                   <input
                     id={f.id}
@@ -1465,7 +1472,10 @@
                   />
                 {/snippet}
               </Field>
-              {@render timeFields("")}
+              {@render timeFields("quote-time-hint")}
+              <small class="field-hint" id="quote-time-hint">
+                Optional if you upload a 3D file above: we'll confirm the print time and price by email.
+              </small>
             </div>
           {/if}
 

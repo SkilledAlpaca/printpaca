@@ -452,3 +452,16 @@ test.describe("P7: a phone's first screen shows an item", () => {
   });
 });
 
+test.describe("P8: the estimate form tells a buyer without a slicer what is optional", () => {
+  test("the upload sits above Material and the weight and print time say they are optional with a file", async ({ page }) => {
+    await page.setExtraHTTPHeaders(xff());
+    await page.goto("/#/estimate");
+    const upload = (await page.getByRole("button", { name: "Choose file" }).boundingBox())!.y;
+    const material = (await page.getByLabel("Material").boundingBox())!.y;
+    expect(upload).toBeLessThan(material);
+    await expect(page.getByLabel(/Model weight/)).toHaveAccessibleDescription(/Optional if you upload a 3D file above/);
+    await expect(page.locator("#quote-time-hint")).toContainText("Optional if you upload a 3D file above");
+    await expect(page.getByLabel(/^Print time \(h/)).toHaveAccessibleDescription(/Optional if you upload/);
+  });
+});
+

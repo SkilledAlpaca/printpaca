@@ -52,6 +52,7 @@
     draft,
     shippingNote = "",
     turnaroundNote = "",
+    dirty: dirtyOut = $bindable(false),
   }: {
     item: PublicItem;
     currency: CurrencyConfig;
@@ -72,6 +73,8 @@
     shippingNote?: string;
     /** shop.turnaroundNote: shown with the total when the owner wrote one. */
     turnaroundNote?: string;
+    /** True while the form holds choices, a quantity or a note (the same rule Escape uses); the shop header link asks before leaving. */
+    dirty?: boolean;
   } = $props();
 
   // groupId -> optionId. Starts empty: a required group shows its "Choose ..." placeholder and an optional one
@@ -110,6 +113,9 @@
   );
   // True once the visitor has chosen an option, changed the quantity or written a note.
   const dirty = $derived(Object.values(selected).some((v) => v !== "") || quantity !== 1 || note !== "");
+  $effect(() => {
+    dirtyOut = dirty;
+  });
   const visibleServerErrors = $derived(serverErrorsFor === formSnapshot ? serverErrors : []);
   const visibleRateLimited = $derived(rateLimited && serverErrorsFor === formSnapshot);
 

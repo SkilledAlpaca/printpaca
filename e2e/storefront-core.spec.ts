@@ -247,7 +247,7 @@ test("accepting orders off: the message replaces every submit, the server refuse
       await expect(page.getByRole("button", { name: new RegExp(ITEM_NAME) })).toHaveCount(0);
       await expect(page.getByRole("button", { name: /place order|request an estimate/i })).toHaveCount(0);
       await expect(page.getByRole("group", { name: "View" })).toHaveCount(0);
-      await expect(page.getByRole("navigation", { name: "Footer" })).toBeVisible();
+      await expect(page.locator("footer.shop-footer").getByRole("link", { name: "Staff sign-in" })).toBeVisible();
     }
   } finally {
     await resetShop(request);

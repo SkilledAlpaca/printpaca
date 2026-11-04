@@ -274,6 +274,18 @@ var migrations = []string{
 	WHERE option_name != '' AND item_id != '' AND EXISTS (SELECT 1 FROM items i, json_each(i.options_json) o
 	  WHERE i.id = item_sales.item_id AND i.option_label != '' AND json_extract(o.value, '$.name') = item_sales.option_name);
 	`,
+
+	// 2 -> 3: optimistic concurrency for items. items.version starts at 1 and the trigger bumps it on
+	// every update, whichever code path wrote the row, so a stale editor save (PUT with the loaded version)
+	// is detectable. recursive_triggers is off, so the trigger's own UPDATE does not re-fire it.
+	`
+	ALTER TABLE items ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+	CREATE TRIGGER items_bump_version AFTER UPDATE ON items
+	WHEN NEW.version = OLD.version
+	BEGIN
+	  UPDATE items SET version = OLD.version + 1 WHERE id = NEW.id;
+	END;
+	`,
 }
 
 // openDB opens the SQLite database in configDir, creating it on first run, and runs pending migrations.

@@ -46,4 +46,32 @@ export const GUIDE_TOPICS: GuideTopic[] = [
     title: "Batches and labor",
     body: "Quantity spreads prep labor and one-time costs across the batch. You see both the per-unit and batch totals.",
   },
+  {
+    id: "requests-finalize-vs-convert",
+    title: "Requests: Finalize or Convert",
+    body: "A request is something a customer sent through the shop: a custom estimate or a shop item order. Finalize means you have dealt with it. It takes the request off your to-do list, records the sale of a shop item, and takes the units out of that item's stock. Finalize does not email the customer, so reply to them yourself. Convert to invoice makes an invoice from the request and creates the client if that email is not on file. Converting also marks the request Invoiced and links it to the invoice, so you do not bill the same request twice. Use Finalize for an order you fulfilled without invoicing, or convert first to bill the customer.",
+  },
+  {
+    id: "shop-items-and-options",
+    title: "Shop items and options",
+    body: "Shop items are the products customers can order from your shop page. A new shop item starts hidden: turn on Public, or press Show in shop after you save, to make it visible. An option group is one choice the customer makes, such as Color or Size. Each group has a group name and a list of choices, and each choice can add or subtract money from the price. Leave Customer must choose one on to force an answer before ordering. Turn it off and the group starts on None. A shop item made to order has no fixed stock. An in-stock item counts down each time you finalize an order for it.",
+  },
+  {
+    id: "spoolman",
+    title: "Spoolman",
+    body: "Spoolman is a separate program that tracks your filament spools. Once an admin adds its address under Integrations in Settings, the Filament page lists your spools, and New quote lets you pick a spool to fill the material cost. The Test button checks the address before or after you save it, including an address set by an environment variable. The material you choose on a quote still sets the density, so pick the matching material as well as the spool.",
+  },
+  {
+    id: "users-and-permissions",
+    title: "Users and permissions",
+    body: "By default, anyone with the admin password has full access. An admin can switch on Multi-user mode in Settings and add staff accounts. Each account is granted whole pages, such as Quotes or Invoices. A staff member sees only the pages they were granted, and Settings shows them only their own password. Editing a quote needs the New quote grant, so a person who has only Quotes can read the list but not open a quote in the editor. If you see a page you can't use, ask an admin to grant it.",
+  },
+];
+
+/** Keyboard shortcuts, shown in the Guide. Each works only on the pages named here; the sidebar footer lists
+ * the ones that work on the page you are on. */
+export const SHORTCUTS: { keys: string; action: string; where: string }[] = [
+  { keys: "Ctrl+S (Cmd+S on Mac)", action: "Save", where: "New quote, Shop items (item editor), Settings, Filament materials, Electricity, Printers" },
+  { keys: "Ctrl+K (Cmd+K on Mac)", action: "Jump to the page's filter box", where: "Quotes, Invoices, Clients, Requests, Shop items, Filament spools, Recent prints on New quote" },
+  { keys: "Esc", action: "Close the open menu or the sidebar drawer", where: "Everywhere" },
 ];

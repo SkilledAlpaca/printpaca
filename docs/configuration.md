@@ -40,7 +40,9 @@ The preset, printer, material, failure rate, and quantity a brand new quote star
 
 ### Business identity
 
-Your business name, logo URL, contact details, tax ID, and how many days a quote stays valid. Printed on quotes and invoices, along with payment instructions and terms text you write here.
+Your business name, logo, contact details, tax ID, and how many days a quote stays valid. Printed on quotes and invoices, along with payment instructions and terms text you write here.
+
+You can paste a logo URL, or upload a PNG, JPG, WebP, or SVG image of up to 64 KB with a preview before you save. An uploaded logo is stored in `config.yaml` as a `data:` URL in `quote.logoUrl`, so backups and the demo carry it with the rest of your settings. Larger pictures are shrunk to fit; an SVG over the limit is refused. **Remove logo** clears it.
 
 The business name and logo also appear on the shop, and in the admin app: the sidebar (and the top bar on a phone) shows them in place of the printpaca name and mark, the browser tab title ends with the name, and a logo that fails to load falls back to the printpaca mark. They update when you save Settings, with no reload. In the admin app, the name and logo are a link to the first tab (usually New quote). The shared footer on every customer page shows your **email**, **phone**, and **address** when you set them here (the `quote.email`, `quote.phone`, and `quote.address` keys in `config.yaml`), as a `mailto:` link, a `tel:` link, and plain text. The footer also shows a **Staff sign-in** link when [`site.staffLink`](#site-settings) or `site.adminUrl` provides one. The tax ID, payment instructions, and terms text stay private.
 
@@ -101,6 +103,8 @@ A few settings live on the tab they affect instead of on the Settings tab itself
 
 ![The Filament tab: material profiles with density, price per kg, waste percentage, and the Public checkbox](screenshots/filament.png)
 
+Material rows are read-only so a stray keystroke can't change what every quote costs. Press **Edit** on a row to change its name, price per kg, waste percentage, or Public checkbox, and **Done** to lock it again. The **Show ID and density (advanced)** checkbox adds the ID and density columns; a wrong density skews every price that uses the material by weight, so change it only when you know the figure.
+
 ![The Printers tab: machine profiles and named presets for failure rate, labor, and overhead](screenshots/printers.png)
 
 ![The Electricity tab: flat-rate, simple time-of-use, or time-of-use schedule pricing for the electricity cost line](screenshots/electricity.png)
@@ -118,7 +122,10 @@ In schedule mode you edit the tariff on the Electricity tab (or Settings):
 - **Default print start** is a 24-hour `HH:MM` time. New orders and public quotes start at the next time that clock time comes round.
 - **Holidays** are dates written `YYYY-MM-DD`, one per line, up to 100. A holiday uses the weekend schedule.
 - **Seasons** (up to 6) each have a name and the months they cover. Every month from 1 to 12 must belong to exactly one season.
-- Each season has a **Weekday** and a **Weekend and holidays** schedule. Each has a base period name and rate, and up to 8 windows with a name, a start, an end (`24:00` is allowed), and a rate. Windows in one schedule can't overlap, and a start must be before its end. Hours outside every window use the base rate.
+- Each season has a **Weekday** and a **Weekend and holidays** schedule. Each has a base period name and rate, and up to 8 windows with a name, a start, an end (`24:00` is allowed), and a rate. Windows in one schedule can't overlap. Hours outside every window use the base rate.
+- A window that runs past midnight, such as 22:00 to 06:00, is accepted. The editor explains that it will be split, and Save turns it into two windows with the same name and rate (22:00 to 24:00 and 00:00 to 06:00), because the server needs each window's start before its end.
+
+The editor writes a problem in your terms, for example "Season 2 › Weekday › Window 1: enter a time like 16:00", marks the fields that need attention, and keeps **Save changes** disabled until the schedule is valid.
 
 Times are wall-clock times in the [time zone](#time-zone) from Settings.
 
@@ -159,7 +166,7 @@ printpaca writes no log files; everything goes to stderr, which Docker collects.
 
 Each integration is opt-in: with its URL unset, the feature is absent from the UI.
 
-You can set each of the three URLs below from the Settings page's **Integrations** card, as an alternative to the environment variable, for operators who can edit `config.yaml` through the UI but not the container's environment. The environment variable wins when both are set, and the card says so on a locked row. A saved URL applies right away, with no restart: printpaca reads the URL on every request. The card labels each row "Configured via environment" (locked), "Configured in settings", or "Not configured", and lists where the integration is used, with links.
+You can set each of the three URLs below from the Settings page's **Integrations** card, as an alternative to the environment variable, for operators who can edit `config.yaml` through the UI but not the container's environment. The environment variable wins when both are set, and the card says so on a locked row. A saved URL applies right away, with no restart: printpaca reads the URL on every request. The card labels each row "Configured via environment" (locked), "Configured in settings", or "Not configured", and lists where the integration is used, with links. **Test** works on a locked row too: it checks the URL the environment variable sets (the request to `POST /api/integrations/test` sends an empty `url`, which the server resolves to the effective URL).
 
 ### Spoolman
 
@@ -280,18 +287,24 @@ Every submission lands in your **Requests** tab for you to review before you con
 
 ## Items gallery
 
-The **Items** tab lets you list ready-made or made-to-order products alongside your quote calculator, so customers can order something directly instead of always requesting a custom estimate.
+The **Shop items** tab (called Items in earlier versions) lets you list ready-made or made-to-order products alongside your quote calculator, so customers can order something directly instead of always requesting a custom estimate.
 
-![The Items tab: a list of ready-made and made-to-order products with price, stock, and the Public toggle](screenshots/items.png)
+![The Shop items tab: a list of ready-made and made-to-order products with price, stock, and the Public toggle](screenshots/items.png)
 
 An item has a name, description, price, an optional image, and optional option groups (see [Option groups](#option-groups)). Uploaded images are stored under `CONFIG_DIR/uploads/items/` and served back to the gallery; deleting an item, or removing an option or its photo, removes the image file too, unless an item photo or another option photo still references the same file (this happens when two uploads have identical image bytes, which share one stored file).
+
+### Saving and editing items
+
+After you save an item, the form shows **Saved.** under the Save button. A new item starts hidden, so the first save says "Saved. Hidden from the shop." with a **Show in shop** button that turns on Public and saves again. Turning **Public** on or off from the list states the result and offers **Undo**. Ctrl+S (⌘S on macOS) saves the open item, and Ctrl+K focuses the list filter, which matches the name and description.
+
+If someone else saves the same item while you have it open (another tab, another browser, or a staff account), your next Save is refused with "This was changed in another tab or by another user." **Reload** discards your edits and shows the stored item. **Overwrite** saves your edits over it. The server counts each item's writes in a `version` that every change moves on, including photo uploads and stock changes from finalized orders. A `PUT /api/items/{id}` that sends the `version` it loaded gets `409 Conflict` when the item has changed since. A request without a `version` is saved as before.
 
 ### Option groups
 
 An option group is one choice the customer makes, such as Color or Size. An item can have up to 5 groups, and a group up to 20 options. In the item's **Options** section:
 
-- **Label** names the group. Labels are unique within an item, ignoring case. Option names are unique within a group.
-- **Required** groups must be answered before the customer can order. The order panel shows a "Choose *label*" placeholder and blocks the order until the customer picks an option. An optional group starts on **None**, which adds nothing to the price.
+- **Group name** names the group. Group names are unique within an item, ignoring case. Choice names are unique within a group.
+- **Customer must choose one** is on by default. A group with it on must be answered before the customer can order: the order panel shows a "Choose *label*" placeholder and blocks the order until the customer picks a choice. With it off, the group starts on **None**, which adds nothing to the price.
 - Each option has a **price adjustment**, positive or negative. The price is the item price plus the adjustments of the selected options, times the quantity. The server computes it, and the cheapest possible selection can't make the price negative.
 - Each option can have a **photo**. The order panel shows the photo of the option the customer changed most recently, or the item photo when none of the selected options has one. The gallery card always shows the item photo. Photos upload after you save the item, the same as the item photo. A new option shows a note until you save.
 - **Move up** and **Move down** reorder groups and options. The customer sees them in this order, and focus stays on the button you pressed.
@@ -311,7 +324,7 @@ Each item uses one of two stock modes:
 
 ### The public flag
 
-An item only appears on the public gallery once you check its **Public** column on the Items tab, the same opt-in pattern the Filament tab uses for materials on the [public quote page](#public-quote-page). New items default to not public.
+An item only appears on the public gallery once you check **Public** in its form, or its **Public** checkbox in the Shop items list, the same opt-in pattern the Filament tab uses for materials on the [public quote page](#public-quote-page). New items default to not public.
 
 ### Ordering flow
 

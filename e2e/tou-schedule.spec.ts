@@ -33,7 +33,7 @@ test.describe.serial("time-of-use schedule", () => {
     await page.getByLabel("Mode").selectOption("schedule");
 
     // The empty schedule is flagged until a season exists.
-    await expect(page.getByRole("list", { name: "Schedule problems" })).toContainText("seasons");
+    await expect(page.getByRole("list", { name: "Schedule problems" })).toContainText(/season/i);
 
     await expect(page.getByText(/rates are examples, not SCE's published rates/)).toBeVisible();
     await page.getByRole("button", { name: "Load SCE TOU-D-4-9PM example" }).click();
@@ -44,7 +44,7 @@ test.describe.serial("time-of-use schedule", () => {
     // A second load replaces a schedule, so it asks first; Cancel keeps the edit.
     await page.getByLabel("Season 1 Weekday window 1 rate").fill("0.6");
     await page.getByRole("button", { name: "Load SCE TOU-D-4-9PM example" }).click();
-    const replace = page.getByRole("button", { name: "Replace with example" });
+    const replace = page.getByRole("button", { name: "Yes, replace with example" });
     await expect(replace).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "Load SCE TOU-D-4-9PM example" })).toBeFocused();

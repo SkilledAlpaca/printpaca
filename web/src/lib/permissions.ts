@@ -26,7 +26,7 @@ export const GRANTABLE_TAB_LABELS: Record<GrantableTabKey, string> = {
   quotes: "Quotes",
   requests: "Requests",
   invoices: "Invoices",
-  items: "Items",
+  items: "Shop items",
   clients: "Clients",
   dashboard: "Dashboard",
   filament: "Filament",
@@ -64,6 +64,22 @@ export function hasTabAccess(id: string, user: ConfigUser | null | undefined): b
   if (!user || user.isAdmin) return true;
   if (!isGrantableTab(id)) return true;
   return user.permissions.includes(id);
+}
+
+/** Whether `user` can use the quote editor. Pricing in the editor calls POST /api/quote/compute, which the
+ * server gates on the "quote" grant (server/static.go), separately from the "quotes" grant that covers the
+ * saved-quote list. A user holding only "quotes" can list, filter and read saved quotes but not edit or
+ * create them, so the UI hides New quote and Open in editor for them instead of leading to "No access".
+ * The New quote nav entry follows the same grant (hasTabAccess), so nav and buttons agree. */
+export function canEditQuotes(user: ConfigUser | null | undefined): boolean {
+  return hasTabAccess("quote", user);
+}
+
+/** Whether `user` may open Settings' admin cards (integrations, users, email). Settings itself is open to
+ * everyone (employees get the Account card only), so setup links elsewhere ("Set it up in Settings") should
+ * show only when this is true, and read "Ask an admin" otherwise. */
+export function canConfigureShop(user: ConfigUser | null | undefined): boolean {
+  return !user || user.isAdmin;
 }
 
 /** Mirrors the server gate on GET /api/settings (requireAnyPermission: filament, electricity or printers).

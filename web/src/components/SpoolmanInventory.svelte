@@ -268,8 +268,12 @@
 
   {#if !cfg.integrations.spoolman}
     <p class="hint">
-      Connect Spoolman to see and manage your spools here and to pick a spool on New quote. Enter your Spoolman URL
-      under Integrations in <a href="#/settings">Settings</a>; it applies as soon as you save.
+      Connect Spoolman to see and manage your spools here and to pick a spool on New quote.
+      {#if cfg.user.isAdmin}
+        Enter your Spoolman URL under Integrations in <a href="#/settings">Settings</a>; it applies as soon as you save.
+      {:else}
+        Ask an admin to connect it.
+      {/if}
     </p>
   {:else}
     {#if cfg.demoMode}
@@ -372,7 +376,7 @@
               <th scope="col">Material</th>
               <th scope="col">Colour</th>
               <th scope="col">Remaining (g)</th>
-              <th scope="col">Price</th>
+              <th scope="col">Price (per spool)</th>
               <th scope="col">Location</th>
               <th scope="col">State</th>
               {#if canWrite}<th scope="col"><span class="visually-hidden">Actions</span></th>{/if}
@@ -404,7 +408,7 @@
                     {#if s.archived === true}
                       <button type="button" class="quiet" data-focus-key={`spool-${s.id}-archive`} aria-label={`Unarchive spool ${s.id}`} onclick={() => unarchive(s.id)}>Unarchive</button>
                     {:else if confirmingArchive === s.id}
-                      <button type="button" class="danger" onclick={() => archive(s.id)} use:confirmFocus={{ restore: keySelector(`spool-${s.id}-archive`), cancel: () => (confirmingArchive = null) }}>Archive spool {s.id}?</button>
+                      <button type="button" onclick={() => archive(s.id)} use:confirmFocus={{ restore: keySelector(`spool-${s.id}-archive`), cancel: () => (confirmingArchive = null) }}>Yes, archive spool {s.id}</button>
                       <button type="button" onclick={() => (confirmingArchive = null)}>Cancel</button>
                     {:else}
                       <button type="button" class="quiet" data-focus-key={`spool-${s.id}-archive`} aria-label={`Archive spool ${s.id}`} onclick={() => (confirmingArchive = s.id)}>Archive</button>

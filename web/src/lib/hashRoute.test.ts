@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitHash, syncDetail } from "./hashRoute";
+import { quoteIdFromHash, routeBase, splitHash, syncDetail } from "./hashRoute";
 
 describe("splitHash", () => {
   it("returns the whole hash as base with no fragment when there's no second #", () => {
@@ -62,5 +62,20 @@ describe("syncDetail", () => {
     let closed = false;
     syncDetail(INVOICES, INVOICES, null, false, () => {}, () => (closed = true));
     expect(closed).toBe(false);
+  });
+});
+
+describe("quote editor routes", () => {
+  it("reads the saved-quote id from #/quote/<id>", () => {
+    expect(quoteIdFromHash("#/quote/abc123")).toBe("abc123");
+    expect(quoteIdFromHash("#/quote")).toBeNull();
+    expect(quoteIdFromHash("#/quotes")).toBeNull();
+    expect(quoteIdFromHash("#/invoices#abc")).toBeNull();
+  });
+  it("routes #/quote/<id> to the quote tab and leaves other hashes alone", () => {
+    expect(routeBase("#/quote/abc123")).toBe("#/quote");
+    expect(routeBase("#/quote")).toBe("#/quote");
+    expect(routeBase("#/quotes")).toBe("#/quotes");
+    expect(routeBase("#/guide")).toBe("#/guide");
   });
 });

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { filterNavSections, type NavSection } from "./navFilter";
 import {
+  canConfigureShop,
+  canEditQuotes,
   canReadSettings,
   extractConfigUser,
   GRANTABLE_TAB_KEYS,
@@ -129,5 +131,22 @@ describe("extractConfigUser", () => {
   it("returns null while the config hasn't loaded", () => {
     expect(extractConfigUser(null)).toBeNull();
     expect(extractConfigUser(undefined)).toBeNull();
+  });
+});
+
+describe("canEditQuotes", () => {
+  it("needs the quote grant, not the quotes list grant", () => {
+    expect(canEditQuotes(admin)).toBe(true);
+    expect(canEditQuotes(null)).toBe(true);
+    expect(canEditQuotes(employee(["quotes"]))).toBe(false);
+    expect(canEditQuotes(employee(["quote", "quotes"]))).toBe(true);
+  });
+});
+
+describe("canConfigureShop", () => {
+  it("is true for an admin or an unloaded user and false for an employee", () => {
+    expect(canConfigureShop(admin)).toBe(true);
+    expect(canConfigureShop(undefined)).toBe(true);
+    expect(canConfigureShop(employee(["quote", "filament"]))).toBe(false);
   });
 });

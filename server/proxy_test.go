@@ -745,3 +745,24 @@ func TestMoonrakerProxyAllowsPrinterInfo(t *testing.T) {
 		}
 	}
 }
+
+// An empty url tests the effective URL (environment first), so the Settings card can test an
+// environment-set URL it can't display; with no URL anywhere it's a 400.
+func TestIntegrationsTestEmptyURLUsesEffectiveURL(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`[{"id":1}]`))
+	}))
+	defer backend.Close()
+
+	mux := newTestMux(t, t.TempDir())
+	rec := serveReq(mux, httptest.NewRequest("POST", "/api/integrations/test", strings.NewReader(`{"kind":"spoolman","url":""}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("no URL anywhere: status = %d, want 400; body %s", rec.Code, rec.Body.String())
+	}
+
+	t.Setenv("SPOOLMAN_URL", backend.URL)
+	rec = serveReq(mux, httptest.NewRequest("POST", "/api/integrations/test", strings.NewReader(`{"kind":"spoolman","url":""}`)))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"ok":true`) {
+		t.Fatalf("env URL: status = %d body %s, want 200 ok", rec.Code, rec.Body.String())
+	}
+}

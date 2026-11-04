@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GUIDE_TOPICS, TILE_HELP, TILE_IDS } from "./guideContent";
+import { GUIDE_TOPICS, SHORTCUTS, TILE_HELP, TILE_IDS } from "./guideContent";
 
 // The em dash is written as an escape so this file doesn't trip the repo-wide em-dash sweep.
 const EM_DASH = "\u2014";
@@ -32,5 +32,18 @@ describe("GUIDE_TOPICS", () => {
   it("has unique ids", () => {
     const ids = GUIDE_TOPICS.map((t) => t.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe("guide coverage", () => {
+  it("documents requests, shop items, Spoolman and users", () => {
+    const ids = GUIDE_TOPICS.map((t) => t.id);
+    for (const id of ["requests-finalize-vs-convert", "shop-items-and-options", "spoolman", "users-and-permissions"]) {
+      expect(ids).toContain(id);
+    }
+  });
+  it("lists the save and filter shortcuts without em dashes", () => {
+    expect(SHORTCUTS.map((s) => s.action)).toEqual(expect.arrayContaining(["Save", "Jump to the page's filter box"]));
+    for (const sc of SHORTCUTS) expect(`${sc.keys}${sc.action}${sc.where}`).not.toContain(EM_DASH);
   });
 });

@@ -3,7 +3,8 @@
 // only picks the scheme and sets four custom properties on <html>. The admin app never loads this module.
 //
 // Set through the CSSOM (style.setProperty) rather than an injected <style> element: the public listener's CSP
-// has no 'unsafe-inline' for styles. The scheme follows the OS preference, or an explicit data-theme on <html>.
+// has no 'unsafe-inline' for styles. The scheme follows the OS preference, or an explicit data-theme on <html> (the server sets it from the pp_theme
+// cookie, and the shop's theme toggle changes it; a MutationObserver re-applies the matching variant).
 import type { PublicShop } from "./api";
 
 type ShopAccent = NonNullable<PublicShop["accent"]>;
@@ -46,8 +47,12 @@ export function applyShopAccent(accent: ShopAccent | null, root: HTMLElement = d
   };
   apply();
   mq.addEventListener("change", apply);
+  // The shop's theme toggle (D53) changes data-theme on <html>; re-apply so the matching variant follows at once.
+  const mo = new MutationObserver(apply);
+  mo.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
   return () => {
     mq.removeEventListener("change", apply);
+    mo.disconnect();
     for (const name of set) root.style.removeProperty(name);
   };
 }

@@ -84,6 +84,7 @@
   import Fieldset from "../components/ui/Fieldset.svelte";
   import CategoryChips from "./CategoryChips.svelte";
   import ClosedPage from "./ClosedPage.svelte";
+  import ShopThemeToggle from "./ShopThemeToggle.svelte";
   import ContactDetails from "./ContactDetails.svelte";
   import ItemGallery from "./ItemGallery.svelte";
   import PublicFooter from "./PublicFooter.svelte";
@@ -1126,7 +1127,9 @@
       branding={cfg.branding}
       notice={refusedNoticeText}
       homeHref={location.pathname + location.search}
-    />
+    >
+      {#snippet actions()}<ShopThemeToggle />{/snippet}
+    </ClosedPage>
   {:else if cfg}
     <header class="brand">
       <!-- Custom logo (quote.logoUrl) when set, else the project mark. Decorative next to the <h1>
@@ -1137,6 +1140,7 @@
           <span class="brand-name">{cfg.branding.businessName || "printpaca"}</span>
         </a>
       </h1>
+      <ShopThemeToggle />
     </header>
     {#if cfg.demoMode}
       <p class="banner-muted demo-banner">
@@ -1650,7 +1654,7 @@
     gap: var(--space-3);
   }
   .brand .logo { height: 2.5rem; width: auto; }
-  .brand h1 { margin: 0; overflow-wrap: anywhere; }
+  .brand h1 { margin: 0; overflow-wrap: anywhere; min-width: 0; }
   /* D45: logo and name are one link; the look is unchanged apart from a hover underline and a focus ring. */
   .brand-link { display: inline-flex; align-items: center; gap: var(--space-3); color: inherit; text-decoration: none; min-height: 44px; border-radius: var(--radius); }
   .brand-link:hover .brand-name { text-decoration: underline; text-underline-offset: 0.15em; }

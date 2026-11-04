@@ -13,6 +13,7 @@
     "web/src/public/ItemGallery.svelte",
     "web/src/public/PublicFooter.svelte",
     "web/src/public/ClosedPage.svelte",
+    "web/src/public/ShopThemeToggle.svelte",
     "web/src/public/ContactDetails.svelte",
     "web/src/public/CategoryChips.svelte",
     "web/src/public/ShopHero.svelte",

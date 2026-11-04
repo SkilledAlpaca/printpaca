@@ -84,10 +84,6 @@ type QuoteRequest struct {
 	InvoiceID     string `json:"invoiceId"`
 	InvoiceNumber string `json:"invoiceNumber"`
 	InvoiceStatus string `json:"invoiceStatus"`
-
-	// NeedsPrintTime marks a public estimate submitted without a print time: priceCents and timeSeconds are 0
-	// until the owner enters the time (handlePrintTime).
-	NeedsPrintTime bool `json:"needsPrintTime"`
 }
 
 // quoteRequestStatusTransitions allows only viewed->finalized (the owner must look first). Others are a 409.

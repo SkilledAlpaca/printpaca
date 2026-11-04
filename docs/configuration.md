@@ -359,6 +359,40 @@ All file parsing happens in your browser. On the New quote page, no file is ever
 
 Retention and the storage cap follow the [Operational limits](#operational-limits) above.
 
+## Numeric limits
+
+Every numeric cap is enforced on the server and mirrored in `config/config.schema.json`, `web/src/lib/settingsRules.ts`, and the input `max` attributes, so a value the UI accepts is never rejected on save. Public-page copy such as "Max 10000 per order." is built from the same constant. A cap is raised only where the larger value is plausible. Mathematical limits stay.
+
+| Limit | Old | New | Reason |
+|---|---|---|---|
+| `pricing.markupMultiplier` (`maxMarkupMultiplier`) | 1000 | 10000 | Owner request. A 10000x markup is extreme but legal. Saturating cent arithmetic stops overflow; see [Input bounds](formulas.md#input-bounds). |
+| Printer `watts` (`maxPrinterWatts`) | 5000 | 10000 | Industrial and multi-printer rigs exceed 5 kW. |
+| Gallery item order quantity (`maxItemOrderQty`), also the invoice item-line quantity | 100 | 10000 | Bulk orders. Stock still caps an in-stock item without backorder. |
+| Public quote and request quantity (`maxPublicQuoteQty`) | 1000 | 10000 | Production runs. The 32 MiB upload cap and rate limits still guard abuse. |
+| `invoicing.salesTaxPct` and invoice `taxBp` | 30% (3000 bp) | 100% (10000 bp) | A percentage can't mathematically exceed 100. |
+| `invoicing.dueDays` | 365 | 10000 | About 27 years. Long net terms are plausible, and the date math has no limit near it. |
+| `pricing.marginPct` | 99.9 | 99.9 (kept) | Mathematical. The price is cost / (1 - margin), which is undefined at 100. |
+| `failureRatePct` (defaults, presets, quotes) | 90 | 90 (kept) | Mathematical. The failure buffer grows as p / (1 - p) and is undefined at 100. |
+| `taxRatePct`, `wastePct`, fee `pct` | 100 | 100 (kept) | Percentages. |
+| `timeMinutes`, public time-minutes input | 59 | 59 (kept) | The minutes remainder. 60 or more belongs in hours. |
+| `offPeakFrac` | 1 | 1 (kept) | A fraction of time. |
+| `currency.decimals` | 4 | 4 (kept) | Display precision, not a magnitude. |
+| `smtp.port` | 65535 | 65535 (kept) | TCP port range. |
+| Filament `diameterMm`, `density` | 5, 25 | 5, 25 (kept) | Physical ranges. |
+| `weightG` (quotes and the public form) | 100000 | 100000 (kept) | Already above 10000 (100 kg). |
+| `timeHours`, `machineLifeHours`, `monthlyHours` | 100000 | 100000 (kept) | Already above 10000. |
+| Public print time (`maxTimeSeconds`) | 30 days | 30 days (kept) | A public abuse guard. A job longer than a month needs a conversation. |
+| `quantity`, `hardware[i].qtyPerUnit`, invoice and quote line quantity | 100000 | 100000 (kept) | Already above 10000. |
+| Money inputs (`maxMoneyAmount`) | 1,000,000,000 | 1,000,000,000 (kept) | Already above 10000. |
+| Cents on a stored price, invoice line, discount, payment, or option delta | 100,000,000 (1,000,000.00) | 100,000,000 (kept) | Already above 10000. Keeps invoice sums far from `int64`. |
+| Item `stockQty` | 1,000,000 | 1,000,000 (kept) | Already above 10000. |
+| Collection sizes: materials, printers, hardware, presets, fee schedules | 200 | 200 (kept) | Counts, not values. Bounds the startup parse. |
+| Option groups per item, options per group | 5, 20 | 5, 20 (kept) | Counts that bound page layout. |
+| Order parts, invoice lines, payment methods | 20, 100, 20 | 20, 100, 20 (kept) | Counts that bound page layout and body size. |
+| Pagination page size | 500 | 500 (kept) | Response size guard. |
+| Top-items window | 30, 90, 365 | 30, 90, 365 (kept) | A fixed set of choices, not a range. |
+| Text, upload, and rate limits | - | unchanged (kept) | Abuse guards; see [Operational limits](#operational-limits). |
+
 ## The config file
 
 Everything is optional. Copy [`config/config.example.yaml`](../config/config.example.yaml) into your mounted config directory as `config.yaml`, then uncomment only what you want to change. An empty or fully commented file runs on defaults. [`config/config.schema.json`](../config/config.schema.json) is a JSON Schema (draft-07) for editor autocomplete; point your editor at it with a `# yaml-language-server: $schema=./config.schema.json` comment.
@@ -370,7 +404,7 @@ printpaca merges `config.yaml` over the built-in defaults:
 - **Arrays** (`materials`, `printers`, `hardware`, `invoicing.paymentMethods`, `ui.disabledTabs`) replace the default list wholesale. If you set one, list every entry you want. `paymentMethods` is the usual trap: setting it drops the four built-in methods (cash, bank transfer, PayPal, other), and validation then requires 1-20 entries.
 - A `config.yaml` with more than one YAML document (a second `---`) is rejected at startup.
 
-At startup the server validates the merged configuration and, on a problem, exits with a path-level error such as `defaults.material: "abs" not in materials`. These numeric fields have hard range checks that crash-loop the container when violated: `currency.decimals` (0-4), `pricing.marginPct` (0-99.9), `pricing.markupMultiplier` (0-1000), material `density` (> 0) and `wastePct` (0-100), printer `filamentDiameterMm` (> 0), `defaults.quantity` (>= 1), `invoicing.salesTaxPct` (0-30), `invoicing.dueDays` (0-365), hardware `unitCost` (>= 0), and `smtp.port` (1-65535, checked only when `smtp.host` is set). [`config.schema.json`](../config/config.schema.json) lists the complete set. A schedule that breaks the rules in [Time-of-use schedule](#time-of-use-schedule) also fails at startup. Other rate-like values, such as a negative flat energy rate or labor rate, are accepted at startup; the calculator shows a field warning on the affected line. `defaults.failureRatePct` and each preset `failureRatePct` also have a hard range check (0-90).
+At startup the server validates the merged configuration and, on a problem, exits with a path-level error such as `defaults.material: "abs" not in materials`. These numeric fields have hard range checks that crash-loop the container when violated: `currency.decimals` (0-4), `pricing.marginPct` (0-99.9), `pricing.markupMultiplier` (0-10000), material `density` (> 0) and `wastePct` (0-100), printer `filamentDiameterMm` (> 0), `defaults.quantity` (>= 1), `invoicing.salesTaxPct` (0-100), `invoicing.dueDays` (0-10000), hardware `unitCost` (>= 0), and `smtp.port` (1-65535, checked only when `smtp.host` is set). [`config.schema.json`](../config/config.schema.json) lists the complete set. A schedule that breaks the rules in [Time-of-use schedule](#time-of-use-schedule) also fails at startup. Other rate-like values, such as a negative flat energy rate or labor rate, are accepted at startup; the calculator shows a field warning on the affected line. `defaults.failureRatePct` and each preset `failureRatePct` also have a hard range check (0-90).
 
 The Settings page edits this configuration through `GET`/`PUT /admin/api/settings` with the same validation. A save writes `config.yaml` as sparse overrides, keeps the previous file as `config.yaml.bak`, drops comments, and applies immediately with no restart.
 

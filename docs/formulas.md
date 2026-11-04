@@ -104,7 +104,7 @@ The bound doesn't protect `1 ÷ (1 − margin%)` mid-quote: `recommendedPrice` i
 
 ### Markup ceiling
 
-`markupMultiplier` has the same one-ceiling rule at 1000 inclusive (`maxMarkupMultiplier`), agreed by `server/pricing.go`, `server/config.go`, `web/src/lib/settingsRules.ts`, and `config/config.schema.json`'s `maximum`, and pinned together by `server/config_test.go`. The multiplier is a plain product with no singularity, so the ceiling catches operator mistakes rather than protecting a formula. With the saturating arithmetic in [Input bounds](#input-bounds), it keeps `recommendedPrice` and `revenue` non-negative for any accepted multiplier.
+`markupMultiplier` has the same one-ceiling rule at 10000 inclusive (`maxMarkupMultiplier`), agreed by `server/pricing.go`, `server/config.go`, `web/src/lib/settingsRules.ts`, and `config/config.schema.json`'s `maximum`, and pinned together by `server/config_test.go`. The multiplier is a plain product with no singularity, so the ceiling catches operator mistakes rather than protecting a formula. With the saturating arithmetic in [Input bounds](#input-bounds), it keeps `recommendedPrice` and `revenue` non-negative for any accepted multiplier.
 
 ### Sale price override
 
@@ -123,14 +123,16 @@ Every money, quantity, and duration input carries an inclusive plausibility maxi
 | `timeHours`, `machineLifeHours`, `monthlyHours` | 100000 | `maxHoursInput` |
 | `prepMinutes` | 6,000,000 | `maxMinutesInput` (`maxHoursInput × 60`) |
 | `quantity`, `hardware[i].qtyPerUnit` | 100000 | `maxQuantity` |
-| `watts` | 5000 | `maxPrinterWatts` |
+| `watts` | 10000 | `maxPrinterWatts` |
 | Schedule: seasons, windows per day type, holidays | 6, 8, 100 | `maxScheduleSeasons`, `maxScheduleWindows`, `maxScheduleHolidays`; schedule rates are also capped at `maxMoneyAmount` |
 | `offPeakFrac` (simple `tou` mode only) | 1 | Rejected above 1 like any bound, and also clamped to [0, 1] inside `effectiveRate` (see [Cost per unit](#cost-per-unit)), so an invalid `offPeakFrac = 1.5` never extrapolates the blended rate past pure off-peak or peak. |
-| `markupMultiplier` | 1000 | `maxMarkupMultiplier`, see [Markup ceiling](#markup-ceiling) above |
+| `markupMultiplier` | 10000 | `maxMarkupMultiplier`, see [Markup ceiling](#markup-ceiling) above |
 | `hardware` (array length, admin quotes only) | 200 | `maxConfigCollectionSize`, shared with the `config.yaml` hardware catalog's limit |
 | `timeMinutes` | **59** | Semantic, not a plausibility bound: it is the minutes remainder, so 60 or more belongs in `timeHours`. `timeMinutes = 60` blanks the quote with an above-max warning. `splitPublicSeconds` in `server/public.go` converts raw seconds into an hours and minutes pair that never trips it. |
 
 Bounds make an absurd magnitude on one field a named field error. They don't bound every product or sum built from several fields: `perUnitTotal`, `batchTotal`, `itemRevenue`, the fee total, and `netProfit` can exceed `int64` from inputs that are each within their maximum. For example, `monthlyFixed` 1e9 ÷ `monthlyHours` 1 × `timeHours` 1e5 reaches about 1e16 cents on the overhead line. A bare `int64(x)` conversion of an out-of-range float64 is implementation-defined in Go and wraps a huge positive amount into a large negative one on amd64.
+
+See [Numeric limits](configuration.md#numeric-limits) for every cap in the app, including the ones outside the quote engine.
 
 **Saturating arithmetic** prevents that wrap. `roundCents` (every line and every price, fee, and tax figure) and the integer-domain `addCents`, `subCents`, and `mulCents` (batch and revenue totals, fee sums, net profit) clamp at ±`maxCents` (`int64`'s maximum magnitude). In-range values, and so every frozen golden vector, are unaffected. A quote can still report `Valid: true` while overstating an absurd magnitude, but it can never report a negative total, revenue, or price from individually legal inputs.
 
@@ -251,7 +253,7 @@ total           = max(0, subtotal − invoiceDiscountCents) + tax
 - **What the totals rows show.** The invoice editor, the sent view, and the printed invoice list the totals in the same rows: **Subtotal** (the item lines), **Shipping** (the shipping-kind lines, only when there are any), **Discount** (the invoice discount, shown as a negative, only when there is one), **Tax**, and **Total**. Subtotal plus Shipping minus Discount plus Tax equals Total, except when a discount larger than the invoice clamps the total at zero.
 - **Money inputs.** The editor refuses a unit price, line discount, invoice discount, or payment with more than two decimal places, and a line quantity of zero or less, before it sends anything, so a sub-cent value is never rounded away silently. The server enforces the same bounds.
 - **Versions.** Every invoice carries a `version` that starts at 1 and goes up by one on every write to the invoice (an edit, a status change, a send, or a payment that changes its status). A `PUT` that carries a `version` other than the current one is refused with a 409 ("This was changed in another tab or by another user."), and the editor offers **Reload** and **Overwrite**. A `PUT` with no `version` is accepted, for API callers that predate the field.
-- **Tax rate.** `taxBp` is the rate in basis points, 0 to 3000. A new invoice that doesn't send `taxBp` takes `invoicing.salesTaxPct`. This is sales tax added on top; it is not the same setting as `pricing.taxRatePct`, which is already inside a quoted price.
+- **Tax rate.** `taxBp` is the rate in basis points, 0 to 10000. A new invoice that doesn't send `taxBp` takes `invoicing.salesTaxPct`. This is sales tax added on top; it is not the same setting as `pricing.taxRatePct`, which is already inside a quoted price.
 - **Where `taxBp` is 0.** A quote or public request whose price already included tax converts with `taxBp = 0`, so the invoice doesn't add the tax a second time. See [Request to invoice](#request-to-invoice).
 
 ## Payments and balance

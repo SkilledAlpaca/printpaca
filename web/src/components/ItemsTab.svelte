@@ -492,7 +492,7 @@
     const g = form.groups[gi];
     if (!g) return;
     g.options = g.options.filter((_, idx) => idx !== i);
-    announce("Option removed.");
+    announce("Choice removed.");
     // The removed row held focus; move to the next option's Remove button, else Add option.
     void focusAfterRowRemoval(`remove-option-${gi}`, i, g.options.length, `add-option-${gi}`);
   }
@@ -503,7 +503,7 @@
     const o = moved[i + delta];
     if (moved === g.options || !o) return;
     g.options = moved;
-    announce(`${o.name.trim() || `Option ${i + 1}`} moved to position ${i + delta + 1} of ${moved.length}.`);
+    announce(`${o.name.trim() || `Choice ${i + 1}`} moved to position ${i + delta + 1} of ${moved.length}.`);
     void focusAfterUpdate(keySelector(`${delta < 0 ? "option-up" : "option-down"}-${g.key}-${o.key}`));
   }
 
@@ -531,7 +531,7 @@
     try {
       detail = await uploadOptionImage(detailId, o.id, await downscaleImage(file));
       await refresh();
-      announce(`Photo uploaded for ${o.name.trim() || "the option"}.`);
+      announce(`Photo uploaded for ${o.name.trim() || "the choice"}.`);
     } catch (err) {
       optionImageError = err instanceof Error ? err.message : "Couldn't upload image.";
     } finally {
@@ -545,7 +545,7 @@
     try {
       detail = await deleteOptionImage(detailId, o.id);
       await refresh();
-      announce(`Photo removed from ${o.name.trim() || "the option"}.`);
+      announce(`Photo removed from ${o.name.trim() || "the choice"}.`);
       await focusAfterUpdate(keySelector(`option-photo-${o.key}`));
     } catch (err) {
       optionImageError = err instanceof Error ? err.message : "Couldn't remove the photo.";
@@ -773,10 +773,10 @@
                     <small class="field-hint">Save the item first to add a photo.</small>
                   {:else}
                     {#if photo}
-                      <img class="option-thumb" src={"item-images/" + photo} alt={`Photo of ${opt.name.trim() || "option"}`} />
+                      <img class="option-thumb" src={"item-images/" + photo} alt={`Photo of ${opt.name.trim() || "choice"}`} />
                     {/if}
                     <label class="file-label">
-                      <span class="visually-hidden">{photo ? "Replace" : "Add"} photo for group {gi + 1} option {i + 1}{opt.name.trim() ? ` (${opt.name.trim()})` : ""}</span>
+                      <span class="visually-hidden">{photo ? "Replace" : "Add"} photo for group {gi + 1} choice {i + 1}{opt.name.trim() ? ` (${opt.name.trim()})` : ""}</span>
                       <input
                         type="file"
                         accept="image/jpeg,image/png,image/webp"
@@ -787,14 +787,14 @@
                       />
                     </label>
                     {#if photo}
-                      <button type="button" aria-label={`Remove photo from group ${gi + 1} option ${i + 1}`} onclick={() => removeOptionPhoto(opt)}>Remove photo</button>
+                      <button type="button" aria-label={`Remove photo from group ${gi + 1} choice ${i + 1}`} onclick={() => removeOptionPhoto(opt)}>Remove photo</button>
                     {/if}
                   {/if}
                 </div>
                 <div class="reorder">
                   <button
                     type="button"
-                    aria-label={`Move group ${gi + 1} option ${i + 1}${opt.name.trim() ? ` (${opt.name.trim()})` : ""} up`}
+                    aria-label={`Move group ${gi + 1} choice ${i + 1}${opt.name.trim() ? ` (${opt.name.trim()})` : ""} up`}
                     aria-disabled={i === 0}
                     data-focus-key={`option-up-${g.key}-${opt.key}`}
                     onclick={() => moveOption(gi, i, -1)}
@@ -803,7 +803,7 @@
                   </button>
                   <button
                     type="button"
-                    aria-label={`Move group ${gi + 1} option ${i + 1}${opt.name.trim() ? ` (${opt.name.trim()})` : ""} down`}
+                    aria-label={`Move group ${gi + 1} choice ${i + 1}${opt.name.trim() ? ` (${opt.name.trim()})` : ""} down`}
                     aria-disabled={i === g.options.length - 1}
                     data-focus-key={`option-down-${g.key}-${opt.key}`}
                     onclick={() => moveOption(gi, i, 1)}
@@ -811,11 +811,11 @@
                     <Icon path={mdiArrowDown} size={16} />
                   </button>
                 </div>
-                <button type="button" aria-label={`Remove group ${gi + 1} option ${i + 1}`} data-focus-key={`remove-option-${gi}-${i}`} onclick={() => removeOption(gi, i)}>Remove</button>
+                <button type="button" aria-label={`Remove group ${gi + 1} choice ${i + 1}`} data-focus-key={`remove-option-${gi}-${i}`} onclick={() => removeOption(gi, i)}>Remove</button>
               </div>
             {/each}
             <button type="button" data-focus-key={`add-option-${gi}`} aria-disabled={g.options.length >= MAX_OPTIONS_PER_GROUP} onclick={() => addOption(gi)}>Add choice</button>
-            {#if g.options.length >= MAX_OPTIONS_PER_GROUP}<small class="field-hint">A group has at most {MAX_OPTIONS_PER_GROUP} options.</small>{/if}
+            {#if g.options.length >= MAX_OPTIONS_PER_GROUP}<small class="field-hint">A group has at most {MAX_OPTIONS_PER_GROUP} choices.</small>{/if}
           </fieldset>
         {/each}
         {#if optionImageError}<p class="banner-warn" role="alert">{optionImageError}</p>{/if}

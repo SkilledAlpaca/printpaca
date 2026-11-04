@@ -135,26 +135,25 @@
     <div class="field-rows">
       <label class="field">
         <span>Date</span>
-        <input type="date" aria-label="Payment date" bind:value={paymentForm.paidDate} />
+        <input type="date" bind:value={paymentForm.paidDate} />
       </label>
       <label class="field">
         <span>Amount ({cfg.currency.symbol})</span>
-        <input type="number" min="0.01" step="0.01" aria-label="Payment amount" bind:value={paymentForm.amount} />
+        <input type="number" min="0.01" step="0.01" bind:value={paymentForm.amount} />
       </label>
       <label class="field">
         <span>Method</span>
-        <select aria-label="Payment method" bind:value={paymentForm.method}>
+        <select bind:value={paymentForm.method}>
           {#each cfg.invoicing.paymentMethods as m (m)}<option value={m}>{m}</option>{/each}
         </select>
       </label>
       <label class="field">
         <span>Note</span>
-        <input aria-label="Payment note" bind:value={paymentForm.note} />
+        <input bind:value={paymentForm.note} />
       </label>
       <label class="field">
         <span>Reference (optional)</span>
         <input
-          aria-label="Payment reference"
           placeholder="Square #4821"
           bind:value={paymentForm.reference}
         />

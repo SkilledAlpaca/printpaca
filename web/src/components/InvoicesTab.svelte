@@ -1,7 +1,7 @@
 <script lang="ts">
   import { canLeave, escapeBelongsToField } from "../lib/unsavedGuard";
   import { unsavedForm } from "../lib/unsavedForm.svelte";
-  import type { ConfigUser } from "../lib/permissions";
+  import { hasTabAccess, type ConfigUser } from "../lib/permissions";
   import { registerPageSave } from "../lib/pageShortcuts.svelte";
   import { onMount, tick, untrack } from "svelte";
   import { toCents, type EffectiveConfig } from "../lib/engine/index";
@@ -23,7 +23,7 @@
   } from "../lib/invoicesApi";
   import { sendInvoiceEmail } from "../lib/sendApi";
   import { printJob, invoicePrintJob, consumePendingOpen } from "../lib/state.svelte";
-  import { syncDetail } from "../lib/hashRoute";
+  import { syncDetail, invoiceHash } from "../lib/hashRoute";
   import { refetchLimit, INITIAL_PAGE_LIMIT } from "../lib/pagination";
   import { createBackfillController } from "../lib/backfillController.svelte";
   import {
@@ -35,6 +35,7 @@
     defaultPaymentForm,
     invoiceFormProblems,
     paymentFormProblems,
+    followBalanceAmount,
     type InvoiceForm,
     type PaymentForm,
   } from "../lib/invoiceForm";
@@ -155,6 +156,8 @@
   }
 
   async function loadItems() {
+    // Without the Shop items grant GET /api/items is a 403: skip it and leave the item picker out.
+    if (!hasTabAccess("items", user)) return;
     const loaded = await listItems();
     if (loaded) items = loaded;
   }
@@ -163,7 +166,7 @@
     refresh();
     void loadClients(); // not awaited: must not delay the pending-open flow below
     void loadItems(); // likewise: the line editor's item picker
-    // Quote conversion (HistoryPanel's "Convert to invoice") and a "#/invoices#<id>" deep link
+    // Quote conversion (HistoryPanel's "Convert to invoice") and a "#/invoices/<id>" deep link (the older "#/invoices#<id>" still works)
     // (routePendingOpen) set this before the tab mounts; open that invoice instead of the list. silent: true
     // matters only for deep links (a stale bookmarked id falls back to the list quietly); conversion hands
     // off a just-created id, so one code path serves both.
@@ -172,19 +175,19 @@
       // Set the hash before opening: a hashchange queued by this tab's mount (App's activate()) fires
       // asynchronously and would otherwise see a bare #/invoices that doesn't match detailId and close the
       // just-opened detail. replaceState, because this completes the navigation that brought us here.
-      history.replaceState(null, "", `${INVOICES_HASH}#${id}`);
+      history.replaceState(null, "", invoiceHash(id));
       openDetail(id, { silent: true });
     }
   });
 
-  // List <-> detail navigation, addressable via "#/invoices#<id>" (App.svelte's tabFromHash strips it for tab
+  // List <-> detail navigation, addressable via "#/invoices/<id>" (App.svelte's tabFromHash strips it for tab
   // routing; handled locally here). Opening pushes a history entry via a guarded location.hash assignment;
   // back/forward and manual edits are picked up by syncDetailFromHash.
 
   const INVOICES_HASH = "#/invoices";
 
   function setDetailHash(id: string) {
-    const target = `${INVOICES_HASH}#${id}`;
+    const target = invoiceHash(id);
     if (location.hash !== target) location.hash = target; // pushes a history entry
   }
 
@@ -243,6 +246,15 @@
   let paymentForm = $state<PaymentForm>(
     untrack(() => defaultPaymentForm(detail ? detail.balanceCents : 0, cfg.invoicing.paymentMethods[0] ?? "", todayInTimezone(cfg.timezone))),
   );
+  // The Amount follows the invoice balance (a save, a new total) until the user types their own.
+  let lastDefaultAmountCents = untrack(() => (detail ? detail.balanceCents : 0));
+  $effect(() => {
+    const balance = detail ? detail.balanceCents : 0;
+    untrack(() => {
+      paymentForm.amount = followBalanceAmount(paymentForm.amount, lastDefaultAmountCents, balance) ?? 0;
+      lastDefaultAmountCents = balance;
+    });
+  });
   let paymentErrors = $state<string[]>([]);
   let paymentSaving = $state(false);
   // The overpayment confirm is open: the entered amount is above the balance, so Record payment asks first.

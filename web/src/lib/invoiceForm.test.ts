@@ -582,3 +582,39 @@ describe("totalsRows", () => {
     expect(rows.map((r) => r.key)).toEqual(["subtotal", "tax", "total"]);
   });
 });
+
+describe("followBalanceAmount", () => {
+  it("follows the balance while the amount is untouched", async () => {
+    const { followBalanceAmount } = await import("./invoiceForm");
+    expect(followBalanceAmount(0, 0, 600)).toBe(6);
+    expect(followBalanceAmount(6, 600, 735)).toBe(7.35);
+    expect(followBalanceAmount(null, 0, 600)).toBe(6);
+  });
+  it("keeps an amount the user typed", async () => {
+    const { followBalanceAmount } = await import("./invoiceForm");
+    expect(followBalanceAmount(2.5, 600, 735)).toBe(2.5);
+  });
+});
+
+describe("lineProblems", () => {
+  it("flags a negative quantity, a sub-cent price and a negative discount as you type", async () => {
+    const { lineProblems, lineHasProblem } = await import("./invoiceForm");
+    expect(lineProblems({ quantity: -2, unitPrice: 0.333, discount: -1 })).toEqual({
+      quantity: "Must be greater than zero.",
+      unitPrice: "Use at most two decimal places.",
+      discount: "Can't be negative.",
+    });
+    expect(lineHasProblem({ quantity: 1, unitPrice: 0.33, discount: 0 })).toBe(false);
+  });
+  it("leaves an invalid line out of the totals preview", async () => {
+    const { emptyForm, previewTotalsFor } = await import("./invoiceForm");
+    const form = emptyForm(0);
+    form.lines = [
+      { description: "ok", quantity: 2, unitPrice: 5, discount: 0, quoteId: "", kind: "item", itemId: "", optionName: "" },
+      { description: "bad", quantity: -2, unitPrice: 0.333, discount: 0, quoteId: "", kind: "item", itemId: "", optionName: "" },
+    ];
+    const t = previewTotalsFor(form);
+    expect(t.lineAmounts).toEqual([1000, 0]);
+    expect(t.subtotalCents).toBe(1000);
+  });
+});

@@ -4,8 +4,9 @@
   import { quote, partLabel } from "../lib/state.svelte";
   import { money } from "../lib/format";
   import { quoteSummaryStats } from "../lib/quoteSummary";
-  import { quoteBlockers } from "../lib/quoteBlockers";
+  import { quoteBlockers, needSentence } from "../lib/quoteBlockers";
   import { goToBlocker } from "../lib/goToBlocker";
+  import { stickyInset } from "../lib/stickyInset";
   import SlicerHelp from "./SlicerHelp.svelte";
 
   let {
@@ -21,6 +22,16 @@
     /** The full message to show while previewStatus is "error". */
     previewError?: string;
   } = $props();
+
+  // Whether the bar is pinned (the media query in the style block): it then reserves its height for focus.
+  let sticky = $state(false);
+  $effect(() => {
+    const mq = matchMedia("(min-width: 700px) and (min-height: 600px)");
+    const sync = () => (sticky = mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  });
 
   // "Updating price…" appears only once the preview has been pending for PENDING_DELAY_MS, so a fast round trip
   // (the usual case while stepping a field) never flashes text. The slot below is always rendered, so showing
@@ -46,13 +57,7 @@
   );
   const need = $derived(missing.find((b) => b.field === "timeHours" || b.field === "timeMinutes") ?? missing[0]);
   const needsTime = $derived(need !== undefined && (need.field === "timeHours" || need.field === "timeMinutes"));
-  const needText = $derived.by(() => {
-    if (need === undefined) return "";
-    const rest = missing.length > 1 ? ` and ${missing.length - 1} more` : "";
-    // Multi-part labels already carry the part name: "Print time (Part 2)".
-    const what = needsTime ? need.label.replace(/^Print time/, "a print time") : need.label.toLowerCase();
-    return `Price needs ${what}${rest}`;
-  });
+  const needText = $derived(needSentence(missing));
 
   // Opens the pricing panel and scrolls to it: the panel can be several tiles down, so a click that only
   // flips the toggle leaves the bar visibly unchanged.
@@ -66,7 +71,7 @@
   }
 </script>
 
-<div class="card summary" role="group" aria-label="Quote summary">
+<div class="card summary" role="group" aria-label="Quote summary" use:stickyInset={{ edge: "top", active: sticky }}>
   <div class="group">
     <span class="section-label">Your cost</span>
     <div class="cost-stats">
@@ -135,6 +140,13 @@
     align-items: stretch;
     gap: 1rem 2rem;
     margin-bottom: 0.75rem;
+    /* Stays in view while the Print and Costs fields scroll under it, so the missing-field message and the
+     * running total are always next to the field being filled in. Sticks to the scrollport's top. */
+    z-index: 3;
+  }
+  /* Only where there is room: on a short or narrow window a tall pinned bar would cover the fields. */
+  @media (min-width: 700px) and (min-height: 600px) {
+    .summary { position: sticky; top: 0; }
   }
   /* One line tall at all times (the --text-sm line box), spanning the card's full width. An error message may
    * wrap onto more lines on a narrow screen; that is the one case the slot grows. */

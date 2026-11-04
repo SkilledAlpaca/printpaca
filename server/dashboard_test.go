@@ -514,14 +514,69 @@ func TestDashboardNeedsAttention(t *testing.T) {
 	for _, it := range resp.NeedsAttention {
 		kinds = append(kinds, it.Kind+":"+it.ID)
 	}
-	want := "new-request:r-new print-time-request:r-time overdue-invoice:overdue draft-invoice:draft"
+	want := "overdue-invoice:overdue draft-invoice:draft print-time-request:r-time new-request:r-new"
 	if got := strings.Join(kinds, " "); got != want {
 		t.Errorf("needsAttention = %q, want %q", got, want)
 	}
 	if c := resp.AttentionCounts; c.NewRequests != 1 || c.PrintTimeRequests != 1 || c.OverdueInvoices != 1 || c.DraftInvoices != 1 {
 		t.Errorf("attentionCounts = %+v, want one of each", c)
 	}
-	if resp.NeedsAttention[2].Number != "INV-1" || resp.NeedsAttention[2].AmountCents != 1000 {
-		t.Errorf("overdue row = %+v, want INV-1 with its 1000 balance", resp.NeedsAttention[2])
+	if resp.NeedsAttention[0].Number != "INV-1" || resp.NeedsAttention[0].AmountCents != 1000 {
+		t.Errorf("overdue row = %+v, want INV-1 with its 1000 balance", resp.NeedsAttention[0])
+	}
+}
+
+func TestDashboardNeedsAttentionCapsAndSentQuotes(t *testing.T) {
+	dir := t.TempDir()
+	db := openTestDB(t, dir)
+	cfg := loadTestConfig(t, dir)
+	cfg.Timezone = "UTC"
+	d := newDashboard(db, NewConfigStore(cfg))
+	d.clock = func() time.Time { return time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC) }
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	for i := 1; i <= 5; i++ {
+		if _, err := db.Exec(`INSERT INTO invoices (id, number, number_year, number_seq, status, client_name, total_cents, created_at, updated_at)
+			VALUES (?, ?, 2026, ?, 'draft', 'Casey', 500, ?, ?)`, fmt.Sprintf("d%d", i), fmt.Sprintf("INV-%d", i), i, now, now); err != nil {
+			t.Fatalf("seed invoice: %v", err)
+		}
+	}
+	quote := func(id, status, invoicedAs string) {
+		t.Helper()
+		var inv any
+		if invoicedAs != "" {
+			inv = invoicedAs
+		}
+		if _, err := db.Exec(`INSERT INTO quotes (id, saved_at, label, client_name, status, invoiced_as, inputs, quantity, per_unit_total_cents, batch_total_cents, resolved_price_cents, valid)
+			VALUES (?, ?, 'Lamp', 'Dana', ?, ?, '{}', 1, 100, 100, 2500, 1)`, id, now, status, inv); err != nil {
+			t.Fatalf("seed quote: %v", err)
+		}
+	}
+	quote("q-sent", "sent", "")
+	quote("q-draft", "draft", "")
+	quote("q-invoiced", "sent", "inv-x")
+
+	rec := serveReq(http.HandlerFunc(d.handleGet), httptest.NewRequest("GET", "/api/dashboard", nil))
+	var resp dashboardResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	drafts, sent := 0, 0
+	for _, it := range resp.NeedsAttention {
+		switch it.Kind {
+		case "draft-invoice":
+			drafts++
+		case "sent-quote":
+			sent++
+			if it.ID != "q-sent" || it.Name != "Dana" || it.AmountCents != 2500 {
+				t.Errorf("sent quote row = %+v", it)
+			}
+		}
+	}
+	if drafts != 3 || resp.AttentionCounts.DraftInvoices != 5 {
+		t.Errorf("drafts listed %d (want 3) of %d (want 5)", drafts, resp.AttentionCounts.DraftInvoices)
+	}
+	if sent != 1 || resp.AttentionCounts.SentQuotes != 1 {
+		t.Errorf("sent quotes listed %d of %d, want 1 of 1 (draft and invoiced quotes excluded)", sent, resp.AttentionCounts.SentQuotes)
 	}
 }

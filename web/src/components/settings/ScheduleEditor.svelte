@@ -84,7 +84,7 @@
 
   <div class="field-rows">
     <label class="field">
-      <span>Default print start (HH:MM)</span>
+      <span>Default print start (24-hour time, such as 22:00)</span>
       <input type="text" inputmode="numeric" placeholder="22:00" aria-describedby="sched-start-help" bind:value={schedule.defaultStartTime} class:warn={bad("defaultStartTime")} aria-invalid={bad("defaultStartTime")} />
       <small id="sched-start-help" class="field-hint">Public quotes and new orders start at the next time this clock time comes round.</small>
     </label>

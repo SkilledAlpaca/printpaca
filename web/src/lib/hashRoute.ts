@@ -1,7 +1,21 @@
 /** Pure hash-routing helpers shared by App.svelte and the list/detail tabs, testable without a component. */
 
-/** Splits "#/invoices#7a1c…" into its base route and an optional second "#" fragment (found from index 1). */
+/** An invoice's address is `#/invoices/<id>`; the older `#/invoices#<id>` still resolves. */
+export function invoiceHash(id: string): string {
+  return `#/invoices/${encodeURIComponent(id)}`;
+}
+
+/** Splits "#/invoices#7a1c…" into its base route and an optional second "#" fragment (found from index 1).
+ * The newer "#/invoices/7a1c…" is read the same way: base "#/invoices", fragment "7a1c…". */
 export function splitHash(hash: string): { base: string; fragment: string | null } {
+  const inv = /^#\/invoices\/([^/#]+)$/.exec(hash);
+  if (inv) {
+    try {
+      return { base: "#/invoices", fragment: decodeURIComponent(inv[1]!) };
+    } catch {
+      return { base: "#/invoices", fragment: null };
+    }
+  }
   const cut = hash.indexOf("#", 1);
   return cut > 0 ? { base: hash.slice(0, cut), fragment: hash.slice(cut + 1) } : { base: hash, fragment: null };
 }

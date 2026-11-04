@@ -54,7 +54,7 @@ test("canceling an invoice that has payments shows the server's message until th
   await expect(page.getByText("sent", { exact: true })).toBeVisible();
 
   // A $10.00 deposit leaves the invoice sent with a balance.
-  await page.getByLabel("Payment amount").fill("10.00");
+  await page.locator(".payments-card").getByLabel(/^Amount/).fill("10.00");
   await page.getByRole("button", { name: /^Record \$/ }).click();
   await expect(page.getByText(/Paid \$10\.00 of \$50\.00/)).toBeVisible();
 

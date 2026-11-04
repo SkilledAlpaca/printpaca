@@ -3,7 +3,7 @@
   import { quote, partLabel, type PartForm } from "../lib/state.svelte";
   import { quoteBlockers, type QuoteBlocker } from "../lib/quoteBlockers";
   import { goToBlocker } from "../lib/goToBlocker";
-  import { money, warnFor, friendlyMessage, presetDisplayName } from "../lib/format";
+  import { money, warnFor, friendlyMessage, feeScheduleDisplayName } from "../lib/format";
   import { otherPricingWarnings, partPricingWarning } from "../lib/orderView";
   import LabeledNumber from "./LabeledNumber.svelte";
   import CardHelp from "./CardHelp.svelte";
@@ -56,6 +56,19 @@
     return cents > 0 ? `-${money(cents, cfg)}` : money(0, cfg);
   }
 
+  // Tax and shipping sit behind "More pricing options": closed for the usual direct sale, open as soon as any of
+  // them holds a value (or has a warning), and never closed again by a change underneath the user.
+  const hasMoreOptions = $derived(
+    (form.taxRatePct ?? 0) !== 0 ||
+      (form.shippingCharge ?? 0) !== 0 ||
+      (form.shippingCost ?? 0) !== 0 ||
+      ["taxRatePct", "shippingCharge", "shippingCost"].some((f) => warnFor(pw, f)),
+  );
+  let moreOpen = $state(false);
+  $effect(() => {
+    if (hasMoreOptions) moreOpen = true;
+  });
+
   const first = $derived(order.parts[0]);
   const overridden = $derived(order.parts.some((x) => x.resolvedPrice !== x.recommendedPrice));
   const recommendedItems = $derived(order.parts.reduce((sum, x) => sum + x.recommendedPrice * x.breakdown.quantity, 0));
@@ -98,13 +111,19 @@
         <label for={feeId}>Fee schedule</label>
         <select id={feeId} bind:value={form.feeScheduleName} aria-describedby="{feeId}-help">
           <option value="none">None (direct sale)</option>
-          {#each Object.keys(cfg.feeSchedules) as name (name)}<option value={name}>{presetDisplayName(name)}</option>{/each}
+          {#each Object.keys(cfg.feeSchedules) as name (name)}<option value={name}>{feeScheduleDisplayName(name)}</option>{/each}
         </select>
         <small id="{feeId}-help" class="field-hint">Marketplace or payment fees, taken out of what the customer pays.</small>
       </div>
-      <LabeledNumber label="Tax (included in price)" suffix="%" bind:value={form.taxRatePct} warn={warnFor(pw, "taxRatePct")} help="Sales tax added to the price. It is set aside, not counted as profit." />
-      <LabeledNumber label="Shipping charged" suffix="customer pays" bind:value={form.shippingCharge} warn={warnFor(pw, "shippingCharge")} help="What you charge the customer for shipping." />
-      <LabeledNumber label="Shipping cost" suffix="you pay" bind:value={form.shippingCost} warn={warnFor(pw, "shippingCost")} help="What the carrier charges you. The difference from the charge comes out of profit." />
+      <details class="more-pricing" bind:open={moreOpen}>
+        <summary>More pricing options</summary>
+        <p class="field-hint">Tax and shipping. Leave them at zero if you don't charge them.</p>
+        <div class="field-rows">
+        <LabeledNumber label="Tax (included in price)" suffix="%" bind:value={form.taxRatePct} warn={warnFor(pw, "taxRatePct")} help="Sales tax added to the price. It is set aside, not counted as profit." />
+        <LabeledNumber label="Shipping charged" suffix="customer pays" bind:value={form.shippingCharge} warn={warnFor(pw, "shippingCharge")} help="What you charge the customer for shipping." />
+        <LabeledNumber label="Shipping cost" suffix="you pay" bind:value={form.shippingCost} warn={warnFor(pw, "shippingCost")} help="What the carrier charges you. The difference from the charge comes out of profit." />
+        </div>
+      </details>
       <LabeledNumber
         label="Sale price override"
         suffix={multi ? `per unit for ${part.label.trim() || `Part ${partIndex + 1}`}, blank = recommended` : "per unit, blank = recommended"}
@@ -183,4 +202,6 @@
   .pricing-out .net.loss dd { color: var(--danger); }
   .pricing-out.invalid .net { border-left: 2px solid var(--danger); padding-left: 0.5rem; }
   dl div dt { margin: 0; } dl div dd { margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .more-pricing { grid-column: 1 / -1; }
+  .more-pricing summary { cursor: pointer; margin: 0.2rem 0 0.4rem; }
 </style>

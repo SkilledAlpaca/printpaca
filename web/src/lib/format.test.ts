@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { moneyAmount, moneyPrecise, friendlyMessage, fieldLabel, formatDate, formatDateTime, presetDisplayName } from "./format";
+import { moneyAmount, moneyPrecise, friendlyMessage, fieldLabel, formatDate, formatDateTime, presetDisplayName, feeScheduleDisplayName, rateText, materialDisplayName } from "./format";
 import type { FieldWarning } from "./engine/index";
 import type { ServerConfig } from "./settings";
 import { settingsWarnings } from "./settingsRules";
@@ -179,5 +179,34 @@ describe("friendlyMessage: blank print time", () => {
   });
   it("keeps the generic copy for other required fields", () => {
     expect(friendlyMessage({ field: "weightG", code: "required", message: "x", severity: "error" })).toBe("Model weight is required.");
+  });
+});
+
+describe("feeScheduleDisplayName", () => {
+  it("names marketplaces and regions", () => {
+    expect(feeScheduleDisplayName("etsy-us")).toBe("Etsy (US)");
+    expect(feeScheduleDisplayName("ebay-uk")).toBe("eBay (UK)");
+    expect(feeScheduleDisplayName("none")).toBe("None");
+    expect(feeScheduleDisplayName("craft-fair")).toBe("Craft fair");
+    expect(feeScheduleDisplayName("local")).toBe("Local");
+  });
+});
+
+describe("rateText", () => {
+  it("shows two decimals and only adds places a rate needs", () => {
+    expect(rateText(0.3, null)).toBe("$0.30/kWh");
+    expect(rateText(0.15, null)).toBe("$0.15/kWh");
+    expect(rateText(0.325, null)).toBe("$0.325/kWh");
+    expect(rateText(0.1234, null)).toBe("$0.1234/kWh");
+  });
+});
+
+describe("materialDisplayName", () => {
+  const mats = [{ id: "petg", name: "PETG" }, { id: "pla", name: "PLA" }];
+  it("maps an id to its name and leaves names and unknowns alone", () => {
+    expect(materialDisplayName("petg", mats)).toBe("PETG");
+    expect(materialDisplayName("PLA", mats)).toBe("PLA");
+    expect(materialDisplayName("silk", mats)).toBe("silk");
+    expect(materialDisplayName("", mats)).toBe("");
   });
 });

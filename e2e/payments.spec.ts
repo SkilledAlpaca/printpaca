@@ -30,7 +30,7 @@ test("record a full payment on a sent invoice and see it reflected on the Dashbo
   await expect(page.getByText("sent", { exact: true })).toBeVisible();
 
   // The form defaults to today and the open balance ($40.00), so recording as-is fully pays the invoice.
-  await page.getByLabel("Payment reference").fill("Square #4821");
+  await page.getByLabel("Reference (optional)").fill("Square #4821");
   await page.getByRole("button", { name: /^Record \$/ }).click();
 
   await expect(page.getByText("paid", { exact: true })).toBeVisible();

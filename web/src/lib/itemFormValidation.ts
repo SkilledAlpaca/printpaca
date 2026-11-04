@@ -50,13 +50,13 @@ export function validateItemForm(f: ItemFormShape): string[] {
     else if (f.groups.some((h, hi) => hi < gi && h.label.trim().toLowerCase() === g.label.trim().toLowerCase())) {
       errors.push(`${where}: another group already uses this label.`);
     }
-    if (g.options.length === 0) errors.push(`${where}: add at least one option.`);
+    if (g.options.length === 0) errors.push(`${where}: add at least one choice.`);
     const seen = new Set<string>();
     g.options.forEach((o, i) => {
       const name = o.name.trim();
-      const oWhere = `${where}, option ${i + 1}${name ? ` (${name})` : ""}`;
+      const oWhere = `${where}, choice ${i + 1}${name ? ` (${name})` : ""}`;
       if (name === "") errors.push(`${oWhere}: enter a name.`);
-      else if (seen.has(name.toLowerCase())) errors.push(`${oWhere}: another option in this group has the same name.`);
+      else if (seen.has(name.toLowerCase())) errors.push(`${oWhere}: another choice in this group has the same name.`);
       seen.add(name.toLowerCase());
       if (o.delta === null || outOfRange(o.delta, DELTA_MIN, DELTA_MAX)) {
         errors.push(`${oWhere}: enter a valid price adjustment.`);

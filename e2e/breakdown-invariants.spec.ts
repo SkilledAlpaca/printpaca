@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { fillCanonicalQuote, readMoney } from "./helpers";
+import { fillCanonicalQuote, readMoney, openMorePricing } from "./helpers";
 
 // UI-rendering invariants that no unit or compat test covers: a blanking rule, which number maps to
 // which on-screen field, and a precondition's on-screen consequence.
@@ -40,6 +40,7 @@ test("shipping charge and shipping cost are not transposed in the profit math", 
   const baseline = await readMoney(netProfit);
 
   // Charge $5, cost $9: net profit must drop by exactly $4, which catches swapped formula inputs.
+  await openMorePricing(page);
   await page.getByLabel(/Shipping charged/).fill("5");
   await page.getByLabel(/Shipping cost/).fill("9");
 
@@ -93,6 +94,7 @@ test("the tax row renders the price-inclusive figure, not price x tax%, under it
   // Pin the margin so the expected tax figure doesn't depend on what an earlier spec left in config.
   await page.getByLabel("Margin (%)").fill("30");
   // LabeledNumber renders `${label} (${suffix})`, so the accessible name is "Tax (included in price) (%)".
+  await openMorePricing(page);
   await page.getByLabel(/^Tax \(included in price\)/).fill("20");
 
   // Cost $2.24 at 30% margin: the pre-tax price is 224c / 0.7 = 320c, grossed up by 20% tax to 384c.

@@ -43,7 +43,7 @@ type dashboardResponse struct {
 	QuotesAvgMarginPct     *float64 `json:"quotesAvgMarginPct"`
 
 	// NeedsAttention is the dashboard's "Needs attention" list: up to attentionPerKind rows per kind, in the
-	// order new requests, requests needing a print time, overdue invoices, draft invoices. AttentionCounts
+	// order overdue invoices, draft invoices, requests needing a print time, new requests, sent quotes awaiting a reply. AttentionCounts
 	// carries the full count per kind so the page can say "and 4 more". Each list is present only when the
 	// caller may open that tab (requests, invoices).
 	NeedsAttention  []attentionItem `json:"needsAttention"`
@@ -51,7 +51,7 @@ type dashboardResponse struct {
 }
 
 // attentionPerKind caps each kind of NeedsAttention row.
-const attentionPerKind = 10
+const attentionPerKind = 3
 
 // Kinds of attentionItem.
 const (
@@ -59,6 +59,7 @@ const (
 	attentionPrintTimeRequest = "print-time-request"
 	attentionOverdueInvoice   = "overdue-invoice"
 	attentionDraftInvoice     = "draft-invoice"
+	attentionSentQuote        = "sent-quote"
 )
 
 // attentionItem is one row of NeedsAttention. Name is the requester or client, Number the invoice number
@@ -79,6 +80,7 @@ type attentionCounts struct {
 	PrintTimeRequests int `json:"printTimeRequests"`
 	OverdueInvoices   int `json:"overdueInvoices"`
 	DraftInvoices     int `json:"draftInvoices"`
+	SentQuotes        int `json:"sentQuotes"`
 }
 
 // effectivePaymentsCTE is the "effective_payments" CTE the revenue queries read. A payment counts toward
@@ -254,6 +256,39 @@ func (d *dashboard) loadAttention(r *http.Request, resp *dashboardResponse, over
 		return hasPermission(perms, key), nil
 	}
 
+	// Money first: overdue invoices, then drafts, then the requests that need a print time, then new requests,
+	// then sent quotes still waiting for a reply.
+	canInvoices, err := allowed("invoices")
+	if err != nil {
+		return err
+	}
+	if canInvoices {
+		sort.SliceStable(overdue, func(a, b int) bool { return overdue[a].Date < overdue[b].Date })
+		resp.AttentionCounts.OverdueInvoices = len(overdue)
+		resp.NeedsAttention = append(resp.NeedsAttention, overdue[:min(len(overdue), attentionPerKind)]...)
+
+		if err := d.db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE status = 'draft'`).Scan(&resp.AttentionCounts.DraftInvoices); err != nil {
+			return err
+		}
+		rows, err := d.db.Query(`SELECT id, number, client_name, total_cents, created_at FROM invoices WHERE status = 'draft' ORDER BY number_year DESC, number_seq DESC LIMIT ?`, attentionPerKind)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			it := attentionItem{Kind: attentionDraftInvoice}
+			if err := rows.Scan(&it.ID, &it.Number, &it.Name, &it.AmountCents, &it.Date); err != nil {
+				rows.Close()
+				return err
+			}
+			resp.NeedsAttention = append(resp.NeedsAttention, it)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+	}
+
 	canRequests, err := allowed("requests")
 	if err != nil {
 		return err
@@ -263,8 +298,8 @@ func (d *dashboard) loadAttention(r *http.Request, resp *dashboardResponse, over
 			kind, where string
 			count       *int
 		}{
-			{attentionNewRequest, "status = 'new' AND needs_print_time = 0", &resp.AttentionCounts.NewRequests},
 			{attentionPrintTimeRequest, "status != 'finalized' AND needs_print_time = 1", &resp.AttentionCounts.PrintTimeRequests},
+			{attentionNewRequest, "status = 'new' AND needs_print_time = 0", &resp.AttentionCounts.NewRequests},
 		} {
 			if err := d.db.QueryRow(`SELECT COUNT(*) FROM quote_requests WHERE ` + q.where).Scan(q.count); err != nil {
 				return err
@@ -289,26 +324,24 @@ func (d *dashboard) loadAttention(r *http.Request, resp *dashboardResponse, over
 		}
 	}
 
-	canInvoices, err := allowed("invoices")
+	canQuotes, err := allowed("quotes")
 	if err != nil {
 		return err
 	}
-	if canInvoices {
-		sort.SliceStable(overdue, func(a, b int) bool { return overdue[a].Date < overdue[b].Date })
-		resp.AttentionCounts.OverdueInvoices = len(overdue)
-		resp.NeedsAttention = append(resp.NeedsAttention, overdue[:min(len(overdue), attentionPerKind)]...)
-
-		if err := d.db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE status = 'draft'`).Scan(&resp.AttentionCounts.DraftInvoices); err != nil {
+	if canQuotes {
+		const sentWhere = `status = 'sent' AND (invoiced_as IS NULL OR invoiced_as = '')`
+		if err := d.db.QueryRow(`SELECT COUNT(*) FROM quotes WHERE ` + sentWhere).Scan(&resp.AttentionCounts.SentQuotes); err != nil {
 			return err
 		}
-		rows, err := d.db.Query(`SELECT id, number, client_name, total_cents, created_at FROM invoices WHERE status = 'draft' ORDER BY number_year DESC, number_seq DESC LIMIT ?`, attentionPerKind)
+		rows, err := d.db.Query(`SELECT id, CASE WHEN client_name != '' THEN client_name ELSE label END, COALESCE(resolved_price_cents, batch_total_cents), saved_at
+			FROM quotes WHERE `+sentWhere+` ORDER BY saved_at DESC LIMIT ?`, attentionPerKind)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
-			it := attentionItem{Kind: attentionDraftInvoice}
-			if err := rows.Scan(&it.ID, &it.Number, &it.Name, &it.AmountCents, &it.Date); err != nil {
+			it := attentionItem{Kind: attentionSentQuote}
+			if err := rows.Scan(&it.ID, &it.Name, &it.AmountCents, &it.Date); err != nil {
 				return err
 			}
 			resp.NeedsAttention = append(resp.NeedsAttention, it)

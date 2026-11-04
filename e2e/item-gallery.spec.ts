@@ -356,22 +356,22 @@ test("the gallery's custom-estimate CTA card switches to the quote view", async 
 test("admin reorders option groups and options, and the order persists and reaches the public panel", async ({ page, request }) => {
   await page.goto("/admin/#/items");
   await page.locator("main").getByRole("button", { name: new RegExp(ITEM_NAME) }).first().click();
-  await expect(page.getByLabel("Group 1 choice 1")).toHaveValue("Black");
+  await expect(page.getByLabel("Group 1 choice 1", { exact: true })).toHaveValue("Black");
 
   // Group 2 (Engraving) up: it becomes group 1, and focus stays on the button that was pressed.
   await page.getByRole("button", { name: /^Move group 2 \(Engraving\) up$/ }).click();
   await expect(page.getByRole("button", { name: /^Move group 1 \(Engraving\) up$/ })).toBeFocused();
-  await expect(page.getByLabel("Group 1 choice 1")).toHaveValue("Name plate");
+  await expect(page.getByLabel("Group 1 choice 1", { exact: true })).toHaveValue("Name plate");
 
   // Color's second option (Red) up, now in group 2.
-  await page.getByRole("button", { name: /^Move group 2 option 2 \(Red\) up$/ }).click();
-  await expect(page.getByRole("button", { name: /^Move group 2 option 1 \(Red\) up$/ })).toBeFocused();
-  await expect(page.getByLabel("Group 2 choice 1")).toHaveValue("Red");
+  await page.getByRole("button", { name: /^Move group 2 choice 2 \(Red\) up$/ }).click();
+  await expect(page.getByRole("button", { name: /^Move group 2 choice 1 \(Red\) up$/ })).toBeFocused();
+  await expect(page.getByLabel("Group 2 choice 1", { exact: true })).toHaveValue("Red");
 
   // Unsaved photos note: an unsaved new option explains photos upload after saving.
   await page.getByRole("button", { name: "Add choice" }).nth(1).click();
   await expect(page.getByText("Save the item first to add a photo.").first()).toBeVisible();
-  await page.getByRole("button", { name: /^Remove group 2 option 3$/ }).click();
+  await page.getByRole("button", { name: /^Remove group 2 choice 3$/ }).click();
 
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText(`${ITEM_NAME} saved.`)).toBeAttached();

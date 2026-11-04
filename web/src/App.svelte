@@ -905,11 +905,6 @@
         <button type="button" class="guide-footer-link" onclick={signOutNow}>{signOut.label}</button>
       {/if}
       <div class="version-line">{versionLabel}</div>
-      <!-- Lists only the shortcuts that work on the current page: {shortcutMod}+S where an editor registered
-           a save, {shortcutMod}+K where the page has a filter input (see FILTER_IDS). -->
-      {#if shortcutHints.length > 0}
-        <div class="shortcuts-line">Shortcuts: {shortcutHints.join(", ")}</div>
-      {/if}
     {:else}
       {#if !disabledTabs.has("guide")}
         <button type="button" class="guide-footer-icon" aria-label="Guide" onclick={() => activate("guide")}>
@@ -998,6 +993,12 @@
 
   <footer>
     <span>printpaca, an open-source 3D print cost and quote calculator.</span>
+    <!-- Lists only the shortcuts that work on the current page: {shortcutMod}+S where an editor registered a
+         save, {shortcutMod}+K where the page has a filter input (see FILTER_IDS). Lives in the page footer,
+         not the sidebar's, so the sidebar keeps room for every destination on short windows. -->
+    {#if shortcutHints.length > 0}
+      <div class="shortcuts-line">Shortcuts: {shortcutHints.join(", ")}</div>
+    {/if}
   </footer>
   </div>
 </main>
@@ -1323,9 +1324,9 @@
   }
   .guide-footer-icon:hover { color: var(--text); }
   .version-line { color: var(--muted); font-size: var(--text-xs); }
-  /* Short windows (1366x768 laptops): tighter nav rows and footer so every destination, Settings included,
+  /* Short windows (1366x768 and 1366x860 laptops): tighter nav rows and footer so every destination, Settings included,
    * fits without scrolling. The nav still scrolls, with its shadow, below this. */
-  @media (min-width: 900px) and (max-height: 820px) {
+  @media (min-width: 900px) and (max-height: 900px) {
     .side-nav { gap: 0; }
     .side-nav button, .side-nav a.nav-external { padding-block: 0.2rem; min-height: 32px; }
     .nav-section-label { padding-block: 0.4rem 0.15rem; }

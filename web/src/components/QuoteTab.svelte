@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, tick } from "svelte";
   import type { EffectiveConfig, EngineOptions, OrderBreakdown, OrderInputs } from "../lib/engine/index";
-  import { quote, activePart, partLabel, toOrderInputs, engineOptions, applyPrinter, applyMaterial, printJob, quoteClient, quoteMeta, nameOrId } from "../lib/state.svelte";
+  import { quote, activePart, partLabel, toOrderInputs, quoteEngineOptions, applyPrinter, applyMaterial, printJob, quoteClient, quoteMeta, nameOrId, quoteSession, quoteActions, storedRatesDiffer, useCurrentRates } from "../lib/state.svelte";
   import { computeOrder, type ComputeOrderResult } from "../lib/quotesApi";
   import { EMPTY_ORDER, orderPrintBlockerHint, partBreakdown } from "../lib/orderView";
   import PartsList from "./PartsList.svelte";
@@ -25,6 +25,9 @@
   import { helpState, setAllHelp } from "../lib/help.svelte";
   import { TILE_HELP, TILE_IDS, type TileId } from "../lib/guideContent";
   import { focusAfterRowRemoval } from "../lib/a11yFocus";
+  import { findFieldByLabel } from "../lib/fieldErrors";
+  import { presetDisplayName } from "../lib/format";
+  import SlicerHelp from "./SlicerHelp.svelte";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 
@@ -53,7 +56,7 @@
   onDestroy(() => preview.dispose());
 
   $effect(() => {
-    preview.update({ inputs: toOrderInputs(cfg), options: engineOptions(cfg) });
+    preview.update({ inputs: toOrderInputs(cfg), options: quoteEngineOptions(cfg) });
   });
 
   // HistoryPanel's save gate must tell "waiting on a recompute" from "the last answer is invalid". Passed as
@@ -109,11 +112,28 @@
     window.print();
   }
 
+  // The client is one field, in the Saved quotes panel beside the label; the print toolbar only shows it.
+  function focusClientField(e: MouseEvent) {
+    e.preventDefault();
+    const el = document.getElementById("history-client");
+    el?.scrollIntoView({ block: "center" });
+    el?.focus();
+  }
+
+  const ratesChanged = $derived(storedRatesDiffer(cfg));
+
+  // The print fields sit below the model drop zone, Recent prints and the part list; keyboard users get
+  // there in one Tab instead of dozens.
+  function skipToPrintFields(e: MouseEvent) {
+    e.preventDefault();
+    findFieldByLabel("Model weight")?.focus();
+  }
+
   // Accessible group labels for each tile's role="group" div, and the h2 text for the three tiles rendered
   // here (gcode, print, costs); the others' h2 and CardHelp live in their own components, so it is only their
   // aria-label.
   const TILE_LABELS: Record<TileId, string> = {
-    gcode: "G-code",
+    gcode: "Model file",
     print: "Print",
     costs: "Costs",
     breakdown: "Cost breakdown",
@@ -147,8 +167,15 @@
 
   let onboarded = $state(readOnboarded());
 
+  // Only on a shop with no saved quote: once one exists the steps are old news. savedCount is null until
+  // the saved-quote list has loaded, which keeps the panel from flashing in for a returning user.
   const showFirstRun = $derived(
-    quote.parts.length === 1 && part.weightG === null && part.timeHours === null && part.timeMinutes === null && !onboarded,
+    quoteSession.savedCount === 0 &&
+      quote.parts.length === 1 &&
+      part.weightG === null &&
+      part.timeHours === null &&
+      part.timeMinutes === null &&
+      !onboarded,
   );
 
   function dismissFirstRun() {
@@ -267,7 +294,7 @@
   // Money values carry the currency symbol, like PresetChips' tooltip: "12 per h labor" reads as a unitless
   // number next to the percentages.
   const ratesSummary = $derived(
-    `${part.presetName || "custom"}${part.presetModified ? " (modified)" : ""}: ${
+    `${part.presetName ? presetDisplayName(part.presetName) : "Custom"}${part.presetModified ? " (modified)" : ""}: ${
       cfg.energy.mode === "schedule"
         ? "time-of-use schedule electricity"
         : cfg.energy.mode === "tou"
@@ -278,12 +305,58 @@
 </script>
 
 <div class="page">
+  <a class="local-skip" href="#main" onclick={skipToPrintFields}>Skip to model weight and print time</a>
   <div class="head-row">
-    <h1>New quote</h1>
+    <h1>{quoteSession.loadedId ? `Edit quote: ${quoteSession.label.trim() || "Untitled"}` : "New quote"}</h1>
     <button type="button" class="explain-toggle" aria-pressed={allHelpOpen} onclick={toggleAllHelp}>
       Explain this page
     </button>
   </div>
+
+  {#if quoteSession.loadedId}
+    <div class="card edit-bar" role="group" aria-label="Save changes to this quote">
+      <p>You are editing a saved quote. Your changes aren't saved until you update it.</p>
+      <div class="edit-actions">
+        <button
+          type="button"
+          class="primary"
+          onclick={() => quoteActions.update?.()}
+          disabled={!quoteActions.busy && quoteActions.blocked}
+          aria-disabled={quoteActions.busy}
+          aria-busy={quoteActions.busy}
+        >{quoteActions.busy ? "Saving…" : "Update quote"}</button>
+        <button
+          type="button"
+          onclick={() => quoteActions.saveAsNew?.()}
+          disabled={!quoteActions.busy && quoteActions.blocked}
+          aria-disabled={quoteActions.busy}
+        >Save as new</button>
+        <!-- aria-hidden: HistoryPanel's status line below is the live region; this repeats it where the
+             buttons are so the result is seen without scrolling. -->
+        <span class="edit-status" class:failed={quoteSession.status.failed} aria-hidden="true">{quoteSession.status.text}</span>
+      </div>
+    </div>
+  {/if}
+
+  {#if quoteSession.conflict}
+    <div class="card banner-warn" role="alert">
+      <p>This was changed in another tab or by another user.</p>
+      <div class="edit-actions">
+        <button type="button" onclick={() => quoteActions.reload?.()}>Reload</button>
+        <button type="button" onclick={() => quoteActions.overwrite?.()}>Overwrite</button>
+      </div>
+      <p class="hint">Reload discards your edits and shows the saved version. Overwrite saves your edits over it.</p>
+    </div>
+  {/if}
+
+  {#if ratesChanged}
+    <div class="card banner-warn" role="status">
+      <p>
+        Shop electricity rates changed since this quote was saved. This quote still uses the rates it was saved with.
+        <button type="button" class="quiet" onclick={useCurrentRates}>Use current rates</button>
+      </p>
+    </div>
+  {/if}
 
   <QuoteSummaryBar
     {cfg}
@@ -310,7 +383,7 @@
   <div class="tile" role="group" aria-label={TILE_LABELS.gcode} aria-describedby="help-gcode">
     <div class="card">
       <div class="head-row with-help">
-        <h2>G-code</h2>
+        <h2>Model file</h2>
         <CardHelp id="gcode" title={TILE_LABELS.gcode} text={TILE_HELP.gcode} />
       </div>
       {#key part.id}
@@ -364,7 +437,10 @@
               <span class="suffix">min</span>
             </span>
           </div>
-          {#if noSlicerTime}<small id="print-time-note" class="field-hint">This file has no slicer time. Enter the print time from your slicer.</small>{/if}
+          {#if noSlicerTime}
+            <small id="print-time-note" class="field-hint">This file has no slicer time. Enter the print time from your slicer.</small>
+            <SlicerHelp />
+          {/if}
           {#if timeWarn !== "" && timeTouched}<small id="print-time-warn" class="warn-text">{timeWarn}</small>{/if}
         </div>
         <LabeledNumber label="Quantity" suffix="units" bind:value={part.quantity} min={1} step={1} warn={warnFor(w, "quantity")} help="How many copies you are printing. Costs are shown per unit and as an order total." />
@@ -464,18 +540,11 @@
   <div class="tile" role="group" aria-label={TILE_LABELS.breakdown} aria-describedby="help-breakdown">
     {#if sellingEnabled}
       <div class="card toolbar">
-        {#if quoteClient.id}
-          <div class="field field-inline">
-            <span>Client</span>
-            <span class="linked-customer">{quoteClient.name || "Linked client"}</span>
-            <small class="linked-customer-hint">From the Saved quotes panel's client picker below.</small>
-          </div>
-        {:else}
-          <label class="field field-inline">
-            <span>Client (optional)</span>
-            <input placeholder="Client name" bind:value={quoteClient.name} />
-          </label>
-        {/if}
+        <div class="field field-inline">
+          <span>Client</span>
+          <span class="linked-customer">{quoteClient.name || (quoteClient.id ? "Linked client" : "No client")}</span>
+          <small class="linked-customer-hint">Set in <a href="#main" onclick={focusClientField}>Client for this quote</a> under Saved quotes.</small>
+        </div>
         <label class="field field-inline">
           <span>Project (optional)</span>
           <input placeholder="Project name" bind:value={quoteMeta.project} />
@@ -513,6 +582,24 @@
     border-color: var(--accent);
     color: var(--accent-text);
   }
+
+  .local-skip {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 5;
+    padding: 0.4rem 0.8rem;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    border-radius: var(--radius);
+  }
+  .local-skip:focus { left: 0.5rem; top: 0.5rem; }
+
+  .edit-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
+  .edit-bar p { margin: 0; }
+  .edit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+  .edit-status { font-size: var(--text-sm); color: var(--ok); }
+  .edit-status.failed { color: var(--danger); }
 
   .first-run ol { margin: 0 0 0.75rem; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.3rem; }
 

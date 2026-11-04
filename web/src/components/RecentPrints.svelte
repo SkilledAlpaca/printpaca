@@ -126,7 +126,12 @@
   function filamentLabel(j: MoonrakerJob): string {
     const raw = mergedRaw(j);
     const result = resolveGcode(raw, currentDiameter(cfg, part), currentDensity(cfg, part));
-    return result.weightG !== undefined ? `${Math.round(result.weightG)} g filament` : "filament weight unknown";
+    if (result.weightG === undefined) return "filament weight unknown";
+    // Name where the figure comes from: the length-based guess here can differ from the slicer's weight that
+    // picking the print fills in, and one unlabeled "9 g" next to a filled 42.5 g read as a bug.
+    return result.source === "reported-weight"
+      ? `${Math.round(result.weightG)} g filament (slicer)`
+      : `about ${Math.round(result.weightG)} g filament (from length used)`;
   }
 
   function durationLabel(j: MoonrakerJob): string {
@@ -275,6 +280,9 @@
         {/each}
       </select>
     </label>
+    <p class="advisory-text weight-note">
+      "From length used" is a rough guess from how much filament was fed. Picking a print fills in the slicer's own weight when Moonraker has it.
+    </p>
     {#if hasMore}
       <button type="button" class="quiet load-more" onclick={loadMore} aria-disabled={loadingMore} aria-busy={loadingMore}>
         {loadingMore ? "Loading…" : `Load more prints (${jobs.length} loaded)`}
@@ -296,6 +304,7 @@
   .recent { margin-top: 0.4rem; }
   .recent-filter { margin-top: 0.4rem; }
   .match-text { margin: 0.2rem 0 0; }
+  .weight-note { margin: 0.3rem 0 0; }
   .load-more { margin-top: 0.4rem; }
   .status-line { margin: 0 0 0.4rem; }
   .status-line.error { color: var(--danger); }

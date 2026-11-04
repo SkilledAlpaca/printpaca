@@ -42,7 +42,7 @@ Every control works from the keyboard, and the focus indicator is visible on eve
 |---|---|
 | Tab and Shift+Tab | Move through controls. A **Skip to content** link is the first stop in the admin app; it moves focus to the main content. |
 | Ctrl+K (⌘K on macOS) | On the Quotes, Clients, and Invoices tabs, focus the list filter. It's ignored while focus is in a text field, select, or editable area. |
-| Ctrl+S (⌘S on macOS) | On the New quote tab, save the quote. |
+| Ctrl+S (⌘S on macOS) | On the New quote tab, save the quote: it updates the quote you have open, or saves a new one. |
 | Escape | Close the mobile menu, a Quotes row menu, or an open record's detail view (Clients, Invoices, and Requests). When a two-step confirm is armed, Escape cancels the confirm first and leaves the record open. Inside a text field or select, Escape keeps its normal meaning and doesn't close the record. |
 
 Ctrl+K and Ctrl+S need a modifier key, so no single-key shortcut can fire by accident (WCAG 2.1.4). Before 1.0.4 the filter shortcut was a bare `/`; it no longer does anything.
@@ -60,7 +60,9 @@ printpaca moves focus so you never land on a blank page:
 - The sticky save bars and jump navigation reserve scroll padding, so a focused field is never hidden behind them (WCAG 2.4.11).
 - The Settings jump navigation wraps onto several lines and sticks to the top at 600 px and wider. Below 600 px it scrolls with the page, so it never covers a large part of a small screen. A jump lands with the section heading fully visible below the navigation.
 - The business name and logo at the top of the sidebar (and of the top bar on a phone) are a link named "<business name> home". Activating it opens the first page in the menu, closes the mobile menu, and moves focus to the page's heading.
-- After you drop an STL or 3MF file that has no slicer time, a note under the print time fields says so. The fields are described by that note and are marked invalid only after you leave them or try to save with Ctrl+S or Cmd+S. When the price can't be calculated, the Price and profit card lists each missing field as a link that moves focus to it.
+- After you drop an STL or 3MF file that has no slicer time, a note under the print time fields says so. The fields are described by that note and are marked invalid only after you leave them or try to save with Ctrl+S or Cmd+S. When the price can't be calculated, the cost bar and the Price and profit card list each missing field as a link that moves focus to it. A "What is a slicer?" disclosure explains the word on demand.
+- A **Skip to model weight and print time** link at the top of New quote moves focus past the model drop zone and the Recent prints list.
+- A saved quote open in the editor is headed "Edit quote: <label>", and the sidebar marks Quotes (not New quote) as the current page. A browser reload, or leaving New quote with unsaved edits, asks for confirmation.
 
 ### 3D model preview
 

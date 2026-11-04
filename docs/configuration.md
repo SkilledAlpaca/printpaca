@@ -321,11 +321,11 @@ Item orders share the per-IP limit of quote requests (see [Operational limits](#
 
 ## Quoting from files
 
-Dropping a file on the G-code box (on the New quote page or the public quote page) gives you different results depending on the file type:
+Dropping a file on the Model file box (on the New quote page) or the file box on the public quote page gives you different results depending on the file type:
 
 - **G-code**: an exact weight, filament length, and print time, read directly from the slicer's own comments in the file.
 - **Sliced `.gcode.3mf`** (from Bambu Studio or OrcaSlicer): the same exact figures as G-code, taken from the slicer's own prediction and summed across every plate in the file.
-- **STL, or a plain (unsliced) 3MF**: an estimated weight only, calculated from the model's volume and an adjustable solidity percentage. Print time still needs entering by hand. Treat this as a starting point: adjust the weight after you've actually sliced the model, since a volume-based estimate can't know about supports, infill patterns, or purge waste the way a slicer does.
+- **STL, or a plain (unsliced) 3MF**: an estimated weight only, calculated from the model's volume and an adjustable solidity percentage. Print time still needs entering by hand: the cost bar at the top of New quote says "Price needs a print time" and links to the field. Dropping a new model file clears a print time that didn't come from a slicer file, so one model's time is never reused for the next. Treat this as a starting point: adjust the weight after you've actually sliced the model, since a volume-based estimate can't know about supports, infill patterns, or purge waste the way a slicer does.
 
 All file parsing happens in your browser. On the New quote page, no file is ever uploaded to the server. On the public quote page, the dropped file (G-code, sliced `.gcode.3mf`, plain 3MF, or STL) is uploaded along with the visitor's submission, so you can inspect it, provided the whole submission (the file plus the form fields) fits the server's 32 MiB cap. The server stores it gzipped under `$CONFIG_DIR/uploads/` and serves it back to you as `application/octet-stream` from the request's detail view. An oversized file degrades to estimate-only: only the parsed weight and print time (and the original filename) are sent with the request, and the visitor is told they may need to send the file separately.
 

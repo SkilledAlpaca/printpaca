@@ -77,6 +77,11 @@
   --card-pad: var(--space-5);
   --cell-pad-y: 0.6rem;
 
+  /* Navigation rail widths (App.svelte): the desktop sidebar, its icon-only collapsed form, and the phone drawer. */
+  --sidebar-w: 220px;
+  --sidebar-w-collapsed: 64px;
+  --drawer-w: min(280px, 85vw);
+
   /* Content widths. --content-max is the admin content cap (D10): it holds the wide column of lists and
    * tables. The narrow reading column of the public pages is set by the public page itself. */
   --content-max: 90rem;

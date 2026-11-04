@@ -174,7 +174,7 @@ test("a low-contrast accent is rejected with the measured ratio and a passing su
   await expect(card.getByRole("group", { name: "Accent color preview" })).toHaveCount(0);
   // The server rejects it too.
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("alert").filter({ hasText: "shop.accentColor" }).first()).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: /^Accent color: #ffee00/ }).first()).toBeVisible();
   expect((await publicConfig(request)).shop.accent).toBeNull();
 
   await suggestion.click();

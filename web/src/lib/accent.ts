@@ -186,14 +186,19 @@ const floor2 = (v: number): number => Math.floor(v * 100) / 100;
 export function accentProblem(input: string): string {
   if (input === "") return "";
   if (!HEX_RE.test(input)) {
-    return "shop.accentColor: must be a color like #9c4212 (six hex digits), or empty for the theme accent";
+    return "Accent color: must be a color like #9c4212 (six hex digits), or empty for the theme accent";
   }
   const res = checkAccentColor(input);
   if (res.ok) return "";
   if (!res.light.pass) {
-    let msg = `shop.accentColor: ${res.accent} doesn't have enough contrast on the shop background: links measure ${floor2(res.light.linkRatio).toFixed(2)}:1 and button text ${floor2(res.light.buttonRatio).toFixed(2)}:1, and both need 4.5:1`;
+    // Name only the pairs that fail: listing a passing ratio as if it failed misleads (A7).
+    const failing: string[] = [];
+    if (res.light.linkRatio < ACCENT_MIN_RATIO) failing.push(`links measure ${floor2(res.light.linkRatio).toFixed(2)}:1`);
+    if (res.light.buttonRatio < ACCENT_MIN_RATIO) failing.push(`button text measures ${floor2(res.light.buttonRatio).toFixed(2)}:1`);
+    const need = failing.length === 2 ? "but both need 4.5:1" : "but need 4.5:1";
+    let msg = `Accent color: ${res.accent} doesn't have enough contrast on the shop background: ${failing.join(" and ")}, ${need}`;
     if (res.suggestion) msg += `; try ${res.suggestion}`;
     return msg;
   }
-  return `shop.accentColor: no dark-mode variant of ${res.accent} reaches 4.5:1; pick a different color`;
+  return `Accent color: no dark-mode variant of ${res.accent} reaches 4.5:1; pick a different color`;
 }

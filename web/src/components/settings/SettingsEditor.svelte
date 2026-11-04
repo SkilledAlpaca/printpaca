@@ -164,7 +164,8 @@
   // label, else to the first control of the card that holds it (errorSection), so the summary always leads somewhere.
   function resolveSettingsError(message: string): ErrorTarget | null {
     const path = errorLabel(message);
-    const named = path && hasFieldLabel(path) ? findFieldByLabel(fieldLabel(path)) : null;
+    // A path ("pricing.marginPct") maps to its label; a message that already leads with a label ("Accent color") is looked up as is.
+    const named = path ? findFieldByLabel(hasFieldLabel(path) ? fieldLabel(path) : path) : null;
     if (named) return { el: named, field: true };
     const card = document.getElementById(`section-${errorSection(message)}`);
     const first = card?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea, button");

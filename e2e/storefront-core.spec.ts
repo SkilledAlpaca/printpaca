@@ -372,7 +372,9 @@ test("a low-contrast accent is rejected with the measured ratios and a suggestio
   expect(bad.status()).toBe(422);
   const message = JSON.stringify(await bad.json());
   expect(message).toMatch(/links measure \d+\.\d\d:1/);
-  expect(message).toMatch(/button text \d+\.\d\d:1/);
+  // Only the pair that fails is named: #ffd700 has plenty of contrast for button text.
+  expect(message).not.toMatch(/button text/);
+  expect(message).not.toContain("shop.accentColor");
   expect(message).toMatch(/try #[0-9a-f]{6}/);
 
   try {

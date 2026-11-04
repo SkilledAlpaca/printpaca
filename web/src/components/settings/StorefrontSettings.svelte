@@ -209,6 +209,7 @@
     {/if}
   </div>
   <p class="hint">What customers see on your shop. Changes apply as soon as you save, with no restart. The hero image is the one exception: it is saved the moment you upload or remove it.</p>
+  <p class="hint">Categories and featured items are set on <a href="#/items" data-testid="storefront-items-link">Shop items</a>: open Categories to add or reorder them, and edit an item to feature it.</p>
 
   <div class="sections">
     <Fieldset legend="What the shop offers">

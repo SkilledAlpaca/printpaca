@@ -246,7 +246,7 @@ export function shopWarnings(shop: ServerConfig["shop"]): FieldWarning[] {
   }
   const accent = accentProblem(shop.accentColor.trim());
   if (accent !== "") {
-    warnings.push({ field: "shop.accentColor", code: "invalid-enum", message: accent.replace(/^shop\.accentColor: /, ""), severity: "error" });
+    warnings.push({ field: "shop.accentColor", code: "invalid-enum", message: accent.replace(/^Accent color: /, ""), severity: "error" });
   }
   if (shop.footerLinks.length > SHOP_FOOTER_LINKS_MAX) {
     warnings.push({ field: "shop.footerLinks", code: "above-max", message: `at most ${SHOP_FOOTER_LINKS_MAX} links`, severity: "error", bound: SHOP_FOOTER_LINKS_MAX });

@@ -163,3 +163,36 @@ test.describe("A5: saving Settings keeps the scroll position", () => {
   });
 });
 
+test.describe("A6: Storefront links to Shop items", () => {
+  test("the Storefront card points at Categories and featured items", async ({ page }) => {
+    await gotoSettings(page);
+    const link = page.locator("#section-storefront").getByRole("link", { name: "Shop items" });
+    await expect(link).toHaveAttribute("href", "#/items");
+    await link.click();
+    await expect(page.getByRole("heading", { level: 1, name: "Shop items" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Categories" })).toBeVisible();
+  });
+});
+
+test.describe("A7: the accent error is plain text and names only the failing pair", () => {
+  test("a pale yellow fails on links only, and the saved error carries no internal key", async ({ page, request }) => {
+    const original = (await (await request.get("/admin/api/settings")).json()).config;
+    try {
+      await gotoSettings(page);
+      const card = page.locator("#section-storefront");
+      await card.getByLabel("Accent color", { exact: true }).fill("#ffee00");
+      const inline = card.locator(".error-text, [role=alert]").filter({ hasText: /contrast/ }).first();
+      await expect(inline).toContainText(/links measure \d+\.\d\d:1, but need 4\.5:1/);
+      await expect(inline).not.toContainText("button text");
+      await expect(inline).not.toContainText("shop.accentColor");
+      await page.getByRole("button", { name: "Save changes" }).click();
+      const alert = page.getByRole("alert").filter({ hasText: /^Accent color: #ffee00/ }).first();
+      await expect(alert).toBeVisible();
+      await expect(alert).not.toContainText("shop.accentColor");
+      await expect(alert).not.toContainText("button text");
+    } finally {
+      await request.put("/admin/api/settings", { data: { config: original } });
+    }
+  });
+});
+

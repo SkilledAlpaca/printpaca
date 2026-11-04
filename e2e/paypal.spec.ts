@@ -88,7 +88,7 @@ test("a PayPal.me handle and currency code put a pay link and QR on a sent invoi
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
   await page.getByRole("button", { name: "Mark sent" }).click();
-  await page.getByRole("button", { name: /^Mark INV-.* as sent\?$/ }).click();
+  await page.getByRole("button", { name: "Yes, mark as sent" }).click();
   await expect(page.getByText("sent", { exact: true })).toBeVisible();
 
   const view = await printInvoice(page);
@@ -111,9 +111,9 @@ test("a fully paid invoice's print view has no pay block", async ({ page }) => {
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
   await page.getByRole("button", { name: "Mark sent" }).click();
-  await page.getByRole("button", { name: /^Mark INV-.* as sent\?$/ }).click();
+  await page.getByRole("button", { name: "Yes, mark as sent" }).click();
   await expect(page.getByText("sent", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Record payment" }).click();
+  await page.getByRole("button", { name: /^Record \$/ }).click();
   await expect(page.getByText("paid", { exact: true })).toBeVisible();
 
   const view = await printInvoice(page);

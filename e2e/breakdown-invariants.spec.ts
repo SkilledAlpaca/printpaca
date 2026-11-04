@@ -1,11 +1,12 @@
 import { test, expect } from "@playwright/test";
-import { fillCanonicalQuote, readMoney, openMorePricing } from "./helpers";
+import { fillCanonicalQuote, readMoney, openMorePricing, openBreakdown } from "./helpers";
 
 // UI-rendering invariants that no unit or compat test covers: a blanking rule, which number maps to
 // which on-screen field, and a precondition's on-screen consequence.
 
 test("an invalid weight blanks only the Material row and both footer totals, not unrelated rows", async ({ page }) => {
   await page.goto("/admin/");
+  await openBreakdown(page);
   await fillCanonicalQuote(page);
   // Quantity > 1 so both footer totals render; at quantity 1 the Batch total row is absent.
   await page.getByLabel(/Quantity/).fill("2");

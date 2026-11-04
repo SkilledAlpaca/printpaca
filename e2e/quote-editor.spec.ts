@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { fillCanonicalQuote, historyRow, navButton } from "./helpers";
+import { fillCanonicalQuote, historyRow, navButton, openBreakdown } from "./helpers";
 import AxeBuilder from "@axe-core/playwright";
 import { geometryOnly3mf } from "./geometry3mf";
 
@@ -205,6 +205,7 @@ test("the print fields are one skip link away, and every Costs input has a name"
 
 test("the cost lines explain themselves and a batch total says how it relates to the unit cost", async ({ page }) => {
   await page.goto("/admin/");
+  await openBreakdown(page);
   await fillCanonicalQuote(page);
   await page.getByLabel(/Quantity/).fill("3");
   await expect(page.getByText("Printer wear: its price spread over its lifespan")).toBeVisible();

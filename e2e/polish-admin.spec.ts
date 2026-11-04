@@ -341,8 +341,8 @@ test.describe("sidebar and quote page", () => {
     await page.goto("/admin/#/quote");
     await expect(page.getByRole("group", { name: "Quote summary" })).toBeVisible();
     // The breakdown comes back from the server preview, so wait for the rows.
-    await expect.poll(() => page.locator("table.measure-cap code").count(), { timeout: 10_000 }).toBeGreaterThan(0);
-    const formulas = (await page.locator("table.measure-cap code").allTextContents()).join(" ");
+    await expect.poll(() => page.locator(".breakdown table code").count(), { timeout: 10_000 }).toBeGreaterThan(0);
+    const formulas = (await page.locator(".breakdown table code").allTextContents()).join(" ");
     expect(formulas).not.toContain("NaN");
     expect(formulas).toContain("– g");
   });

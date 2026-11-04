@@ -33,13 +33,16 @@
 <div class="ui-field" data-size={size}>
   <label for={id}>{label}</label>
   {#if hint}<small class="hint-text" id={ids.hint}>{hint}</small>{/if}
-  {@render children({ id, describedby: described, invalid: error ? "true" : undefined })}
+  <!-- display: contents, so the control and anything the caller adds beside it lay out as direct children of the
+       field; FormGrid's align="controls" turns it into the field's one third row. -->
+  <div class="ui-field-control">{@render children({ id, describedby: described, invalid: error ? "true" : undefined })}</div>
   {#if error}<small class="error-text" id={ids.error}>{error}</small>{/if}
 </div>
 
 <style>
   .ui-field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
   label { font-size: var(--type-secondary); font-weight: 600; color: var(--text); }
+  .ui-field-control { display: contents; }
   .hint-text { color: var(--muted); font-size: var(--type-secondary); }
   .error-text { color: var(--danger); font-size: var(--type-secondary); }
   .ui-field :global(:is(input, select, textarea)) { width: 100%; min-width: 0; }

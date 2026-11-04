@@ -8,10 +8,10 @@
   let { cfg, order }: { cfg: EffectiveConfig; order: OrderBreakdown } = $props();
 </script>
 
-<div class="card">
-  <h2>Order by part</h2>
+<div class="order-by-part">
+  <h3>Order by part</h3>
   <ScrollRegion label="Order by part table">
-    <table class="parts-table measure-cap" class:priced={!!order.pricing}>
+    <table class="parts-table" class:priced={!!order.pricing}>
       <thead>
         <tr>
           <th>Part</th>
@@ -55,11 +55,13 @@
 </div>
 
 <style>
-  /* Phone width: drops the per-unit cost column (and the cost total once prices show) and tightens cells so
+  /* In a narrow container (the summary column, or a phone): drops the per-unit cost column (and the cost total once prices show) and tightens cells so
    * the table fits without sideways scrolling; costs stay in the summary bar and breakdown card. */
-  @media (max-width: 480px) {
+  .order-by-part { min-width: 0; container-type: inline-size; }
+  h3 { margin: 0; font-size: var(--type-heading); }
+  @container (max-width: 34rem) {
     .parts-table { font-size: var(--text-sm); }
-    .parts-table :is(th, td) { padding: 0.3rem 0.25rem; }
+    .parts-table :is(th, td) { padding: var(--space-1); }
     .parts-table thead th:nth-child(3),
     .parts-table tbody td:nth-child(3) { display: none; }
     .parts-table.priced thead th:nth-child(4),

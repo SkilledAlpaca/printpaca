@@ -194,6 +194,19 @@ export async function requestIdByReference(request: APIRequestContext, reference
   return row!.id;
 }
 
+/** Opens the summary's collapsed Breakdown (the cost lines and the order-by-part table), if it is closed. At
+ * widths below 1100px the summary itself is collapsed behind its Expand button; open that first. */
+export async function openBreakdown(page: Page): Promise<void> {
+  const details = page.locator("details.breakdown-disclosure");
+  if ((await details.getAttribute("open")) === null) await details.locator("> summary").click();
+}
+
+/** At widths below 1100px the full summary (client, label, Save) sits behind the pinned bar's Expand button. */
+export async function expandSummary(page: Page): Promise<void> {
+  const expand = page.getByRole("button", { name: /^Expand/ });
+  if (await expand.isVisible()) await expand.click();
+}
+
 /** Opens the Price and profit card's collapsed "More pricing options" (tax and shipping), if it is closed. */
 export async function openMorePricing(page: Page): Promise<void> {
   const details = page.locator("details.more-pricing");

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Field from "./ui/Field.svelte";
   import { onMount } from "svelte";
   import type { EffectiveConfig } from "../lib/engine/index";
   import { DEFAULT_FETCH_TIMEOUT_MS } from "../lib/fetchTimeouts";
@@ -112,6 +113,7 @@
           : "",
   );
   const assertive = $derived(status === "error");
+  const uid = $props.id();
 </script>
 
 <div class="spool-picker">
@@ -126,17 +128,18 @@
   {/if}
 
   {#if status === "ok"}
-    <label class="field field-inline spool">
-      <span>Spool (from Spoolman)</span>
-      <select value={selectedId} onchange={(e) => pick(e.currentTarget.value)}>
-        <option value="">Use material preset</option>
-        {#each spools as s (s.id)}
-          <option value={s.id}>
-            {spoolLabel(s)} · {s.remaining_weight == null ? "remaining unknown" : `${Math.round(s.remaining_weight)} g left`}
-          </option>
-        {/each}
-      </select>
-    </label>
+    <Field id={`${uid}-spool`} label="Spool (from Spoolman)">
+      {#snippet children(a)}
+        <select id={a.id} value={selectedId} onchange={(e) => pick(e.currentTarget.value)}>
+          <option value="">Use material preset</option>
+          {#each spools as s (s.id)}
+            <option value={s.id}>
+              {spoolLabel(s)} · {s.remaining_weight == null ? "remaining unknown" : `${Math.round(s.remaining_weight)} g left`}
+            </option>
+          {/each}
+        </select>
+      {/snippet}
+    </Field>
 
     {#if materialNote}
       <p class="advisory-text hint-text" role="status">{materialNote}</p>
@@ -167,9 +170,8 @@
 </div>
 
 <style>
-  .spool-picker { margin-top: 0.6rem; }
-  .spool { margin-top: 0.4rem; }
-  .status-line { margin: 0 0 0.4rem; }
+  .spool-picker { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+  .spool-picker > :global(.ui-field) { align-self: stretch; }
+  .status-line, .hint-text, .spool-picker p { margin: 0; }
   .status-line.error { color: var(--danger); }
-  .hint-text { margin: 0.3rem 0; }
 </style>

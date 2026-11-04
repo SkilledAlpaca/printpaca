@@ -5,7 +5,7 @@ export const TILE_IDS = ["gcode", "print", "costs", "breakdown", "pricing", "his
 export type TileId = (typeof TILE_IDS)[number];
 
 export const TILE_HELP: Record<TileId, string> = {
-  gcode: "Drop a sliced .gcode or .3mf file, or an STL or 3MF model. printpaca reads the slicer's weight and time, or estimates weight from the model, and fills in the Print box.",
+  gcode: "Drop a sliced .gcode or .3mf file, or an STL or 3MF model. printpaca reads the slicer's weight and time, or estimates weight from the model, and fills in the Print box. Several files at once make one part each. Files are read in your browser and never uploaded.",
   print: "The job itself: printer, material, model weight, print time, and quantity. Waste adds a percentage to the model weight to cover purge and supports. With a time-of-use schedule, it also holds the print start, because the start decides which rates the print pays.",
   costs: "Your shop rates: electricity, labor, printer depreciation, and overhead. These usually stay the same between quotes; set defaults on the Electricity and Printers pages.",
   breakdown: "Live cost breakdown per unit and per batch. A dash means a required input above is missing or invalid.",

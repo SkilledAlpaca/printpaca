@@ -12,6 +12,7 @@
   import { formatDateTime } from "../lib/format";
   import { onDestroy, onMount } from "svelte";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
+  import Field from "./ui/Field.svelte";
   import { resolveGcode, type EffectiveConfig } from "../lib/engine/index";
   import { currentDensity, currentDiameter, type PartForm } from "../lib/state.svelte";
   import { splitSeconds } from "../lib/gcodeTime";
@@ -255,31 +256,34 @@
   {/if}
 
   {#if status === "ok"}
-    <label class="field field-inline recent-filter">
-      <span>Filter recent prints by file name</span>
-      <input id="recent-prints-filter" type="search" bind:value={filter} autocomplete="off" />
-    </label>
+    <Field id="recent-prints-filter" label="Filter recent prints by file name" size="m">
+      {#snippet children(a)}
+        <input id={a.id} type="search" bind:value={filter} autocomplete="off" />
+      {/snippet}
+    </Field>
     <p class="advisory-text match-text" role="status" aria-live="polite">{matchText}</p>
-    <label class="field field-inline recent">
-      <span>Recent print (from Moonraker)</span>
-      <select
-        bind:value={selectedId}
-        aria-disabled={applying} aria-busy={applying}
-        onchange={(e) => {
-          // A pick is applying: keep the select focusable (aria-disabled, not disabled) but ignore changes.
-          if (applying) {
-            e.currentTarget.value = selectedId;
-            return;
-          }
-          pick(e.currentTarget.value);
-        }}
-      >
-        <option value="">Pick a completed print…</option>
-        {#each visibleJobs as j (j.job_id)}
-          <option value={j.job_id}>{j.filename} · {j.status} · {whenFinished(j)} · {filamentLabel(j)} · {durationLabel(j)}</option>
-        {/each}
-      </select>
-    </label>
+    <Field id="recent-prints-select" label="Recent print (from Moonraker)">
+      {#snippet children(a)}
+        <select
+          id={a.id}
+          bind:value={selectedId}
+          aria-disabled={applying} aria-busy={applying}
+          onchange={(e) => {
+            // A pick is applying: keep the select focusable (aria-disabled, not disabled) but ignore changes.
+            if (applying) {
+              e.currentTarget.value = selectedId;
+              return;
+            }
+            pick(e.currentTarget.value);
+          }}
+        >
+          <option value="">Pick a completed print…</option>
+          {#each visibleJobs as j (j.job_id)}
+            <option value={j.job_id}>{j.filename} · {j.status} · {whenFinished(j)} · {filamentLabel(j)} · {durationLabel(j)}</option>
+          {/each}
+        </select>
+      {/snippet}
+    </Field>
     <p class="advisory-text weight-note">
       "From length used" is a rough guess from how much filament was fed. Picking a print fills in the slicer's own weight when Moonraker has it.
     </p>
@@ -300,13 +304,9 @@
 </div>
 
 <style>
-  .recent-prints { margin-top: 0.6rem; }
-  .recent { margin-top: 0.4rem; }
-  .recent-filter { margin-top: 0.4rem; }
-  .match-text { margin: 0.2rem 0 0; }
-  .weight-note { margin: 0.3rem 0 0; }
-  .load-more { margin-top: 0.4rem; }
-  .status-line { margin: 0 0 0.4rem; }
+  .recent-prints { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+  .recent-prints > :global(.ui-field) { align-self: stretch; }
+  .match-text, .weight-note, .status-line { margin: 0; }
   .status-line.error { color: var(--danger); }
   .apply-status.ok { color: var(--ok); }
   .apply-status.not-found,

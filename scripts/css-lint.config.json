@@ -18,7 +18,22 @@
     "web/src/public/ShopHero.svelte",
     "web/src/public/FormErrorSummary.svelte",
     "web/src/public/RateLimitNotice.svelte",
-    "web/src/public/PublicApp.svelte"
+    "web/src/public/PublicApp.svelte",
+    "web/src/components/QuoteTab.svelte",
+    "web/src/components/PartsList.svelte",
+    "web/src/components/PartsTable.svelte",
+    "web/src/components/PricingPanel.svelte",
+    "web/src/components/QuoteSummaryBar.svelte",
+    "web/src/components/BreakdownTable.svelte",
+    "web/src/components/RecentPrints.svelte",
+    "web/src/components/PrintStartFields.svelte",
+    "web/src/components/SpoolPicker.svelte",
+    "web/src/components/GcodeDrop.svelte",
+    "web/src/components/PresetChips.svelte",
+    "web/src/components/LabeledNumber.svelte",
+    "web/src/components/LabeledText.svelte",
+    "web/src/components/PrintView.svelte",
+    "web/src/components/HistoryPanel.svelte"
   ],
   "scan": [
     ".svelte",
@@ -59,6 +74,27 @@
       "property": "width",
       "value": "64px",
       "reason": "Collapsed (icon-only) rail width; fits one 40px control plus padding."
+    },
+    {
+      "file": "web/src/components/PrintView.svelte",
+      "selector": ".logo",
+      "property": "max-width",
+      "value": "240px",
+      "reason": "Business logo bound on the printed quote: an image size the plan exempts, and print output must match v1.1."
+    },
+    {
+      "file": "web/src/components/PrintView.svelte",
+      "selector": ".seller p",
+      "property": "margin",
+      "value": "0.1rem 0",
+      "reason": "Printed seller-block line spacing kept at the v1.1 value so the printed quote is unchanged; the screen scale has no step this small."
+    },
+    {
+      "file": "web/src/components/PrintView.svelte",
+      "selector": "td, th",
+      "property": "padding",
+      "value": "0.35rem var(--space-2)",
+      "reason": "Printed table cell padding kept at the v1.1 value so the printed quote is unchanged; the screen scale has no step this size."
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { historyRow, quotesRow, openMorePricing } from "./helpers";
+import { historyRow, quotesRow, openMorePricing, openBreakdown, expandSummary } from "./helpers";
 
 // Multi-part quote: drop three small synthetic G-code files at once (one part
 // each, no real personal data), price them with per-part quantities and one
@@ -35,16 +35,16 @@ test("a three-part order: drop, price, save, restore, print, convert", async ({ 
 
   await page.locator('.drop input[type="file"]').setInputFiles(FILES);
   for (const name of ["bracket", "lid", "spacers"]) {
-    await expect(page.getByRole("button", { name: new RegExp(`^Edit ${name} ×`) })).toBeVisible();
+    await expect(page.getByRole("tab", { name: new RegExp(`^${name} ×`) })).toBeVisible();
   }
-  await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(3);
+  await expect(page.getByRole("tab")).toHaveCount(3);
 
   const weight = page.getByLabel(/Model weight/);
-  await page.getByRole("button", { name: /^Edit bracket ×/ }).click();
+  await page.getByRole("tab", { name: /^bracket ×/ }).click();
   await expect(weight).toHaveValue("10");
-  await page.getByRole("button", { name: /^Edit lid ×/ }).click();
+  await page.getByRole("tab", { name: /^lid ×/ }).click();
   await expect(weight).toHaveValue("20");
-  await page.getByRole("button", { name: /^Edit spacers ×/ }).click();
+  await page.getByRole("tab", { name: /^spacers ×/ }).click();
   await expect(weight).toHaveValue("5");
 
   await page.getByLabel("Set a selling price").check();
@@ -54,9 +54,10 @@ test("a three-part order: drop, price, save, restore, print, convert", async ({ 
 
   await page.getByLabel(/^Quantity/).fill("20");
   await page.getByLabel(/Sale price override/).fill("0.75");
-  await page.getByRole("button", { name: /^Edit bracket ×/ }).click();
+  await page.getByRole("tab", { name: /^bracket ×/ }).click();
   await page.getByLabel(/^Quantity/).fill("4");
 
+  await openBreakdown(page);
   const orderTable = page.locator(".parts-table tbody tr");
   await expect(orderTable).toHaveCount(3);
   await expect(page.locator(".parts-table")).toContainText("$15.00"); // spacers: 20 x $0.75
@@ -86,9 +87,9 @@ test("a three-part order: drop, price, save, restore, print, convert", async ({ 
   // Opening over unsaved edits asks first; accept it.
   page.once("dialog", (d) => void d.accept());
   await historyRow(page, label).getByRole("button", { name: /^Open "/ }).click();
-  await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(3);
+  await expect(page.getByRole("tab")).toHaveCount(3);
   await expect(page.getByLabel(/^Quantity/)).toHaveValue("4");
-  await page.getByRole("button", { name: /^Edit spacers ×/ }).click();
+  await page.getByRole("tab", { name: /^spacers ×/ }).click();
   await expect(page.getByLabel(/^Quantity/)).toHaveValue("20");
   await expect(page.getByLabel(/Sale price override/)).toHaveValue("0.75");
 
@@ -151,11 +152,11 @@ test("a single-part quote keeps the compact editor and an Add part action", asyn
   await expect(page.getByRole("button", { name: "Add part" })).toBeVisible();
   await expect(page.getByLabel("Part name")).toHaveCount(0);
   await page.getByRole("button", { name: "Add part" }).click();
-  await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(2);
+  await expect(page.getByRole("tab")).toHaveCount(2);
   await page.getByRole("button", { name: "Remove Part 2" }).click();
-  await page.getByRole("button", { name: "Remove? Part 2" }).click();
+  await page.getByRole("button", { name: "Remove Part 2?" }).click();
   await expect(page.getByRole("button", { name: "Add part" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(0);
+  await expect(page.getByRole("tab")).toHaveCount(0);
 });
 
 test("a three-part order and the Quotes page fit a phone without sideways page scroll", async ({ page, request }) => {
@@ -164,6 +165,9 @@ test("a three-part order and the Quotes page fit a phone without sideways page s
   await page.goto("/admin/");
   await page.locator('.drop input[type="file"]').setInputFiles(FILES);
   await page.getByLabel("Set a selling price").check();
+  // Below 1100px the summary sits behind its pinned bar's Expand button.
+  await expandSummary(page);
+  await openBreakdown(page);
   await expect(page.locator(".parts-table tbody tr")).toHaveCount(3);
   const fits = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
   expect(await fits()).toBe(true);

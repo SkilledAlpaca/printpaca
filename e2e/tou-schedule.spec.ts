@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { fillCanonicalQuote, navButton } from "./helpers";
+import { fillCanonicalQuote, navButton, openBreakdown } from "./helpers";
 
 // Time-of-use schedule energy mode. It switches the shared server to schedule mode and restores the original
 // settings afterwards. The example rates are the app's SCE TOU-D-4-9PM example (summer weekday on-peak 0.55,
@@ -23,7 +23,7 @@ test.afterAll(async ({ request }) => {
 });
 
 async function electricityRow(page: Page) {
-  return page.locator("table.measure-cap tbody tr", { hasText: "Electricity" });
+  return page.locator(".breakdown table tbody tr", { hasText: "Electricity" });
 }
 
 test.describe.serial("time-of-use schedule", () => {
@@ -76,6 +76,7 @@ test.describe.serial("time-of-use schedule", () => {
   test("a quote prices from its print start, with a per-part override", async ({ page }) => {
     await page.goto("/admin/");
     await navButton(page, "New quote").click();
+    await openBreakdown(page);
     await fillCanonicalQuote(page);
 
     const order = page.getByLabel("Print start (order)");

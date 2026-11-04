@@ -33,6 +33,7 @@ test("the correct password logs in, survives reload, and Sign out returns to the
 
   // Sign out clears the session and returns to the login screen.
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm sign out" }).click();
   await expect(page.getByLabel("Password")).toBeVisible();
   await expect(navButton).not.toBeVisible();
 });

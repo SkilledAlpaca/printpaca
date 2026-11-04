@@ -69,7 +69,7 @@ test("item editor: group wording, hidden-on-save notice with Show in shop, and a
 
 test("item editor: Ctrl+S saves and the list filter takes Ctrl+K", async ({ page, request }) => {
   await page.goto("/admin/#/items");
-  await expect(page.locator("footer .shortcuts-line")).toContainText("Ctrl+K filter");
+  await expect(page.locator("main .shortcuts-line")).toContainText("Ctrl+K filter");
   await page.keyboard.press("Control+k");
   await expect(page.locator("#items-filter")).toBeFocused();
   await page.locator("#items-filter").fill("shell test");
@@ -79,7 +79,7 @@ test("item editor: Ctrl+S saves and the list filter takes Ctrl+K", async ({ page
   await page.locator("#items-filter").fill("shell test");
 
   await page.locator("button.row-open", { hasText: "Shell Test Item" }).click();
-  await expect(page.locator("footer .shortcuts-line")).toContainText("Ctrl+S save");
+  await expect(page.locator("main .shortcuts-line")).toContainText("Ctrl+S save");
   await page.getByLabel("Description").fill("Saved by shortcut");
   await page.getByLabel("Description").press("Control+s");
   await expect(page.getByTestId("item-saved")).toContainText("Saved.");
@@ -131,7 +131,7 @@ test("the list's Public toggle states what happened and offers Undo", async ({ p
 });
 
 test("Ctrl+S and Ctrl+K are offered only where they work", async ({ page }) => {
-  const hint = page.locator("footer .shortcuts-line");
+  const hint = page.locator("main .shortcuts-line");
   await page.goto("/admin/#/dashboard");
   await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
   await expect(hint).toHaveCount(0);

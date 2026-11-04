@@ -208,7 +208,7 @@ test("at 1366x768 every nav item can be reached, and the footer controls stay in
     expect(hit, `${name} is clickable`).toBe(true);
   }
   const aside = (await page.getByRole("complementary").boundingBox())!;
-  for (const name of ["Guide", "Compact density", "Collapse sidebar"]) {
+  for (const name of ["Guide", "Compact density", "Dark theme", "Collapse sidebar"]) {
     const b = (await page.getByRole("complementary").getByRole("button", { name }).boundingBox())!;
     expect(b.y + b.height, `${name} bottom edge`).toBeLessThanOrEqual(aside.y + aside.height + 0.5);
   }

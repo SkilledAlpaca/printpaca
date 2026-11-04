@@ -17,6 +17,10 @@
     mdiFileDocumentMultipleOutline,
     mdiLogout,
     mdiFormatLineSpacing,
+    mdiThemeLightDark,
+    mdiCheck,
+    mdiInformationOutline,
+    mdiClose,
     mdiOpenInNew,
     mdiStorefrontOutline,
     mdiMenu,
@@ -33,6 +37,7 @@
   import { listInvoices } from "./lib/invoicesApi";
   import { signOutAction } from "./lib/accessSignIn";
   import { density, toggleDensity } from "./lib/density.svelte";
+  import { theme, toggleTheme, syncThemeFromDocument } from "./lib/theme.svelte";
   import { applyConfig, appConfig, effectiveConfig, printJob, invoicePrintJob, quoteActions, pendingOpen, quoteSession, startNewQuote, quoteIsDirty } from "./lib/state.svelte";
   import {
     demoLocal,
@@ -53,7 +58,7 @@
   import { brandTab, fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab } from "./lib/navFilter";
   import { loadPublicConfig } from "./public/api";
   import { splitHash, routeBase, quoteIdFromHash } from "./lib/hashRoute";
-  import { focusAfterUpdate } from "./lib/a11y.svelte";
+  import { focusAfterUpdate, announce } from "./lib/a11y.svelte";
   import { pageTitle as pageTitleState } from "./lib/pageTitle.svelte";
   import LiveAnnouncer from "./components/LiveAnnouncer.svelte";
   import Icon from "./components/Icon.svelte";
@@ -454,6 +459,103 @@
     else void logout();
   }
 
+  // D41: Sign out confirms in place. The first click swaps the button for a split control (cancel, confirm).
+  // It reverts on Escape, a click elsewhere, or 5 seconds without activity; the timer restarts whenever focus or
+  // a key press lands inside the control, so a keyboard user is not rushed. Focus goes to the confirm button on
+  // the first click and back to Sign out on a revert.
+  const SIGN_OUT_CONFIRM_MS = 5000;
+  let confirmingSignOut = $state(false);
+  let signOutTimer: ReturnType<typeof setTimeout> | undefined;
+  let signOutBtnEl = $state<HTMLButtonElement | undefined>();
+  let signOutGroupEl = $state<HTMLElement | undefined>();
+  let signOutConfirmEl = $state<HTMLButtonElement | undefined>();
+
+  function armSignOutTimer() {
+    clearTimeout(signOutTimer);
+    signOutTimer = setTimeout(() => cancelSignOut(), SIGN_OUT_CONFIRM_MS);
+  }
+
+  function startSignOutConfirm() {
+    confirmingSignOut = true;
+    armSignOutTimer();
+    void focusAfterUpdate(() => signOutConfirmEl);
+  }
+
+  function cancelSignOut() {
+    if (!confirmingSignOut) return;
+    clearTimeout(signOutTimer);
+    // Move focus back only when it is inside the control (or lost because the control is about to unmount);
+    // a user who already moved on elsewhere keeps their place.
+    const active = document.activeElement;
+    const refocus = !active || active === document.body || (signOutGroupEl?.contains(active) ?? false);
+    confirmingSignOut = false;
+    announce("Sign out cancelled");
+    if (refocus) void focusAfterUpdate(() => signOutBtnEl);
+  }
+
+  $effect(() => {
+    if (!confirmingSignOut) return;
+    function onPointerDown(e: PointerEvent) {
+      if (!signOutGroupEl?.contains(e.target as Node)) cancelSignOut();
+    }
+    function onKeydown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      // Escape belongs to the confirmation first; it must not also close the phone drawer behind it.
+      e.stopPropagation();
+      cancelSignOut();
+    }
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeydown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeydown, true);
+      clearTimeout(signOutTimer);
+    };
+  });
+
+  // The control belongs to one footer layout at a time; a collapse or resize remounts it, so reset.
+  $effect(() => {
+    void navCollapsed;
+    untrack(() => {
+      if (confirmingSignOut) {
+        confirmingSignOut = false;
+        clearTimeout(signOutTimer);
+      }
+    });
+  });
+
+  // D40: the sidebar Theme toggle. In the demo the banner's Theme select persists its own copy, so the toggle
+  // writes through to it and the sidebar re-reads <html> when the select changes.
+  function onToggleTheme() {
+    const next = toggleTheme();
+    if (demoMode) setDemoTheme(next);
+  }
+  $effect(() => {
+    void demoLocal.theme;
+    void tick().then(syncThemeFromDocument);
+  });
+
+  // D42: a status badge opens Settings, then scrolls to and focuses the Integrations card once the Settings
+  // page has loaded its sections.
+  async function openIntegrations() {
+    activate("settings");
+    if (tab !== "settings") return; // an unsaved-changes prompt was declined
+    for (let i = 0; i < 40; i++) {
+      await tick();
+      const section = document.getElementById("section-integrationsUrls");
+      if (section) {
+        section.scrollIntoView({ block: "start" });
+        const heading = section.querySelector<HTMLElement>("h2");
+        if (heading) {
+          heading.tabIndex = -1;
+          heading.focus({ preventScroll: true });
+        }
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+
   async function logout() {
     try {
       await fetch("api/logout", { method: "POST", signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS) });
@@ -622,6 +724,14 @@
   // Moonraker: Recent prints on New quote). Anyone else would see status they can't act on.
   const showSpoolmanLine = $derived(hasTabAccess("quote", configUser) || hasTabAccess("filament", configUser));
   const showMoonrakerLine = $derived(hasTabAccess("quote", configUser));
+  // D42: badges are links only for someone who can reach Settings (admin-only; no user means authentication is off); everyone else gets plain status.
+  const canOpenSettings = $derived((!configUser || configUser.isAdmin) && !disabledTabs.has("settings"));
+  function integrationDetail(kind: "spoolman" | "moonraker"): string {
+    const src = appConfig.current?.integrationSources?.[kind];
+    if (src === "env") return "Configured through an environment variable.";
+    if (src === "config") return "Configured in Settings.";
+    return demoMode ? "Configured with demo data." : "Configured.";
+  }
   const versionLabel = $derived(appConfig.current?.version ? `printpaca ${appConfig.current.version}` : "printpaca dev");
   // DEMO_MODE=1 server-side (server/main.go), a plain field on the loaded config like authEnabled.
   const demoMode = $derived(config?.demoMode === true);
@@ -880,51 +990,119 @@
     {/if}
   </nav>
   <div class="sidebar-footer">
-    <!-- Only configured integrations get a line; an unconfigured one is status the owner already knows
-         and never acts on here. Renders nothing when neither is configured. -->
-    {#if spoolmanEnabled && showSpoolmanLine}
-      <div class="integration-line" title={navCollapsed ? "Spoolman configured" : undefined}>
-        <span class="dot ok" aria-hidden="true"></span>
-        {#if !navCollapsed}<span>Spoolman configured</span>{:else}<span class="visually-hidden">Spoolman configured</span>{/if}
+    <!-- D42: only configured integrations get a badge; a disabled one shows nothing. The badge text is its
+         accessible name; the detail is its description and, on hover or focus in the expanded sidebar, a
+         small panel above it. Someone without Settings access gets the same badge as plain status. -->
+    {#snippet integrationBadge(kind: "spoolman" | "moonraker", name: string)}
+      {@const detail = integrationDetail(kind)}
+      <div class="badge-wrap" class:rail={navCollapsed}>
+        {#if canOpenSettings}
+          <button
+            type="button"
+            class="int-badge"
+            aria-label={`${name}: configured`}
+            aria-describedby={`int-${kind}-detail`}
+            title={navCollapsed ? `${name}: configured. ${detail} Opens Settings, Integrations.` : undefined}
+            onclick={openIntegrations}
+          >
+            <span class="dot ok" aria-hidden="true"></span>
+            {#if !navCollapsed}<span aria-hidden="true">{name}: configured</span>{/if}
+          </button>
+        {:else}
+          <span
+            class="int-badge static"
+            role="img"
+            aria-label={`${name}: configured`}
+            aria-describedby={`int-${kind}-detail`}
+            title={navCollapsed ? `${name}: configured. ${detail}` : undefined}
+          >
+            <span class="dot ok" aria-hidden="true"></span>
+            {#if !navCollapsed}<span aria-hidden="true">{name}: configured</span>{/if}
+          </span>
+        {/if}
+        <span class="badge-detail" id={`int-${kind}-detail`} role="presentation">{detail}{canOpenSettings ? " Opens Settings, Integrations." : ""}</span>
       </div>
-    {/if}
-    {#if moonrakerConfigured && showMoonrakerLine}
-      <div class="integration-line" title={navCollapsed ? "Moonraker configured" : undefined}>
-        <span class="dot ok" aria-hidden="true"></span>
-        {#if !navCollapsed}<span>Moonraker configured</span>{:else}<span class="visually-hidden">Moonraker configured</span>{/if}
-      </div>
-    {/if}
-    {#if !navCollapsed}
+    {/snippet}
+    {#if spoolmanEnabled && showSpoolmanLine}{@render integrationBadge("spoolman", "Spoolman")}{/if}
+    {#if moonrakerConfigured && showMoonrakerLine}{@render integrationBadge("moonraker", "Moonraker")}{/if}
+    <div class="footer-actions" class:rail={navCollapsed}>
       {#if !disabledTabs.has("guide")}
         <button
           type="button"
-          class="guide-footer-link"
+          class="footer-btn"
           class:active={tab === "guide"}
           aria-current={tab === "guide" ? "page" : undefined}
+          aria-label={navCollapsed ? "Guide" : undefined}
+          title={navCollapsed ? "Guide" : undefined}
           onclick={() => activate("guide")}
-        >Guide</button>
-      {/if}
-      {#if signOut}
-        <button type="button" class="guide-footer-link" onclick={signOutNow}>{signOut.label}</button>
-      {/if}
-      <!-- Admin-only, per browser (localStorage). The public pages never read it. -->
-      <button type="button" class="guide-footer-link" aria-pressed={density.current === "compact"} onclick={toggleDensity}>Compact density</button>
-      <div class="version-line">{versionLabel}</div>
-    {:else}
-      {#if !disabledTabs.has("guide")}
-        <button type="button" class="guide-footer-icon" aria-label="Guide" onclick={() => activate("guide")}>
+        >
           <Icon path={mdiBookOpenVariant} size={16} />
+          {#if !navCollapsed}<span>Guide</span>{/if}
         </button>
       {/if}
       {#if signOut}
-        <button type="button" class="guide-footer-icon" aria-label={signOut.label} onclick={signOutNow}>
-          <Icon path={mdiLogout} size={16} />
-        </button>
+        {#if !confirmingSignOut}
+          <button
+            type="button"
+            class="footer-btn"
+            bind:this={signOutBtnEl}
+            aria-label={navCollapsed ? signOut.label : undefined}
+            title={navCollapsed ? signOut.label : undefined}
+            onclick={startSignOutConfirm}
+          >
+            <Icon path={mdiLogout} size={16} />
+            {#if !navCollapsed}<span>{signOut.label}</span>{/if}
+          </button>
+        {:else}
+          <!-- Split control: cancel (red, left) and confirm (green, right). Each has an icon, a name, and a
+               color, so color is never the only cue. -->
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <div
+            class="signout-split"
+            class:rail={navCollapsed}
+            role="group"
+            aria-label="Confirm sign out"
+            bind:this={signOutGroupEl}
+            onfocusin={armSignOutTimer}
+            onkeydown={armSignOutTimer}
+          >
+            <button type="button" class="footer-btn cancel" aria-label="Cancel sign out" title="Cancel sign out" onclick={cancelSignOut}>
+              <Icon path={mdiClose} size={16} />
+              {#if !navCollapsed}<span>Cancel</span>{/if}
+            </button>
+            <button type="button" class="footer-btn confirm" bind:this={signOutConfirmEl} aria-label="Confirm sign out" title="Confirm sign out" onclick={signOutNow}>
+              <Icon path={mdiCheck} size={16} />
+              {#if !navCollapsed}<span>Confirm</span>{/if}
+            </button>
+          </div>
+        {/if}
       {/if}
-      <button type="button" class="guide-footer-icon" aria-label="Compact density" aria-pressed={density.current === "compact"} onclick={toggleDensity}>
+    </div>
+    <!-- Admin-only, per browser (localStorage). The public pages never read either. -->
+    <div class="footer-prefs" class:rail={navCollapsed} role="group" aria-label="Display preferences">
+      <button
+        type="button"
+        class="footer-btn"
+        aria-label="Compact density"
+        aria-pressed={density.current === "compact"}
+        title={navCollapsed ? "Compact density" : undefined}
+        onclick={toggleDensity}
+      >
         <Icon path={mdiFormatLineSpacing} size={16} />
+        {#if !navCollapsed}<span>Compact</span>{/if}
       </button>
-    {/if}
+      <button
+        type="button"
+        class="footer-btn"
+        aria-label="Dark theme"
+        aria-pressed={theme.current === "dark"}
+        title={navCollapsed ? "Dark theme" : undefined}
+        onclick={onToggleTheme}
+      >
+        <Icon path={mdiThemeLightDark} size={16} />
+        {#if !navCollapsed}<span>Dark</span>{/if}
+      </button>
+    </div>
     {#if isDesktop}
       <!-- Icon-only collapsing is a desktop concept: below 900px the drawer is near full width (see
            navCollapsed), where icons would save no space and the toggle would be one more control to
@@ -938,6 +1116,19 @@
         <Icon path={sidebarCollapsed ? mdiChevronRight : mdiChevronLeft} size={16} />
         {#if !sidebarCollapsed}<span>Collapse sidebar</span>{/if}
       </button>
+    {/if}
+    <!-- D39: the page footer's line lives here, next to the version. The rail hides the line and keeps the
+         version as a tooltip. -->
+    {#if !navCollapsed}
+      <div class="about">
+        <span class="about-text">Open-source 3D print quote calculator.</span>
+        <span class="version-line">{versionLabel}</span>
+      </div>
+    {:else}
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <span class="version-rail" role="img" tabindex="0" aria-label={versionLabel} title={versionLabel}>
+        <Icon path={mdiInformationOutline} size={16} />
+      </span>
     {/if}
   </div>
 </aside>
@@ -999,15 +1190,12 @@
     <SettingsTab />
   {/if}
 
-  <footer>
-    <span>printpaca, an open-source 3D print cost and quote calculator.</span>
-    <!-- Lists only the shortcuts that work on the current page: {shortcutMod}+S where an editor registered a
-         save, {shortcutMod}+K where the page has a filter input (see FILTER_IDS). Lives in the page footer,
-         not the sidebar's, so the sidebar keeps room for every destination on short windows. -->
-    {#if shortcutHints.length > 0}
-      <div class="shortcuts-line">Shortcuts: {shortcutHints.join(", ")}</div>
-    {/if}
-  </footer>
+  <!-- Lists only the shortcuts that work on the current page: {shortcutMod}+S where an editor registered a
+       save, {shortcutMod}+K where the page has a filter input (see FILTER_IDS). The admin has no page footer
+       (D39); the hint is a line at the end of the content. -->
+  {#if shortcutHints.length > 0}
+    <p class="shortcuts-line">Shortcuts: {shortcutHints.join(", ")}</p>
+  {/if}
   </div>
 </main>
 
@@ -1227,12 +1415,9 @@
    * :focus-visible for them when the trigger was the keyboard, which framed the whole content area in a ring.
    * They take no ring; real controls (and Guide's tabindex="0" scroll region) keep theme.css's. */
   #main[tabindex="-1"]:focus-visible { outline: none; }
-  /* Lives inside <main> as its last child, not a separate grid row: content ends where it ends and the
-   * footer follows, instead of a fixed row pinning it to the viewport bottom with a void above on short
-   * pages. The top border/margin separate it. No max-width or horizontal margin of its own: it's already
-   * inside <main>'s, and adding them would double the indent versus every card. */
-  footer {
-    margin-top: var(--space-6);
+  /* The shortcut hint is the last line of <main>'s content (the admin has no page footer, D39). */
+  .shortcuts-line {
+    margin: var(--space-6) 0 0;
     padding: var(--space-4) 0;
     color: var(--muted);
     font-size: var(--text-xs);
@@ -1278,16 +1463,28 @@
     margin-top: auto;
     padding-top: var(--space-3);
   }
-  /* Named .integration-line, not .status-line: theme.css's .status-line is the shared live-region class
-   * (verifying…, saving…), and this static Spoolman dot + text isn't a live region, so reusing the name
-   * would be a collision. */
-  .integration-line {
-    display: flex;
+  /* Integration badges (D42): a pill with a status dot and "Name: configured". A link-badge is a button; a
+   * static one (no Settings access) is a span with the same look. Contrast: --text on --surface-2 in both
+   * themes; the dot is decoration. The detail panel is an overlay above the badge, inside the sidebar. */
+  .badge-wrap { position: relative; }
+  .int-badge {
+    display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    color: var(--muted);
+    max-width: 100%;
+    min-height: var(--tap-sm);
+    padding: 0 var(--space-3);
+    border: none;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--text);
     font-size: var(--text-xs);
+    white-space: nowrap;
   }
+  button.int-badge { cursor: pointer; }
+  button.int-badge:hover { outline: 1px solid var(--control-border); }
+  .int-badge.static { cursor: default; }
+  .badge-wrap.rail .int-badge { width: 100%; justify-content: center; padding: 0; }
   .dot {
     width: var(--space-2);
     height: var(--space-2);
@@ -1296,53 +1493,66 @@
     flex-shrink: 0;
   }
   .dot.ok { background: var(--ok); }
-  /* Accent-colored and underlined, unlike the muted status lines around it, so it reads as an actionable
-   * link. align-self: flex-start sizes the click target to its text (sidebar-footer is a column flex
-   * container, where buttons stretch); min-height brings the target nearer a reasonable tap size. */
-  .guide-footer-link {
-    align-self: flex-start;
+  .badge-detail {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + var(--space-1));
+    z-index: 5;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: var(--text-xs);
+    box-shadow: var(--shadow);
+  }
+  .badge-wrap:not(.rail):hover .badge-detail,
+  .badge-wrap:not(.rail):focus-within .badge-detail { display: block; }
+
+  /* Footer buttons (Guide, Sign out, Density, Theme): small tinted buttons, each with an icon and a name. The
+   * rail keeps the icon alone, with the name as its aria-label and tooltip. */
+  .footer-actions, .footer-prefs { display: flex; flex-direction: column; gap: var(--space-1); }
+  .footer-prefs { flex-direction: row; }
+  .footer-prefs.rail { flex-direction: column; }
+  .footer-prefs > .footer-btn { flex: 1 1 0; min-width: 0; }
+  .footer-btn {
     display: inline-flex;
     align-items: center;
+    justify-content: flex-start;
+    gap: var(--space-2);
     min-height: var(--tap-sm);
+    padding: 0 var(--space-3);
     border: none;
-    background: none;
-    padding: 0;
-    text-align: left;
-    color: var(--accent-text);
-    text-decoration: underline;
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    color: var(--text);
     font-size: var(--text-xs);
     cursor: pointer;
   }
-  .guide-footer-link:hover { color: var(--text); }
-  /* Phone drawer: footer links are touch targets too (D26). */
-  @media (max-width: 600px) {
-    .guide-footer-link { min-height: 44px; }
-  }
-  /* The same "this is where you are" affordance as the nav buttons (.side-nav button.active), adapted for a
-   * text link: bold weight and solid --text color instead of a background fill, which would look out of
-   * place on this thin footer link. */
-  .guide-footer-link.active,
-  .guide-footer-link[aria-pressed="true"] {
+  .footer-btn:hover { outline: 1px solid var(--control-border); }
+  .footer-btn.active,
+  .footer-btn[aria-pressed="true"] {
     font-weight: 700;
-    color: var(--text);
+    box-shadow: inset 3px 0 0 var(--accent-text);
   }
-  /* Collapsed-sidebar counterpart: same destination, icon-only like the nav buttons' collapsed treatment,
-   * since there is no room for a text link. */
-  .guide-footer-icon {
-    align-self: flex-start;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: var(--tap-sm);
-    height: var(--tap-sm);
-    border: none;
-    background: none;
-    padding: 0;
-    color: var(--muted);
-    cursor: pointer;
+  .footer-actions.rail .footer-btn,
+  .footer-prefs.rail .footer-btn { justify-content: center; padding: 0; width: 100%; }
+  /* Sign out confirmation (D41). Status colors are the --danger and --ok tokens, which pass contrast as text on
+   * --surface-2 in both themes (axe checks both); the icon and the word carry the meaning as well as the color. */
+  .signout-split { display: flex; gap: var(--space-1); }
+  .signout-split.rail { flex-direction: column; }
+  .signout-split .footer-btn { flex: 1 1 0; min-width: 0; justify-content: center; font-weight: 600; border: 1px solid currentColor; }
+  .signout-split .cancel { color: var(--danger); }
+  .signout-split .confirm { color: var(--ok); }
+  .about { display: flex; flex-direction: column; gap: 0; color: var(--muted); font-size: var(--text-xs); line-height: 1.3; }
+  .version-rail { align-self: center; color: var(--muted); display: inline-flex; padding: var(--space-1); }
+  .version-line { font-variant-numeric: tabular-nums; }
+  /* Phone drawer: every footer control is a 44px touch target (D26). */
+  @media (max-width: 600px) {
+    .footer-btn, .int-badge { min-height: 44px; }
+    .collapse-toggle { min-height: 44px; }
   }
-  .guide-footer-icon:hover { color: var(--text); }
-  .version-line { color: var(--muted); font-size: var(--text-xs); }
   /* Short windows (1366x768 and 1366x860 laptops): tighter nav rows and footer so every destination, Settings included,
    * fits without scrolling. The nav still scrolls, with its shadow, below this. */
   @media (min-width: 900px) and (max-height: 900px) {
@@ -1352,7 +1562,6 @@
     .sidebar { padding-block: var(--space-3); gap: var(--space-1); }
     .sidebar-footer { gap: var(--space-1); padding-top: var(--space-2); }
   }
-  .shortcuts-line { color: var(--muted); font-size: var(--text-xs); }
   .collapse-toggle {
     display: inline-flex;
     align-items: center;

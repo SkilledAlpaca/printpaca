@@ -10,7 +10,8 @@ import (
 )
 
 // This file implements GET /api/export, a manual human-readable backup of every record table.
-// Export only, deliberately: there is no import endpoint.
+// Export only, deliberately: there is no import endpoint (so "import includes categories" has nothing to
+// build on; the export carries them).
 // config.yaml and the SQLite file remain the authoritative restore path.
 
 // exportRequest is a quote request's metadata only (id, status, name, email, createdAt), not QuoteRequest.
@@ -42,6 +43,9 @@ type exportPayload struct {
 	Quotes        []Quote         `json:"quotes"`
 	Requests      []exportRequest `json:"requests"`
 	Items         []Item          `json:"items"`
+	// Categories are the shop categories; each item's categoryId refers to one. Added in v1.2.0 without a
+	// format version bump: it is a new key, and every existing key keeps its shape.
+	Categories []Category `json:"categories"`
 }
 
 // exportClientsTx reads every client, in handleList's order, inside the caller's transaction.
@@ -284,6 +288,13 @@ func handleExport(store *ConfigStore, db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		categoriesList, err := listCategories(tx)
+		if err != nil {
+			log.Printf("export categories: %v", err)
+			http.Error(w, "export unavailable", http.StatusInternalServerError)
+			return
+		}
+
 		now := time.Now().UTC()
 		payload := exportPayload{
 			FormatVersion: exportFormatVersion,
@@ -295,6 +306,7 @@ func handleExport(store *ConfigStore, db *sql.DB) http.HandlerFunc {
 			Quotes:        quotesList,
 			Requests:      requestsList,
 			Items:         itemsList,
+			Categories:    categoriesList,
 		}
 
 		filename := fmt.Sprintf("printpaca-export-%s.json", now.Format("2006-01-02"))

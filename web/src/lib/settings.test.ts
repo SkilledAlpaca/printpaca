@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cloneConfig, configsEqual, errorSection, loadSettings, nextKey, saveSettings, type ServerConfig } from "./settings";
+import { DEFAULT_SHOP_CONFIG } from "./shop";
 
 function baseConfig(): ServerConfig {
   return {
@@ -32,7 +33,7 @@ function baseConfig(): ServerConfig {
     integrationsUrls: { spoolmanUrl: "", moonrakerUrl: "", fluiddUrl: "" },
     ui: { disabledTabs: [] },
     site: { shopOnMainPort: true, staffLink: true, adminUrl: "" },
-    shop: { maxOrderQty: 100 },
+    shop: structuredClone(DEFAULT_SHOP_CONFIG),
     users: { multiUser: false, accessAdminEmail: "" },
   };
 }

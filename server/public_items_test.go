@@ -13,12 +13,6 @@ import (
 	"time"
 )
 
-// publicItemsResponse mirrors handlePublicItems' response envelope
-// (server/public.go).
-type publicItemsResponse struct {
-	Items []publicItem `json:"items"`
-}
-
 // Seeds one public in_stock item (option plus uploaded image), one public ready_to_print item, and one non-public item through the admin routes, then asserts GET /api/public/items on the PUBLIC mux returns exactly the two public items in sort_order,
 // with imageUrl/stock populated and no internal fields (imageFile/createdAt/updatedAt/sortOrder), and that the public mux serves the image via /item-images/{file}.
 func TestPublicItems(t *testing.T) {

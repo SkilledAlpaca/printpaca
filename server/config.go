@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +15,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -243,15 +246,68 @@ type Site struct {
 	AdminURL string `yaml:"adminUrl" json:"adminUrl"`
 }
 
-// Shop holds customer-facing shop limits. MaxOrderQty caps the quantity on one public estimate request or
-// gallery order; the page and the server validation both read it.
+// Shop holds the customer-facing shop settings (Settings > Storefront). Every default preserves v1.1
+// behavior (defaults.yaml): the gallery and custom estimates are on, orders are accepted, nothing is
+// restyled. MaxOrderQty caps the quantity on one public estimate request or gallery order. Every text field
+// is plain text (validateShop rejects control characters) and is rendered as text, never HTML. A change
+// applies without a restart.
 type Shop struct {
 	MaxOrderQty int `yaml:"maxOrderQty" json:"maxOrderQty"`
+	// CustomEstimates off hides the custom estimate flow and makes the server reject estimate previews and
+	// submissions (404). Materials keep their Public flag.
+	CustomEstimates bool `yaml:"customEstimates" json:"customEstimates"`
+	// Gallery off hides the item gallery and makes the server reject item orders (404).
+	Gallery bool `yaml:"gallery" json:"gallery"`
+	// AcceptingOrders off is vacation mode: the shop stays visible, the server rejects every new order and
+	// estimate (503), and PausedMessage replaces the submit buttons.
+	AcceptingOrders bool   `yaml:"acceptingOrders" json:"acceptingOrders"`
+	PausedMessage   string `yaml:"pausedMessage" json:"pausedMessage"`
+	// DefaultView is "gallery" or "estimate": which one the shop opens on when both are on.
+	DefaultView  string `yaml:"defaultView" json:"defaultView"`
+	Heading      string `yaml:"heading" json:"heading"`
+	Announcement string `yaml:"announcement" json:"announcement"`
+	// HeroImage.File is owned by the hero image endpoints (handleHeroImageUpload); a settings save keeps the
+	// stored file and takes only Alt from the request.
+	HeroImage ShopHeroImage `yaml:"heroImage" json:"heroImage"`
+	// AccentColor is "" (theme accent) or #rrggbb passing checkAccentColor.
+	AccentColor   string `yaml:"accentColor" json:"accentColor"`
+	ShowStock     bool   `yaml:"showStock" json:"showStock"`
+	ShowFromPrice bool   `yaml:"showFromPrice" json:"showFromPrice"`
+	// ItemSort is "manual" (the admin order), "name", or "price".
+	ItemSort       string           `yaml:"itemSort" json:"itemSort"`
+	FooterLinks    []ShopFooterLink `yaml:"footerLinks" json:"footerLinks"`
+	ShowContact    bool             `yaml:"showContact" json:"showContact"`
+	ShippingNote   string           `yaml:"shippingNote" json:"shippingNote"`
+	TurnaroundNote string           `yaml:"turnaroundNote" json:"turnaroundNote"`
+}
+
+// ShopHeroImage is the optional shop banner: a content-addressed file under uploads/items plus required alt text.
+type ShopHeroImage struct {
+	File string `yaml:"file" json:"file"`
+	Alt  string `yaml:"alt" json:"alt"`
+}
+
+// ShopFooterLink is one shop footer link; URL must be https.
+type ShopFooterLink struct {
+	Label string `yaml:"label" json:"label"`
+	URL   string `yaml:"url" json:"url"`
 }
 
 const (
 	defaultShopMaxOrderQty = 100
 	shopMaxOrderQtyCeiling = 10000
+
+	shopHeadingMaxChars      = 120
+	shopAnnouncementMaxChars = 300
+	shopPausedMaxChars       = 300
+	shopNoteMaxChars         = 300
+	shopHeroAltMaxChars      = 200
+	shopFooterLinksMax       = 6
+	shopFooterLabelMaxChars  = 40
+	shopFooterURLMaxChars    = 500
+
+	// defaultShopPausedMessage is shown when acceptingOrders is off and pausedMessage is blank.
+	defaultShopPausedMessage = "We aren't taking new orders right now."
 )
 
 // maxOrderQty is the per-order quantity cap for the public shop, falling back to the default for a Config
@@ -435,6 +491,27 @@ func normalizeConfig(c *Config) {
 	normalizeHardware(c)
 	normalizeEnergySchedule(&c.Energy.Schedule)
 	c.Users.AccessAdminEmail = foldEmail(c.Users.AccessAdminEmail)
+	normalizeShop(&c.Shop)
+}
+
+// normalizeShop trims the shop strings, lowercases the accent color, and makes footerLinks non-nil so
+// /api/config never serves "footerLinks":null.
+func normalizeShop(s *Shop) {
+	s.PausedMessage = strings.TrimSpace(s.PausedMessage)
+	s.Heading = strings.TrimSpace(s.Heading)
+	s.Announcement = strings.TrimSpace(s.Announcement)
+	s.ShippingNote = strings.TrimSpace(s.ShippingNote)
+	s.TurnaroundNote = strings.TrimSpace(s.TurnaroundNote)
+	s.HeroImage.File = strings.TrimSpace(s.HeroImage.File)
+	s.HeroImage.Alt = strings.TrimSpace(s.HeroImage.Alt)
+	s.AccentColor = strings.ToLower(strings.TrimSpace(s.AccentColor))
+	if s.FooterLinks == nil {
+		s.FooterLinks = []ShopFooterLink{}
+	}
+	for i := range s.FooterLinks {
+		s.FooterLinks[i].Label = strings.TrimSpace(s.FooterLinks[i].Label)
+		s.FooterLinks[i].URL = strings.TrimSpace(s.FooterLinks[i].URL)
+	}
 }
 
 // normalizeFeeSchedules makes Fixed/Percent non-nil so /api/config never serves "fixed":null.
@@ -679,10 +756,96 @@ func validate(c *Config) []string {
 	p = append(p, validateDisabledTabs(c.UI.DisabledTabs)...)
 	p = append(p, validateIntegrationsUrls(c.IntegrationsUrls)...)
 	p = append(p, validateSite(c.Site)...)
-	if c.Shop.MaxOrderQty < 1 || c.Shop.MaxOrderQty > shopMaxOrderQtyCeiling {
+	p = append(p, validateShop(c.Shop)...)
+	return p
+}
+
+// plainTextProblem reports a field that is too long or holds control characters (newlines included): every
+// shop string is one line of plain text.
+func plainTextProblem(path, v string, maxChars int) string {
+	if utf8.RuneCountInString(v) > maxChars {
+		return fmt.Sprintf("%s: at most %d characters", path, maxChars)
+	}
+	for _, r := range v {
+		if unicode.IsControl(r) {
+			return fmt.Sprintf("%s: must be plain text on one line", path)
+		}
+	}
+	return ""
+}
+
+// validateShop checks the shop block. normalizeConfig has already trimmed the strings.
+func validateShop(s Shop) []string {
+	var p []string
+	add := func(msg string) {
+		if msg != "" {
+			p = append(p, msg)
+		}
+	}
+	if s.MaxOrderQty < 1 || s.MaxOrderQty > shopMaxOrderQtyCeiling {
 		p = append(p, fmt.Sprintf("shop.maxOrderQty: must be a whole number from 1 to %d", shopMaxOrderQtyCeiling))
 	}
+	if !s.Gallery && !s.CustomEstimates {
+		p = append(p, "shop.gallery: the item gallery and custom estimates can't both be off; to stop taking orders, turn off accepting orders instead")
+	}
+	if s.DefaultView != "gallery" && s.DefaultView != "estimate" {
+		p = append(p, "shop.defaultView: must be gallery or estimate")
+	}
+	if s.ItemSort != "manual" && s.ItemSort != "name" && s.ItemSort != "price" {
+		p = append(p, "shop.itemSort: must be manual, name, or price")
+	}
+	add(plainTextProblem("shop.heading", s.Heading, shopHeadingMaxChars))
+	add(plainTextProblem("shop.announcement", s.Announcement, shopAnnouncementMaxChars))
+	add(plainTextProblem("shop.pausedMessage", s.PausedMessage, shopPausedMaxChars))
+	add(plainTextProblem("shop.shippingNote", s.ShippingNote, shopNoteMaxChars))
+	add(plainTextProblem("shop.turnaroundNote", s.TurnaroundNote, shopNoteMaxChars))
+	if s.HeroImage.File != "" {
+		if !itemImageName.MatchString(s.HeroImage.File) {
+			p = append(p, "shop.heroImage.file: not a stored image; upload one instead")
+		}
+		if s.HeroImage.Alt == "" {
+			p = append(p, "shop.heroImage.alt: required when a hero image is set; describe the image for people who can't see it")
+		}
+	}
+	add(plainTextProblem("shop.heroImage.alt", s.HeroImage.Alt, shopHeroAltMaxChars))
+	add(accentProblem(s.AccentColor))
+	if len(s.FooterLinks) > shopFooterLinksMax {
+		p = append(p, fmt.Sprintf("shop.footerLinks: at most %d links", shopFooterLinksMax))
+	}
+	for i, l := range s.FooterLinks {
+		if i >= shopFooterLinksMax {
+			break
+		}
+		path := fmt.Sprintf("shop.footerLinks[%d]", i)
+		if l.Label == "" {
+			p = append(p, path+".label: required")
+		} else {
+			add(plainTextProblem(path+".label", l.Label, shopFooterLabelMaxChars))
+		}
+		add(httpsURLProblem(path+".url", l.URL))
+	}
 	return p
+}
+
+// httpsURLProblem requires an absolute https URL with a host, no credentials, no whitespace or control
+// characters, and at most shopFooterURLMaxChars.
+func httpsURLProblem(path, raw string) string {
+	if raw == "" {
+		return path + ": required"
+	}
+	if utf8.RuneCountInString(raw) > shopFooterURLMaxChars {
+		return fmt.Sprintf("%s: at most %d characters", path, shopFooterURLMaxChars)
+	}
+	for _, r := range raw {
+		if unicode.IsControl(r) || unicode.IsSpace(r) {
+			return path + ": must not contain spaces"
+		}
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
+		return path + ": must be an https:// address"
+	}
+	return ""
 }
 
 // validateIntegrationsUrls applies mustValidProxyURL's startup rules (http/https scheme, non-empty host) via

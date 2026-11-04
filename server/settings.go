@@ -96,9 +96,17 @@ func handleSettingsPut(configDir string, store *ConfigStore, auth *authState) ht
 			writeAPIError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		var body struct {
-			Config *Config `json:"config"`
+		// shop decodes onto the built-in defaults, so a request that sends only some shop keys (a client that
+		// predates the storefront settings sends just maxOrderQty) keeps the default for the rest instead of
+		// reading as "everything off". The "shop" key itself must be present, like "site" below.
+		builtinShop, err := defaultConfig()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
+		body := struct {
+			Config *Config `json:"config"`
+		}{Config: &Config{Shop: builtinShop.Shop}}
 		dec := json.NewDecoder(bytes.NewReader(raw))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&body); err != nil {
@@ -119,9 +127,16 @@ func handleSettingsPut(configDir string, store *ConfigStore, auth *authState) ht
 			writeAPIError(w, http.StatusUnprocessableEntity, "site: required")
 			return
 		}
+		if len(probe.Config["shop"]) == 0 || string(probe.Config["shop"]) == "null" {
+			writeAPIError(w, http.StatusUnprocessableEntity, "shop: required")
+			return
+		}
 		desired := body.Config
 
 		normalizeConfig(desired)
+		// The hero image file is owned by the hero image endpoints: a settings save keeps the stored file and
+		// takes only the alt text, so a stale form can't resurrect a deleted image or name an arbitrary file.
+		desired.Shop.HeroImage.File = store.Get().Shop.HeroImage.File
 		problems := validate(desired)
 		if p := usersMultiUserRequiresAuthProblem(desired.Users.MultiUser, auth.enabled); p != "" {
 			problems = append(problems, p)
@@ -152,6 +167,14 @@ func handleSettingsPut(configDir string, store *ConfigStore, auth *authState) ht
 		if settingsPutCurrentReadHook != nil {
 			settingsPutCurrentReadHook()
 		}
+		if desired.Shop.HeroImage.File != current.Shop.HeroImage.File {
+			// A hero upload or delete landed between the first read and the lock; re-check against the new file.
+			desired.Shop.HeroImage.File = current.Shop.HeroImage.File
+			if problems := validateShop(desired.Shop); len(problems) > 0 {
+				writeAPIError(w, http.StatusUnprocessableEntity, problems...)
+				return
+			}
+		}
 		id := identityFor(r)
 		if !id.isAdmin {
 			perms, err := userPermissions(auth.db, id.username)
@@ -181,33 +204,11 @@ func handleSettingsPut(configDir string, store *ConfigStore, auth *authState) ht
 			return
 		}
 
-		overrides, err := diffOverrides(desired, builtin)
+		reloaded, status, err := persistConfig(configDir, store, desired, builtin)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeConfigPersistError(w, status, err)
 			return
 		}
-		yamlBody, err := yaml.Marshal(overrides)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		content := append([]byte(settingsFileHeader), yamlBody...)
-
-		if err := writeConfigFile(configDir, content); err != nil {
-			writeAPIError(w, writeConfigFileErrorStatus(err), fmt.Sprintf("writing config.yaml: %v", err))
-			return
-		}
-
-		// Rebuild the effective config as startup does (defaults plus the overrides just written), so the store
-		// holds what a restart would produce, then swap it in for all handlers.
-		reloaded, err := LoadConfig(configDir)
-		if err != nil {
-			// content came from a desired config that passed validate() and was written, so a reload failure means
-			// something external raced the write. Report it rather than keep serving the old config.
-			http.Error(w, fmt.Sprintf("reloading config.yaml after save: %v", err), http.StatusInternalServerError)
-			return
-		}
-		store.Set(reloaded)
 		warnIfSmtpAuthMisconfigured(reloaded)
 
 		// Turning users.multiUser off must stop employee access immediately, as a disabled, deleted, or reset
@@ -221,6 +222,45 @@ func handleSettingsPut(configDir string, store *ConfigStore, auth *authState) ht
 		// {} keeps the response a JSON object for callers that decode into a struct.
 		json.NewEncoder(w).Encode(struct{}{})
 	}
+}
+
+// persistConfig writes desired as sparse overrides over builtin to config.yaml, then reloads it as startup
+// does (defaults plus the overrides just written) and swaps the result into store, so the store holds what a
+// restart would produce. Callers hold settingsWriteMu and have validated desired. On error, status is the
+// HTTP status to answer with; a write failure keeps writeConfigFile's mapping (507 for a full disk).
+func persistConfig(configDir string, store *ConfigStore, desired, builtin *Config) (reloaded *Config, status int, err error) {
+	// A write failure is reported as a JSON API error, the others as plain text (see writeConfigPersistError).
+	overrides, err := diffOverrides(desired, builtin)
+	if err != nil {
+		return nil, http.StatusInternalServerError, err
+	}
+	yamlBody, err := yaml.Marshal(overrides)
+	if err != nil {
+		return nil, http.StatusInternalServerError, err
+	}
+	content := append([]byte(settingsFileHeader), yamlBody...)
+
+	if err := writeConfigFile(configDir, content); err != nil {
+		return nil, writeConfigFileErrorStatus(err), fmt.Errorf("writing config.yaml: %w", err)
+	}
+	// content came from a desired config that passed validate() and was written, so a reload failure means
+	// something external raced the write. Report it rather than keep serving the old config.
+	reloaded, err = LoadConfig(configDir)
+	if err != nil {
+		return nil, http.StatusInternalServerError, fmt.Errorf("reloading config.yaml after save: %w", err)
+	}
+	store.Set(reloaded)
+	return reloaded, http.StatusOK, nil
+}
+
+// writeConfigPersistError answers a persistConfig failure: a failed write is a JSON API error, anything else
+// plain text, as handleSettingsPut always has.
+func writeConfigPersistError(w http.ResponseWriter, status int, err error) {
+	if msg := err.Error(); strings.HasPrefix(msg, "writing config.yaml") {
+		writeAPIError(w, status, msg)
+		return
+	}
+	http.Error(w, err.Error(), status)
 }
 
 const settingsFileHeader = `# printpaca configuration

@@ -33,6 +33,63 @@ export interface PublicConfig {
   /** shop.maxOrderQty: the largest quantity one request or order may carry. Absent from a server that predates
    * the setting; the page then assumes 100. */
   maxOrderQty?: number;
+  /** The storefront settings (server/public.go's publicShop). Absent from a server that predates them; read it
+   * through `shopOf`, which fills the v1.1 behavior. All strings are plain text: render them as text. */
+  shop?: PublicShop;
+}
+
+export interface PublicShop {
+  customEstimates: boolean;
+  gallery: boolean;
+  acceptingOrders: boolean;
+  /** The owner's message, or a default; meaningful when acceptingOrders is false. */
+  pausedMessage: string;
+  /** The view the shop opens on; "estimate" only when estimates are on. */
+  defaultView: "gallery" | "estimate";
+  heading: string;
+  announcement: string;
+  heroImage: { url: string; alt: string } | null;
+  /** null for the theme accent. buttonText is the label color that passes contrast on the accent. */
+  accent: { light: { accent: string; buttonText: string }; dark: { accent: string; buttonText: string } } | null;
+  showStock: boolean;
+  showFromPrice: boolean;
+  itemSort: "manual" | "name" | "price";
+  footerLinks: { label: string; url: string }[];
+  showContact: boolean;
+  shippingNote: string;
+  turnaroundNote: string;
+}
+
+/** What a server without storefront settings behaves like: v1.1. */
+export const DEFAULT_PUBLIC_SHOP: PublicShop = {
+  customEstimates: true,
+  gallery: true,
+  acceptingOrders: true,
+  pausedMessage: "We aren't taking new orders right now.",
+  defaultView: "gallery",
+  heading: "",
+  announcement: "",
+  heroImage: null,
+  accent: null,
+  showStock: true,
+  showFromPrice: true,
+  itemSort: "manual",
+  footerLinks: [],
+  showContact: true,
+  shippingNote: "",
+  turnaroundNote: "",
+};
+
+export function shopOf(cfg: PublicConfig | null): PublicShop {
+  return cfg?.shop ? { ...DEFAULT_PUBLIC_SHOP, ...cfg.shop } : DEFAULT_PUBLIC_SHOP;
+}
+
+/** The vacation-mode message when a submit was refused because the shop isn't taking orders (the server's 403
+ * with `paused: true`), else null. The message is the owner's text, so it is shown as written, not run
+ * through the field-error humanizer (which would eat a colon in it). */
+function pausedMessageOf(body: unknown): string | null {
+  const b = body as { paused?: unknown; pausedMessage?: unknown } | null;
+  return b?.paused === true && typeof b.pausedMessage === "string" && b.pausedMessage !== "" ? b.pausedMessage : null;
 }
 
 /** A plain fetch/json cast like web/src/lib/api.ts's loadConfig(): null on any network failure or non-2xx,
@@ -103,6 +160,8 @@ export interface SubmitResult {
    * accepts the submission without the file and signals fileStored: false in the 201 body; true when the
    * file persisted or none was sent. */
   fileStored?: boolean;
+  /** Set when the shop is paused (accepting orders is off): the owner's message, also the only entry in `errors`. */
+  paused?: string;
 }
 
 // GET /api/public/items, POST /api/public/item-order
@@ -119,19 +178,42 @@ export interface PublicItem {
   optionGroups: ChoiceGroup[];
   imageUrl: string;
   stock: { mode: "ready_to_print" | "in_stock"; qty?: number; allowBackorder: boolean };
+  /** Null for an item with no category or one in a hidden category. Absent from a server that predates categories. */
+  category?: PublicCategory | null;
+  /** Featured items come first; the server already sorted them. */
+  featured?: boolean;
+}
+
+export interface PublicCategory {
+  slug: string;
+  name: string;
+}
+
+export interface PublicCatalog {
+  items: PublicItem[];
+  /** Visible categories that have at least one public item, in shop order. */
+  categories: PublicCategory[];
 }
 
 /** Null on any network failure or non-2xx, never throws. A missing or malformed `items` resolves to []
  * (like listItems()); null means "couldn't ask", not "none". */
-export async function loadPublicItems(): Promise<PublicItem[] | null> {
+export async function loadPublicCatalog(): Promise<PublicCatalog | null> {
   try {
     const res = await fetch("/api/public/items", { signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS) });
     if (!res.ok) return null;
-    const body = (await res.json()) as { items?: unknown };
-    return Array.isArray(body.items) ? (body.items as PublicItem[]) : [];
+    const body = (await res.json()) as { items?: unknown; categories?: unknown };
+    return {
+      items: Array.isArray(body.items) ? (body.items as PublicItem[]) : [],
+      categories: Array.isArray(body.categories) ? (body.categories as PublicCategory[]) : [],
+    };
   } catch {
     return null;
   }
+}
+
+/** loadPublicCatalog's items alone. */
+export async function loadPublicItems(): Promise<PublicItem[] | null> {
+  return (await loadPublicCatalog())?.items ?? null;
 }
 
 /** POSTs the JSON item-order body (server/public.go's publicItemOrderRequest). Never throws: failure
@@ -171,6 +253,8 @@ export async function submitItemOrder(
     return { ok: true, status: res.status, errors: [], id: b?.id, reference: b?.reference || b?.id, priceCents: b?.priceCents };
   }
 
+  const paused = pausedMessageOf(parsed);
+  if (paused) return { ok: false, status: res.status, errors: [paused], paused };
   const errBody = parsed as { errors?: string[] } | null;
   const errors = errBody?.errors?.length
     ? humanizePublicFieldErrors(errBody.errors)
@@ -224,6 +308,8 @@ export async function submitQuoteRequest(form: FormData): Promise<SubmitResult> 
     };
   }
 
+  const paused = pausedMessageOf(body);
+  if (paused) return { ok: false, status: res.status, errors: [paused], paused };
   const errBody = body as { errors?: string[] } | null;
   const errors = errBody?.errors?.length
     ? humanizePublicFieldErrors(errBody.errors)
@@ -245,6 +331,8 @@ export interface QuotePreviewResult {
   ok: boolean;
   status: number;
   errors: string[];
+  /** Set when the shop is paused; see SubmitResult.paused. */
+  paused?: string;
   priceCents?: number;
   shippingCents?: number;
 }
@@ -283,6 +371,8 @@ export async function fetchQuotePreview(input: QuotePreviewInput): Promise<Quote
     return { ok: false, status: 429, errors: ["Too many estimate requests right now. Wait a moment and try again."] };
   }
 
+  const paused = pausedMessageOf(body);
+  if (paused) return { ok: false, status: res.status, errors: [paused], paused };
   const errBody = body as { errors?: string[] } | null;
   const errors = errBody?.errors?.length
     ? humanizePublicFieldErrors(errBody.errors)

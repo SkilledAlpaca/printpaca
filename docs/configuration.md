@@ -231,6 +231,66 @@ The `site` section of `config.yaml`, also under **Storefront** on the Requests t
 
 `GET /api/public/config` returns the result as `staffUrl`, computed per listener: on `PORT` it's `/admin/` when `site.staffLink` is `true` and empty otherwise, and on `PUBLIC_PORT` it's `site.adminUrl`. The shop footer shows the link only when `staffUrl` isn't empty.
 
+## Storefront
+
+The `shop` section of `config.yaml` controls what the customer-facing shop offers and how it reads. Every default keeps the shop as it was in v1.1, so an upgrade changes nothing until you opt in. A change applies without a restart.
+
+In this release the settings are plain inputs under **Public estimates** in Settings, and in `config.yaml`. The hero image upload, the footer links editor, the accent color picker, and the **Preview shop** button arrive with the redesigned Storefront card.
+
+| Key | Default | Effect |
+|---|---|---|
+| `shop.maxOrderQty` | `100` | The largest quantity one estimate request or gallery order may carry, from 1 to 10,000. |
+| `shop.customEstimates` | `true` | Offers the custom estimate flow. When `false`, the shop hides the **Custom estimate** switch, the "Need something custom?" card, and the estimate form, and the server refuses estimate previews and submissions with a plain `404`. Materials keep their **Public** flag for when you turn it back on. |
+| `shop.gallery` | `true` | Offers the item gallery. When `false`, the shop shows only the custom estimate, `GET /api/public/items` returns no items, and the server refuses item orders with a plain `404`. |
+| `shop.acceptingOrders` | `true` | When `false` (vacation mode), the shop stays visible, your `pausedMessage` replaces every submit button, and the server refuses new item orders, estimate previews, and estimate submissions with a `403` that carries the message. Requests you already have are unaffected, and you can still work them. |
+| `shop.pausedMessage` | empty | Up to 300 characters, for example `Closed until January 5`. Empty uses "We aren't taking new orders right now." |
+| `shop.defaultView` | `gallery` | `gallery` or `estimate`: what the shop opens on when both are on. A link to `/#/` always opens the gallery. |
+| `shop.heading` | empty | A heading above the intro, up to 120 characters. Empty shows only the business name. |
+| `shop.announcement` | empty | A notice at the top of the shop, up to 300 characters, such as a holiday shipping cutoff. |
+| `shop.heroImage` | none | A banner image with required alt text (up to 200 characters). Uploaded with `POST /api/shop/hero-image?alt=<text>` (a JPEG, PNG, or WebP up to 5 MiB, admin only) and removed with `DELETE /api/shop/hero-image`. It is stored like an item photo and served from `/item-images/`. A settings save keeps the stored file and takes only the alt text. |
+| `shop.accentColor` | empty | A `#rrggbb` color for shop buttons and links. See [Accent color](#accent-color). Empty uses the theme accent. |
+| `shop.showStock` | `true` | Shows stock counts on items. |
+| `shop.showFromPrice` | `true` | Shows "from" prices on items with options. |
+| `shop.itemSort` | `manual` | `manual` (the order in Shop items), `name`, or `price`. Featured items come first in every mode. |
+| `shop.footerLinks` | none | Up to 6 links, each with a `label` (up to 40 characters) and an `https://` `url`. They open with `rel="noopener noreferrer"`. **Staff sign-in** stays controlled by [`site.staffLink`](#site-settings). |
+| `shop.showContact` | `true` | Shows your email, phone, and address in the shop. When `false`, `GET /api/public/config` doesn't serve them at all. |
+| `shop.shippingNote` | empty | Up to 300 characters, replacing "Shipping, if any, is confirmed by email." on the estimate form. Empty keeps the default wording. |
+| `shop.turnaroundNote` | empty | Up to 300 characters, replacing the fixed turnaround wording. Empty keeps the default wording. |
+
+Every text field is plain text on one line: markup is shown as typed, never rendered, and line breaks aren't allowed.
+
+You can't turn off both the gallery and custom estimates. Settings rejects that combination with a message; to stop taking orders, turn off **Accepting orders** instead.
+
+The server checks `customEstimates`, `gallery`, and `acceptingOrders` on every submission, so hiding a control in the page is never the only gate. A feature that's switched off answers `404` before vacation mode is considered, so a refusal never hints that a feature exists.
+
+An old `#/estimate` link, when custom estimates are off, opens the gallery with the note "Custom estimates aren't offered right now." and your email and phone when they're shown.
+
+`GET /api/public/config` returns the public-safe subset as `shop`. It never carries anything you haven't chosen to show.
+
+### Accent color
+
+`shop.accentColor` must stay readable on the shop backgrounds in both color schemes. The check uses WCAG 2.2 AA contrast, 4.5:1, for two pairs:
+
+- **Link text:** the accent as text on the shop background, the card color, and the tinted card color. The lowest ratio counts.
+- **Button:** the accent as a button background with its label. printpaca picks white or near-black for the label, whichever contrasts more.
+
+If the color you pick fails in the light scheme, Settings rejects it, shows the measured ratios, and suggests the nearest color that passes (same hue and saturation, adjusted lightness). A color that passes gets a dark-mode variant that printpaca derives with the same rule against the dark backgrounds, so you pick one color only. The shop uses the label color the check returns. A color changed in `config.yaml` is checked the same way at startup and when you save.
+
+### Categories and featured items
+
+Group items into categories to give the shop category chips and `/#/category/<slug>` addresses. An item has zero or one category. A category has a name, a slug (lowercase letters, numbers, and single hyphens, up to 40 characters, unique), a position, and a **hidden** flag. A slug left empty is made from the name. Categories need the same permission as Shop items:
+
+| Request | Effect |
+|---|---|
+| `GET /api/categories` | Lists categories in shop order with an `itemCount` each. |
+| `POST /api/categories` | Creates one from `name`, optional `slug`, `sortOrder`, and `hidden`. A repeated slug or name is a `409`. Up to 50 categories. |
+| `PUT /api/categories/{id}` | Updates one. An empty slug keeps the stored slug. |
+| `DELETE /api/categories/{id}` | Deletes the category and unlinks its items, which stay as they were otherwise. |
+
+Items take `categoryId` (empty for none) and `featured` on `POST` and `PUT /api/items`. A `PUT` that leaves them out keeps the stored values, and the item `version` check works as before. Featured items appear first within the selected view.
+
+`GET /api/public/items` returns each public item with its `category` (`slug` and `name`, or `null`) and `featured`, plus `categories`: the visible categories that have at least one public item. An item in a hidden category stays in the shop under **All**, with no category. `GET /api/export` includes `categories` and each item's `categoryId` and `featured`. There's no import endpoint.
+
 ## Public quote page
 
 The main port already serves the shop (see [Routing and hostnames](#routing-and-hostnames)). Set `PUBLIC_PORT` as well to run a second, customer-only listener for people who want isolation: the admin app is never served there, so you can expose that port without exposing `/admin/`. Only the routes below are reachable through it.

@@ -309,9 +309,50 @@
 #   adminUrl: ""     # for example, https://admin.example.com/admin/
 
 # ---------------------------------------------------------------------------
-# shop: limits for the customer-facing shop. maxOrderQty is the largest
-# quantity one estimate request or gallery order may carry (1 to 10000). The
-# page and the server both enforce it. A change applies without a restart.
+# shop: the customer-facing shop (Settings > Storefront). Every default keeps
+# the shop as it was in v1.1; a change applies without a restart. Text fields
+# are plain text on one line, never HTML.
+#
+#   maxOrderQty      the largest quantity one estimate request or gallery
+#                    order may carry (1 to 10000). The page and server enforce it.
+#   customEstimates  false hides the custom estimate flow; the server rejects
+#                    estimate previews and submissions. The gallery and custom
+#                    estimates can't both be off (use acceptingOrders).
+#   gallery          false shows only the custom estimate; the server rejects
+#                    item orders.
+#   acceptingOrders  false is vacation mode: the shop stays visible, the
+#                    pausedMessage replaces the submit buttons, and the server
+#                    rejects new submissions. Existing requests are unaffected.
+#   defaultView      gallery or estimate: what the shop opens on when both are on.
+#   heading          heading above the intro (up to 120 characters); empty uses
+#                    the business name.
+#   announcement     banner at the top of the shop (up to 300 characters).
+#   heroImage        banner image: upload it in Settings (alt text is required).
+#   accentColor      #rrggbb for shop buttons and links. It must reach 4.5:1
+#                    contrast on the shop backgrounds; printpaca derives the
+#                    dark-mode variant. Empty uses the theme accent.
+#   showStock        show stock counts on items.
+#   showFromPrice    show "from" prices on items with options.
+#   itemSort         manual, name, or price. Featured items always come first.
+#   footerLinks      up to 6 links, each with a label and an https:// url.
+#   showContact      show your email, phone, and address in the shop.
+#   shippingNote     replaces the fixed shipping wording (up to 300 characters).
+#   turnaroundNote   replaces the fixed turnaround wording (up to 300 characters).
 # ---------------------------------------------------------------------------
 # shop:
 #   maxOrderQty: 100
+#   customEstimates: true
+#   gallery: true
+#   acceptingOrders: true
+#   pausedMessage: ""    # for example, "Closed until January 5"
+#   defaultView: gallery
+#   heading: ""
+#   announcement: ""
+#   accentColor: ""      # for example, "#9c4212"
+#   showStock: true
+#   showFromPrice: true
+#   itemSort: manual
+#   footerLinks: []      # for example, [{label: Etsy, url: "https://example.com/shop"}]
+#   showContact: true
+#   shippingNote: ""
+#   turnaroundNote: ""

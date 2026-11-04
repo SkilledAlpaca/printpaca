@@ -30,7 +30,7 @@ test.describe.serial("time-of-use schedule", () => {
   test("choose the mode, load the labelled SCE example, and save", async ({ page }) => {
     await page.goto("/admin/");
     await navButton(page, "Electricity").click();
-    await page.getByLabel("Mode").selectOption("schedule");
+    await page.getByLabel("Mode", { exact: true }).selectOption("schedule");
 
     // The empty schedule is flagged until a season exists.
     await expect(page.getByRole("list", { name: "Schedule problems" })).toContainText(/season/i);

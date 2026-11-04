@@ -7,7 +7,7 @@
   import { needSentence } from "../lib/quoteBlockers";
   import { goToBlocker } from "../lib/goToBlocker";
   import { currentBlockers } from "../lib/currentBlockers";
-    import SlicerHelp from "./SlicerHelp.svelte";
+  import { findFieldByLabel } from "../lib/fieldErrors";
 
   let {
     cfg,
@@ -30,6 +30,7 @@
   // (the usual case while stepping a field) never flashes text. The slot below is always rendered, so showing
   // or hiding the text never changes the page height.
   const PENDING_DELAY_MS = 300;
+  const PRICE_FIELD_WAIT_MS = 3000;
   let pendingVisible = $state(false);
   $effect(() => {
     if (previewStatus !== "pending") {
@@ -49,7 +50,6 @@
     currentBlockers(order).filter((b) => b.missing),
   );
   const need = $derived(missing.find((b) => b.field === "timeHours" || b.field === "timeMinutes") ?? missing[0]);
-  const needsTime = $derived(need !== undefined && (need.field === "timeHours" || need.field === "timeMinutes"));
   const needText = $derived(needSentence(missing));
   // The pinned bar is one short line, not the whole list: the count, or the one thing missing. The full list
   // stays in the expanded summary.
@@ -57,15 +57,24 @@
     missing.length === 1 ? `Needs ${needText.replace(/^Price needs /, "")}.` : `Needs ${missing.length} more values.`,
   );
 
-  // Opens the pricing panel and scrolls to it: the panel can be several tiles down, so a click that only
-  // flips the toggle leaves the bar visibly unchanged.
+  // Turns selling on, scrolls to the Price section, and focuses its price target (the Margin or Markup value,
+  // whichever the strategy uses): the section can be several tiles down, so a click that only flipped the
+  // switch would leave the summary visibly unchanged (D35).
   async function setPrice() {
     quote.order.sellingEnabled = true;
     await tick();
     const card = document.getElementById("pricing-card");
     card?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
     // preventScroll: a plain .focus() jumps instantly and cancels the smooth scroll started above.
-    card?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.focus({ preventScroll: true });
+    // The strategy fields render once the price preview has answered, so wait for them briefly; the switch itself
+    // takes focus when they don't come.
+    const find = () => (card ? (findFieldByLabel("Margin", card) ?? findFieldByLabel("Markup", card)) : null);
+    let target = find();
+    for (let waited = 0; !target && waited < PRICE_FIELD_WAIT_MS; waited += 50) {
+      await new Promise((r) => setTimeout(r, 50));
+      target = find();
+    }
+    (target ?? card?.querySelector<HTMLInputElement>('input[type="checkbox"]'))?.focus({ preventScroll: true });
   }
 </script>
 
@@ -142,19 +151,14 @@
           <span class="stat-value">{s.costCents !== null ? money(order.parts[0]?.breakdown.perUnitTotal ?? 0, cfg) : "-"}</span>
         </div>
       {/if}
-      <button type="button" class="set-price" onclick={setPrice}>
-        Set a price
-      </button>
+      <button type="button" class="set-price" onclick={setPrice}>Set a client price</button>
     {/if}
     <!-- One reserved line for the missing-field notice and the "Updating price…" status, so neither shifts what is
          below it. The status region stays in the DOM so screen readers announce its text changes; the error is
          a separate alert. -->
     <div class="notice">
       {#if need}
-        <div class="cost-need">
-          {@render needLink()}
-          {#if needsTime}<SlicerHelp />{/if}
-        </div>
+        <div class="cost-need">{@render needLink()}</div>
       {/if}
       <p class="status-text" role="status">{pendingVisible ? "Updating price…" : ""}</p>
       {#if previewStatus === "error" && previewError}
@@ -196,10 +200,5 @@
   .cost-need { font-size: var(--type-secondary); }
   .status-text { margin: 0; font-size: var(--type-secondary); line-height: 1.5; color: var(--muted); }
   .status-text.status-error { color: var(--danger); }
-  .set-price {
-    align-self: flex-start;
-    background: transparent;
-    border-color: var(--accent);
-    color: var(--accent-text);
-  }
+  .set-price { align-self: flex-start; }
 </style>

@@ -36,8 +36,6 @@
     "web/src/components/HistoryPanel.svelte",
     "web/src/components/SettingsTab.svelte",
     "web/src/components/LoginScreen.svelte",
-    "web/src/components/CardHelp.svelte",
-    "web/src/components/SlicerHelp.svelte",
     "web/src/components/GettingStarted.svelte",
     "web/src/components/settings/AccountCard.svelte",
     "web/src/components/settings/UsersSettings.svelte",

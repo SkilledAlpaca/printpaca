@@ -182,9 +182,9 @@ describe.each([
     });
   }
 
-  // CardHelp's "More in the guide" link sits on --surface-2 via the global `a` color, so it needs its
-  // own --accent-text vs --surface-2 assertion.
-  it("--accent-text clears 4.5:1 against --surface-2 (the CardHelp note background)", () => {
+  // A link inside a --surface-2 panel gets the global `a` color, so it needs its own --accent-text vs
+  // --surface-2 assertion.
+  it("--accent-text clears 4.5:1 against --surface-2 (links inside inset panels)", () => {
     expect(
       contrastRatio(token(tokens, "accent-text", schemeName), token(tokens, "surface-2", schemeName)),
     ).toBeGreaterThanOrEqual(4.5);

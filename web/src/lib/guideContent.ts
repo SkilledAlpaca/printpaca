@@ -1,19 +1,6 @@
-// Copy for the Quote tab's per-card "?" help (CardHelp.svelte) and the Guide page's Concepts section
-// (GettingStarted.svelte).
+// Copy for the Guide page: the Concepts section (GettingStarted.svelte).
 
-export const TILE_IDS = ["gcode", "print", "costs", "breakdown", "pricing", "history"] as const;
-export type TileId = (typeof TILE_IDS)[number];
-
-export const TILE_HELP: Record<TileId, string> = {
-  gcode: "Drop a sliced .gcode or .3mf file, or an STL or 3MF model. printpaca reads the slicer's weight and time, or estimates weight from the model, and fills in the Print box. Several files at once make one part each. Files are read in your browser and never uploaded.",
-  print: "The job itself: printer, material, model weight, print time, and quantity. Waste adds a percentage to the model weight to cover purge and supports. With a time-of-use schedule, it also holds the print start, because the start decides which rates the print pays.",
-  costs: "Your shop rates: electricity, labor, printer depreciation, and overhead. These usually stay the same between quotes; set defaults on the Electricity and Printers pages.",
-  breakdown: "Live cost breakdown per unit and per batch. A dash means a required input above is missing or invalid.",
-  pricing: "Turns a cost into a price: margin, marketplace fees, shipping, and tax. Shows the recommended price and net profit.",
-  history: "Save the current quote to the server, and open any of your 5 most recent saves. See every saved quote, filter, export, import, convert to an invoice, or track its status on the Quotes page.",
-};
-
-// Guide "Concepts" topics, one h3/p pair each; CardHelp's guideAnchor links point at a topic's id.
+// Guide "Concepts" topics, one h3/p pair each; a topic's id is its anchor (#/guide#<id>).
 export interface GuideTopic {
   id: string;
   title: string;
@@ -25,6 +12,26 @@ export const GUIDE_TOPICS: GuideTopic[] = [
     id: "configuring-printpaca",
     title: "Configuring printpaca",
     body: "You can edit materials, printers, electricity rates, labor presets, and fee schedules on the Printers, Filament, Electricity, and Settings pages. Edits stay local until you press Save changes in the save bar at the bottom of the page. The config.yaml file on the server seeds the starting values.",
+  },
+  {
+    id: "model-files",
+    title: "Model files and print time",
+    body: "On New quote, drop a sliced .gcode or .3mf file, or an STL or 3MF model, on the model file box. printpaca reads the weight and print time from a sliced file, or estimates the weight from a model, and fills in the fields below. Several files at once make one part each. Files are read in your browser and never uploaded. A slicer is the program that turns a 3D model into instructions for the printer, for example Bambu Studio, PrusaSlicer, or Cura. It also estimates the print time. If a file has no time, open the model in your slicer, slice it, and type the time it shows.",
+  },
+  {
+    id: "material-and-printer",
+    title: "Material, printer, and print start",
+    body: "Section 2 of New quote holds what you print on: the material, its price per kilogram, the waste percentage, the printer, and the quantity. Waste adds a percentage to the model weight to cover purge and supports. With a time-of-use electricity schedule, the section also holds the print start, because the start decides which rates the print pays. The shop rates (electricity, labor, printer wear, and overhead) sit under Costs and Edit rates. They usually stay the same between quotes, so set the defaults on the Electricity and Printers pages.",
+  },
+  {
+    id: "cost-breakdown",
+    title: "Cost breakdown",
+    body: "The Breakdown in the summary shows your cost live, per unit and per batch. A dash means a required input is missing or invalid, and the summary names the first missing field with a link to it.",
+  },
+  {
+    id: "saving-quotes",
+    title: "Saving quotes",
+    body: "Save keeps the current quote on the server, and Save as new keeps a copy. The Recent saves list opens any of your five most recent saves. The Quotes page lists every saved quote and lets you filter, export, import, convert a quote to an invoice, or track its status.",
   },
   {
     id: "margin-vs-markup",

@@ -42,14 +42,13 @@ test("New quote opens blank after a save and a hand-typed print time doesn't sur
   await expect(page.getByLabel("Solidity")).toBeVisible();
   await expect(page.getByLabel(/^Print time \(h/)).toHaveValue("");
 
-  // The cost bar says why the cost is missing, links to the field, and explains "slicer" on demand.
+  // The cost bar says why the cost is missing and links to the field.
   const need = page.getByRole("group", { name: "Quote summary" }).getByRole("link", { name: /Price needs a print time/ });
   await expect(need).toBeVisible();
   await need.click();
   await expect(page.getByLabel(/^Print time \(h/)).toBeFocused();
-  const help = page.getByRole("group", { name: "Quote summary" }).getByText("What is a slicer?");
-  await help.click();
-  await expect(page.getByRole("group", { name: "Quote summary" }).getByText(/turns a 3D model into instructions/)).toBeVisible();
+  // The slicer box is gone (D34); the Guide explains the word.
+  await expect(page.getByText("What is a slicer?")).toHaveCount(0);
 });
 
 test("a saved quote is edited under its own heading, stays bound after a save, and loads from its URL", async ({ page }) => {

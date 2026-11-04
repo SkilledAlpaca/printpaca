@@ -437,7 +437,6 @@ test("header actions keep their natural width on a phone; a single main action f
   await page.goto("/admin/");
   await expect(page.getByRole("heading", { level: 1, name: "New quote" })).toBeVisible();
   const row = (await page.locator(".title-row").first().boundingBox())!.width;
-  expect(await widthOf("Explain this page"), "Explain this page is not stretched").toBeLessThan(row * 0.8);
   await page.goto("/admin/#/quotes");
   await expect(page.getByRole("heading", { level: 1, name: "Quotes" })).toBeVisible();
   expect(await widthOf("Export"), "Export is not stretched").toBeLessThan(row * 0.5);

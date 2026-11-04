@@ -6,8 +6,8 @@
   import PageHeader from "./ui/PageHeader.svelte";
 
   onMount(async () => {
-    // Covers both CardHelp's "More in the guide" (this component mounts fresh on tab switch) and a cold-load
-    // deep link: App.svelte's onMount only normalizes a hash that doesn't resolve to the current tab, so
+    // Covers a deep link to a topic, both from another tab (this component mounts fresh on tab switch) and on a
+    // cold load: App.svelte's onMount only normalizes a hash that doesn't resolve to the current tab, so
     // "#/guide#margin-vs-markup" keeps its fragment.
     const anchor = splitHash(location.hash).fragment;
     if (!anchor) return;
@@ -27,17 +27,17 @@
 
   <Card heading="Getting started">
     <ol class="steps">
-      <li><strong>Pick a printer and material.</strong> Choose them in the Print box. Your printer and material settings fill in power draw, filament price, and waste.</li>
-      <li><strong>Add the print job.</strong> Drop a sliced .gcode file on the Model file box to fill weight and time automatically, or type them in.</li>
-      <li><strong>Set your costs.</strong> The Costs box holds your shop rates. Cost breakdown updates live as you type.</li>
-      <li><strong>Set a price.</strong> Turn on Set a selling price in the Price and profit card to get a recommended price that accounts for margin, fees, shipping, and tax.</li>
-      <li><strong>Save and share.</strong> Save the quote in the Saved quotes panel, open any of your last 5 saves, and print a client-ready copy.</li>
+      <li><strong>Add the print job.</strong> In section 1, Model and print time, drop a sliced .gcode file to fill the weight and time automatically, or type them in.</li>
+      <li><strong>Pick a printer and material.</strong> Choose them in section 2, Material and printer. Your printer and material settings fill in power draw, filament price, and waste.</li>
+      <li><strong>Set your costs.</strong> Costs, in section 2, holds your shop rates. The Breakdown in the summary updates live as you type.</li>
+      <li><strong>Set a price.</strong> Press Set a client price in the summary, or turn on Set a selling price in section 3, Price, to get a recommended price that accounts for margin, fees, shipping, and tax.</li>
+      <li><strong>Save and share.</strong> Press Save in the summary, open any of your last 5 saves, and print a client-ready copy.</li>
     </ol>
   </Card>
 
   <Card heading="Running the business">
     <ol class="steps">
-      <li><strong>Link a client and save.</strong> In the Saved quotes panel on the New quote page, type a client name in the Client field next to the label field, then press Save quote.</li>
+      <li><strong>Link a client and save.</strong> In the summary on the New quote page, type a client name in the Client field next to the label field, then press Save.</li>
       <li><strong>Track its status.</strong> Every save shows up on the Quotes page with a status badge. Emailing a quote marks it sent automatically; use Mark sent, Mark accepted, or Mark declined to record moves you make outside printpaca. The row shows the most likely next status. The other status options, Email quote, Duplicate, and Delete are in the row's ⋯ (More actions) menu.</li>
       <li><strong>Email or print it.</strong> Press Email quote in the Quotes page row's ⋯ menu to send it to the client, or use Print client quote on the New quote page for a paper copy.</li>
       <li><strong>Convert it once accepted.</strong> Press Convert to invoice on the Quotes page to turn an accepted quote into an invoice on the Invoices page.</li>
@@ -71,7 +71,7 @@
   </Card>
 
   <p class="footnote">
-    On the New quote page, press the ? next to any card heading for an explanation of that card.
+    Next to many fields, a ? button opens a short explanation. Hover over it, focus it with the keyboard, or tap it.
   </p>
 </div>
 

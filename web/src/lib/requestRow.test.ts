@@ -38,6 +38,7 @@ function req(over: Partial<QuoteRequest> = {}): QuoteRequest {
     invoiceNumber: "",
     invoiceStatus: "",
     needsPrintTime: false,
+    reference: "",
     ...over,
   };
 }
@@ -85,6 +86,12 @@ describe("reply and delete wording", () => {
     expect(link.startsWith("mailto:sam%40example.com?subject=")).toBe(true);
     expect(decodeURIComponent(link)).toContain("Re: your request 0123ABCD");
     expect(decodeURIComponent(link)).toContain("Hi Sam Rivera,");
+  });
+  it("uses the public reference when the row has one and the id prefix otherwise", () => {
+    expect(requestReference(req({ reference: "HL-1001" }))).toBe("HL-1001");
+    expect(decodeURIComponent(replyMailto(req({ reference: "HL-1001" })))).toContain("Re: your request HL-1001");
+    expect(matchesRequestFilter(req({ reference: "HL-1001" }), "hl-1001", "all")).toBe(true);
+    expect(matchesRequestFilter(req(), "hl-1001", "all")).toBe(false);
   });
   it("states the count and the permanence", () => {
     expect(deleteAllNewQuestion(8)).toBe("Delete 8 new requests? Their uploaded files are deleted permanently too. This can't be undone.");

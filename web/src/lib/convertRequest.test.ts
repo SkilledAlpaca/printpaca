@@ -31,6 +31,7 @@ function request(overrides: Partial<QuoteRequest> = {}): QuoteRequest {
     invoiceNumber: "",
     invoiceStatus: "",
     needsPrintTime: false,
+    reference: "",
     ...overrides,
   };
 }

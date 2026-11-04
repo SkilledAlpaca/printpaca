@@ -24,12 +24,12 @@ export function requestDisplayStatus(r: Pick<QuoteRequest, "status" | "invoiceId
   return isInvoiced(r) ? "invoiced" : r.status;
 }
 
-/** True when the request passes the text and chip filters (AND). The text matches the requester's name and
- * email, the gallery item, the option summary, the material and the uploaded file name, case-insensitively. */
+/** True when the request passes the text and chip filters (AND). The text matches the requester's name, email,
+ * reference, the gallery item, the option summary, the material and the uploaded file name, case-insensitively. */
 export function matchesRequestFilter(r: QuoteRequest, text: string, chip: RequestFilter): boolean {
   const q = text.trim().toLowerCase();
   if (q !== "") {
-    const hay = [r.name, r.email, r.itemName, r.optionName, r.material, r.gcodeFilename].join("\n").toLowerCase();
+    const hay = [r.name, r.email, r.reference ?? "", r.itemName, r.optionName, r.material, r.gcodeFilename].join("\n").toLowerCase();
     if (!hay.includes(q)) return false;
   }
   switch (chip) {
@@ -46,13 +46,14 @@ export function matchesRequestFilter(r: QuoteRequest, text: string, chip: Reques
   }
 }
 
-/** The reference a customer can quote: the first eight characters of the request id, uppercase. */
-export function requestReference(r: Pick<QuoteRequest, "id">): string {
-  return r.id.slice(0, 8).toUpperCase();
+/** The reference a customer can quote: the short per-shop reference the public form gave them ("HL-1001"),
+ * or for a row created before references existed the first eight characters of the request id, uppercase. */
+export function requestReference(r: Pick<QuoteRequest, "id"> & Partial<Pick<QuoteRequest, "reference">>): string {
+  return r.reference ? r.reference : r.id.slice(0, 8).toUpperCase();
 }
 
 /** A mailto: link that replies to the requester with the reference in the subject. */
-export function replyMailto(r: Pick<QuoteRequest, "id" | "name" | "email">): string {
+export function replyMailto(r: Pick<QuoteRequest, "id" | "name" | "email"> & Partial<Pick<QuoteRequest, "reference">>): string {
   const ref = requestReference(r);
   const subject = `Re: your request ${ref}`;
   const body = `Hi ${r.name},\n\nAbout your request ${ref}:\n\n`;

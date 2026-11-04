@@ -47,6 +47,8 @@ export interface QuoteRequest {
   /** A public estimate submitted without a print time: timeSeconds and priceCents are 0 until the owner
    * enters the time (setRequestPrintTime). */
   needsPrintTime: boolean;
+  /** The short per-shop reference the customer saw ("HL-1001"); "" for rows from before references existed. */
+  reference: string;
 }
 
 /** A network failure returns null so the inbox can show an offline note. Same optional-pagination overload

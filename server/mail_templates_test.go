@@ -378,3 +378,23 @@ func TestRenderQuoteEmailLabelRule(t *testing.T) {
 		t.Error("multi-part quote must show part labels, with the neutral text for a blank one")
 	}
 }
+
+// An uploaded logo is a data: URL, which html/template would rewrite to #ZgotmplZ; the email omits the image
+// instead, while an http(s) logo is kept.
+func TestRenderEmailLogoOnlyForHTTPURLs(t *testing.T) {
+	inv := &Invoice{InvoiceSummary: InvoiceSummary{Number: "INV-1", ClientName: "C", TotalCents: 100}}
+	cfg := testDocConfig()
+	_, _, htmlBody := renderInvoiceEmail(cfg, inv)
+	if !strings.Contains(htmlBody, `<img src="https://example.com/logo.png"`) {
+		t.Errorf("https logo missing from email: %s", htmlBody)
+	}
+
+	cfg.Quote.LogoURL = "data:image/png;base64,iVBORw0KGgo="
+	_, _, htmlBody = renderInvoiceEmail(cfg, inv)
+	if strings.Contains(htmlBody, "<img") || strings.Contains(htmlBody, "ZgotmplZ") {
+		t.Errorf("data: logo should be omitted, got: %s", htmlBody)
+	}
+	if !strings.Contains(htmlBody, "Acme Prints") {
+		t.Error("business name should still head the email")
+	}
+}

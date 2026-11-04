@@ -41,7 +41,60 @@ type dashboardResponse struct {
 	QuotesSavedThisMonth   int      `json:"quotesSavedThisMonth"`
 	QuotesInvoicedSharePct *float64 `json:"quotesInvoicedSharePct"`
 	QuotesAvgMarginPct     *float64 `json:"quotesAvgMarginPct"`
+
+	// NeedsAttention is the dashboard's "Needs attention" list: up to attentionPerKind rows per kind, in the
+	// order overdue invoices, draft invoices, requests needing a print time, new requests, sent quotes awaiting a reply. AttentionCounts
+	// carries the full count per kind so the page can say "and 4 more". Each list is present only when the
+	// caller may open that tab (requests, invoices).
+	NeedsAttention  []attentionItem `json:"needsAttention"`
+	AttentionCounts attentionCounts `json:"attentionCounts"`
 }
+
+// attentionPerKind caps each kind of NeedsAttention row.
+const attentionPerKind = 3
+
+// Kinds of attentionItem.
+const (
+	attentionNewRequest       = "new-request"
+	attentionPrintTimeRequest = "print-time-request"
+	attentionOverdueInvoice   = "overdue-invoice"
+	attentionDraftInvoice     = "draft-invoice"
+	attentionSentQuote        = "sent-quote"
+)
+
+// attentionItem is one row of NeedsAttention. Name is the requester or client, Number the invoice number
+// (invoices only), AmountCents the request price or the invoice balance (overdue) or total (draft), and Date
+// the due date (overdue invoices), the creation date (drafts), or the submission time (requests).
+type attentionItem struct {
+	Kind        string `json:"kind"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Number      string `json:"number"`
+	AmountCents int    `json:"amountCents"`
+	Date        string `json:"date"`
+}
+
+// attentionCounts is the full number of rows behind each NeedsAttention kind.
+type attentionCounts struct {
+	NewRequests       int `json:"newRequests"`
+	PrintTimeRequests int `json:"printTimeRequests"`
+	OverdueInvoices   int `json:"overdueInvoices"`
+	DraftInvoices     int `json:"draftInvoices"`
+	SentQuotes        int `json:"sentQuotes"`
+}
+
+// effectivePaymentsCTE is the "effective_payments" CTE the revenue queries read. A payment counts toward
+// revenue only up to the invoice total: payments are taken in paid-date order (then created_at, then id) and
+// each is capped at the total minus what the earlier ones already covered, so an overpayment's excess never
+// reaches the dashboard (the invoice shows it as "Overpaid"). The window runs over every payment of an
+// invoice, so callers filter on paid_date outside the CTE, never inside it.
+const effectivePaymentsCTE = `effective_payments AS (
+	SELECT p.paid_date AS paid_date,
+	       MAX(0, MIN(p.amount_cents, i.total_cents - COALESCE(SUM(p.amount_cents) OVER (
+	         PARTITION BY p.invoice_id ORDER BY p.paid_date, p.created_at, p.id
+	         ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0))) AS amount_cents
+	FROM payments p JOIN invoices i ON i.id = p.invoice_id
+)`
 
 // handleGet bounds every aggregate to a 12-month window and a 10-row recent list, not all history.
 // The indexes each query relies on come from the baseline schema in db.go.
@@ -62,17 +115,19 @@ func (d *dashboard) handleGet(w http.ResponseWriter, r *http.Request) {
 	resp := dashboardResponse{
 		RecentInvoices: []InvoiceSummary{},
 		RevenueByMonth: []revenueMonth{},
+		NeedsAttention: []attentionItem{},
 	}
+	var overdueItems []attentionItem
 
 	// Revenue is cash-basis: payment amounts bucketed by payment date, not invoice date or status. Half-open
 	// paid_date ranges let payments_paid_date serve range scans (substr() prefixes force full scans).
-	if err := d.db.QueryRow(`SELECT COALESCE(SUM(amount_cents), 0) FROM payments WHERE paid_date >= ? AND paid_date < ?`,
+	if err := d.db.QueryRow(`WITH `+effectivePaymentsCTE+` SELECT COALESCE(SUM(amount_cents), 0) FROM effective_payments WHERE paid_date >= ? AND paid_date < ?`,
 		monthStart.Format("2006-01-02"), monthEnd.Format("2006-01-02")).Scan(&resp.RevenueMonthCents); err != nil {
 		log.Printf("dashboard revenue month: %v", err)
 		http.Error(w, "dashboard unavailable", http.StatusInternalServerError)
 		return
 	}
-	if err := d.db.QueryRow(`SELECT COALESCE(SUM(amount_cents), 0) FROM payments WHERE paid_date >= ? AND paid_date < ?`,
+	if err := d.db.QueryRow(`WITH `+effectivePaymentsCTE+` SELECT COALESCE(SUM(amount_cents), 0) FROM effective_payments WHERE paid_date >= ? AND paid_date < ?`,
 		yearStart.Format("2006-01-02"), yearEnd.Format("2006-01-02")).Scan(&resp.RevenueYearCents); err != nil {
 		log.Printf("dashboard revenue year: %v", err)
 		http.Error(w, "dashboard unavailable", http.StatusInternalServerError)
@@ -82,7 +137,7 @@ func (d *dashboard) handleGet(w http.ResponseWriter, r *http.Request) {
 	// Outstanding = sum over sent invoices of (total - paid); overdueCount shares the balance > 0 gate.
 	// Filter on status first, then join payments only for those invoices.
 	rows, err := d.db.Query(`
-		SELECT i.id, i.due_date, i.total_cents, COALESCE(SUM(p.amount_cents), 0)
+		SELECT i.id, i.due_date, i.total_cents, COALESCE(SUM(p.amount_cents), 0), i.number, i.client_name
 		FROM invoices i
 		LEFT JOIN payments p ON p.invoice_id = i.id
 		WHERE i.status = 'sent'
@@ -93,9 +148,9 @@ func (d *dashboard) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for rows.Next() {
-		var id, dueDate string
+		var id, dueDate, number, clientName string
 		var total, paid int
-		if err := rows.Scan(&id, &dueDate, &total, &paid); err != nil {
+		if err := rows.Scan(&id, &dueDate, &total, &paid, &number, &clientName); err != nil {
 			rows.Close()
 			log.Printf("dashboard outstanding scan: %v", err)
 			http.Error(w, "dashboard unavailable", http.StatusInternalServerError)
@@ -106,6 +161,7 @@ func (d *dashboard) handleGet(w http.ResponseWriter, r *http.Request) {
 			resp.OutstandingCents += balance
 			if dueDate != "" && dueDate < today {
 				resp.OverdueCount++
+				overdueItems = append(overdueItems, attentionItem{Kind: attentionOverdueInvoice, ID: id, Name: clientName, Number: number, AmountCents: balance, Date: dueDate})
 			}
 		}
 	}
@@ -123,11 +179,11 @@ func (d *dashboard) handleGet(w http.ResponseWriter, r *http.Request) {
 	recentRows, err := d.db.Query(`
 		SELECT i.id, i.number, i.status, i.client_id, i.client_name, i.client_email, i.client_billing_address, i.client_shipping_address,
 		       i.issue_date, i.due_date, i.tax_bp, i.discount_cents, i.notes, i.subtotal_cents, i.tax_cents, i.total_cents, i.created_at, i.updated_at,
-		       i.created_by, i.updated_by,
+		       i.created_by, i.updated_by, i.version,
 		       COALESCE(SUM(p.amount_cents), 0)
 		FROM (
 			SELECT id, number, number_year, number_seq, status, client_id, client_name, client_email, client_billing_address, client_shipping_address,
-			       issue_date, due_date, tax_bp, discount_cents, notes, subtotal_cents, tax_cents, total_cents, created_at, updated_at, created_by, updated_by
+			       issue_date, due_date, tax_bp, discount_cents, notes, subtotal_cents, tax_cents, total_cents, created_at, updated_at, created_by, updated_by, version
 			FROM invoices ORDER BY created_at DESC, number_year DESC, number_seq DESC LIMIT 10
 		) i
 		LEFT JOIN payments p ON p.invoice_id = i.id
@@ -168,6 +224,12 @@ func (d *dashboard) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 	resp.RevenueByMonth = last12Months(now, monthSums)
 
+	if err := d.loadAttention(r, &resp, overdueItems); err != nil {
+		log.Printf("dashboard attention: %v", err)
+		http.Error(w, "dashboard unavailable", http.StatusInternalServerError)
+		return
+	}
+
 	if err := d.loadQuoteTiles(&resp, monthStart, monthEnd); err != nil {
 		log.Printf("dashboard quote tiles: %v", err)
 		http.Error(w, "dashboard unavailable", http.StatusInternalServerError)
@@ -178,13 +240,128 @@ func (d *dashboard) handleGet(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// loadAttention fills resp.NeedsAttention and resp.AttentionCounts. overdue is the overdue invoices handleGet
+// already found (oldest due date first after the sort below). Requests are listed only for callers who may
+// open the Requests tab, invoices only for those who may open Invoices.
+func (d *dashboard) loadAttention(r *http.Request, resp *dashboardResponse, overdue []attentionItem) error {
+	id := identityFor(r)
+	allowed := func(key string) (bool, error) {
+		if id.isAdmin {
+			return true, nil
+		}
+		perms, err := userPermissions(d.db, id.username)
+		if err != nil {
+			return false, err
+		}
+		return hasPermission(perms, key), nil
+	}
+
+	// Money first: overdue invoices, then drafts, then the requests that need a print time, then new requests,
+	// then sent quotes still waiting for a reply.
+	canInvoices, err := allowed("invoices")
+	if err != nil {
+		return err
+	}
+	if canInvoices {
+		sort.SliceStable(overdue, func(a, b int) bool { return overdue[a].Date < overdue[b].Date })
+		resp.AttentionCounts.OverdueInvoices = len(overdue)
+		resp.NeedsAttention = append(resp.NeedsAttention, overdue[:min(len(overdue), attentionPerKind)]...)
+
+		if err := d.db.QueryRow(`SELECT COUNT(*) FROM invoices WHERE status = 'draft'`).Scan(&resp.AttentionCounts.DraftInvoices); err != nil {
+			return err
+		}
+		rows, err := d.db.Query(`SELECT id, number, client_name, total_cents, created_at FROM invoices WHERE status = 'draft' ORDER BY number_year DESC, number_seq DESC LIMIT ?`, attentionPerKind)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			it := attentionItem{Kind: attentionDraftInvoice}
+			if err := rows.Scan(&it.ID, &it.Number, &it.Name, &it.AmountCents, &it.Date); err != nil {
+				rows.Close()
+				return err
+			}
+			resp.NeedsAttention = append(resp.NeedsAttention, it)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+	}
+
+	canRequests, err := allowed("requests")
+	if err != nil {
+		return err
+	}
+	if canRequests {
+		for _, q := range []struct {
+			kind, where string
+			count       *int
+		}{
+			{attentionPrintTimeRequest, "status != 'finalized' AND needs_print_time = 1", &resp.AttentionCounts.PrintTimeRequests},
+			{attentionNewRequest, "status = 'new' AND needs_print_time = 0", &resp.AttentionCounts.NewRequests},
+		} {
+			if err := d.db.QueryRow(`SELECT COUNT(*) FROM quote_requests WHERE ` + q.where).Scan(q.count); err != nil {
+				return err
+			}
+			rows, err := d.db.Query(`SELECT id, name, price_cents, created_at FROM quote_requests WHERE `+q.where+` ORDER BY created_at DESC, rowid DESC LIMIT ?`, attentionPerKind)
+			if err != nil {
+				return err
+			}
+			for rows.Next() {
+				it := attentionItem{Kind: q.kind}
+				if err := rows.Scan(&it.ID, &it.Name, &it.AmountCents, &it.Date); err != nil {
+					rows.Close()
+					return err
+				}
+				resp.NeedsAttention = append(resp.NeedsAttention, it)
+			}
+			err = rows.Err()
+			rows.Close()
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	canQuotes, err := allowed("quotes")
+	if err != nil {
+		return err
+	}
+	if canQuotes {
+		const sentWhere = `status = 'sent' AND (invoiced_as IS NULL OR invoiced_as = '')`
+		if err := d.db.QueryRow(`SELECT COUNT(*) FROM quotes WHERE ` + sentWhere).Scan(&resp.AttentionCounts.SentQuotes); err != nil {
+			return err
+		}
+		rows, err := d.db.Query(`SELECT id, CASE WHEN client_name != '' THEN client_name ELSE label END, COALESCE(resolved_price_cents, batch_total_cents), saved_at
+			FROM quotes WHERE `+sentWhere+` ORDER BY saved_at DESC LIMIT ?`, attentionPerKind)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			it := attentionItem{Kind: attentionSentQuote}
+			if err := rows.Scan(&it.ID, &it.Name, &it.AmountCents, &it.Date); err != nil {
+				return err
+			}
+			resp.NeedsAttention = append(resp.NeedsAttention, it)
+		}
+		return rows.Err()
+	}
+	return nil
+}
+
 // loadQuoteTiles: savedThisMonth counts quotes.saved_at in the half-open local month [monthStart, monthEnd);
 // invoicedSharePct is the 0-100 share of this month's quotes with invoiced_as set (nil if none saved);
 // avgMarginPct is the mean achieved_margin_pct over all invoiced quotes with a margin (nil if none).
 func (d *dashboard) loadQuoteTiles(resp *dashboardResponse, monthStart, monthEnd time.Time) error {
 	// saved_at is an RFC 3339 UTC string, so the bounds are converted to UTC before the string comparison.
-	monthStartStr := monthStart.UTC().Format(time.RFC3339)
-	monthEndStr := monthEnd.UTC().Format(time.RFC3339)
+	// The bounds use the millisecond layout of new saves: as a string "T00:00:00.123Z" sorts before the
+	// whole-second "T00:00:00Z" ('.' < 'Z'), so a whole-second bound put a millisecond timestamp from the first
+	// second of a month in the previous month. Against ".000Z", both a millisecond value and an older
+	// whole-second value compare correctly ('Z' > '.').
+	monthStartStr := monthStart.UTC().Format(quoteVersionLayout)
+	monthEndStr := monthEnd.UTC().Format(quoteVersionLayout)
 
 	var savedThisMonth, invoicedThisMonth int
 	err := d.db.QueryRow(`
@@ -218,7 +395,7 @@ func (d *dashboard) loadQuoteTiles(resp *dashboardResponse, monthStart, monthEnd
 // monthlyRevenueSums returns amount_cents summed per "YYYY-MM" for payments on or after since.
 // Gap-filling happens in last12Months; bounding on since lets payments_paid_date serve a range scan.
 func monthlyRevenueSums(db *sql.DB, since string) (map[string]int, error) {
-	rows, err := db.Query(`SELECT substr(paid_date, 1, 7), SUM(amount_cents) FROM payments WHERE paid_date >= ? GROUP BY 1`, since)
+	rows, err := db.Query(`WITH `+effectivePaymentsCTE+` SELECT substr(paid_date, 1, 7), SUM(amount_cents) FROM effective_payments WHERE paid_date >= ? GROUP BY 1`, since)
 	if err != nil {
 		return nil, err
 	}

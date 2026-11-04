@@ -19,8 +19,8 @@ describe("computeElectricity", () => {
     expect(r.valid).toBe(false);
     expect(r.warnings[0]?.field).toBe("watts");
   });
-  it("watts above 5000 → warning with code above-max", () => {
-    const r = computeElectricity({ watts: 5001, hours: 1, rate: 0.15 });
+  it("watts above 10000 → warning with code above-max", () => {
+    const r = computeElectricity({ watts: 10001, hours: 1, rate: 0.15 });
     expect(r.valid).toBe(false);
     expect(r.warnings.some((w) => w.code === "above-max")).toBe(true);
   });

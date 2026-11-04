@@ -34,4 +34,19 @@ export function setHelp(id: string, v: boolean): void {
 export function setAllHelp(ids: string[], v: boolean): void {
   for (const id of ids) helpState.open[id] = v;
   writeLocal(helpState.open);
+  if (v) scrollToFirstNote();
+}
+
+/** After "Explain this page" opens the notes, they sit below the fold and the page seems to do nothing:
+ * bring the first open note into view once the DOM has updated. */
+function scrollToFirstNote(): void {
+  if (typeof document === "undefined") return;
+  void Promise.resolve().then(() =>
+    requestAnimationFrame(() => {
+      const note = document.querySelector<HTMLElement>(".help-note:not([hidden])");
+      if (!note) return;
+      const reduce = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+      note.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+    }),
+  );
 }

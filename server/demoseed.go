@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -193,7 +194,7 @@ var demoHardwareCatalog = []Hardware{
 
 // demoIntroText seeds publicQuotes.introText for the demo's public page; defaults.yaml's introText is "",
 // so the intro-text feature would otherwise show nothing.
-const demoIntroText = "Upload your model for an instant estimate, or order from the gallery below — we print and ship within 5 business days."
+const demoIntroText = "Upload your 3D model for a price estimate, or order from the gallery below — we print and ship within 5 business days."
 
 // demoSeedMaterials returns defaultConfig()'s materials verbatim except "pla" and "petg" are Public, so
 // the public page has materials to offer. Built from defaultConfig(), not a literal: config.yaml's
@@ -1264,9 +1265,24 @@ type demoItemRow struct {
 	priceCents  int
 	public      bool
 	stockMode   string
-	optionName  string
+	optionName  string // the seeded order's option_name: the last option of every group
 	optionDelta int
-	options     []ItemOption // every option, for seedDemoItemSales
+	groups      []ItemOptionGroup // with ids, for seedDemoItemSales
+}
+
+// demoOptionSpec is one seeded option; a non-nil imageBG gives it a generated placeholder photo.
+type demoOptionSpec struct {
+	name       string
+	deltaCents int
+	imageBG    *color.RGBA
+	imageShape demoShape
+}
+
+// demoGroupSpec is one seeded option group.
+type demoGroupSpec struct {
+	label    string
+	required bool
+	options  []demoOptionSpec
 }
 
 // demoItemSpec is one hand-built fake gallery item; daysAgo backdates created_at/updated_at as in
@@ -1275,8 +1291,7 @@ type demoItemRow struct {
 type demoItemSpec struct {
 	name, description string
 	priceCents        int
-	optionLabel       string
-	options           []ItemOption
+	groups            []demoGroupSpec
 	public            bool
 	stockMode         string
 	stockQty          int
@@ -1287,18 +1302,22 @@ type demoItemSpec struct {
 	imageShape        demoShape
 }
 
-// demoItemSpecs seeds four items: a public in_stock item with a two-option "Color" list (one with a
-// positive delta) and allowBackorder, a public ready_to_print item, a non-public item proving the
-// public filter, and a public ready_to_print item with a two-option "Size" list. Items alone get a placeholder photo: a gallery of gray tiles undersells the feature.
+// demoItemSpecs seeds four items: a public in_stock item with a required two-option "Color" group and an optional
+// "Mounting" group, both with option photos, and allowBackorder, a public ready_to_print item, a non-public item proving the
+// public filter, and a public ready_to_print item with a required two-option "Size" group. Items alone get a placeholder photo: a gallery of gray tiles undersells the feature.
 var demoItemSpecs = []demoItemSpec{
 	{
 		name:        "Cable Clip 8-Pack",
 		description: "A set of 8 snap-in cable clips for desk or wall mounting.",
 		priceCents:  900,
-		optionLabel: "Color",
-		options: []ItemOption{
-			{Name: "Black", DeltaCents: 0},
-			{Name: "White", DeltaCents: 50},
+		groups: []demoGroupSpec{
+			{label: "Color", required: true, options: []demoOptionSpec{
+				{name: "Black", imageBG: &color.RGBA{R: 0x22, G: 0x22, B: 0x2a, A: 0xff}, imageShape: demoShapeCircle},
+				{name: "White", deltaCents: 50, imageBG: &color.RGBA{R: 0xb8, G: 0xbc, B: 0xc8, A: 0xff}, imageShape: demoShapeCircle},
+			}},
+			{label: "Mounting", required: false, options: []demoOptionSpec{
+				{name: "Adhesive strip", deltaCents: 100, imageBG: &color.RGBA{R: 0xd9, G: 0x77, B: 0x06, A: 0xff}, imageShape: demoShapeRoundedSquare},
+			}},
 		},
 		public:         true,
 		stockMode:      stockModeInStock,
@@ -1335,10 +1354,11 @@ var demoItemSpecs = []demoItemSpec{
 		name:        "Desk Organizer Tray",
 		description: "A stackable tray for pens, cables, and small parts, printed to order.",
 		priceCents:  2200,
-		optionLabel: "Size",
-		options: []ItemOption{
-			{Name: "Small", DeltaCents: 0},
-			{Name: "Large", DeltaCents: 400},
+		groups: []demoGroupSpec{
+			{label: "Size", required: true, options: []demoOptionSpec{
+				{name: "Small"},
+				{name: "Large", deltaCents: 400},
+			}},
 		},
 		public:     true,
 		stockMode:  stockModeReadyToPrint,
@@ -1485,13 +1505,33 @@ func seedDemoItems(tx *sql.Tx, configDir string) ([]demoItemRow, error) {
 
 	rows := make([]demoItemRow, 0, len(demoItemSpecs))
 	for i, s := range demoItemSpecs {
-		options := s.options
-		if options == nil {
-			options = []ItemOption{}
+		groups := make([]ItemOptionGroup, 0, len(s.groups))
+		for _, gs := range s.groups {
+			g := ItemOptionGroup{Label: gs.label, Required: gs.required, Options: []ItemOption{}}
+			for _, osp := range gs.options {
+				o := ItemOption{Name: osp.name, DeltaCents: osp.deltaCents}
+				if osp.imageBG != nil {
+					body := drawDemoItemImage(*osp.imageBG, osp.imageShape)
+					o.ImageFile = demoItemImageFilename(body)
+					if err := os.WriteFile(itemImagePath(configDir, o.ImageFile), body, 0o644); err != nil {
+						return nil, fmt.Errorf("demo item %q: write option image: %w", s.name, err)
+					}
+				}
+				g.Options = append(g.Options, o)
+			}
+			groups = append(groups, g)
 		}
-		optionsJSON, err := json.Marshal(options)
+		// reconcileOptionGroups assigns ids and drops photos (they are server-owned); put them back by position.
+		withIDs := reconcileOptionGroups(nil, groups)
+		for gi := range withIDs {
+			for oi := range withIDs[gi].Options {
+				withIDs[gi].Options[oi].ImageFile = groups[gi].Options[oi].ImageFile
+			}
+		}
+		groups = withIDs
+		groupsJSON, err := json.Marshal(groups)
 		if err != nil {
-			return nil, fmt.Errorf("demo item %q: marshal options: %w", s.name, err)
+			return nil, fmt.Errorf("demo item %q: marshal option groups: %w", s.name, err)
 		}
 
 		imageBody := drawDemoItemImage(s.imageBG, s.imageShape)
@@ -1504,23 +1544,26 @@ func seedDemoItems(tx *sql.Tx, configDir string) ([]demoItemRow, error) {
 		createdAt := rfc3339(daysAgoAt(s.daysAgo, 9, 0))
 		by := demoAttributionAt(i)
 		_, err = tx.Exec(`
-			INSERT INTO items (id, name, description, price_cents, option_label, options_json,
+			INSERT INTO items (id, name, description, price_cents, option_groups_json,
 				image_file, public, stock_mode, stock_qty, allow_backorder, sort_order, created_at, updated_at, created_by, updated_by)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, s.name, s.description, s.priceCents, s.optionLabel, string(optionsJSON),
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, s.name, s.description, s.priceCents, string(groupsJSON),
 			imageFile, s.public, s.stockMode, s.stockQty, s.allowBackorder, s.sortOrder, createdAt, createdAt, by, by,
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		row := demoItemRow{id: id, name: s.name, priceCents: s.priceCents, public: s.public, stockMode: s.stockMode, options: s.options}
-		if len(s.options) > 0 {
-			// Pick the last option (the positive-delta one, by construction of demoItemSpecs) so the seeded order
-			// shows a non-zero option price adjustment.
-			opt := s.options[len(s.options)-1]
-			row.optionName, row.optionDelta = opt.Name, opt.DeltaCents
+		row := demoItemRow{id: id, name: s.name, priceCents: s.priceCents, public: s.public, stockMode: s.stockMode, groups: groups}
+		// Pick the last option of every group (the positive-delta one, by construction of demoItemSpecs) so the
+		// seeded order shows a non-zero option price adjustment.
+		var parts []string
+		for _, g := range groups {
+			opt := g.Options[len(g.Options)-1]
+			parts = append(parts, g.Label+": "+opt.Name)
+			row.optionDelta += opt.DeltaCents
 		}
+		row.optionName = strings.Join(parts, optionSummarySep)
 		rows = append(rows, row)
 	}
 	return rows, nil
@@ -1570,17 +1613,17 @@ type demoItemSaleSpec struct {
 }
 
 var demoItemSaleSpecs = []demoItemSaleSpec{
-	{"Cable Clip 8-Pack", "White", 4, 3, "Marlow Pike"},
-	{"Cable Clip 8-Pack", "Black", 6, 9, "Tamsin Okafor"},
-	{"Cable Clip 8-Pack", "White", 2, 20, "Idris Lund"},
-	{"Cable Clip 8-Pack", "Black", 3, 37, "Wren Castellan"},
+	{"Cable Clip 8-Pack", "Color: White · Mounting: Adhesive strip", 4, 3, "Marlow Pike"},
+	{"Cable Clip 8-Pack", "Color: Black", 6, 9, "Tamsin Okafor"},
+	{"Cable Clip 8-Pack", "Color: White", 2, 20, "Idris Lund"},
+	{"Cable Clip 8-Pack", "Color: Black", 3, 37, "Wren Castellan"},
 	{"Phone Stand", "", 3, 6, "Odalys Brandt"},
 	{"Phone Stand", "", 2, 14, "Kestrel Moon"},
 	{"Phone Stand", "", 4, 33, "Piers Halloran"},
-	{"Desk Organizer Tray", "Large", 7, 45, "Linnea Arroyo"},
-	{"Desk Organizer Tray", "Small", 4, 58, "Fenwick Adair"},
-	{"Desk Organizer Tray", "Large", 3, 71, "Saoirse Vale"},
-	{"Desk Organizer Tray", "Small", 2, 82, "Bastian Rowe"},
+	{"Desk Organizer Tray", "Size: Large", 7, 45, "Linnea Arroyo"},
+	{"Desk Organizer Tray", "Size: Small", 4, 58, "Fenwick Adair"},
+	{"Desk Organizer Tray", "Size: Large", 3, 71, "Saoirse Vale"},
+	{"Desk Organizer Tray", "Size: Small", 2, 82, "Bastian Rowe"},
 }
 
 // seedDemoItemSales inserts a finalized quote_requests row and its item_sales ledger row for each of
@@ -1596,17 +1639,9 @@ func seedDemoItemSales(tx *sql.Tx, items []demoItemRow) error {
 		if !ok {
 			return fmt.Errorf("demo item sale %d: no seeded item %q", i, s.item)
 		}
-		delta := 0
-		if s.option != "" {
-			found := false
-			for _, o := range item.options {
-				if o.Name == s.option {
-					delta, found = o.DeltaCents, true
-				}
-			}
-			if !found {
-				return fmt.Errorf("demo item sale %d: item %q has no option %q", i, s.item, s.option)
-			}
+		delta, ok := optionSummaryDelta(item.groups, s.option)
+		if !ok {
+			return fmt.Errorf("demo item sale %d: item %q has no option %q", i, s.item, s.option)
 		}
 		total := (item.priceCents + delta) * s.quantity
 		finalized := daysAgoAt(s.daysAgo, 15, 40)

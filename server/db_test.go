@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -368,5 +370,107 @@ func TestSchemaPartCountDefaultsToOne(t *testing.T) {
 	var n int
 	if err := db.QueryRow(`SELECT part_count FROM quotes WHERE id = 'q1'`).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("part_count = %d (%v), want 1", n, err)
+	}
+}
+
+// seedV105OptionRows builds a version-1 database in dir shaped like v1.0.5: item "it" with option_label
+// "Color" and bare option names, plus one row per table that stored the bare name. It returns nothing; the
+// caller opens dir with openDB, which runs migration 2.
+func seedV105OptionRows(t *testing.T, dir string) {
+	t.Helper()
+	raw, err := openRawSQLite(filepath.Join(dir, "printpaca.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw.SetMaxOpenConns(1)
+	if err := runMigration(raw, 0); err != nil {
+		t.Fatal(err)
+	}
+	stmts := []string{
+		`INSERT INTO items (id, name, price_cents, option_label, options_json, created_at, updated_at) VALUES
+		  ('it', 'Clip', 1000, 'Color', '[{"name":"Red","deltaCents":0},{"name":"Blue","deltaCents":50}]', 'x', 'x'),
+		  ('plain', 'Plain', 500, '', '[]', 'x', 'x')`,
+		`INSERT INTO invoices (id, number, number_year, number_seq, client_name, created_at, updated_at) VALUES ('inv', '2026-0001', 2026, 1, 'Walk-in', 'x', 'x')`,
+		`INSERT INTO invoice_lines (id, invoice_id, position, description, quantity, unit_price_cents, item_id, option_name) VALUES
+		  ('l1', 'inv', 0, 'Clip', 1, 1000, 'it', 'Red'),
+		  ('l2', 'inv', 1, 'Plain', 1, 500, 'plain', ''),
+		  ('l3', 'inv', 2, 'Clip', 1, 1000, 'it', '')`,
+		`INSERT INTO quote_requests (id, name, email, material, quantity, created_at, kind, item_id, item_name, option_name)
+		  VALUES ('r1', 'A', 'a@example.com', 'PLA', 1, 'x', 'item', 'it', 'Clip', 'Blue')`,
+		`INSERT INTO item_sales (request_id, item_id, item_name, option_name, quantity, revenue_cents, sold_at)
+		  VALUES ('r1', 'it', 'Clip', 'Blue', 1, 1050, 'x'), ('r2', 'gone', 'Old', 'Red', 1, 100, 'x')`,
+	}
+	for _, s := range stmts {
+		if _, err := raw.Exec(s); err != nil {
+			t.Fatalf("seed: %v\n%s", err, s)
+		}
+	}
+	raw.Close()
+}
+
+// Migration 2 rewrites bare option names stored by v1.0.5 into "Label: Name" in all three tables, and leaves
+// rows that are empty or linked to an item that no longer exists alone.
+func TestMigrationRewritesBareOptionNames(t *testing.T) {
+	dir := t.TempDir()
+	seedV105OptionRows(t, dir)
+	db := openTestDB(t, dir)
+	one := func(q string) string {
+		var v string
+		if err := db.QueryRow(q).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	for q, want := range map[string]string{
+		`SELECT option_name FROM invoice_lines WHERE id = 'l1'`:      "Color: Red",
+		`SELECT option_name FROM invoice_lines WHERE id = 'l2'`:      "",
+		`SELECT option_name FROM invoice_lines WHERE id = 'l3'`:      "",
+		`SELECT option_name FROM quote_requests WHERE id = 'r1'`:     "Color: Blue",
+		`SELECT option_name FROM item_sales WHERE request_id = 'r1'`: "Color: Blue",
+		`SELECT option_name FROM item_sales WHERE request_id = 'r2'`: "Red",
+	} {
+		if got := one(q); got != want {
+			t.Errorf("%s = %q, want %q", q, got, want)
+		}
+	}
+}
+
+// A draft invoice carrying a pre-upgrade line must still save: linksValid parses the migrated name.
+func TestMigratedDraftInvoiceSaves(t *testing.T) {
+	dir := t.TempDir()
+	seedV105OptionRows(t, dir)
+	mux := newTestMux(t, dir)
+	rec := getInvoice(t, mux, "inv")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET: %d %s", rec.Code, rec.Body.String())
+	}
+	var inv Invoice
+	if err := json.Unmarshal(rec.Body.Bytes(), &inv); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"clientName":"Walk-in","lines":[{"description":"Clip","quantity":1,"unitPriceCents":1000,"itemId":"it","optionName":"Color: Red"}]}`
+	if rec := putInvoice(t, mux, "inv", body); rec.Code != http.StatusOK {
+		t.Fatalf("PUT migrated line: %d %s", rec.Code, rec.Body.String())
+	}
+	// The line as stored after migration, sent back unchanged.
+	if len(inv.Lines) == 0 || inv.Lines[0].OptionName != "Color: Red" {
+		t.Fatalf("stored lines = %+v", inv.Lines)
+	}
+}
+
+// The v1.1 migrations give every existing invoice version 1 and every existing request no invoice link and no
+// needs-print-time mark.
+func TestMigrationAddsInvoiceVersionAndRequestLink(t *testing.T) {
+	dir := t.TempDir()
+	seedV105OptionRows(t, dir)
+	db := openTestDB(t, dir)
+	var version int
+	if err := db.QueryRow(`SELECT version FROM invoices WHERE id = 'inv'`).Scan(&version); err != nil || version != 1 {
+		t.Errorf("invoice version = %d (err %v), want 1", version, err)
+	}
+	var invoiceID string
+	var needs int
+	if err := db.QueryRow(`SELECT invoice_id, needs_print_time FROM quote_requests WHERE id = 'r1'`).Scan(&invoiceID, &needs); err != nil || invoiceID != "" || needs != 0 {
+		t.Errorf("request invoice_id %q needs_print_time %d (err %v), want '' and 0", invoiceID, needs, err)
 	}
 }

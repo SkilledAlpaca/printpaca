@@ -1,17 +1,16 @@
 <script lang="ts">
+  import { characterCountText } from "../../lib/countText";
   import type { ServerConfig } from "../../lib/settings";
   import { settingsWarnings, PUBLIC_INTRO_TEXT_MAX_BYTES } from "../../lib/settingsRules";
   import { presetDisplayName, warnFor } from "../../lib/format";
-  import { utf8ByteLength } from "../../lib/publicFormLimits";
   import LabeledText from "../LabeledText.svelte";
 
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 
   const warnings = $derived(settingsWarnings(form));
-  const introTextBytes = $derived(utf8ByteLength(form.publicQuotes.introText));
 </script>
 
-<div id="section-public-quotes" class="card roomy" class:danger-border={hasError("publicQuotes") || hasError("site")}>
+<div id="section-public-quotes" class="card roomy" class:danger-border={hasError("publicQuotes") || hasError("site") || hasError("shop")}>
   <p class="section-label">Settings</p>
   <h2>Public estimates</h2>
   <p class="hint">The printer and preset that price every visitor estimate. The intro text appears at the top of your
@@ -43,13 +42,13 @@
       aria-invalid={warnFor(warnings, "publicQuotes.introText") !== ""}
       aria-describedby={warnFor(warnings, "publicQuotes.introText") !== "" ? "public-intro-count public-intro-warn" : "public-intro-count"}
     ></textarea>
-    <small id="public-intro-count" class="field-hint">{introTextBytes} / {PUBLIC_INTRO_TEXT_MAX_BYTES} bytes</small>
+    <small id="public-intro-count" class="field-hint">{characterCountText(form.publicQuotes.introText, PUBLIC_INTRO_TEXT_MAX_BYTES)}</small>
     {#if warnFor(warnings, "publicQuotes.introText") !== ""}
       <small id="public-intro-warn" class="warn-text">{warnFor(warnings, "publicQuotes.introText")}</small>
     {/if}
   </div>
 
-  <h3 class="section-label">Front door and shop</h3>
+  <h3 class="section-label">Storefront</h3>
   <p class="hint">What your server's main address shows to customers. Changes apply without a restart.</p>
   <label class="toggle">
     <input type="checkbox" bind:checked={form.site.shopOnMainPort} />
@@ -58,9 +57,14 @@
   <small class="field-hint">Turn off to send / to the admin sign-in and hide the shop and estimate page on the main address. A separate public port is not affected.</small>
   <label class="toggle">
     <input type="checkbox" bind:checked={form.site.staffLink} />
-    <span>Show a Staff sign-in button on the front door</span>
+    <span>Show a Staff sign-in link in the shop footer</span>
   </label>
-  <small class="field-hint">Adds a Staff sign-in button to the front door that opens the admin app at /admin/.</small>
+  <small class="field-hint">Adds a Staff sign-in link to the footer of the shop that opens the admin app at /admin/.</small>
+  <label class="field">
+    <span>Largest order quantity</span>
+    <input type="number" min="1" max="10000" step="1" bind:value={form.shop.maxOrderQty} aria-describedby="shop-max-qty-hint" />
+    <small class="field-hint" id="shop-max-qty-hint">The most units one estimate request or gallery order may carry, from 1 to 10,000. Customers see a message instead of a total above it.</small>
+  </label>
   <LabeledText
     label="Staff sign-in link on the public port"
     bind:value={form.site.adminUrl}

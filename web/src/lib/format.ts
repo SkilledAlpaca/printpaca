@@ -34,6 +34,8 @@ const FIELD_LABELS: Record<string, string> = {
   peakRate: "Peak rate",
   offPeakRate: "Off-peak rate",
   offPeakFrac: "Off-peak share",
+  printStart: "Print start",
+  schedule: "Electricity schedule",
   failureRatePct: "Failure rate",
   netProfit: "Net profit",
   prepMinutes: "Prep time",
@@ -142,6 +144,8 @@ export function friendlyMessage(w: FieldWarning): string {
   const lower = label.charAt(0).toLowerCase() + label.slice(1);
   switch (w.code) {
     case "required":
+      // A blank print time is one thing to the user, whichever half the warning names.
+      if (w.field === "timeHours" || w.field === "timeMinutes") return "Enter the print time.";
       return `${label} is required.`;
     case "nan":
       return `Enter a valid ${lower}.`;
@@ -184,4 +188,37 @@ export function formatDateTime(iso: string): string {
 export function presetDisplayName(key: string): string {
   const spaced = key.replace(/[-_]+/g, " ").trim();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+const FEE_BRANDS: Record<string, string> = { ebay: "eBay", paypal: "PayPal", etsy: "Etsy", square: "Square", stripe: "Stripe", shopify: "Shopify", amazon: "Amazon", none: "None" };
+
+/** Display name for a fee-schedule key: "etsy-us" becomes "Etsy (US)", "ebay-uk" becomes "eBay (UK)". A trailing
+ * two-letter segment reads as a region; known marketplace names get their usual spelling; anything else falls
+ * back to presetDisplayName. The key itself stays the stored id. */
+export function feeScheduleDisplayName(key: string): string {
+  const parts = key.split(/[-_]+/).filter(Boolean);
+  if (parts.length === 0) return key;
+  let region = "";
+  if (parts.length > 1 && /^[a-z]{2}$/i.test(parts[parts.length - 1]!)) region = parts.pop()!.toUpperCase();
+  const name = parts.map((p, i) => FEE_BRANDS[p.toLowerCase()] ?? (i === 0 ? p.charAt(0).toUpperCase() + p.slice(1) : p)).join(" ");
+  return region ? `${name} (${region})` : name;
+}
+
+/** An electricity rate as dollars per kWh: two decimals ("$0.30"), or more only when the rate needs them
+ * ("$0.325"), never trailing zeros past the second place. */
+export function rateText(rate: number, cfg: EffectiveConfig | null): string {
+  const cents = rate * 100;
+  const decimals = Math.abs(cents - Math.round(cents)) < 1e-9 ? 2 : Math.abs(rate * 1000 - Math.round(rate * 1000)) < 1e-9 ? 3 : 4;
+  return `${moneyPrecise(rate, cfg, decimals)}/kWh`;
+}
+
+/** A material shown by name: a stored id such as "petg" becomes the configured name ("PETG"); a value that is
+ * already a name, or matches nothing, is returned as it is. */
+export function materialDisplayName(value: string, materials: readonly { id: string; name: string }[]): string {
+  const lower = value.trim().toLowerCase();
+  if (lower === "") return value;
+  const byName = materials.find((m) => m.name.toLowerCase() === lower);
+  if (byName) return byName.name;
+  const byId = materials.find((m) => m.id.toLowerCase() === lower);
+  return byId ? byId.name : value;
 }

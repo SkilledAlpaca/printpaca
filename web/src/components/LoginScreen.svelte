@@ -7,7 +7,14 @@
   // Rendered by App.svelte in place of the app shell when GET /api/config 401s (ADMIN_PASSWORD set, no valid
   // session) or a mid-session request 401s (accessWatch.sessionExpired). onLoggedIn re-runs App.svelte's boot
   // flow after a successful POST /api/login. `notice` renders only for the sessionExpired case.
-  let { onLoggedIn, notice }: { onLoggedIn: () => void; notice?: string } = $props();
+  // businessName/logoSrc are the public branding (or printpaca and the bundled mark), resolved by App.svelte.
+  let {
+    onLoggedIn,
+    notice,
+    businessName = "printpaca",
+    logoSrc = logoUrl,
+    onLogoError = () => {},
+  }: { onLoggedIn: () => void; notice?: string; businessName?: string; logoSrc?: string; onLogoError?: () => void } = $props();
 
   let username = $state("");
   let password = $state("");
@@ -26,6 +33,9 @@
   // users.multiUser, from the same GET /api/demo response (the pre-auth login-info surface; no separate
   // endpoint exists). Gates the username field, so a single-user login screen is unchanged.
   let multiUser = $state(false);
+  // Where the customer shop lives on this port ("/" while site.shopOnMainPort is on, else ""), so staff who
+  // arrived from the shop footer can go back. Same GET /api/demo response.
+  let shopUrl = $state("");
 
   // Password gets the initial focus (single-user's only field, and the default before the async multiUser
   // answer). Once the /api/demo response confirms multi-user mode, focus moves to Username as it mounts
@@ -46,7 +56,8 @@
     try {
       const res = await fetch("api/demo", { signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS) });
       if (!res.ok) return;
-      const body = (await res.json()) as { demoMode?: boolean; publicUrl?: string; multiUser?: boolean };
+      const body = (await res.json()) as { demoMode?: boolean; publicUrl?: string; multiUser?: boolean; shopUrl?: string };
+      if (typeof body.shopUrl === "string") shopUrl = body.shopUrl;
       if (body.demoMode === true) {
         demoMode = true;
         password = "demo"; // prefilled, not locked -- the visitor can still edit it
@@ -103,8 +114,9 @@
 
 <main class="login-shell">
   <form class="card login-card" onsubmit={submit}>
-    <img class="logo" src={logoUrl} alt="" />
-    <h1>printpaca</h1>
+    <img class="logo" src={logoSrc} alt="" onerror={onLogoError} />
+    <h1>{businessName}</h1>
+    <p class="staff-line">For {businessName} staff</p>
     {#if notice}
       <!-- Set only for the mid-session-401 case (App passes accessWatch.sessionExpired). A plain
            informational note, not `.warn-text`, which is reserved for the submit-time error that can show
@@ -133,7 +145,7 @@
           aria-invalid={error ? "true" : undefined}
           bind:this={usernameInput}
         />
-        <small class="field-hint" id="username-hint">Leave empty to sign in as the admin.</small>
+        <small class="field-hint" id="username-hint">Enter the username you were given. Only the shop admin can leave this empty.</small>
       </div>
     {/if}
     <label class="field">
@@ -154,6 +166,7 @@
     <button type="submit" class="primary" aria-disabled={submitting ? "true" : undefined}>
       {submitting ? "Signing in…" : "Sign in"}
     </button>
+    {#if shopUrl}<a class="back-to-shop" href={shopUrl}>&larr; Back to shop</a>{/if}
   </form>
 </main>
 
@@ -184,8 +197,21 @@
     margin: 0 auto;
   }
   .login-card h1 {
-    margin: 0 0 var(--space-2, 0.5rem);
+    margin: 0;
     font-size: 1.25rem;
     text-align: center;
+  }
+  .staff-line {
+    margin: 0 0 var(--space-2, 0.5rem);
+    text-align: center;
+    color: var(--muted);
+    font-size: var(--text-sm, 0.875rem);
+  }
+  .back-to-shop {
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 var(--space-2, 0.5rem);
   }
 </style>

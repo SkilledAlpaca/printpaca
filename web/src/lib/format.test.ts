@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { moneyAmount, moneyPrecise, friendlyMessage, fieldLabel, formatDate, formatDateTime, presetDisplayName } from "./format";
+import { moneyAmount, moneyPrecise, friendlyMessage, fieldLabel, formatDate, formatDateTime, presetDisplayName, feeScheduleDisplayName, rateText, materialDisplayName } from "./format";
 import type { FieldWarning } from "./engine/index";
 import type { ServerConfig } from "./settings";
 import { settingsWarnings } from "./settingsRules";
@@ -107,7 +107,7 @@ function allInvalidConfig(): ServerConfig {
     materials: [{ id: "", name: "PLA", density: 0, pricePerKg: 20, wastePct: -1, public: false }],
     printers: [{ id: "", name: "Printer", watts: 250, purchaseCost: 400, lifespanHours: 4000, filamentDiameterMm: 0 }],
     hardware: [{ name: "", unitCost: -1, lostOnFailure: true }],
-    energy: { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.2, offPeakRate: 0.1, defaultOffPeakFrac: 0.5 } },
+    energy: { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.2, offPeakRate: 0.1, defaultOffPeakFrac: 0.5 }, schedule: { defaultStartTime: "22:00", holidays: [], seasons: [] } },
     presets: {
       "side-hustle": { failureRatePct: 5, prepMinutes: 10, laborRate: 20, monthlyFixed: 50, monthlyHours: 40 },
     },
@@ -122,6 +122,7 @@ function allInvalidConfig(): ServerConfig {
       paymentInstructions: "x".repeat(2001),
       termsText: "x".repeat(2001),
       validDays: 30,
+      referencePrefix: "",
     },
     invoicing: { numberPrefix: "", salesTaxPct: -1, dueDays: -1, paymentMethods: [""], paypalMe: "bad/handle" },
     publicQuotes: { printer: "p1", preset: "side-hustle", introText: "x".repeat(501) },
@@ -131,6 +132,7 @@ function allInvalidConfig(): ServerConfig {
     integrationsUrls: { spoolmanUrl: "", moonrakerUrl: "", fluiddUrl: "" },
     ui: { disabledTabs: [] },
     site: { shopOnMainPort: true, staffLink: true, adminUrl: "" },
+    shop: { maxOrderQty: 100 },
     users: { multiUser: false, accessAdminEmail: "" },
   };
 }
@@ -166,5 +168,45 @@ describe("presetDisplayName", () => {
     expect(presetDisplayName("side-hustle")).toBe("Side hustle");
     expect(presetDisplayName("small-shop")).toBe("Small shop");
     expect(presetDisplayName("Custom")).toBe("Custom");
+  });
+});
+
+describe("friendlyMessage: blank print time", () => {
+  it("reads 'Enter the print time.' for either half", () => {
+    for (const field of ["timeHours", "timeMinutes"]) {
+      expect(friendlyMessage({ field, code: "required", message: "Enter the print time", severity: "error" })).toBe("Enter the print time.");
+    }
+  });
+  it("keeps the generic copy for other required fields", () => {
+    expect(friendlyMessage({ field: "weightG", code: "required", message: "x", severity: "error" })).toBe("Model weight is required.");
+  });
+});
+
+describe("feeScheduleDisplayName", () => {
+  it("names marketplaces and regions", () => {
+    expect(feeScheduleDisplayName("etsy-us")).toBe("Etsy (US)");
+    expect(feeScheduleDisplayName("ebay-uk")).toBe("eBay (UK)");
+    expect(feeScheduleDisplayName("none")).toBe("None");
+    expect(feeScheduleDisplayName("craft-fair")).toBe("Craft fair");
+    expect(feeScheduleDisplayName("local")).toBe("Local");
+  });
+});
+
+describe("rateText", () => {
+  it("shows two decimals and only adds places a rate needs", () => {
+    expect(rateText(0.3, null)).toBe("$0.30/kWh");
+    expect(rateText(0.15, null)).toBe("$0.15/kWh");
+    expect(rateText(0.325, null)).toBe("$0.325/kWh");
+    expect(rateText(0.1234, null)).toBe("$0.1234/kWh");
+  });
+});
+
+describe("materialDisplayName", () => {
+  const mats = [{ id: "petg", name: "PETG" }, { id: "pla", name: "PLA" }];
+  it("maps an id to its name and leaves names and unknowns alone", () => {
+    expect(materialDisplayName("petg", mats)).toBe("PETG");
+    expect(materialDisplayName("PLA", mats)).toBe("PLA");
+    expect(materialDisplayName("silk", mats)).toBe("silk");
+    expect(materialDisplayName("", mats)).toBe("");
   });
 });

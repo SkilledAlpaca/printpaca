@@ -44,7 +44,7 @@ func newSSOEnv(t *testing.T, multi bool, adminEmail string, requirePassword bool
 	auth.cfAccess = f.cf
 	mux := routesMux(db, store, auth, dir, false)
 	// main() registers GET /api/config and PUT /api/settings outside registerRoutes.
-	mux.HandleFunc("GET /api/config", handleConfig(store, Integrations{}, configExtras{authEnabled: true}, auth))
+	mux.HandleFunc("GET /api/config", handleConfig(store, configExtras{authEnabled: true}, auth))
 	mux.HandleFunc("PUT /api/settings", handleSettingsPut(dir, store, auth))
 	return &ssoEnv{t: t, f: f, h: auth.middleware(mux), auth: auth, store: store, db: db}
 }

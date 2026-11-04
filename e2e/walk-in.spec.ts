@@ -12,8 +12,9 @@ test("walk-in name persists through save, restore, and convert", async ({ page }
   await page.goto("/admin/");
   await fillCanonicalQuote(page);
   await page.getByLabel("Set a selling price").check();
-  await page.getByPlaceholder("Client name").fill(customer);
-  await expect(page.getByLabel("Client for this quote")).toHaveValue(customer);
+  // One client field: the print toolbar only shows what the Saved quotes field holds.
+  await page.getByLabel("Client for this quote").fill(customer);
+  await expect(page.locator(".linked-customer")).toHaveText(customer);
 
   await page.getByLabel("Label for this quote").fill(label);
   await page.getByRole("button", { name: "Save quote" }).click();

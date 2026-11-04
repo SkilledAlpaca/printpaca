@@ -1,6 +1,6 @@
 # Accessibility
 
-printpaca targets [WCAG 2.2](https://www.w3.org/TR/WCAG22/) Level AA for the admin app, the sign-in screen, and the customer pages (the front door at `/` and the shop at `/order`). Version 1.0.4 is the first release built to that target. This page states what is covered, how it's tested, how to use printpaca without a mouse or with a screen reader, what isn't fixed, and how to report a problem. Contributors: see [Contributor guidance](#contributor-guidance).
+printpaca targets [WCAG 2.2](https://www.w3.org/TR/WCAG22/) Level AA for the admin app, the sign-in screen, and the customer pages (the shop, served at `/` and `/order`). Version 1.0.4 is the first release built to that target. This page states what is covered, how it's tested, how to use printpaca without a mouse or with a screen reader, what isn't fixed, and how to report a problem. Contributors: see [Contributor guidance](#contributor-guidance).
 
 This is a statement of intent and of testing done, not a certification. No third party has audited printpaca.
 
@@ -16,12 +16,12 @@ Three layers back the conformance target:
 
 | Dimension | Coverage |
 |---|---|
-| Pages | The sign-in screen (empty, and after a failed submit), the front door, and the shop: gallery, an open item panel, the custom estimate form (empty, with a live estimate, and with validation errors), and the order and estimate confirmations. In the admin app: all 12 tabs (New quote, Quotes, Requests, Invoices, Items, Clients, Dashboard, Filament, Electricity, Printers, Settings, and Guide) and one open detail view each for an invoice, a client, a request, and an item. |
+| Pages | The sign-in screen (empty, and after a failed submit), and the shop: gallery, an open item panel, the custom estimate form (empty, with a live estimate, and with validation errors), and the order and estimate confirmations. In the admin app: all 12 tabs (New quote, Quotes, Requests, Invoices, Items, Clients, Dashboard, Filament, Electricity, Printers, Settings, and Guide) and one open detail view each for an invoice, a client, a request, and an item (with option groups). |
 | Themes | Light and dark, by emulating the system color scheme. |
 | Viewports | Desktop (1280 by 900 px) and phone (390 by 844 px). |
 | Reflow | At 320 by 640 px (light theme), the page has no horizontal scroll (WCAG 1.4.10). |
 | Heading and title | Each detail view has exactly one `h1`, and its text is the record segment of the browser tab title (WCAG 1.3.1, 2.4.2). |
-| Focus | The mobile drawer: focus moves into it on open, back to the menu button on Escape, and to the main content after you pick a page. A delete confirm: focus lands on the confirm button. The shop: opening an item focuses its heading, going back focuses the card that opened it, and a failed submit focuses the first invalid field and links it to its message. Submitted orders and estimate requests focus the confirmation heading. The sign-in error focuses the password field. |
+| Focus | The mobile drawer: focus moves into it on open, back to the menu button on Escape, and to the main content after you pick a page. A delete confirm: focus lands on the confirm button. The shop: opening an item focuses its heading and the next Tab reaches Back to gallery; Escape also goes back, and the page says so. Going back focuses the card that opened the item, and a failed submit focuses the first invalid field and links it to its message (a required option group's error sits under its select). Error messages go away as soon as the problem is fixed. Submitted orders and estimate requests focus the confirmation heading. The sign-in error focuses the password field. |
 | Sticky bars | On Settings, a focused field stays clear of the sticky save bar and the jump navigation (WCAG 2.4.11). |
 | Shortcuts | A bare `/` isn't a shortcut (WCAG 2.1.4). |
 
@@ -41,11 +41,12 @@ Every control works from the keyboard, and the focus indicator is visible on eve
 | Key | Action |
 |---|---|
 | Tab and Shift+Tab | Move through controls. A **Skip to content** link is the first stop in the admin app; it moves focus to the main content. |
-| Ctrl+K (⌘K on macOS) | On the Quotes, Clients, and Invoices tabs, focus the list filter. It's ignored while focus is in a text field, select, or editable area. |
-| Ctrl+S (⌘S on macOS) | On the New quote tab, save the quote. |
-| Escape | Close the mobile menu, a Quotes row menu, or an open record's detail view (Clients, Invoices, and Requests). When a two-step confirm is armed, Escape cancels the confirm first and leaves the record open. Inside a text field or select, Escape keeps its normal meaning and doesn't close the record. |
+| Ctrl+K (⌘K on macOS) | On every page that has a list filter (Quotes, Clients, Invoices, Requests, Shop items, Filament spools, and Recent prints on New quote), focus the filter. It's ignored while focus is in a text field, select, or editable area. |
+| Ctrl+S (⌘S on macOS) | In every editor that has a Save button: New quote, the shop item editor, Settings, the Filament materials, Electricity, and Printers, invoice drafts, and client details. It works from inside a text field. |
+| Arrow Up, Arrow Down, Home, End | In an open row menu (a Quotes row, or More on Requests), move between its items. Arrow keys wrap at the ends. Tab closes the menu and puts focus on its toggle, so the next Tab continues from there. |
+| Escape | Close the mobile menu, a row menu, or an open record's detail view (Clients, Invoices, and Requests). When a two-step confirm is armed, Escape cancels the confirm first and leaves the record open. Inside a text field or select, Escape keeps its normal meaning and doesn't close the record. |
 
-Ctrl+K and Ctrl+S need a modifier key, so no single-key shortcut can fire by accident (WCAG 2.1.4). Before 1.0.4 the filter shortcut was a bare `/`; it no longer does anything.
+Ctrl+K and Ctrl+S need a modifier key, so no single-key shortcut can fire by accident (WCAG 2.1.4). The sidebar footer lists only the shortcuts that work on the page you're on, and the Guide lists them all. Before 1.0.4 the filter shortcut was a bare `/`; it no longer does anything.
 
 ### Focus behavior
 
@@ -58,6 +59,11 @@ printpaca moves focus so you never land on a blank page:
 - Loading more rows focuses the first new row.
 - Actions that take time, such as saving, keep focus on their button. The button gets `aria-disabled="true"` and a busy style, and repeat presses are ignored, so focus is never lost to a disabled button.
 - The sticky save bars and jump navigation reserve scroll padding, so a focused field is never hidden behind them (WCAG 2.4.11).
+- The Settings jump navigation wraps onto several lines and sticks to the top at 600 px and wider. Below 600 px it scrolls with the page, so it never covers a large part of a small screen. A jump lands with the section heading fully visible below the navigation.
+- The business name and logo at the top of the sidebar (and of the top bar on a phone) are a link named "<business name> home". Activating it opens the first page in the menu, closes the mobile menu, and moves focus to the page's heading.
+- After you drop an STL or 3MF file that has no slicer time, a note under the print time fields says so. The fields are described by that note and are marked invalid only after you leave them or try to save with Ctrl+S or Cmd+S. When the price can't be calculated, the cost bar and the Price and profit card list each missing field as a link that moves focus to it. A "What is a slicer?" disclosure explains the word on demand.
+- A **Skip to model weight and print time** link at the top of New quote moves focus past the model drop zone and the Recent prints list.
+- A saved quote open in the editor is headed "Edit quote: <label>", and the sidebar marks Quotes (not New quote) as the current page. A browser reload, or leaving New quote with unsaved edits, asks for confirmation.
 
 ### 3D model preview
 
@@ -70,12 +76,13 @@ These behaviors are built in, but see the note about [testing](#how-its-tested):
 - **Live announcements.** A hidden polite region and a hidden assertive region, mounted once in the admin app and once in the customer pages, announce results that have no visible message of their own. Examples are a saved quote, a failed save, a loading state, and the live price on the shop page.
 - **Form errors.** An invalid field has `aria-invalid="true"` and an `aria-describedby` that points at its message. Forms that list several errors show an error summary: an alert region with one button per error that moves focus to the field.
 - **Headings and landmarks.** Every view has exactly one `h1`. The sign-in screen and the customer pages sit in a `main` landmark. The sidebar groups (Sell and Shop) are labeled groups.
-- **Page titles.** The browser tab title names the current view, in the form `Quotes · printpaca`. In a detail view it adds the record, as in `Invoice INV-2026-0016 · Invoices · printpaca`. The sign-in screen is `Sign in · printpaca`. The front door's title is your business name, and the shop's title changes with the step the visitor is on.
+- **Shop addresses.** Each shop view has its own address (`#/item/<id>`, `#/estimate`, and the two confirmations), so the browser's Back button, reload, and shared links work. When a confirmation is no longer available, the page returns to the gallery and a status message says why.
+- **Page titles.** The browser tab title names the current view, in the form `Quotes · printpaca`. In a detail view it adds the record, as in `Invoice INV-2026-0016 · Invoices · printpaca`. The sign-in screen is `Sign in · printpaca`. When you set a **Business name** in Settings, it replaces `printpaca` in every title (`Quotes · Alpaca Prints`), and the sign-in screen uses it too when the server offers the public branding. The shop's title changes with the step the visitor is on.
 - **Dashboard chart.** The revenue chart is an image with a text summary of the range and total. A **Revenue by month as a table** disclosure under it lists the same numbers.
 - **Cost breakdown.** The legend shows each segment's percentage in text, so color isn't the only cue.
 - **Names.** Visible text is part of every control's accessible name, so speech-input users can say what they see (WCAG 2.5.3). Help text, hints, warnings, and counters are linked to their fields as descriptions and are not part of the name.
 - **Unread requests.** The sidebar item and the mobile menu button both include the unread count in their names.
-- **Confirmations before consequential actions.** printpaca asks before it marks an invoice sent, emails an invoice or a quote, changes a quote's status, or finalizes a request.
+- **Confirmations before consequential actions.** printpaca asks before it marks an invoice sent, emails an invoice or a quote, changes a quote's status, finalizes requests, records a payment above the balance, or deletes all new requests. The confirm button names the action ("Yes, mark as sent", "Yes, delete 8 requests") and only a destructive confirm is red. The delete-all confirm states the count and that the stored files go too, and focus starts on Cancel.
 
 ## Theme and contrast
 
@@ -107,7 +114,7 @@ These are the gaps left in 1.0.4:
 - **No screen-reader or assistive-technology testing.** See [How it's tested](#how-its-tested).
 - **Print views and emails.** The printed quote, cost audit, and invoice views were scanned in emulated print media during review but aren't in the automated gate. The HTML and plain-text emails (quotes, invoices, and request notifications) weren't audited.
 - **Gate coverage is partial.** See [What the gate doesn't cover](#what-the-gate-doesnt-cover).
-- **Ctrl+S works only on New quote.** Other tabs have no save shortcut.
+- **Ctrl+S needs an editor.** Pages without a Save button, such as the Dashboard, don't use it, so the browser's own Save command runs there.
 - **User content.** Logos, item photos, custom CSS, and text you enter aren't checked. Item photos and logos are treated as decorative, because the name is always next to them.
 - **Browsers.** The gate runs in Chromium. Firefox and Safari aren't tested automatically.
 

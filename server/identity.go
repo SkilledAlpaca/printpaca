@@ -118,6 +118,20 @@ func requirePermission(db *sql.DB, key string, next http.HandlerFunc) http.Handl
 	}
 }
 
+// callerHasPermission reports whether the request's caller is admin or holds key, for a handler whose route
+// is gated on another key but whose body can reach a second area (POST /api/invoices with a requestId).
+func callerHasPermission(db *sql.DB, r *http.Request, key string) (bool, error) {
+	id := identityFor(r)
+	if id.isAdmin {
+		return true, nil
+	}
+	perms, err := userPermissions(db, id.username)
+	if err != nil {
+		return false, err
+	}
+	return hasPermission(perms, key), nil
+}
+
 // requireAnyPermission is the OR counterpart to requirePermission: admin or an employee holding at
 // least one of keys. Its one use is GET /api/settings for filament/electricity/printers, whose
 // embedded SettingsEditor can't load without it; the read exposes nothing GET /api/config doesn't.

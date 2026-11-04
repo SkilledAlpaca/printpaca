@@ -33,8 +33,10 @@ const (
 	publicMaxUploadBytes = 32 << 20 // 32 MiB
 	// publicUploadsCapBytes is the total size CONFIG_DIR/uploads may reach; past it, submissions are stored without their file.
 	publicUploadsCapBytes = 2 << 30 // 2 GiB
-	// publicRateLimit/publicRateWindow are the per-IP abuse guard.
-	publicRateLimit  = 5
+	// publicRateLimit/publicRateWindow are the per-IP abuse guard. Item orders and custom estimates each get
+	// their own budget of this size (publicShared.orderRl, quoteRl), so a visitor who sends estimates can
+	// still place an order.
+	publicRateLimit  = 10
 	publicRateWindow = time.Hour
 	// publicMaxConcurrentUploads bounds submissions mid-upload. Streaming to disk avoids heap buffering, but
 	// gzip and multipart buffers and disk writes still cost; the per-IP rate limit doesn't bound concurrency.
@@ -243,7 +245,7 @@ type publicConfigResponse struct {
 		Phone   string `json:"phone"`
 		Address string `json:"address"`
 	} `json:"branding"`
-	// StaffUrl is the Staff sign-in target on the front door, "" to hide the button. It depends on the
+	// StaffUrl is the Staff sign-in target in the shop footer, "" to hide the link. It depends on the
 	// listener answering (staffURLFunc): /admin/ on the main port, site.adminUrl on PUBLIC_PORT.
 	StaffUrl  string           `json:"staffUrl"`
 	IntroText string           `json:"introText"`
@@ -256,9 +258,11 @@ type publicConfigResponse struct {
 	MaxUploadBytes int `json:"maxUploadBytes"`
 	// DemoMode lets the page show a "nothing is saved" banner up front (demo submissions insert no row).
 	DemoMode bool `json:"demoMode"`
+	// MaxOrderQty is shop.maxOrderQty: the largest quantity one estimate request or gallery order may carry.
+	MaxOrderQty int `json:"maxOrderQty"`
 }
 
-// staffURLFunc computes the front door's Staff sign-in target for one listener from the live config.
+// staffURLFunc computes the shop footer's Staff sign-in target for one listener from the live config.
 type staffURLFunc func(cfg *Config) string
 
 // mainStaffURL is the main port's target: the admin app under the same host, when site.staffLink is on.
@@ -308,6 +312,7 @@ func handlePublicConfig(store *ConfigStore, demoMode bool, staffURL staffURLFunc
 			FilamentDiameterMm: printer.FilamentDiameterMm,
 			MaxUploadBytes:     publicMaxUploadBytes,
 			DemoMode:           demoMode,
+			MaxOrderQty:        cfg.maxOrderQty(),
 		}
 		resp.Branding.BusinessName = cfg.Quote.BusinessName
 		resp.Branding.LogoURL = cfg.Quote.LogoURL
@@ -352,14 +357,45 @@ type publicItemStock struct {
 // publicItem is the narrow shape served per public item: no imageFile (ImageURL is derived) and none
 // of the admin-only bookkeeping fields (public, createdAt, updatedAt, sortOrder).
 type publicItem struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	PriceCents  int             `json:"priceCents"`
-	OptionLabel string          `json:"optionLabel"`
-	Options     []ItemOption    `json:"options"`
-	ImageURL    string          `json:"imageUrl"` // "/item-images/{file}" or ""
-	Stock       publicItemStock `json:"stock"`
+	ID           string              `json:"id"`
+	Name         string              `json:"name"`
+	Description  string              `json:"description"`
+	PriceCents   int                 `json:"priceCents"`
+	OptionGroups []publicOptionGroup `json:"optionGroups"`
+	ImageURL     string              `json:"imageUrl"` // "/item-images/{file}" or ""
+	Stock        publicItemStock     `json:"stock"`
+}
+
+// publicOptionGroup and publicOption are ItemOptionGroup and ItemOption without imageFile: the photo is
+// served as ImageURL ("/item-images/{file}" or "").
+type publicOptionGroup struct {
+	ID       string         `json:"id"`
+	Label    string         `json:"label"`
+	Required bool           `json:"required"`
+	Options  []publicOption `json:"options"`
+}
+
+type publicOption struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	DeltaCents int    `json:"deltaCents"`
+	ImageURL   string `json:"imageUrl"`
+}
+
+func toPublicOptionGroups(groups []ItemOptionGroup) []publicOptionGroup {
+	out := make([]publicOptionGroup, 0, len(groups))
+	for _, g := range groups {
+		pg := publicOptionGroup{ID: g.ID, Label: g.Label, Required: g.Required, Options: make([]publicOption, 0, len(g.Options))}
+		for _, o := range g.Options {
+			url := ""
+			if o.ImageFile != "" {
+				url = "/item-images/" + o.ImageFile
+			}
+			pg.Options = append(pg.Options, publicOption{ID: o.ID, Name: o.Name, DeltaCents: o.DeltaCents, ImageURL: url})
+		}
+		out = append(out, pg)
+	}
+	return out
 }
 
 // publicItemsCacheTTL bounds how long handlePublicItems serves its cached response. This is the only
@@ -429,13 +465,12 @@ func handlePublicItems(db *sql.DB) http.HandlerFunc {
 				imageURL = "/item-images/" + it.ImageFile
 			}
 			items = append(items, publicItem{
-				ID:          it.ID,
-				Name:        it.Name,
-				Description: it.Description,
-				PriceCents:  it.PriceCents,
-				OptionLabel: it.OptionLabel,
-				Options:     it.Options, // scanItem already guarantees non-nil
-				ImageURL:    imageURL,
+				ID:           it.ID,
+				Name:         it.Name,
+				Description:  it.Description,
+				PriceCents:   it.PriceCents,
+				OptionGroups: toPublicOptionGroups(it.OptionGroups),
+				ImageURL:     imageURL,
 				Stock: publicItemStock{
 					Mode:           it.StockMode,
 					Qty:            it.StockQty,
@@ -475,27 +510,28 @@ const quoteRequestsEmailMaxLen = 320
 // publicItemOrderRequest is the POST /api/public/item-order body. DisallowUnknownFields rejects any
 // other field, a client-supplied price above all: the server is the only price authority.
 type publicItemOrderRequest struct {
-	ItemID     string `json:"itemId"`
-	OptionName string `json:"optionName"`
-	Quantity   int    `json:"quantity"`
-	Name       string `json:"name"`
-	Email      string `json:"email"`
-	Note       string `json:"note"`
+	ItemID     string            `json:"itemId"`
+	Selections []optionSelection `json:"selections"`
+	Quantity   int               `json:"quantity"`
+	Name       string            `json:"name"`
+	Email      string            `json:"email"`
+	Note       string            `json:"note"`
 }
 
 // writePublicOrderAccepted writes an order's 201, kept apart from writePublicQuoteAccepted's shape.
-func writePublicOrderAccepted(w http.ResponseWriter, id string, priceCents int) {
+func writePublicOrderAccepted(w http.ResponseWriter, id, reference string, priceCents int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(struct {
 		ID         string `json:"id"`
+		Reference  string `json:"reference"`
 		PriceCents int    `json:"priceCents"`
 		Message    string `json:"message"`
-	}{ID: id, PriceCents: priceCents, Message: "Order request received, subject to review"})
+	}{ID: id, Reference: reference, PriceCents: priceCents, Message: "Order request received, subject to review"})
 }
 
 // handlePublicItemOrder stores a visitor's order against one public item. Pricing is server-authoritative:
-// the item is reloaded (getItem) and total = (item.PriceCents + selectedOption.DeltaCents) * quantity
+// the item is reloaded (getItem) and total = (item.PriceCents + Σ selected option deltas) * quantity
 // is computed from that row; DisallowUnknownFields rejects a client priceCents.
 //
 // Order mirrors handlePublicQuoteRequest: rate limit, decode/validate, load the item (not found and
@@ -542,7 +578,6 @@ func handlePublicItemOrder(db *sql.DB, store *ConfigStore, rl *rateLimiter, trus
 		name := strings.TrimSpace(in.Name)
 		email := strings.TrimSpace(in.Email)
 		note := strings.TrimSpace(in.Note)
-		optionName := strings.TrimSpace(in.OptionName)
 
 		var problems []string
 		if name == "" {
@@ -562,8 +597,8 @@ func handlePublicItemOrder(db *sql.DB, store *ConfigStore, rl *rateLimiter, trus
 		if len(note) > 2000 {
 			problems = append(problems, "note: max 2000 characters")
 		}
-		if in.Quantity < 1 || in.Quantity > maxItemOrderQty {
-			problems = append(problems, fmt.Sprintf("quantity: must be an integer 1-%d", maxItemOrderQty))
+		if in.Quantity < 1 || in.Quantity > cfg.maxOrderQty() {
+			problems = append(problems, fmt.Sprintf("quantity: must be an integer 1-%d", cfg.maxOrderQty()))
 		}
 
 		item, found, err := getItem(db, in.ItemID)
@@ -581,22 +616,8 @@ func handlePublicItemOrder(db *sql.DB, store *ConfigStore, rl *rateLimiter, trus
 			return
 		}
 
-		var delta int
-		if item.OptionLabel != "" {
-			matched := false
-			for _, opt := range item.Options {
-				if opt.Name == optionName {
-					matched = true
-					delta = opt.DeltaCents
-					break
-				}
-			}
-			if !matched {
-				problems = append(problems, "optionName: must be one of this item's options")
-			}
-		} else if optionName != "" {
-			problems = append(problems, "optionName: this item has no options")
-		}
+		delta, optionName, selProblems := resolveSelections(item.OptionGroups, in.Selections)
+		problems = append(problems, selProblems...)
 
 		if item.StockMode == stockModeInStock && !item.AllowBackorder {
 			// Check-then-insert race accepted by design: concurrent orders can both pass against the same on-hand
@@ -620,16 +641,16 @@ func handlePublicItemOrder(db *sql.DB, store *ConfigStore, rl *rateLimiter, trus
 
 		if demoMode {
 			// Simulate the rest: same 201 and synthesized id, but no row and no notification.
-			writePublicOrderAccepted(w, id, total)
+			writePublicOrderAccepted(w, id, peekRequestReference(db, referencePrefix(cfg)), total)
 			return
 		}
 
 		now := time.Now().UTC().Format(time.RFC3339)
-		_, err = db.Exec(`INSERT INTO quote_requests
+		reference, err := insertRequestWithReference(db, cfg, `INSERT INTO quote_requests
 		  (id, status, kind, name, email, note, material, quantity, weight_g, time_seconds,
 		   price_cents, gcode_filename, gcode_path, gcode_bytes, created_at,
-		   item_id, item_name, option_name, tax_inclusive)
-		  VALUES (?, 'new', 'item', ?, ?, ?, '', ?, 0, 0, ?, '', '', 0, ?, ?, ?, ?, 0)`,
+		   item_id, item_name, option_name, tax_inclusive, reference)
+		  VALUES (?, 'new', 'item', ?, ?, ?, '', ?, 0, 0, ?, '', '', 0, ?, ?, ?, ?, 0, ?)`,
 			id, name, email, note, in.Quantity, total, now, item.ID, item.Name, optionName)
 		if err != nil {
 			log.Printf("public item-order: insert: %v", err)
@@ -641,10 +662,10 @@ func handlePublicItemOrder(db *sql.DB, store *ConfigStore, rl *rateLimiter, trus
 		nq.enqueue(cfg, QuoteRequest{
 			ID: id, Status: "new", Kind: "item", Name: name, Email: email, Note: note,
 			Quantity: in.Quantity, PriceCents: total, CreatedAt: now,
-			ItemID: item.ID, ItemName: item.Name, OptionName: optionName,
+			ItemID: item.ID, ItemName: item.Name, OptionName: optionName, Reference: reference,
 		})
 
-		writePublicOrderAccepted(w, id, total)
+		writePublicOrderAccepted(w, id, reference, total)
 	}
 }
 
@@ -682,6 +703,16 @@ func buildPublicQuoteInputs(cfg *Config, material Material, quantity int, weight
 			PeakRate:    OptF{Value: cfg.Energy.Tou.PeakRate, Present: true},
 			OffPeakRate: OptF{Value: cfg.Energy.Tou.OffPeakRate, Present: true},
 			OffPeakFrac: OptF{Value: cfg.Energy.Tou.DefaultOffPeakFrac, Present: true},
+		}
+	} else if cfg.Energy.Mode == "schedule" {
+		// A visitor can't choose a start, so the quote prices from the next occurrence of the shop's default
+		// start time at request time.
+		sched := cfg.Energy.Schedule
+		energy = EnergyInputs{
+			Mode:     "schedule",
+			Schedule: &sched,
+			Timezone: cfg.Timezone,
+			Start:    nextStartWall(sched.DefaultStartTime, cfg.Location(), time.Now()),
 		}
 	} else {
 		energy = EnergyInputs{Mode: "flat", FlatRate: OptF{Value: cfg.Energy.FlatRate, Present: true}}
@@ -721,7 +752,7 @@ const publicQuotePreviewMaxBytes = 2 * 1024
 
 // publicPreviewRateLimit/publicPreviewRateWindow bound POST /api/public/quote/preview on its OWN per-IP
 // budget (handlePublicQuotePreview gets a dedicated rateLimiter): the page calls it on every debounced
-// keystroke, so sharing the 5/hour submission budget would starve real submissions. 60/min is generous
+// keystroke, so sharing the per-hour submission budget would starve real submissions. 60/min is generous
 // for a ~350ms debounce yet bounds direct hammering.
 const (
 	publicPreviewRateLimit  = 60
@@ -794,8 +825,8 @@ func handlePublicQuotePreview(store *ConfigStore, rl *rateLimiter, trustProxy bo
 		} else if !materialIsPublic {
 			problems = append(problems, "material: no longer offered; choose another")
 		}
-		if in.Quantity < 1 || in.Quantity > 1000 {
-			problems = append(problems, "quantity: must be an integer 1-1000")
+		if in.Quantity < 1 || in.Quantity > cfg.maxOrderQty() {
+			problems = append(problems, fmt.Sprintf("quantity: must be an integer 1-%d", cfg.maxOrderQty()))
 		}
 		if in.WeightG < 0 || in.WeightG > 100000 {
 			problems = append(problems, "weightG: must be 0-100000")
@@ -1030,15 +1061,19 @@ func (q *notifyQueue) stop(ctx context.Context) {
 // fileStored says whether an uploaded file actually persisted: true when no file was sent (a manual
 // estimate isn't a "dropped file") or the part was written; false only when a part arrived but was
 // dropped at the uploads cap (the errPublicStorageFull branch). Always true in demoMode.
-func writePublicQuoteAccepted(w http.ResponseWriter, id string, priceCents int, fileStored bool) {
+//
+// needsPrintTime is true when the visitor sent no print time: priceCents is then 0 and means "to be confirmed".
+func writePublicQuoteAccepted(w http.ResponseWriter, id, reference string, priceCents int, needsPrintTime, fileStored bool) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(struct {
-		ID         string `json:"id"`
-		PriceCents int    `json:"priceCents"`
-		Message    string `json:"message"`
-		FileStored bool   `json:"fileStored"`
-	}{ID: id, PriceCents: priceCents, Message: "Estimate, subject to review", FileStored: fileStored})
+		ID             string `json:"id"`
+		Reference      string `json:"reference"`
+		PriceCents     int    `json:"priceCents"`
+		NeedsPrintTime bool   `json:"needsPrintTime"`
+		Message        string `json:"message"`
+		FileStored     bool   `json:"fileStored"`
+	}{ID: id, Reference: reference, PriceCents: priceCents, NeedsPrintTime: needsPrintTime, Message: "Estimate, subject to review", FileStored: fileStored})
 }
 
 // uploadSlots bounds concurrent gcode file copies: at most n in total and one per source key (IP, or /64
@@ -1323,8 +1358,8 @@ func handlePublicQuoteRequest(db *sql.DB, store *ConfigStore, configDir string, 
 		}
 
 		quantity, err := strconv.Atoi(strings.TrimSpace(fields["quantity"]))
-		if err != nil || quantity < 1 || quantity > 1000 {
-			problems = append(problems, "quantity: must be an integer 1-1000")
+		if err != nil || quantity < 1 || quantity > cfg.maxOrderQty() {
+			problems = append(problems, fmt.Sprintf("quantity: must be an integer 1-%d", cfg.maxOrderQty()))
 		}
 
 		// strconv.ParseFloat accepts "NaN"/"Inf"/"-Inf" with a nil err, and every comparison against NaN is
@@ -1334,9 +1369,16 @@ func handlePublicQuoteRequest(db *sql.DB, store *ConfigStore, configDir string, 
 			problems = append(problems, "weightG: must be 0-100000")
 		}
 
-		timeSeconds, err := strconv.Atoi(strings.TrimSpace(fields["timeSeconds"]))
-		if err != nil || timeSeconds < 0 || timeSeconds > maxTimeSeconds {
-			problems = append(problems, fmt.Sprintf("timeSeconds: must be 0-%d", maxTimeSeconds))
+		// A blank or absent timeSeconds is allowed: an unsliced STL or 3MF has no print time the visitor can
+		// know. The request is stored with needs_print_time set and no price; the owner confirms it. The time
+		// is never estimated from volume.
+		var timeSeconds int
+		needsPrintTime := strings.TrimSpace(fields["timeSeconds"]) == ""
+		if !needsPrintTime {
+			timeSeconds, err = strconv.Atoi(strings.TrimSpace(fields["timeSeconds"]))
+			if err != nil || timeSeconds < 0 || timeSeconds > maxTimeSeconds {
+				problems = append(problems, fmt.Sprintf("timeSeconds: must be 0-%d", maxTimeSeconds))
+			}
 		}
 
 		if len(problems) > 0 {
@@ -1350,18 +1392,24 @@ func handlePublicQuoteRequest(db *sql.DB, store *ConfigStore, configDir string, 
 		// Server-authoritative price: the client sends none. POST /api/public/quote/preview is the only place a
 		// visitor sees a number before submitting, and it runs this same engine call, so preview and stored
 		// price can't disagree. price_cents is the sole price column.
-		qi, opt := buildPublicQuoteInputs(cfg, matchedMaterial, quantity, weightG, timeSeconds)
-		bd := ComputeQuote(qi, opt)
-		if !bd.Valid || bd.Pricing == nil || !bd.Pricing.Valid {
-			// Same fail-closed posture as handlePublicQuotePreview: a form that passed every bound shouldn't hit
-			// an invalid breakdown, so this is a config-shaped failure; refuse to store a fabricated price, not 0.
-			cleanupFile()
-			log.Printf("public quote-request: recompute produced an invalid breakdown for material %q", material)
-			writeAPIError(w, http.StatusUnprocessableEntity, "price: we can't price this request right now; try again later or contact the shop")
-			return
+		//
+		// Without a print time there is nothing to price: price_cents stays 0, which with needs_print_time means
+		// "to be confirmed", never "free".
+		priceCents := 0
+		if !needsPrintTime {
+			qi, opt := buildPublicQuoteInputs(cfg, matchedMaterial, quantity, weightG, timeSeconds)
+			bd := ComputeQuote(qi, opt)
+			if !bd.Valid || bd.Pricing == nil || !bd.Pricing.Valid {
+				// Same fail-closed posture as handlePublicQuotePreview: a form that passed every bound shouldn't hit
+				// an invalid breakdown, so this is a config-shaped failure; refuse to store a fabricated price, not 0.
+				cleanupFile()
+				log.Printf("public quote-request: recompute produced an invalid breakdown for material %q", material)
+				writeAPIError(w, http.StatusUnprocessableEntity, "price: we can't price this request right now; try again later or contact the shop")
+				return
+			}
+			// ShippingCharge is forced to 0 in buildPublicQuoteInputs, so Revenue is ResolvedPrice * quantity.
+			priceCents = int(bd.Pricing.Revenue)
 		}
-		// ShippingCharge is forced to 0 in buildPublicQuoteInputs, so Revenue is ResolvedPrice * quantity.
-		priceCents := int(bd.Pricing.Revenue)
 		// The shipping charge the preview showed, stored so converting the request to an invoice adds the
 		// same Shipping line the visitor saw even if the setting changes later.
 		shippingCents := int(toCents(cfg.Pricing.DefaultShippingCharge))
@@ -1370,14 +1418,14 @@ func handlePublicQuoteRequest(db *sql.DB, store *ConfigStore, configDir string, 
 
 		if demoMode {
 			// Simulate the rest: same 201 and synthesized id, but no row, gcode file or notification.
-			writePublicQuoteAccepted(w, id, priceCents, fileStored)
+			writePublicQuoteAccepted(w, id, peekRequestReference(db, referencePrefix(cfg)), priceCents, needsPrintTime, fileStored)
 			return
 		}
 
-		_, err = db.Exec(`
-			INSERT INTO quote_requests (id, status, name, email, note, material, quantity, weight_g, time_seconds, price_cents, gcode_filename, gcode_path, gcode_bytes, created_at, shipping_cents, tax_inclusive)
-			VALUES (?, 'new', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, name, email, note, material, quantity, weightG, timeSeconds, priceCents, filename, gzPath, written, now, shippingCents, taxInclusive)
+		reference, err := insertRequestWithReference(db, cfg, `
+			INSERT INTO quote_requests (id, status, name, email, note, material, quantity, weight_g, time_seconds, price_cents, gcode_filename, gcode_path, gcode_bytes, created_at, shipping_cents, tax_inclusive, needs_print_time, reference)
+			VALUES (?, 'new', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, name, email, note, material, quantity, weightG, timeSeconds, priceCents, filename, gzPath, written, now, shippingCents, taxInclusive, needsPrintTime)
 		if err != nil {
 			cleanupFile()
 			log.Printf("public quote-request: insert: %v", err)
@@ -1391,10 +1439,33 @@ func handlePublicQuoteRequest(db *sql.DB, store *ConfigStore, configDir string, 
 			ID: id, Status: "new", Name: name, Email: email, Note: note, Material: material,
 			Quantity: quantity, WeightG: weightG, TimeSeconds: timeSeconds, PriceCents: priceCents, ShippingCents: shippingCents, TaxInclusive: taxInclusive,
 			GcodeFilename: filename, GcodePath: gzPath, GcodeBytes: int(written), CreatedAt: now,
+			NeedsPrintTime: needsPrintTime, Reference: reference,
 		})
 
-		writePublicQuoteAccepted(w, id, priceCents, fileStored)
+		writePublicQuoteAccepted(w, id, reference, priceCents, needsPrintTime, fileStored)
 	}
+}
+
+// insertRequestWithReference runs the quote_requests INSERT with a freshly issued reference appended as its
+// last bound argument, in one transaction with the counter bump, so a failed insert leaves no gap in the
+// sequence. It returns the reference.
+func insertRequestWithReference(db *sql.DB, cfg *Config, query string, args ...any) (string, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	reference, err := nextRequestReference(tx, referencePrefix(cfg))
+	if err != nil {
+		return "", err
+	}
+	if _, err := tx.Exec(query, append(args, reference)...); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return reference, nil
 }
 
 // loadPublicManifest reads public-manifest.json from sub and returns the set of files it lists. The
@@ -1423,7 +1494,7 @@ func loadPublicManifest(sub fs.FS) map[string]struct{} {
 }
 
 // publicIndexHandler serves the public listener's static assets from sub (the admin's embedded dist),
-// but not all of it. "/" (the front door) and "/order" (the shop) serve public.html, the public Vite entry,
+// but not all of it. "/" (the shop) and "/order" (the same shop, kept for old links) serve public.html, the public Vite entry,
 // and 503 when it is absent (the
 // placeholder dist). Every other path must be in loadPublicManifest's allowlist, so the admin bundle
 // (index.html, assets/main-*.js/css) still 404s here.
@@ -1487,10 +1558,12 @@ func publicIndexHandler(sub fs.FS) http.Handler {
 // budget, one upload-concurrency bound and one notification worker whichever port they arrive on. main
 // builds it once and mounts the public mux on the main port and on PUBLIC_PORT (when set).
 type publicShared struct {
-	// rl is shared by handlePublicQuoteRequest and handlePublicItemOrder: both persist submissions counted
-	// against publicMaxOpenRequests, so they draw from the same per-IP publicRateLimit budget.
-	rl *rateLimiter
-	// previewRl is SEPARATE from rl: preview must not use the 5/hour submission budget (publicPreviewRateLimit).
+	// quoteRl and orderRl are the per-IP publicRateLimit budgets of handlePublicQuoteRequest and
+	// handlePublicItemOrder. They are separate so sending estimates doesn't use up a visitor's orders. Both
+	// kinds still count against publicMaxOpenRequests, the global bound.
+	quoteRl *rateLimiter
+	orderRl *rateLimiter
+	// previewRl is SEPARATE from quoteRl and orderRl: preview must not use the per-hour submission budgets (publicPreviewRateLimit).
 	previewRl *rateLimiter
 	// uploads bounds in-flight gcode file copies (publicMaxConcurrentUploads, one per source).
 	uploads *uploadSlots
@@ -1500,7 +1573,8 @@ type publicShared struct {
 
 func newPublicShared() *publicShared {
 	return &publicShared{
-		rl:        newRateLimiter(),
+		quoteRl:   newRateLimiter(),
+		orderRl:   newRateLimiter(),
 		previewRl: newRateLimiter(),
 		uploads:   newUploadSlots(publicMaxConcurrentUploads),
 		nq:        newNotifyQueue(),
@@ -1536,8 +1610,8 @@ func buildPublicMuxShared(store *ConfigStore, db *sql.DB, configDir string, shar
 	mux.HandleFunc("GET /api/public/items", handlePublicItems(db))
 	mux.HandleFunc("GET /item-images/{file}", itemImageHandler(configDir))
 	mux.HandleFunc("POST /api/public/quote/preview", handlePublicQuotePreview(store, shared.previewRl, trustProxy))
-	mux.HandleFunc("POST /api/public/quote-request", handlePublicQuoteRequest(db, store, configDir, shared.rl, trustProxy, shared.uploads, shared.nq, demoMode))
-	mux.HandleFunc("POST /api/public/item-order", handlePublicItemOrder(db, store, shared.rl, trustProxy, shared.nq, demoMode))
+	mux.HandleFunc("POST /api/public/quote-request", handlePublicQuoteRequest(db, store, configDir, shared.quoteRl, trustProxy, shared.uploads, shared.nq, demoMode))
+	mux.HandleFunc("POST /api/public/item-order", handlePublicItemOrder(db, store, shared.orderRl, trustProxy, shared.nq, demoMode))
 
 	sub, err := fs.Sub(distFS, "embedded/dist")
 	if err != nil {

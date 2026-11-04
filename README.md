@@ -4,7 +4,7 @@ A self-hosted, open-source 3D print cost and quote calculator: transparent formu
 
 printpaca was developed with AI assistance.
 
-To try printpaca with fake data first, [run the demo yourself](docs/demo.md).
+**Live demo:** try the [admin app](https://demo.printpaca.com/admin/) (password `demo`) and the [customer shop](https://demo-cust.printpaca.com/). It's read-only and seeded with fake data. You can also [run the demo yourself](docs/demo.md).
 
 [![The New quote tab for a batch of three prints, with your cost, the client price, profit, and margin at the top](docs/screenshot.png)](docs/screenshot.png)
 
@@ -21,9 +21,9 @@ To try printpaca with fake data first, [run the demo yourself](docs/demo.md).
 
 | Area | Capabilities |
 |---|---|
-| Quoting | Print-cost quote calculator: material, electricity, machine depreciation, failure buffer, prep labor, and overhead, with per-material waste, flat or time-of-use electricity, and batch math that spreads prep labor across the batch. Multi-part quotes: one order of up to 20 parts, each with its own weight, time, material, and quantity, with fees, tax, and shipping applied once and one line per part when printed, emailed, and invoiced. A reusable hardware add-on catalog (unit cost and a lost-on-failure flag per entry) attaches to admin quotes only, never to public quotes (see [Hardware scope](docs/formulas.md#hardware-scope)). |
+| Quoting | Print-cost quote calculator: material, electricity, machine depreciation, failure buffer, prep labor, and overhead, with per-material waste, flat, simple time-of-use, or full time-of-use schedule electricity (seasons, windows, holidays, and a print start), and batch math that spreads prep labor across the batch. Multi-part quotes: one order of up to 20 parts, each with its own weight, time, material, and quantity, with fees, tax, and shipping applied once and one line per part when printed, emailed, and invoiced. A reusable hardware add-on catalog (unit cost and a lost-on-failure flag per entry) attaches to admin quotes only, never to public quotes (see [Hardware scope](docs/formulas.md#hardware-scope)). |
 | Pricing | Margin or markup pricing, plus named marketplace fee schedules (fixed plus percentage of revenue, each with a provenance note). Shipping charged to the customer (revenue) and shipping you pay (expense) are tracked separately, so under-charged shipping shows up as a real loss. |
-| Files and integrations | A G-code drop zone reads slicer-reported weight, length, and time from the file (Cura, PrusaSlicer, OrcaSlicer/Bambu, Snapmaker Orca), and estimates weight from STL and 3MF files. Optional Spoolman integration (spool picker, low-material warnings). Optional Moonraker integration (prefill a quote from a completed print's filament use and duration) and a Fluidd sidebar link. Every integration URL is settable from the Settings page or by environment variable, with a Test button. |
+| Files and integrations | A G-code drop zone reads slicer-reported weight, length, and time from the file (Cura, PrusaSlicer, OrcaSlicer/Bambu, Snapmaker Orca), and estimates weight from STL and 3MF files. Optional Spoolman integration (spool picker, low-material warnings, and an inventory card on the Filament tab where an admin can add, adjust, and archive spools). Optional Moonraker integration (prefill a quote from a completed print's filament use and duration, and add the printer it reports) and a Fluidd sidebar link. Every integration URL is settable from the Settings page or by environment variable, with a Test button. Saved URLs apply without a restart. |
 | Business records | Quote history (save, restore, filter, delete, JSON export and import). Printable and exportable quotes with your branding. Client records with a searchable list. Invoices: numbered, status-tracked (draft, sent, paid, canceled), with line items, discounts, and US sales tax, convertible from a saved quote, with lines that can link to gallery items (sending takes in-stock items off the shelf; canceling a sent invoice puts them back), with a printable document and an optional PayPal.me link and QR code. A per-invoice payment register that marks an invoice paid when its balance reaches zero, and a dashboard (revenue this month and year, outstanding balance, overdue count, revenue over time) with a Top items panel (gallery and in-person units, orders, and booked revenue per gallery item over 30, 90, or 365 days, kept when a request is deleted). |
 | Public shop | A public quote page and item gallery: list ready-to-print or fixed-quantity products with images and options, optionally accepting orders beyond stock. Orders land in Requests for review, and stock decrements when you finalize an order. |
 | Interface | A built-in getting-started guide, help text on cost and pricing fields, keyboard and screen-reader support, a dark theme that follows the system preference, mobile navigation, and an installable Progressive Web App (needs HTTPS or `localhost`; it silently no-ops on plain-HTTP LAN deployments). |
@@ -62,7 +62,7 @@ docker run -p 127.0.0.1:8080:8080 skilledalpaca/printpaca:latest
 docker build -t printpaca . && docker run -p 127.0.0.1:8080:8080 printpaca
 ```
 
-Open `http://localhost:8080/admin/` for the admin app. Customers see a front door at `http://localhost:8080/` and the shop at `http://localhost:8080/order`. With no `ADMIN_PASSWORD` set, the container generates a random password on first start and prints it once in `docker logs`, on a line starting `printpaca: Use this password to sign in:`. See [Authentication](#authentication).
+Open `http://localhost:8080/admin/` for the admin app. Customers see the shop at `http://localhost:8080/`. The older address `http://localhost:8080/order` shows the same page. With no `ADMIN_PASSWORD` set, the container generates a random password on first start and prints it once in `docker logs`, on a line starting `printpaca: Use this password to sign in:`. See [Authentication](#authentication).
 
 With no `-v` flag the container uses an anonymous volume that survives restarts but not recreation (`docker rm` plus a fresh `run`). The container runs as the non-root user `65532:65532`, so for a bind mount that survives recreation, own the directory first:
 
@@ -87,7 +87,7 @@ The compose file builds from source by default. To run the published image, comm
 
 ## Hosting options
 
-printpaca serves everything from one port (`PORT`, default `8080`): the front door at `/`, the shop at `/order`, and the admin app and its API under `/admin/`. Point one hostname at that port. Pick how traffic reaches it:
+printpaca serves everything from one port (`PORT`, default `8080`): the shop at `/` (and at `/order`, so old links work), and the admin app and its API under `/admin/`. Point one hostname at that port. Pick how traffic reaches it:
 
 | Option | Use it when | Details |
 |---|---|---|
@@ -116,7 +116,7 @@ Through a Cloudflare Tunnel, `/admin/` follows these rules:
 - Without Access and with a password set, the request is allowed, and the printpaca password and its login rate limits are the only lock. Cloudflare Access is the better choice; see [Cloudflare Tunnel](docs/cloudflare-tunnel.md).
 - Without Access and with authentication disabled (`ADMIN_PASSWORD=`), the request gets `403`.
 
-The front door, the shop, and `/api/public/*` are anonymous and carry no admin capability. See [Authentication](docs/configuration.md#authentication) for the full list, and [Multi-user mode](docs/configuration.md#users) for employee accounts.
+The shop and `/api/public/*` are anonymous and carry no admin capability. See [Authentication](docs/configuration.md#authentication) for the full list, and [Multi-user mode](docs/configuration.md#users) for employee accounts.
 
 ## Philosophy
 
@@ -149,7 +149,7 @@ mkdir -p /tmp/printpaca-dev && cd server && CONFIG_DIR=/tmp/printpaca-dev go run
 npm run dev -w web
 ```
 
-Open the URL Vite prints (typically `http://localhost:5173`). Vite proxies `/api/*` to `/admin/api/*` on `http://localhost:8080`, because the production admin app calls its API under `/admin/`. The proxy covers the admin app only, so this flow can't exercise the front door or the shop at `/order`.
+Open the URL Vite prints (typically `http://localhost:5173`). Vite proxies `/api/*` to `/admin/api/*` on `http://localhost:8080`, because the production admin app calls its API under `/admin/`. The proxy covers the admin app only, so this flow can't exercise the shop at `/`.
 
 To run the built app, use `bash scripts/e2e-server.sh` (main port on `:8099` with the admin app at `/admin/`, and the customer-only listener on `:8098`). It builds the web assets, copies them into `server/embedded/dist` just long enough to compile a binary, restores the placeholder, and runs the binary against a throwaway config directory. `npm run e2e` runs the same script (see [`e2e/playwright.config.ts`](e2e/playwright.config.ts)).
 

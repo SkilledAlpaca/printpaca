@@ -2,6 +2,7 @@
   import ErrorSummary from "./ErrorSummary.svelte";
   import { canLeave, escapeBelongsToField } from "../lib/unsavedGuard";
   import { unsavedForm } from "../lib/unsavedForm.svelte";
+  import { registerPageSave } from "../lib/pageShortcuts.svelte";
   import { onMount } from "svelte";
   import type { EffectiveConfig } from "../lib/engine/index";
   import { listClients, createClient, updateClient, deleteClient, type Client, type ClientInput } from "../lib/clientsApi";
@@ -302,6 +303,12 @@
     });
   }
 
+  // Ctrl/Cmd+S (App.svelte's handler) saves the open client form, even from inside a field.
+  $effect(() => {
+    if (view !== "detail") return;
+    return registerPageSave(() => void save());
+  });
+
   // Escape closes an open detail view like "Back to list", but cancels an armed two-click delete first.
   // Ignored while focus is in a text field or select, which use Escape themselves (dismissing autocomplete or a dropdown).
   function handleDetailKeydown(e: KeyboardEvent) {
@@ -564,7 +571,7 @@
                 Invoices keep their own copy of this client's details. Saved quotes keep the name but lose the link.
               </p>
               <div class="form-actions">
-                <button type="button" class="danger" aria-disabled={deleting} aria-busy={deleting} onclick={confirmDeleteClient} use:confirmFocus={{ restore: keySelector("delete-client"), cancel: cancelDelete }}>Delete client?</button>
+                <button type="button" class="danger" aria-disabled={deleting} aria-busy={deleting} onclick={confirmDeleteClient} use:confirmFocus={{ restore: keySelector("delete-client"), cancel: cancelDelete }}>Yes, delete client</button>
                 <button type="button" onclick={cancelDelete}>Cancel</button>
               </div>
             {:else}

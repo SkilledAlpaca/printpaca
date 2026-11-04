@@ -54,13 +54,13 @@ test("create, edit, and delete a client through the detail view", async ({ page 
   // The confirm button takes focus; Escape cancels and puts focus back on the trigger.
   await page.getByRole("button", { name: "Delete client" }).click();
   await expect(page.getByText("Invoices keep their own copy of this client's details.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Delete client?" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Yes, delete client" })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Delete client", exact: true })).toBeFocused();
   await expect(page.getByRole("heading", { level: 1, name: "Jordan Alpaca" })).toBeVisible();
 
   await page.getByRole("button", { name: "Delete client", exact: true }).click();
-  await page.getByRole("button", { name: "Delete client?" }).click();
+  await page.getByRole("button", { name: "Yes, delete client" }).click();
 
   // With no row left to take focus, it lands on the list heading.
   await expect(page).toHaveURL(/#\/clients$/);

@@ -18,12 +18,12 @@ function baseConfig(): ServerConfig {
     materials: [{ id: "pla", name: "PLA", density: 1.24, pricePerKg: 20, wastePct: 5, public: false }],
     printers: [{ id: "p1", name: "Printer", watts: 250, purchaseCost: 400, lifespanHours: 4000, filamentDiameterMm: 1.75 }],
     hardware: [],
-    energy: { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.2, offPeakRate: 0.1, defaultOffPeakFrac: 0.5 } },
+    energy: { mode: "flat", flatRate: 0.15, tou: { peakRate: 0.2, offPeakRate: 0.1, defaultOffPeakFrac: 0.5 }, schedule: { defaultStartTime: "22:00", holidays: [], seasons: [] } },
     presets: {
       "side-hustle": { failureRatePct: 5, prepMinutes: 10, laborRate: 20, monthlyFixed: 50, monthlyHours: 40 },
     },
     defaults: { preset: "side-hustle", printer: "p1", material: "pla", failureRatePct: 5, quantity: 1 },
-    quote: { businessName: "", logoUrl: "", address: "", email: "", phone: "", taxId: "", paymentInstructions: "", termsText: "", validDays: 30 },
+    quote: { businessName: "", logoUrl: "", address: "", email: "", phone: "", taxId: "", paymentInstructions: "", termsText: "", validDays: 30, referencePrefix: "" },
     invoicing: { numberPrefix: "INV", salesTaxPct: 0, dueDays: 30, paymentMethods: ["cash", "bank transfer"], paypalMe: "" },
     publicQuotes: { printer: "p1", preset: "side-hustle", introText: "" },
     customCss: "",
@@ -32,6 +32,7 @@ function baseConfig(): ServerConfig {
     integrationsUrls: { spoolmanUrl: "", moonrakerUrl: "", fluiddUrl: "" },
     ui: { disabledTabs: [] },
     site: { shopOnMainPort: true, staffLink: true, adminUrl: "" },
+    shop: { maxOrderQty: 100 },
     users: { multiUser: false, accessAdminEmail: "" },
   };
 }
@@ -78,6 +79,7 @@ describe("errorSection", () => {
     ["quote.validDays: must be >= 0", "quote"],
     ["invoicing.dueDays: 400 out of range [0,365]", "invoicing"],
     ["publicQuotes.printer: \"x\" not in printers", "publicQuotes"],
+    ["shop.maxOrderQty: must be a whole number from 1 to 10000", "shop"],
     ["smtp.port: 70000 out of range [1,65535]", "smtp"],
     ["ui.disabledTabs[0]: \"nope\" is not a valid tab id", "ui"],
     ["users.multiUser: requires ADMIN_PASSWORD to be set -- enable authentication before turning on multi-user mode", "users"],

@@ -1,14 +1,63 @@
 <script lang="ts">
   import { tick } from "svelte";
   import type { EffectiveConfig, OrderBreakdown } from "../lib/engine/index";
-  import { quote } from "../lib/state.svelte";
+  import { quote, partLabel } from "../lib/state.svelte";
   import { money } from "../lib/format";
   import { quoteSummaryStats } from "../lib/quoteSummary";
+  import { quoteBlockers, needSentence } from "../lib/quoteBlockers";
+  import { goToBlocker } from "../lib/goToBlocker";
+  import { stickyInset } from "../lib/stickyInset";
+  import SlicerHelp from "./SlicerHelp.svelte";
 
-  let { cfg, order }: { cfg: EffectiveConfig; order: OrderBreakdown } = $props();
+  let {
+    cfg,
+    order,
+    previewStatus = "idle",
+    previewError = "",
+  }: {
+    cfg: EffectiveConfig;
+    order: OrderBreakdown;
+    /** The server preview's state (QuotePreviewState["status"]); only "pending" and "error" show anything. */
+    previewStatus?: string;
+    /** The full message to show while previewStatus is "error". */
+    previewError?: string;
+  } = $props();
+
+  // Whether the bar is pinned (the media query in the style block): it then reserves its height for focus.
+  let sticky = $state(false);
+  $effect(() => {
+    const mq = matchMedia("(min-width: 700px) and (min-height: 600px)");
+    const sync = () => (sticky = mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  });
+
+  // "Updating price…" appears only once the preview has been pending for PENDING_DELAY_MS, so a fast round trip
+  // (the usual case while stepping a field) never flashes text. The slot below is always rendered, so showing
+  // or hiding the text never changes the page height.
+  const PENDING_DELAY_MS = 300;
+  let pendingVisible = $state(false);
+  $effect(() => {
+    if (previewStatus !== "pending") {
+      pendingVisible = false;
+      return;
+    }
+    const timer = setTimeout(() => (pendingVisible = true), PENDING_DELAY_MS);
+    return () => clearTimeout(timer);
+  });
 
   const s = $derived(quoteSummaryStats(order, quote.order.sellingEnabled));
   const loss = $derived(s.profitCents !== null && s.profitCents < 0);
+
+  // Why the cost shows "-": the first blank field, named here so the reason sits next to the number instead of
+  // in a message further down. Print time wins because it is what a model file never supplies.
+  const missing = $derived(
+    quoteBlockers(order, quote.parts.map((p, i) => partLabel(p, i))).filter((b) => b.missing),
+  );
+  const need = $derived(missing.find((b) => b.field === "timeHours" || b.field === "timeMinutes") ?? missing[0]);
+  const needsTime = $derived(need !== undefined && (need.field === "timeHours" || need.field === "timeMinutes"));
+  const needText = $derived(needSentence(missing));
 
   // Opens the pricing panel and scrolls to it: the panel can be several tiles down, so a click that only
   // flips the toggle leaves the bar visibly unchanged.
@@ -22,7 +71,7 @@
   }
 </script>
 
-<div class="card summary" role="group" aria-label="Quote summary">
+<div class="card summary" role="group" aria-label="Quote summary" use:stickyInset={{ edge: "top", active: sticky }}>
   <div class="group">
     <span class="section-label">Your cost</span>
     <div class="cost-stats">
@@ -35,6 +84,18 @@
           <span class="stat-label">Per unit</span>
           <span class="stat-value">{s.costCents !== null ? money(order.parts[0]?.breakdown.perUnitTotal ?? 0, cfg) : "-"}</span>
         </div>
+      {/if}
+    </div>
+    <!-- The line is always reserved, so a field filling in doesn't pull the cards below it upward. -->
+    <div class="cost-need">
+      {#if need}
+        <a
+          href="#main"
+          onclick={(e) => {
+            e.preventDefault();
+            void goToBlocker(need);
+          }}>{needText}</a>
+        {#if needsTime}<SlicerHelp />{/if}
       {/if}
     </div>
   </div>
@@ -61,6 +122,15 @@
       </button>
     {/if}
   </div>
+  <!-- Fixed-height status slot (always rendered, text swaps, height doesn't): a status line that came and went
+       above the cards shifted everything below on every keystroke. The status region stays in the DOM so
+       screen readers announce its text changes; the error is a separate alert. -->
+  <div class="status-slot">
+    <p class="status-text" role="status">{pendingVisible ? "Updating price…" : ""}</p>
+    {#if previewStatus === "error" && previewError}
+      <p class="status-text status-error" role="alert">{previewError}</p>
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -70,8 +140,21 @@
     align-items: stretch;
     gap: 1rem 2rem;
     margin-bottom: 0.75rem;
+    /* Stays in view while the Print and Costs fields scroll under it, so the missing-field message and the
+     * running total are always next to the field being filled in. Sticks to the scrollport's top. */
+    z-index: 3;
   }
+  /* Only where there is room: on a short or narrow window a tall pinned bar would cover the fields. */
+  @media (min-width: 700px) and (min-height: 600px) {
+    .summary { position: sticky; top: 0; }
+  }
+  /* One line tall at all times (the --text-sm line box), spanning the card's full width. An error message may
+   * wrap onto more lines on a narrow screen; that is the one case the slot grows. */
+  .status-slot { flex: 0 0 100%; min-height: calc(var(--text-sm) * 1.5); margin-top: -0.4rem; }
+  .status-text { margin: 0; font-size: var(--text-sm); line-height: 1.5; color: var(--muted); }
+  .status-text.status-error { color: var(--danger); }
   .group { display: flex; flex-direction: column; gap: 0.3rem; }
+  .cost-need { min-height: calc(var(--text-sm) * 1.5); font-size: var(--text-sm); }
   .group.sell {
     border-left: 1px solid var(--border);
     padding-left: 2rem;

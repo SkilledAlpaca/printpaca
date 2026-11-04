@@ -92,13 +92,14 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, cfgStore *ConfigStore, auth 
 	mux.HandleFunc("GET /api/dashboard", requirePermission(db, "dashboard", dash.handleGet))
 	mux.HandleFunc("GET /api/dashboard/top-items", requirePermission(db, "dashboard", dash.handleTopItems))
 
-	qr := newQuoteRequests(db, configDir, demoMode)
+	qr := newQuoteRequests(db, cfgStore, configDir, demoMode)
 	mux.HandleFunc("GET /api/requests", requirePermission(db, "requests", qr.handleList))
 	// Literal segment; ServeMux resolves it by specificity, independent of order.
 	mux.HandleFunc("GET /api/requests/storage", requirePermission(db, "requests", qr.handleStorage))
 	mux.HandleFunc("GET /api/requests/{id}", requirePermission(db, "requests", qr.handleGet))
 	mux.HandleFunc("GET /api/requests/{id}/gcode", requirePermission(db, "requests", qr.handleGcodeDownload))
 	mux.HandleFunc("POST /api/requests/{id}/status", requirePermission(db, "requests", qr.handleStatus))
+	mux.HandleFunc("POST /api/requests/{id}/print-time", requirePermission(db, "requests", qr.handlePrintTime))
 	// Bulk-delete of new requests (flood recovery). Literal segment like /storage; request ids are 32 hex chars.
 	mux.HandleFunc("DELETE /api/requests/new", requirePermission(db, "requests", qr.handleDeleteNew))
 	mux.HandleFunc("DELETE /api/requests/{id}", requirePermission(db, "requests", qr.handleDelete))
@@ -109,6 +110,8 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, cfgStore *ConfigStore, auth 
 	mux.HandleFunc("PUT /api/items/{id}", requirePermission(db, "items", it.handlePut))
 	mux.HandleFunc("DELETE /api/items/{id}", requirePermission(db, "items", it.handleDelete))
 	mux.HandleFunc("POST /api/items/{id}/image", requirePermission(db, "items", it.handleImageUpload))
+	mux.HandleFunc("POST /api/items/{id}/options/{optionId}/image", requirePermission(db, "items", it.handleOptionImageUpload))
+	mux.HandleFunc("DELETE /api/items/{id}/options/{optionId}/image", requirePermission(db, "items", it.handleOptionImageDelete))
 	// Outside /api/ on purpose: keeps the long-lived Cache-Control past noStoreAPIMiddleware, and item
 	// images are public content. No permission wrapper applies.
 	mux.HandleFunc("GET /item-images/{file}", itemImageHandler(configDir))
@@ -120,10 +123,10 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, cfgStore *ConfigStore, auth 
 	// The handler has its own demo-mode block (GET is never seen by demoWriteGuard).
 	mux.HandleFunc("GET /api/logs/errors", adminOnly(handleLogsErrors(appLogRing, demoMode)))
 
-	registerProxies(mux, demoMode, cfgStore.Get(), db) // proxy.go; permission-gated internally
+	registerProxies(mux, demoMode, cfgStore, db) // proxy.go; permission-gated internally
 
 	// Probes a Spoolman/Moonraker URL before it is saved. Hard admin-only; demoWriteGuard blocks it in demo.
-	mux.HandleFunc("POST /api/integrations/test", adminOnly(handleIntegrationsTest))
+	mux.HandleFunc("POST /api/integrations/test", adminOnly(handleIntegrationsTest(cfgStore)))
 
 	// Same handler as the public listener, so web/index.html's print-only stylesheet link works here.
 	// Safe GET outside /api/*, so no demo block or auth exemption is needed.

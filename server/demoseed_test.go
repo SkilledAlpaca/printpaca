@@ -221,17 +221,24 @@ func TestSeedDemoDataProducesValidReadableRecords(t *testing.T) {
 	if inStockItem == nil {
 		t.Fatal("expected a public in_stock item")
 	}
-	if inStockItem.OptionLabel == "" || len(inStockItem.Options) < 2 {
-		t.Fatalf("expected the seeded in_stock item to have a two-option list, got %+v", inStockItem)
+	if len(inStockItem.OptionGroups) < 2 || len(inStockItem.OptionGroups[0].Options) < 2 || !inStockItem.OptionGroups[0].Required || inStockItem.OptionGroups[1].Required {
+		t.Fatalf("expected the seeded in_stock item to have a required and an optional option group, got %+v", inStockItem)
+	}
+	for _, g := range inStockItem.OptionGroups {
+		for _, o := range g.Options {
+			if o.ImageFile == "" {
+				t.Errorf("seeded option %s / %s has no photo", g.Label, o.Name)
+			}
+		}
 	}
 	hasPositiveDelta := false
-	for _, o := range inStockItem.Options {
+	for _, o := range inStockItem.OptionGroups[0].Options {
 		if o.DeltaCents > 0 {
 			hasPositiveDelta = true
 		}
 	}
 	if !hasPositiveDelta {
-		t.Fatalf("expected one of the seeded in_stock item's options to have a positive deltaCents, got %+v", inStockItem.Options)
+		t.Fatalf("expected one of the seeded in_stock item's options to have a positive deltaCents, got %+v", inStockItem.OptionGroups)
 	}
 	if inStockItem.StockQty <= 0 {
 		t.Fatalf("expected the seeded in_stock item to have stockQty > 0, got %d", inStockItem.StockQty)
@@ -239,8 +246,8 @@ func TestSeedDemoDataProducesValidReadableRecords(t *testing.T) {
 	if readyToPrintItem == nil {
 		t.Fatal("expected a public ready_to_print item")
 	}
-	if len(readyToPrintItem.Options) != 0 {
-		t.Fatalf("expected the seeded ready_to_print item to have no options, got %+v", readyToPrintItem.Options)
+	if len(readyToPrintItem.OptionGroups) != 0 {
+		t.Fatalf("expected the seeded ready_to_print item to have no options, got %+v", readyToPrintItem.OptionGroups)
 	}
 	// Seeded items are the exception to the no-file convention: each carries a real on-disk placeholder photo, content-addressed like an upload (itemImageName).
 	for _, it := range itemsResp.Items {

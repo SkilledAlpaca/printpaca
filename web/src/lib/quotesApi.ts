@@ -90,15 +90,66 @@ export async function createQuote(input: QuoteInput): Promise<ServerQuote> {
   return (await res.json()) as ServerQuote;
 }
 
-export async function updateQuote(id: string, input: QuoteInput): Promise<ServerQuote> {
+/** The server refused a save because the quote changed after it was loaded (409). */
+export class QuoteConflictError extends Error {
+  constructor() {
+    super("This was changed in another tab or by another user.");
+    this.name = "QuoteConflictError";
+  }
+}
+
+/** One quote by id, or null when it doesn't exist or can't be read. */
+export async function getQuote(id: string): Promise<ServerQuote | null> {
+  try {
+    const res = await fetch(`api/quotes/${encodeURIComponent(id)}`, { signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS) });
+    return res.ok ? ((await res.json()) as ServerQuote) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** PUT /api/quotes/{id}. With `expectedSavedAt` (the savedAt the caller loaded) a stale save is refused
+ * with a QuoteConflictError instead of overwriting; without it the write always lands. */
+export async function updateQuote(id: string, input: QuoteInput, expectedSavedAt?: string): Promise<ServerQuote> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (expectedSavedAt) headers["If-Match"] = `"${expectedSavedAt}"`;
   const res = await fetch(`api/quotes/${encodeURIComponent(id)}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(input),
     signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS),
   });
+  if (res.status === 409) throw new QuoteConflictError();
   if (!res.ok) throw await errorsFrom(res);
   return (await res.json()) as ServerQuote;
+}
+
+/**
+ * PUT a change built from a quote the caller holds, guarded by that row's savedAt (If-Match) so a stale copy
+ * never overwrites a newer one. On a 409 the quote is fetched again and `build` is asked for the input from the
+ * fresh row, which reapplies the caller's change (a status transition, a client link) on top of whatever
+ * changed elsewhere. `build` returns null when the change no longer makes sense on the fresh row (its status
+ * moved on); that, a quote deleted meanwhile, or a second conflict surface as a QuoteConflictError.
+ */
+export async function updateQuoteGuarded(raw: ServerQuote, build: (current: ServerQuote) => QuoteInput | null): Promise<ServerQuote> {
+  const first = build(raw);
+  if (!first) throw new QuoteConflictError();
+  try {
+    return await updateQuote(raw.id, first, raw.savedAt);
+  } catch (err) {
+    if (!(err instanceof QuoteConflictError)) throw err;
+  }
+  const fresh = await getQuote(raw.id);
+  const retry = fresh ? build(fresh) : null;
+  if (!fresh || !retry) throw new QuoteConflictError();
+  return updateQuote(fresh.id, retry, fresh.savedAt);
+}
+
+/** The list with the quote of fresh.id replaced by the server's current row; a quote absent from the list stays
+ * absent. Used before a save so cached status, log and link never go stale. */
+export function adoptServerQuote(list: SavedQuote[], fresh: ServerQuote): SavedQuote[] {
+  const mapped = toSavedQuote(fresh);
+  return list.map((q) => (q.id === fresh.id ? mapped : q));
 }
 
 export async function deleteQuote(id: string): Promise<void> {

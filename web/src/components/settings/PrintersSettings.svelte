@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { nextKey, type ServerConfig } from "../../lib/settings";
+  import { newPrinter, type ServerConfig } from "../../lib/settings";
   import { settingsWarnings } from "../../lib/settingsRules";
   import { warnFor } from "../../lib/format";
   import { rowProblems, warnId } from "../../lib/rowIssues";
@@ -15,8 +15,8 @@
   // Printers: a wholesale array, at least one row required.
 
   function addPrinter() {
-    const id = nextKey(form.printers.map((p) => p.id), "new-printer");
-    form.printers.push({ id, name: "New printer", watts: 250, purchaseCost: 400, lifespanHours: 4000, filamentDiameterMm: 1.75 });
+    const printer = newPrinter(form.printers.map((p) => p.id), "New printer");
+    form.printers.push(printer);
   }
   function removePrinter(index: number) {
     form.printers = form.printers.filter((_, i) => i !== index);

@@ -792,7 +792,7 @@ func TestInvoicingConfigDefaultsLoad(t *testing.T) {
 
 func TestInvoicingConfigOutOfRangeSalesTaxPctFailsValidation(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("invoicing:\n  salesTaxPct: 45\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("invoicing:\n  salesTaxPct: 100.5\n"), 0o644); err != nil {
 		t.Fatalf("write config.yaml: %v", err)
 	}
 	_, err := LoadConfig(dir)
@@ -1167,5 +1167,118 @@ func TestInvoiceStatusRejectsBritishSpelling(t *testing.T) {
 	inv := mustUnmarshalInvoice(t, postInvoice(t, mux, `{"clientName":"A","lines":[]}`))
 	if rec := setInvoiceStatus(t, mux, inv.ID, "cancelled"); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status cancelled: %d %s, want 422", rec.Code, rec.Body.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Optimistic concurrency (decision 5)
+// ---------------------------------------------------------------------------
+
+func TestInvoicePutWithStaleVersionIs409(t *testing.T) {
+	mux := newTestMux(t, t.TempDir())
+	rec := postInvoice(t, mux, `{"clientName":"A","lines":[{"description":"X","quantity":1,"unitPriceCents":100}]}`)
+	inv := mustUnmarshalInvoice(t, rec)
+	if inv.Version != 1 {
+		t.Fatalf("new invoice version = %d, want 1", inv.Version)
+	}
+
+	body := func(note string, version int) string {
+		return fmt.Sprintf(`{"clientName":"A","notes":%q,"version":%d,"lines":[{"description":"X","quantity":1,"unitPriceCents":100}]}`, note, version)
+	}
+	rec = putInvoice(t, mux, inv.ID, body("tab one", inv.Version))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first save: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+	saved := mustUnmarshalInvoice(t, rec)
+	if saved.Version != 2 {
+		t.Errorf("version after save = %d, want 2", saved.Version)
+	}
+
+	// The second tab still holds version 1.
+	rec = putInvoice(t, mux, inv.ID, body("tab two", inv.Version))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("stale save: want 409, got %d %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "changed in another tab") {
+		t.Errorf("409 body %q should say the invoice was changed elsewhere", rec.Body.String())
+	}
+	got := mustUnmarshalInvoice(t, getInvoice(t, mux, inv.ID))
+	if got.Notes != "tab one" {
+		t.Errorf("notes = %q, want the first tab's save to stand", got.Notes)
+	}
+
+	// Overwrite: the UI reloads the version and saves again.
+	rec = putInvoice(t, mux, inv.ID, body("tab two", got.Version))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("overwrite with the current version: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+
+	// A body with no version still saves (API callers that predate the field).
+	rec = putInvoice(t, mux, inv.ID, `{"clientName":"A","lines":[{"description":"X","quantity":1,"unitPriceCents":100}]}`)
+	if rec.Code != http.StatusOK {
+		t.Errorf("no version: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestInvoiceVersionBumpsOnStatusChange(t *testing.T) {
+	mux := newTestMux(t, t.TempDir())
+	inv := newSentInvoice(t, mux, 500)
+	if inv.Version != 2 {
+		t.Errorf("version after Mark sent = %d, want 2", inv.Version)
+	}
+	rec := postPayment(t, mux, inv.ID, `{"paidDate":"2026-01-15","amountCents":500}`)
+	paid := mustUnmarshalInvoice(t, rec)
+	if paid.Version != 3 {
+		t.Errorf("version after the payment flips it to paid = %d, want 3", paid.Version)
+	}
+}
+
+// Converting a saved quote (a line with a quoteId) fills the issue date with today and the due date from the
+// default terms; a manual invoice keeps what the editor sent.
+func TestInvoiceFromQuoteDefaultsDates(t *testing.T) {
+	mux := newTestMux(t, t.TempDir())
+	rec := postInvoice(t, mux, `{"clientName":"A","lines":[{"description":"X","quantity":1,"unitPriceCents":100,"quoteId":"q1"}]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("convert: %d %s", rec.Code, rec.Body.String())
+	}
+	inv := mustUnmarshalInvoice(t, rec)
+	if inv.IssueDate == "" || inv.DueDate == "" || inv.DueDate <= inv.IssueDate {
+		t.Errorf("dates = %q / %q, want issue today and a later due date", inv.IssueDate, inv.DueDate)
+	}
+	rec = postInvoice(t, mux, `{"clientName":"A","lines":[{"description":"X","quantity":1,"unitPriceCents":100}]}`)
+	manual := mustUnmarshalInvoice(t, rec)
+	if manual.IssueDate != "" || manual.DueDate != "" {
+		t.Errorf("manual invoice dates = %q / %q, want them left blank", manual.IssueDate, manual.DueDate)
+	}
+}
+
+// The widest invoice the validators accept (100 lines, each at the quantity and unit-price maxima, the maximum
+// per-line discount and a 100% tax rate) must total exactly, far inside int64 and below 2^53 so the browser's
+// doubles stay exact too.
+func TestInvoiceTotalsAtValidatorExtremes(t *testing.T) {
+	const (
+		maxQty  = 100000
+		unitMax = 100_000_000
+		lines   = 100
+		taxBp   = maxSalesTaxPct * 100
+	)
+	in := make([]invoiceLineInput, lines)
+	for i := range in {
+		in[i] = invoiceLineInput{Description: "x", Quantity: maxQty, UnitPriceCents: unitMax, DiscountCents: 0}
+	}
+	if p := validateInvoiceInput(&invoiceInput{ClientName: "X", Lines: in, TaxBp: func() *int { v := taxBp; return &v }()}); len(p) != 0 {
+		t.Fatalf("the extreme invoice failed validation: %v", p)
+	}
+	got := computeTotals(in, 0, taxBp)
+	wantSubtotal := lines * maxQty * unitMax // 1e15
+	if got.SubtotalCents != wantSubtotal || got.TaxCents != wantSubtotal || got.TotalCents != 2*wantSubtotal {
+		t.Errorf("subtotal/tax/total = %d/%d/%d, want %d/%d/%d", got.SubtotalCents, got.TaxCents, got.TotalCents, wantSubtotal, wantSubtotal, 2*wantSubtotal)
+	}
+	if got.TotalCents <= 0 || got.TotalCents >= 1<<53 {
+		t.Errorf("total %d is outside (0, 2^53)", got.TotalCents)
+	}
+	over := validateInvoiceInput(&invoiceInput{ClientName: "X", Lines: in[:1], TaxBp: func() *int { v := taxBp + 1; return &v }()})
+	if len(over) == 0 {
+		t.Error("taxBp above the ceiling validated clean")
 	}
 }

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  colorName,
+  colorText,
+  filamentLabel,
+  filterSpools,
   isLowStock,
+  normalizeHex,
   isValidSpool,
   spoolLabel,
   spoolOverrideFrom,
@@ -139,5 +144,46 @@ describe("isValidSpool", () => {
     const mixed: unknown[] = [good, null, { notASpool: true }, 42, spool({ id: 2 })];
     const kept = mixed.filter(isValidSpool);
     expect(kept.map((s) => s.id)).toEqual([1, 2]);
+  });
+});
+
+describe("inventory helpers", () => {
+  const mk = (id: number, extra: Partial<SpoolDto> = {}, filament: Partial<SpoolDto["filament"]> = {}): SpoolDto =>
+    spool({ id, filament: { density: 1.24, name: "PLA Basic", material: "PLA", vendor: { name: "Prusament" }, color_hex: "FF0000", ...filament }, ...extra });
+
+  it("filterSpools hides archived rows unless asked", () => {
+    const list = [mk(1), mk(2, { archived: true })];
+    expect(filterSpools(list, "", false).map((s) => s.id)).toEqual([1]);
+    expect(filterSpools(list, "", true).map((s) => s.id)).toEqual([1, 2]);
+  });
+
+  it("filterSpools matches vendor, material, colour name, location, and id", () => {
+    const list = [mk(1, { location: "Shelf A" }), mk(22, {}, { vendor: { name: "Overture" }, material: "PETG", color_hex: "0000FF" })];
+    expect(filterSpools(list, "overture", false).map((s) => s.id)).toEqual([22]);
+    expect(filterSpools(list, "petg", false).map((s) => s.id)).toEqual([22]);
+    expect(filterSpools(list, "blue", false).map((s) => s.id)).toEqual([22]);
+    expect(filterSpools(list, "shelf", false).map((s) => s.id)).toEqual([1]);
+    expect(filterSpools(list, "#22", false).map((s) => s.id)).toEqual([22]);
+  });
+
+  it("normalizeHex accepts Spoolman's bare hex and rejects junk", () => {
+    expect(normalizeHex("ff00aa")).toBe("#FF00AA");
+    expect(normalizeHex("#ff00aa")).toBe("#FF00AA");
+    expect(normalizeHex("red")).toBeNull();
+    expect(normalizeHex(undefined)).toBeNull();
+  });
+
+  it("colorName maps to the nearest basic colour", () => {
+    expect(colorName("FF0000")).toBe("Red");
+    expect(colorName("000000")).toBe("Black");
+    expect(colorName("FFFFFF")).toBe("White");
+    expect(colorName("nope")).toBe("");
+    expect(colorText("0000FF")).toBe("Blue (#0000FF)");
+    expect(colorText(undefined)).toBe("No colour");
+  });
+
+  it("filamentLabel names vendor, filament, and material", () => {
+    expect(filamentLabel({ id: 3, name: "Basic", material: "PLA", vendor: { name: "Prusament" } })).toBe("Prusament Basic (PLA)");
+    expect(filamentLabel({ id: 4 })).toBe("Filament #4");
   });
 });

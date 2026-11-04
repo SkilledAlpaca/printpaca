@@ -175,6 +175,8 @@ type Energy struct {
 	Mode     string  `yaml:"mode" json:"mode"`
 	FlatRate float64 `yaml:"flatRate" json:"flatRate"`
 	Tou      Tou     `yaml:"tou" json:"tou"`
+	// Schedule is the time-of-use tariff used when Mode is "schedule" (energy_schedule.go).
+	Schedule EnergySchedule `yaml:"schedule" json:"schedule"`
 }
 
 type Preset struct {
@@ -203,6 +205,9 @@ type QuoteBranding struct {
 	PaymentInstructions string `yaml:"paymentInstructions" json:"paymentInstructions"`
 	TermsText           string `yaml:"termsText" json:"termsText"`
 	ValidDays           int    `yaml:"validDays" json:"validDays"`
+	// ReferencePrefix is the prefix of the short order reference customers see ("HL-1001"). Blank derives it
+	// from the business name's initials (reference.go).
+	ReferencePrefix string `yaml:"referencePrefix" json:"referencePrefix"`
 }
 
 // Invoicing holds invoice numbering, default terms, and the payment method list.
@@ -225,17 +230,37 @@ type PublicQuotes struct {
 	IntroText string `yaml:"introText" json:"introText"`
 }
 
-// Site controls what the main port (PORT) serves at its root and what the front door links to. The admin
+// Site controls what the main port (PORT) serves at its root and what the shop footer links to. The admin
 // app always lives under /admin/. A change applies without a restart, like the rest of the config.
 type Site struct {
-	// ShopOnMainPort serves the front door (/), the shop (/order) and /api/public/* on the main port. When
+	// ShopOnMainPort serves the shop (/ and /order) and /api/public/* on the main port. When
 	// false, / redirects to /admin/ and the public routes 404 there. PUBLIC_PORT is unaffected.
 	ShopOnMainPort bool `yaml:"shopOnMainPort" json:"shopOnMainPort"`
-	// StaffLink shows the Staff sign-in button on the main port's front door.
+	// StaffLink shows the Staff sign-in link in the footer of the shop on the main port.
 	StaffLink bool `yaml:"staffLink" json:"staffLink"`
 	// AdminURL is the absolute http(s) URL of the admin app, the Staff sign-in target on the PUBLIC_PORT
-	// front door. Empty hides the button there.
+	// shop footer. Empty hides the link there.
 	AdminURL string `yaml:"adminUrl" json:"adminUrl"`
+}
+
+// Shop holds customer-facing shop limits. MaxOrderQty caps the quantity on one public estimate request or
+// gallery order; the page and the server validation both read it.
+type Shop struct {
+	MaxOrderQty int `yaml:"maxOrderQty" json:"maxOrderQty"`
+}
+
+const (
+	defaultShopMaxOrderQty = 100
+	shopMaxOrderQtyCeiling = 10000
+)
+
+// maxOrderQty is the per-order quantity cap for the public shop, falling back to the default for a Config
+// that was built without one.
+func (c Config) maxOrderQty() int {
+	if c.Shop.MaxOrderQty < 1 {
+		return defaultShopMaxOrderQty
+	}
+	return c.Shop.MaxOrderQty
 }
 
 // Smtp configures outgoing email; this struct stores and validates config only. The password comes solely
@@ -308,6 +333,7 @@ type Config struct {
 	PublicQuotes PublicQuotes   `yaml:"publicQuotes" json:"publicQuotes"`
 	Users        Users          `yaml:"users" json:"users"`
 	Site         Site           `yaml:"site" json:"site"`
+	Shop         Shop           `yaml:"shop" json:"shop"`
 	// CustomCss is operator-authored CSS served verbatim, unsanitized: same trust as every free-text field
 	// here, so only the byte cap applies. GET /custom.css styles the public page; the admin listener links
 	// it with media="print" only, for printed documents.
@@ -407,6 +433,7 @@ func normalizeConfig(c *Config) {
 	normalizeFeeSchedules(c)
 	normalizeUI(c)
 	normalizeHardware(c)
+	normalizeEnergySchedule(&c.Energy.Schedule)
 	c.Users.AccessAdminEmail = foldEmail(c.Users.AccessAdminEmail)
 }
 
@@ -446,6 +473,14 @@ func normalizeHardware(c *Config) {
 // leaves unbounded: endless valid entries would be re-parsed on every start (a self-inflicted DoS).
 // 200 is far beyond a real catalog.
 const maxConfigCollectionSize = 200
+
+// maxSalesTaxPct and maxDueDays bound invoicing.salesTaxPct (a percentage, so 100 is the mathematical
+// ceiling) and invoicing.dueDays (10000 days, about 27 years). config.schema.json, web settingsRules.ts and
+// the Settings inputs mirror them; invoices.go derives the per-invoice taxBp ceiling from maxSalesTaxPct.
+const (
+	maxSalesTaxPct = 100
+	maxDueDays     = 10000
+)
 
 // publicIntroTextMaxBytes bounds publicQuotes.introText in bytes (len()), not characters, so the web counter
 // (PublicQuotesSettings.svelte, keep in sync) and the 422 agree for multi-byte scripts and emoji.
@@ -575,9 +610,10 @@ func validate(c *Config) []string {
 			p = append(p, fmt.Sprintf("hardware[%d] (%s): unitCost must be >= 0", i, hw.Name))
 		}
 	}
-	if c.Energy.Mode != "flat" && c.Energy.Mode != "tou" {
-		p = append(p, "energy.mode: must be flat or tou")
+	if c.Energy.Mode != "flat" && c.Energy.Mode != "tou" && c.Energy.Mode != "schedule" {
+		p = append(p, "energy.mode: must be flat, tou, or schedule")
 	}
+	p = append(p, validateEnergySchedule(c.Energy.Schedule, c.Energy.Mode == "schedule")...)
 	if !seen[c.Defaults.Material] {
 		p = append(p, fmt.Sprintf("defaults.material: %q not in materials", c.Defaults.Material))
 	}
@@ -590,14 +626,17 @@ func validate(c *Config) []string {
 	if c.Defaults.Quantity < 1 {
 		p = append(p, "defaults.quantity: must be ≥ 1")
 	}
+	if c.Quote.ReferencePrefix != "" && !isAlnumPrefix(c.Quote.ReferencePrefix) {
+		p = append(p, "quote.referencePrefix: must be 1-10 letters/digits, or blank to use your business initials")
+	}
 	if !isAlnumPrefix(c.Invoicing.NumberPrefix) {
 		p = append(p, "invoicing.numberPrefix: must be 1-10 letters/digits")
 	}
-	if c.Invoicing.SalesTaxPct < 0 || c.Invoicing.SalesTaxPct > 30 {
-		p = append(p, fmt.Sprintf("invoicing.salesTaxPct: %v out of range [0,30]", c.Invoicing.SalesTaxPct))
+	if c.Invoicing.SalesTaxPct < 0 || c.Invoicing.SalesTaxPct > maxSalesTaxPct {
+		p = append(p, fmt.Sprintf("invoicing.salesTaxPct: %v out of range [0,%d]", c.Invoicing.SalesTaxPct, maxSalesTaxPct))
 	}
-	if c.Invoicing.DueDays < 0 || c.Invoicing.DueDays > 365 {
-		p = append(p, fmt.Sprintf("invoicing.dueDays: %v out of range [0,365]", c.Invoicing.DueDays))
+	if c.Invoicing.DueDays < 0 || c.Invoicing.DueDays > maxDueDays {
+		p = append(p, fmt.Sprintf("invoicing.dueDays: %v out of range [0,%d]", c.Invoicing.DueDays, maxDueDays))
 	}
 	p = append(p, validatePaymentMethods(c.Invoicing.PaymentMethods)...)
 	if c.Invoicing.PayPalMe != "" && !paypalHandleRe.MatchString(c.Invoicing.PayPalMe) {
@@ -640,6 +679,9 @@ func validate(c *Config) []string {
 	p = append(p, validateDisabledTabs(c.UI.DisabledTabs)...)
 	p = append(p, validateIntegrationsUrls(c.IntegrationsUrls)...)
 	p = append(p, validateSite(c.Site)...)
+	if c.Shop.MaxOrderQty < 1 || c.Shop.MaxOrderQty > shopMaxOrderQtyCeiling {
+		p = append(p, fmt.Sprintf("shop.maxOrderQty: must be a whole number from 1 to %d", shopMaxOrderQtyCeiling))
+	}
 	return p
 }
 

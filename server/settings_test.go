@@ -100,6 +100,19 @@ func TestSettingsPutRoundTrip(t *testing.T) {
 				Mode:     "tou",
 				FlatRate: c.Energy.FlatRate,
 				Tou:      Tou{PeakRate: 0.5, OffPeakRate: 0.2, DefaultOffPeakFrac: 0.6},
+				Schedule: c.Energy.Schedule,
+			}
+		}},
+		{"schedule energy config", func(c *Config) {
+			c.Energy.Mode = "schedule"
+			c.Energy.Schedule = EnergySchedule{
+				DefaultStartTime: "21:30",
+				Holidays:         []string{"2026-12-25"},
+				Seasons: []TouSeason{{
+					Name: "All year", Months: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
+					Weekday: TouDay{BaseName: "Off-peak", BaseRate: 0.2, Windows: []TouWindow{{Name: "Peak", Start: "16:00", End: "21:00", Rate: 0.4}}},
+					Weekend: TouDay{BaseName: "Off-peak", BaseRate: 0.2, Windows: []TouWindow{}},
+				}},
 			}
 		}},
 		{"invoicing section", func(c *Config) {
@@ -303,7 +316,7 @@ func TestSettingsPutHotApplies(t *testing.T) {
 	running := loadTestConfig(t, dir)
 	store := NewConfigStore(running)
 	mux := newSettingsMux(dir, store)
-	mux.HandleFunc("GET /api/config", handleConfig(store, Integrations{}, configExtras{}, newAuthState("", nil)))
+	mux.HandleFunc("GET /api/config", handleConfig(store, configExtras{}, newAuthState("", nil)))
 
 	getMarginPct := func() float64 {
 		rec := serveReq(mux, httptest.NewRequest("GET", "/api/config", nil))

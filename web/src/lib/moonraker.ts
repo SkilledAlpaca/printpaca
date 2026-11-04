@@ -4,10 +4,35 @@ import type { EffectiveConfig, RawGcodeMeta } from "./engine/index";
  * from user input; only the metadata filename is appended, as an encoded query value. */
 export const MOONRAKER_HISTORY_PATH = "api/moonraker/server/history/list";
 export const MOONRAKER_METADATA_PATH = "api/moonraker/server/files/metadata";
+export const MOONRAKER_PRINTER_INFO_PATH = "api/moonraker/printer/info";
 
-/** Newest first, capped at a small page: a "recent completed prints" picker, not a history browser. */
-export function moonrakerHistoryUrl(limit = 20): string {
-  return `${MOONRAKER_HISTORY_PATH}?limit=${limit}&order=desc`;
+/** Jobs per page of the Recent prints picker; "Load more" fetches the next page. */
+export const HISTORY_PAGE_SIZE = 50;
+
+/** Newest first, one page at a time: `start` is how many jobs (of any status) were already fetched. */
+export function moonrakerHistoryUrl(limit = HISTORY_PAGE_SIZE, start = 0): string {
+  return `${MOONRAKER_HISTORY_PATH}?limit=${limit}&order=desc${start > 0 ? `&start=${start}` : ""}`;
+}
+
+/** One fetched page: the completed jobs, how many jobs of any status the page held (the next `start`
+ * offset), and Moonraker's total count when it reports one. */
+export interface HistoryPage {
+  jobs: MoonrakerJob[];
+  rawCount: number;
+  total: number | null;
+}
+
+export function parseHistoryPage(data: unknown): HistoryPage {
+  const result = (data as { result?: { jobs?: unknown; count?: unknown } } | null)?.result;
+  const rawJobs = result && typeof result === "object" && Array.isArray(result.jobs) ? result.jobs : [];
+  const total = typeof result?.count === "number" && Number.isFinite(result.count) ? result.count : null;
+  return { jobs: parseCompletedJobs(data), rawCount: rawJobs.length, total };
+}
+
+/** Case-insensitive filename filter for the picker; an empty query keeps everything. */
+export function filterJobs(jobs: MoonrakerJob[], query: string): MoonrakerJob[] {
+  const q = query.trim().toLowerCase();
+  return q === "" ? jobs : jobs.filter((j) => j.filename.toLowerCase().includes(q));
 }
 
 export function moonrakerMetadataUrl(filename: string): string {

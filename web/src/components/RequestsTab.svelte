@@ -1,6 +1,6 @@
 <script lang="ts">
   import { escapeBelongsToField } from "../lib/unsavedGuard";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import {
     parseGcodeText,
     resolveGcode,
@@ -14,20 +14,37 @@
     finalizeRequest,
     deleteRequest,
     deleteAllNewRequests,
+    setRequestPrintTime,
     fetchRequestGcode,
     fetchRequestsStorage,
     type QuoteRequest,
   } from "../lib/requestsApi";
-  import { listClients, createClient } from "../lib/clientsApi";
+  import { listClients, createClient, deleteClient } from "../lib/clientsApi";
   import { densityOrFallback } from "../lib/filamentDefaults";
   import { createInvoice } from "../lib/invoicesApi";
-  import { invoiceInputFromRequest } from "../lib/convertRequest";
+  import { convertRequestToInvoice } from "../lib/convertRequest";
+  import { finalizeBlockedReason, splitBulkFinalize } from "../lib/requestFinalize";
   import { INITIAL_PAGE_LIMIT, refetchLimit } from "../lib/pagination";
   import { startOnePartQuote, engineOptions, applyMaterial, pendingOpen, consumePendingOpen, quoteClient, quoteMeta } from "../lib/state.svelte";
   import { syncDetail } from "../lib/hashRoute";
-  import { refreshUnread } from "../lib/requestsBadge.svelte";
+  import { refreshUnread, unreadRequests } from "../lib/requestsBadge.svelte";
+  import { createBackfillController } from "../lib/backfillController.svelte";
+  import { handleMenuKeydown } from "../lib/menuNav";
+  import {
+    REQUEST_FILTER_CHIPS,
+    deleteAllNewConfirmLabel,
+    deleteAllNewQuestion,
+    isInvoiced,
+    matchesRequestFilter,
+    replyMailto,
+    requestDisplayStatus,
+    requestReference,
+    type RequestFilter,
+  } from "../lib/requestRow";
+  import BackfillStatus from "./BackfillStatus.svelte";
   import { splitSeconds } from "../lib/gcodeTime";
   import { buildQuoteInputs, energyInputsFor } from "../lib/quoteInputs";
+  import { nextStartWall } from "../lib/engine/schedule";
   import { findDuplicateRequestIds } from "../lib/requestDuplicates";
   import {
     classifyRequestFileState,
@@ -36,7 +53,7 @@
     describeStoredModelHint,
   } from "../lib/gcodeMessage";
   import { describeStorageBanner, type StorageBanner } from "../lib/storageBanner";
-  import { money, formatDate, formatDateTime } from "../lib/format";
+  import { money, formatDate, formatDateTime, materialDisplayName } from "../lib/format";
   import { mdiArrowLeft } from "@mdi/js";
   import Icon from "./Icon.svelte";
   import StatusBadge from "./StatusBadge.svelte";
@@ -46,7 +63,7 @@
   import LoadMoreRow from "./LoadMoreRow.svelte";
   import DetailTitle from "./DetailTitle.svelte";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
-  import { confirmFocus, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "../lib/a11yFocus";
+  import { confirmFocus, focusOnMount, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "../lib/a11yFocus";
 
   let {
     cfg,
@@ -72,10 +89,27 @@
   }
 
   // Server pagination (server/pagination.go's opt-in ?limit=&offset=): `requests` holds the loaded window and
-  // `total` is the pre-slice count (X-Total-Count). This list has no filter box, so there is no backfill
-  // concern, only the first page plus Load more.
+  // `total` is the pre-slice count (X-Total-Count). The filter backfills the rest of the list before it runs
+  // (backfillController), so it never filters a partial window; Load more is shown only while unfiltered.
   let total = $state(0);
   let loadingMore = $state(false);
+
+  let filterText = $state("");
+  let filterChip = $state<RequestFilter>("all");
+  const filterActive = $derived(filterText.trim() !== "" || filterChip !== "all");
+  const filteredRequests = $derived(filterActive ? requests.filter((r) => matchesRequestFilter(r, filterText, filterChip)) : requests);
+  const backfill = createBackfillController<QuoteRequest>({
+    getItems: () => requests,
+    getTotal: () => total,
+    fetchPage: (page) => loadRequests(page),
+    setItems: (items) => {
+      requests = items;
+      total = items.length;
+    },
+  });
+  $effect(() => {
+    backfill.ensureReady(filterActive ? `${filterChip}|${filterText}` : "");
+  });
 
   // The first load fetches 100; a refetch after a mutation (finalize/delete) asks for at least as many rows
   // as are loaded, so the window doesn't shrink.
@@ -108,27 +142,61 @@
     loadingMore = false;
   }
 
-  // "Delete all new" (admin recovery from a public-request flood, server/requests.go's handleDeleteNew):
-  // visible only while the loaded window has a "new" row. Same two-step confirm as QuotesTab's per-row delete
-  // and the same action-status live region for the outcome.
-  const hasNewRequests = $derived(requests.some((r) => r.status === "new"));
+  // "Delete all new" (admin recovery from a public-request flood, server/requests.go's handleDeleteNew) lives
+  // in the "More" menu below the heading, not beside it as a first Tab stop. Its confirm is a block of its own
+  // that states the count and that the stored files go too, with the confirm button away from the menu that
+  // opened it, and focus starting on Cancel so a double Enter can't delete anything.
+  const loadedNewCount = $derived(requests.filter((r) => r.status === "new").length);
+  // The badge count covers the whole list; the loaded window may hold fewer while a long list is paginated.
+  const newCount = $derived(Math.max(unreadRequests.count, loadedNewCount));
   let confirmingDeleteAllNew = $state(false);
   let bulkDeleting = $state(false);
   let bulkStatus = $state("");
   let bulkFailed = $state(false);
 
+  // "More" menu: one panel, closed by an outside click, Escape, or Tab. Like QuotesTab's row menu, a labeled
+  // group of buttons with arrow-key navigation (menuNav.ts), not an ARIA menu.
+  let moreOpen = $state(false);
+  let moreToggleEl: HTMLElement | undefined = $state();
+  async function toggleMore() {
+    if (moreOpen) {
+      closeMore();
+      return;
+    }
+    moreOpen = true;
+    await tick();
+    document.querySelector<HTMLElement>("#requests-more-menu .menu-item:not([disabled])")?.focus();
+  }
+  function closeMore(restoreFocus = true) {
+    moreOpen = false;
+    if (restoreFocus) moreToggleEl?.focus();
+  }
+  function handleMoreFocusOut(e: FocusEvent) {
+    const next = e.relatedTarget;
+    if (!(next instanceof Node)) return;
+    if (e.currentTarget instanceof Node && e.currentTarget.contains(next)) return;
+    closeMore(false);
+  }
+  function handleWindowPointerDown(e: PointerEvent) {
+    if (!moreOpen) return;
+    if (e.target instanceof Element && e.target.closest("[data-more-menu]")) return;
+    closeMore(false);
+  }
+
   function askDeleteAllNew() {
+    closeMore(false);
     confirmingDeleteAllNew = true;
   }
   // Which row opened the detail view, so "Back to list" can return focus to it (WCAG 2.4.3).
   let openerId: string | null = null;
   function cancelDeleteAllNew() {
     confirmingDeleteAllNew = false;
+    void focusAfterUpdate(() => document.querySelector<HTMLElement>(keySelector("requests-more")));
   }
-  /** After the confirm closes: the "Delete all new" trigger if it is still rendered, else the list heading. */
-  function focusDeleteAllOrHeading(): Promise<void> {
+  /** After the confirm closes: the More button if it is still rendered, else the list heading. */
+  function focusMoreOrHeading(): Promise<void> {
     return focusAfterUpdate(
-      () => document.querySelector<HTMLElement>(keySelector("delete-all-new")) ?? document.querySelector<HTMLElement>(keySelector("requests-heading")),
+      () => document.querySelector<HTMLElement>(keySelector("requests-more")) ?? document.querySelector<HTMLElement>(keySelector("requests-heading")),
     );
   }
   async function removeAllNew() {
@@ -142,15 +210,75 @@
       await refresh();
       await refreshUnread();
       confirmingDeleteAllNew = false;
-      void focusDeleteAllOrHeading();
+      void focusMoreOrHeading();
     } catch (err) {
       bulkFailed = true;
       bulkStatus = err instanceof Error ? `Couldn't delete new requests: ${err.message}` : "Couldn't delete new requests.";
       confirmingDeleteAllNew = false;
-      void focusDeleteAllOrHeading();
+      void focusMoreOrHeading();
     } finally {
       bulkDeleting = false;
     }
+  }
+
+  // Bulk finalize: row checkboxes on the Requests list only. Finalizing needs a viewed request (the server
+  // wants the owner to have looked first), so only viewed rows have a checkbox; each selected request is
+  // finalized with the same endpoint as the detail view's Finalize, one after another.
+  let selectedIds = $state<string[]>([]);
+  let confirmingBulkFinalize = $state(false);
+  let bulkFinalizing = $state(false);
+  const viewedRows = $derived(filteredRequests.filter((r) => r.status === "viewed"));
+  // NEW rows are selectable too: finalizing one opens it first (which marks it viewed), then finalizes it.
+  const newRows = $derived(filteredRequests.filter((r) => r.status === "new"));
+  // Drop ids that left the list or were finalized (a refresh after finalizing, a filter change).
+  $effect(() => {
+    const ok = new Set(requests.filter((r) => r.status === "viewed" || r.status === "new").map((r) => r.id));
+    if (selectedIds.some((id) => !ok.has(id))) selectedIds = selectedIds.filter((id) => ok.has(id));
+  });
+  function toggleSelected(id: string) {
+    selectedIds = selectedIds.includes(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id];
+    confirmingBulkFinalize = false;
+  }
+  function selectAllViewed() {
+    selectedIds = viewedRows.map((r) => r.id);
+    confirmingBulkFinalize = false;
+  }
+  function selectAllNew() {
+    selectedIds = newRows.map((r) => r.id);
+    confirmingBulkFinalize = false;
+  }
+  function clearSelection() {
+    selectedIds = [];
+    confirmingBulkFinalize = false;
+  }
+  async function finalizeSelected() {
+    if (bulkFinalizing || selectedIds.length === 0) return;
+    bulkFinalizing = true;
+    // Rows still waiting for a print time can't be finalized (the server refuses them): skip and say so.
+    const { ready: ids, skipped } = splitBulkFinalize([...selectedIds], requests);
+    let done = 0;
+    let firstError = "";
+    for (const id of ids) {
+      try {
+        // The server finalizes only a viewed request; opening a NEW one is what marks it viewed.
+        if (requests.find((r) => r.id === id)?.status === "new") await loadRequest(id);
+        await finalizeRequest(id);
+        done++;
+      } catch (err) {
+        firstError ||= err instanceof Error ? err.message : "Couldn't finalize a request.";
+      }
+    }
+    bulkFailed = firstError !== "" || skipped.length > 0;
+    bulkStatus =
+      `Finalized ${done} ${done === 1 ? "request" : "requests"}.` +
+      (skipped.length > 0 ? ` Skipped ${skipped.length} that still ${skipped.length === 1 ? "needs" : "need"} a print time.` : "") +
+      (firstError ? ` ${ids.length - done} couldn't be finalized: ${firstError}` : "");
+    confirmingBulkFinalize = false;
+    selectedIds = [];
+    await refresh();
+    await refreshUnread();
+    bulkFinalizing = false;
+    void focusAfterUpdate(() => document.querySelector<HTMLElement>(keySelector("requests-filter-input")) ?? document.querySelector<HTMLElement>(keySelector("requests-heading")));
   }
 
   // Ids of requests that look like a rapid duplicate submission (same email/filename/quantity as an earlier
@@ -160,7 +288,22 @@
   // Escape closes an open detail view like "Back to list", but cancels an armed two-click delete first.
   // Ignored while focus is in a text field or select, which use Escape themselves (dismissing autocomplete or a dropdown).
   function handleDetailKeydown(e: KeyboardEvent) {
+    if (moreOpen) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeMore();
+        return;
+      }
+      const panel = document.getElementById("requests-more-menu");
+      if (panel && e.target instanceof Node && panel.contains(e.target)) handleMenuKeydown(e, panel, closeMore);
+      return;
+    }
     if (e.key !== "Escape") return;
+    if (confirmingDeleteAllNew && view === "list") {
+      e.preventDefault();
+      cancelDeleteAllNew();
+      return;
+    }
     if (view !== "detail") return;
     if (escapeBelongsToField(e.target)) return;
     e.preventDefault();
@@ -306,7 +449,11 @@
         timeSeconds,
         printer,
         preset,
-        energy: energyInputsFor(cfg.energy),
+        // A schedule-mode public quote prices from the next default start after it was submitted.
+        energy: energyInputsFor(cfg.energy, undefined, undefined, {
+          timezone: cfg.timezone || "UTC",
+          start: nextStartWall(cfg.energy.schedule.defaultStartTime, cfg.timezone || "UTC", new Date(record.createdAt)),
+        }),
         quantity: record.quantity,
         pricing: {
           strategy: cfg.pricing.strategy,
@@ -362,6 +509,9 @@
     detailError = null;
     actionError = null;
     convertError = null;
+    timeError = null;
+    timeHours = 0;
+    timeMinutes = 0;
     verifyOutcome = null;
     // A prior request's verify can still be in flight (its staleness guard bails once this call bumps
     // openSeq). Reset here too so a newly opened, non-auto-verified request doesn't inherit a spinner nothing
@@ -407,16 +557,17 @@
   // Actions
 
   let finalizing = $state(false);
-  // Finalizing can't be undone (no way back to "viewed") and records a sale for gallery orders, so it asks first (3.3.4).
+  // Finalizing can't be undone (no way back to "viewed") and records a sale for shop item orders, so it asks first (3.3.4).
   let confirmingFinalize = $state(false);
   function askFinalize() {
+    if (detail && finalizeBlockedReason(detail)) return;
     confirmingFinalize = true;
   }
   function cancelFinalize() {
     confirmingFinalize = false;
   }
   async function finalize() {
-    if (!detail || finalizing) return;
+    if (!detail || finalizing || finalizeBlockedReason(detail)) return;
     confirmingFinalize = false;
     finalizing = true;
     actionError = null;
@@ -437,7 +588,7 @@
   function openInQuoteTab() {
     if (!detail) return;
     // A request opens as a new one-part quote, never into a quote being edited: parts, order block, customer
-    // and meta all reset.
+    // and meta all reset. A request still waiting for its print time opens with the time blank.
     const part = startOnePartQuote(cfg);
     quoteClient.id = "";
     quoteClient.name = "";
@@ -453,19 +604,51 @@
     onOpenInQuote();
   }
 
+  // The print time of a public estimate submitted without one (needsPrintTime). Entered here, priced by the
+  // server from the current settings, and required before Convert to invoice.
+  let timeHours = $state(0);
+  let timeMinutes = $state(0);
+  let savingTime = $state(false);
+  let timeError = $state<string | null>(null);
+  async function savePrintTime() {
+    if (!detail || savingTime) return;
+    const seconds = Math.round((Number(timeHours) || 0) * 3600 + (Number(timeMinutes) || 0) * 60);
+    if (seconds < 60) {
+      timeError = "Enter the print time from your slicer, at least one minute.";
+      return;
+    }
+    savingTime = true;
+    timeError = null;
+    try {
+      detail = await setRequestPrintTime(detail.id, seconds);
+      announce(`Print time saved. The price is ${money(detail.priceCents, cfg)}.`);
+      await refresh();
+      void focusAfterUpdate(() => document.querySelector<HTMLElement>(keySelector("convert-request")));
+    } catch (err) {
+      timeError = err instanceof Error ? err.message : "Couldn't save the print time.";
+    } finally {
+      savingTime = false;
+    }
+  }
+
+  function openLinkedInvoice(id: string) {
+    pendingOpen.current = { tab: "invoices", id };
+    onOpenInvoice();
+  }
+
   async function convertToInvoice() {
     if (!detail || converting) return;
+    if (detail.needsPrintTime) {
+      convertError = "Enter the print time first. Convert to invoice needs a price.";
+      return;
+    }
     convertError = null;
     converting = true;
     try {
-      const existing = await listClients();
-      const match = (existing ?? []).find((c) => c.email.toLowerCase() === detail!.email.toLowerCase());
-      const clientId = match
-        ? match.id
-        : (await createClient({ name: detail.name, email: detail.email, phone: "", billingAddress: "", shippingAddress: "", notes: "" })).id;
-
-      const input = invoiceInputFromRequest(detail, cfg, clientId);
-      const invoice = await createInvoice(input);
+      // The server links the request to the invoice and finalizes it in this same call (requestId); a client
+      // created for a conversion that then fails is removed again.
+      const invoice = await convertRequestToInvoice(detail, cfg, { listClients, createClient, deleteClient, createInvoice });
+      void refreshUnread();
       pendingOpen.current = { tab: "invoices", id: invoice.id };
       onOpenInvoice();
     } catch (err) {
@@ -519,33 +702,95 @@
   }
 </script>
 
-<svelte:window onhashchange={syncDetailFromHash} onkeydown={handleDetailKeydown} />
+<svelte:window onhashchange={syncDetailFromHash} onkeydown={handleDetailKeydown} onpointerdown={handleWindowPointerDown} />
 
 <div class="page">
   {#if view === "list"}
     <div class="head-row">
       <h1 tabindex="-1" data-focus-key="requests-heading">Requests</h1>
-      {#if hasNewRequests}
-        <div class="head-actions">
-          {#if confirmingDeleteAllNew}
-            <button
-              type="button"
-              class="danger"
-              onclick={removeAllNew}
-              aria-disabled={bulkDeleting}
-              aria-label="Delete all new? Also deletes their stored files."
-              use:confirmFocus={{ restore: keySelector("delete-all-new"), cancel: cancelDeleteAllNew }}
-            >{bulkDeleting ? "Deleting…" : "Delete all new?"}</button>
-            <button type="button" onclick={cancelDeleteAllNew} aria-label="Cancel deleting all new requests">Cancel</button>
-            <span class="advisory-text">Also deletes their stored files.</span>
-          {:else}
-            <button type="button" data-focus-key="delete-all-new" onclick={askDeleteAllNew} aria-label="Delete all new requests">Delete all new</button>
-          {/if}
-        </div>
-      {/if}
     </div>
 
-    <!-- Live region for removeAllNew's outcome, like QuotesTab's action-status (collapsed while empty;
+    {#if requests.length > 0}
+      <div class="toolbar">
+        <input
+          id="requests-filter"
+          class="search-input"
+          data-focus-key="requests-filter-input"
+          placeholder="Filter by name, item, or file"
+          aria-label="Filter requests by name, item, or file"
+          bind:value={filterText}
+        />
+        {#if newCount > 0}
+          <div class="more" data-more-menu onfocusout={handleMoreFocusOut}>
+            <button
+              type="button"
+              class="quiet menu-toggle"
+              bind:this={moreToggleEl}
+              data-focus-key="requests-more"
+              aria-expanded={moreOpen}
+              aria-controls="requests-more-menu"
+              aria-label="More actions for requests"
+              onclick={toggleMore}
+            >⋯</button>
+            {#if moreOpen}
+              <div class="menu-panel" id="requests-more-menu">
+                <div class="menu-group" role="group" aria-label="More actions for requests">
+                  <button type="button" class="quiet menu-item" onclick={askDeleteAllNew}>Delete all new…</button>
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </div>
+      <div class="chips" role="group" aria-label="Filter by status">
+        {#each REQUEST_FILTER_CHIPS as chip (chip.key)}
+          <button
+            type="button"
+            class:active={filterChip === chip.key}
+            aria-pressed={filterChip === chip.key}
+            onclick={() => (filterChip = chip.key)}
+          >{chip.label}</button>
+        {/each}
+      </div>
+      <BackfillStatus backfilling={backfill.backfilling} backfillFailed={backfill.backfillFailed} verb="filter" />
+    {/if}
+
+    {#if confirmingDeleteAllNew}
+      <div class="banner-warn confirm-delete-all" role="group" aria-label="Confirm deleting all new requests">
+        <p>{deleteAllNewQuestion(newCount)}</p>
+        <div class="confirm-actions">
+          <button type="button" use:focusOnMount onclick={cancelDeleteAllNew}>Cancel</button>
+          <button type="button" class="danger" onclick={removeAllNew} aria-disabled={bulkDeleting}>{bulkDeleting ? "Deleting…" : deleteAllNewConfirmLabel(newCount)}</button>
+        </div>
+      </div>
+    {/if}
+
+    {#if viewedRows.length > 0 || newRows.length > 0}
+      <div class="bulk-bar">
+        {#if selectedIds.length === 0}
+          {#if newRows.length > 0}<button type="button" class="quiet" onclick={selectAllNew}>Select all new ({newRows.length})</button>{/if}
+          {#if viewedRows.length > 0}<button type="button" class="quiet" onclick={selectAllViewed}>Select all viewed ({viewedRows.length})</button>{/if}
+        {:else}
+          <span class="bulk-count" role="status">{selectedIds.length} selected</span>
+          {#if confirmingBulkFinalize}
+            <button
+              type="button"
+              class="primary"
+              aria-disabled={bulkFinalizing}
+              onclick={finalizeSelected}
+              use:confirmFocus={{ restore: keySelector("finalize-selected"), cancel: () => (confirmingBulkFinalize = false) }}
+            >{bulkFinalizing ? "Finalizing…" : `Yes, finalize ${selectedIds.length} ${selectedIds.length === 1 ? "request" : "requests"}`}</button>
+            <button type="button" onclick={() => (confirmingBulkFinalize = false)}>Cancel</button>
+            <span class="advisory-text">Marks them handled (new ones are marked viewed first). It doesn't email the customers.</span>
+          {:else}
+            <button type="button" class="primary" data-focus-key="finalize-selected" onclick={() => (confirmingBulkFinalize = true)}>Finalize selected</button>
+            <button type="button" class="quiet" onclick={clearSelection}>Clear selection</button>
+          {/if}
+        {/if}
+      </div>
+    {/if}
+
+    <!-- Live region for the bulk actions' outcome, like QuotesTab's action-status (collapsed while empty;
          alert on failure, status on success). -->
     <p
       class="status-line action-status"
@@ -570,30 +815,45 @@
         {#if loading}
           <li class="empty-state"><span role="status">Loading…</span></li>
         {:else}
-          {#each requests as r (r.id)}
-            <li>
+          {#each filteredRequests as r (r.id)}
+            <li class="req-row">
+              <span class="r-check">
+                {#if r.status === "viewed" || r.status === "new"}
+                  <label class="check-label">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select request from ${r.name}`}
+                      checked={selectedIds.includes(r.id)}
+                      onchange={() => toggleSelected(r.id)}
+                    />
+                  </label>
+                {/if}
+              </span>
               <button type="button" class="row-link" data-row-id={r.id} onclick={() => openDetail(r.id)}>
-                <StatusBadge status={r.status} />
+                <StatusBadge status={requestDisplayStatus(r)} />
                 <!-- Name and its optional pills share one grid cell (.r-who): as siblings of the metadata
                      spans they were extra tracks and pushed later columns out of line with rows that
                      lacked them. -->
                 <span class="r-who">
                   <span class="r-name">{r.name}</span>
+                  {#if r.reference}<span class="pill ref-pill">{r.reference}</span>{/if}
                   {#if r.kind === "item"}<span class="pill item-pill">item order</span>{/if}
+                  {#if r.needsPrintTime}<span class="pill time-pill">Needs print time</span>{/if}
+                  {#if isInvoiced(r)}<span class="pill item-pill">{r.invoiceNumber}</span>{/if}
                   {#if duplicateRequestIds.has(r.id)}<span class="pill dup-pill">possible duplicate</span>{/if}
                 </span>
-                <span class="r-material">{r.kind === "item" ? r.itemName : r.material}</span>
+                <span class="r-material">{r.kind === "item" ? r.itemName : materialDisplayName(r.material, cfg.materials)}</span>
                 <span class="r-qty">×{r.quantity}</span>
-                <span class="r-price">{money(r.priceCents, cfg)}</span>
+                <span class="r-price">{r.needsPrintTime ? "To be confirmed" : money(r.priceCents, cfg)}</span>
                 <span class="r-date">{formatDate(r.createdAt)}</span>
               </button>
             </li>
           {:else}
-            <li class="empty-state">No estimate requests yet. They arrive here when a visitor submits your public estimate page. Set that page up below.</li>
+            <li class="empty-state">{requests.length === 0 ? "No estimate requests yet. They arrive here when a visitor submits your public estimate page. Set that page up below." : "No requests match the filter. Clear it, or choose All, to see every request."}</li>
           {/each}
         {/if}
       </ul>
-      {#if !loading}
+      {#if !loading && !filterActive}
         <LoadMoreRow shown={requests.length} {total} {loadingMore} onLoadMore={loadMore} />
       {/if}
     </div>
@@ -606,7 +866,7 @@
   {:else}
     <div class="head-row">
       <button type="button" class="quiet back-link" onclick={() => backToList()}><Icon path={mdiArrowLeft} /> Back to list</button>
-      {#if detail}<StatusBadge status={detail.status} />{/if}
+      {#if detail}<StatusBadge status={requestDisplayStatus(detail)} />{/if}
     </div>
 
     {#if detailLoading}
@@ -619,6 +879,7 @@
         <AttributionLine updatedBy={detail.updatedBy} />
 
         <div class="readonly-grid">
+          <div><span class="lbl">Reference</span><span>{requestReference(detail)}</span></div>
           <div><span class="lbl">Name</span><span>{detail.name}</span></div>
           <div><span class="lbl">Email</span><span><a href={`mailto:${encodeURIComponent(detail.email)}`}>{detail.email}</a></span></div>
           {#if detail.kind === "item"}
@@ -627,17 +888,53 @@
             <div><span class="lbl">Quantity</span><span>{detail.quantity}</span></div>
             <div><span class="lbl">Total</span><span>{money(detail.priceCents, cfg)}</span></div>
           {:else}
-            <div><span class="lbl">Material</span><span>{detail.material}</span></div>
+            <div><span class="lbl">Material</span><span>{materialDisplayName(detail.material, cfg.materials)}</span></div>
             <div><span class="lbl">Quantity</span><span>{detail.quantity}</span></div>
             <div><span class="lbl">Weight</span><span>{detail.weightG} g</span></div>
-            <div><span class="lbl">Print time</span><span>{formatDuration(detail.timeSeconds)}</span></div>
-            <div><span class="lbl">Price</span><span>{money(detail.priceCents, cfg)}</span></div>
+            <div><span class="lbl">Print time</span><span>{detail.needsPrintTime ? "Not provided" : formatDuration(detail.timeSeconds)}</span></div>
+            <div><span class="lbl">Price</span><span>{detail.needsPrintTime ? "To be confirmed" : money(detail.priceCents, cfg)}</span></div>
             {#if detail.shippingCents > 0}<div><span class="lbl">Shipping</span><span>{money(detail.shippingCents, cfg)}</span></div>{/if}
           {/if}
           <div><span class="lbl">Submitted</span><span>{formatDateTime(detail.createdAt)}</span></div>
         </div>
 
         {#if detail.note}<p class="notes"><span class="lbl">Note</span> {detail.note}</p>{/if}
+
+        {#if isInvoiced(detail)}
+          <p class="banner-muted invoiced-note">
+            Invoiced as {detail.invoiceNumber} (request {requestReference(detail)}).
+            <button type="button" class="quiet linkish" onclick={() => openLinkedInvoice(detail!.invoiceId)}>Open invoice</button>
+          </p>
+        {/if}
+
+        {#if detail.needsPrintTime}
+          <div class="subcard time-card" role="group" aria-labelledby="print-time-heading">
+            <h3 id="print-time-heading">This estimate needs a print time</h3>
+            <p class="hint">
+              The customer's file had no print time, so there's no price yet. Enter the print time from your slicer and
+              printpaca prices the request from your current settings. You need it before you can convert the request
+              to an invoice.
+            </p>
+            <form
+              class="time-form"
+              onsubmit={(e) => {
+                e.preventDefault();
+                void savePrintTime();
+              }}
+            >
+              <label class="field">
+                <span>Hours</span>
+                <input type="number" min="0" step="1" bind:value={timeHours} />
+              </label>
+              <label class="field">
+                <span>Minutes</span>
+                <input type="number" min="0" max="59" step="1" bind:value={timeMinutes} />
+              </label>
+              <button type="submit" class="primary" aria-disabled={savingTime} aria-busy={savingTime}>{savingTime ? "Saving…" : "Save print time"}</button>
+            </form>
+            {#if timeError}<p class="banner-warn" role="alert">{timeError}</p>{/if}
+          </div>
+        {/if}
 
         {#if detail.kind === "item"}
           <!-- Item orders never carry g-code (server/requests.go): weight, time and gcode are zero/empty,
@@ -719,43 +1016,60 @@
         {#if actionError}<p class="banner-warn" role="alert">{actionError}</p>{/if}
         {#if convertError}<p class="banner-warn" role="alert">{convertError}</p>{/if}
 
-        <p class="hint">
-          {#if detail.status === "viewed"}Finalize marks this request as handled. Finalized gallery orders count toward Top items. {/if}Convert to invoice creates the client if this email isn't on file.
-        </p>
+        {#if detail.status === "viewed" || !isInvoiced(detail)}
+          <p class="hint">
+            {#if detail.status === "viewed"}Finalize marks this request as handled in your list. It doesn't email the customer; use Reply by email to tell them. Finalized shop item orders count toward Top items.{" "}{/if}{#if !isInvoiced(detail)}Convert to invoice creates the client if this email isn't on file, then marks the request invoiced.{/if}
+          </p>
+        {/if}
         <div class="status-actions">
           {#if detail.status === "viewed"}
             {#if confirmingFinalize}
-              <button type="button" class="primary" onclick={finalize} use:confirmFocus={{ restore: keySelector("finalize-request"), cancel: cancelFinalize }}>Finalize request from {detail.name}?</button>
+              <button type="button" class="primary" onclick={finalize} use:confirmFocus={{ restore: keySelector("finalize-request"), cancel: cancelFinalize }}>Yes, finalize this request</button>
               <button type="button" onclick={cancelFinalize}>Cancel</button>
             {:else}
-              <button type="button" class="primary" data-focus-key="finalize-request" aria-disabled={finalizing} onclick={askFinalize}>Finalize</button>
+              <button
+                type="button"
+                class="primary"
+                data-focus-key="finalize-request"
+                aria-disabled={finalizing || detail.needsPrintTime}
+                aria-describedby={detail.needsPrintTime ? "finalize-needs-time" : undefined}
+                onclick={askFinalize}
+              >Finalize</button>
             {/if}
           {/if}
+          <a class="reply-link" href={replyMailto(detail)} aria-label={`Reply by email to ${detail.name}, reference ${requestReference(detail)}`}>Reply by email</a>
           {#if detail.kind !== "item"}
             <button type="button" onclick={openInQuoteTab}>Open in new quote</button>
           {/if}
-          <button
-            type="button"
-            class={detail.status === "viewed" ? "" : "primary"}
-            onclick={convertToInvoice}
-            aria-disabled={converting}
-          >
-            {converting ? "Converting…" : "Convert to invoice"}
-          </button>
+          {#if !isInvoiced(detail)}
+            <button
+              type="button"
+              class={detail.status === "viewed" ? "" : "primary"}
+              data-focus-key="convert-request"
+              onclick={convertToInvoice}
+              aria-disabled={converting || detail.needsPrintTime}
+              aria-describedby={detail.needsPrintTime ? "convert-needs-time" : undefined}
+            >
+              {converting ? "Converting…" : "Convert to invoice"}
+            </button>
+          {/if}
           {#if confirmingDelete}
             <button
               type="button"
               class="danger"
               onclick={remove}
-              aria-label="Delete? Also deletes the stored file."
               use:confirmFocus={{ restore: keySelector("delete-request"), cancel: cancelDelete }}
-            >Delete?</button>
-            <button type="button" onclick={cancelDelete} aria-label="Cancel deleting this request">Cancel</button>
+            >Yes, delete this request</button>
+            <button type="button" onclick={cancelDelete}>Cancel</button>
             <span class="advisory-text">Also deletes the stored file.</span>
           {:else}
             <button type="button" data-focus-key="delete-request" onclick={askDelete} aria-label="Delete this request">Delete</button>
           {/if}
         </div>
+        {#if detail.needsPrintTime}
+          <p id="finalize-needs-time" class="hint">{finalizeBlockedReason(detail)}.</p>
+          <p id="convert-needs-time" class="hint">Enter the print time above before converting this request to an invoice.</p>
+        {/if}
       </div>
     {/if}
   {/if}
@@ -764,10 +1078,60 @@
 <style>
   .back-link { display: inline-flex; align-items: center; gap: 0.35rem; }
 
-  /* .head-actions and .action-status.collapsed mirror QuotesTab's rules (component-scoped styles don't
-   * cascade); theme.css's .head-row supplies the flex layout, but the actions gap and collapse-when-empty
-   * are local. */
-  .head-actions { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+  .toolbar { display: flex; gap: 0.5rem; align-items: center; }
+  .search-input { flex: 1; min-width: 0; }
+  .more { position: relative; flex-shrink: 0; }
+  .menu-toggle { min-width: var(--tap-sm); font-weight: 700; letter-spacing: 1px; }
+  /* Not position: fixed like QuotesTab's row menu: this one sits beside the filter, outside any scroll
+   * container, so an absolute panel can't be clipped. */
+  .menu-panel {
+    position: absolute;
+    z-index: 5;
+    right: 0;
+    top: calc(100% + 4px);
+    min-width: 11rem;
+    padding: 0.3rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) / 2);
+    box-shadow: var(--shadow);
+  }
+  .menu-group { display: flex; flex-direction: column; gap: 0.1rem; }
+  .menu-item { display: block; width: 100%; text-align: left; white-space: nowrap; }
+
+  .confirm-delete-all p { margin: 0 0 var(--space-2); }
+  .confirm-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .bulk-count { font-size: var(--text-sm); font-weight: 600; }
+
+  .req-row { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr); align-items: center; }
+  .r-check { display: flex; justify-content: center; }
+  .check-label { display: flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; cursor: pointer; }
+  .check-label input { width: 1.25rem; height: 1.25rem; margin: 0; }
+  .time-pill { color: var(--warn); }
+
+  .invoiced-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .invoiced-note .linkish { border: none; background: none; color: var(--accent-text); font-weight: 600; text-decoration: underline; }
+  .time-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
+  .time-form .field { margin: 0; }
+  .time-form input { width: 6rem; }
+  .time-card h3 { margin-top: 0; }
+
+  /* "Reply by email" is a mailto: link, so it is an <a>; styled like the neighboring buttons. */
+  .reply-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    text-decoration: none;
+  }
+  .reply-link:hover { background: var(--surface-2); }
+
+  /* .action-status.collapsed mirrors QuotesTab's rule (component-scoped styles don't cascade): collapse the
+   * live region while it is empty. */
   .action-status.collapsed { min-height: 0; margin-top: calc(var(--space-6) * -1); margin-bottom: calc(var(--space-6) * -1); }
 
   li { border-top: 1px solid var(--border); }
@@ -806,6 +1170,7 @@
    * .invoiced-badge notes. */
   .dup-pill { color: var(--muted); }
   .item-pill { color: var(--muted); }
+  .ref-pill { color: var(--muted); font-variant-numeric: tabular-nums; }
 
   .notes, .gcode-line { font-size: var(--text-sm); margin: 0.3rem 0; }
   .gcode-line a { margin-left: 0.5rem; }

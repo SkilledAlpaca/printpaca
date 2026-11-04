@@ -1,6 +1,8 @@
 import { pctToBp, type InvoiceInput, type InvoiceLineInput } from "./invoicesApi";
 import { SHIPPING_LINE_DESCRIPTION } from "./convertQuote";
 import type { QuoteRequest } from "./requestsApi";
+import type { Client, ClientInput } from "./clientsApi";
+import type { Invoice } from "./invoicesApi";
 
 /** The config fields the request conversion reads. */
 export interface RequestConversionConfig {
@@ -29,9 +31,12 @@ export function requestInvoiceLines(req: QuoteRequest): InvoiceLineInput[] {
           unitPriceCents: req.priceCents / req.quantity,
           discountCents: 0,
           quoteId: "",
-          // Never linked to the item: finalize already counted this sale in item_sales and took its stock,
-          // so a link would count it twice.
-          itemId: "",
+          // Linked to the gallery item with its option summary, so the invoice line shows what was ordered.
+          // The server finalizes the request on conversion WITHOUT recording a sale or taking stock, so
+          // sending the invoice counts the sale and the stock once. It drops the link instead when the order
+          // was already finalized (that sale is already counted) or the item has been deleted.
+          itemId: req.itemId,
+          optionName: req.itemId ? req.optionName : "",
         }
       : {
           description: req.gcodeFilename ? `3D print: ${req.material} (${req.gcodeFilename})` : `3D print: ${req.material}`,
@@ -63,5 +68,39 @@ export function invoiceInputFromRequest(req: QuoteRequest, cfg: RequestConversio
     discountCents: 0,
     notes: "",
     lines: requestInvoiceLines(req),
+    // The server links the request to the new invoice and finalizes it in the same transaction.
+    requestId: req.id,
   };
+}
+
+/** The API calls convertRequestToInvoice makes, injected so the flow is testable without a server. */
+export interface RequestConversionApi {
+  listClients(): Promise<Client[] | null>;
+  createClient(input: ClientInput): Promise<Client>;
+  deleteClient(id: string): Promise<void>;
+  createInvoice(input: InvoiceInput): Promise<Invoice>;
+}
+
+/**
+ * Converts a request to an invoice for the client with its email, creating that client first when none
+ * exists. The invoice needs the client id, so the client comes first; when the invoice POST then fails (a
+ * 409 because another conversion won, say) a client created by this call is deleted again, so a failed
+ * conversion leaves no orphan. A matching client that was already on file is never touched.
+ */
+export async function convertRequestToInvoice(req: QuoteRequest, cfg: RequestConversionConfig, api: RequestConversionApi): Promise<Invoice> {
+  const existing = await api.listClients();
+  const match = (existing ?? []).find((c) => c.email.toLowerCase() === req.email.toLowerCase());
+  let createdId = "";
+  let clientId = match?.id ?? "";
+  if (!match) {
+    const created = await api.createClient({ name: req.name, email: req.email, phone: "", billingAddress: "", shippingAddress: "", notes: "" });
+    createdId = created.id;
+    clientId = created.id;
+  }
+  try {
+    return await api.createInvoice(invoiceInputFromRequest(req, cfg, clientId));
+  } catch (err) {
+    if (createdId) await api.deleteClient(createdId).catch(() => undefined);
+    throw err;
+  }
 }

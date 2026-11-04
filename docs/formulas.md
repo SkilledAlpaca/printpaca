@@ -15,7 +15,7 @@ The one place a quantity is rounded separately is `itemRevenue` (the quantity-sc
 | Line | Formula |
 |---|---|
 | material | weight_g × (1 + wastePct ÷ 100) × pricePerKg ÷ 1000 (wastePct defaults to 0) |
-| electricity | hours × watts ÷ 1000 × rate  (TOU: rate = offPeakFrac·offPeakRate + (1−offPeakFrac)·peakRate, with offPeakFrac clamped to [0, 1] before blending). `offPeakFrac` is the operator's estimate of the share of the print that runs off peak. printpaca doesn't compute it from the print start time or tariff periods, and doesn't split a print across periods or midnight. Public quotes always use `energy.tou.defaultOffPeakFrac`. |
+| electricity | Flat: hours × watts ÷ 1000 × rate. Simple time-of-use (`tou`): the same with rate = offPeakFrac·offPeakRate + (1−offPeakFrac)·peakRate, with offPeakFrac clamped to [0, 1] before blending. In simple mode, `offPeakFrac` is your estimate of the share of the print that runs off peak; printpaca doesn't derive it from a start time, and public quotes use `energy.tou.defaultOffPeakFrac`. Time-of-use schedule (`schedule`): watts ÷ 1000 × Σ (hours in each segment × that segment's rate), where the print's start time decides which tariff periods it falls in. See [Time-of-use schedule](#time-of-use-schedule). |
 | depreciation | hours × machineCost ÷ lifespanHours (0 when lifespan unset) |
 | failure buffer | failure base × p ÷ (1 − p), where p = failureRatePct ÷ 100; floored at 0 (see below for what's in the base) |
 | prep labor | laborRate × prepMinutes ÷ 60, per batch, amortized ÷ quantity (laborPerUnit flips this) |
@@ -46,11 +46,32 @@ Two consequences of the base are not visible from the failure-buffer row alone:
 
 The hardware catalog is **admin-quote-only**: the operator's internal cost basis for physical add-ons attached by hand on the Quote tab. The public quote page, the public preview endpoint, and the Requests verification replay build their inputs with no hardware field and price accordingly. A public visitor can't select hardware or know which add-ons a part needs, so applying the catalog to every public quote would charge visitors for parts their model may not use. `server/public_test.go` pins the scope in both public paths.
 
+### Time-of-use schedule
+
+Energy mode `schedule` prices electricity from a tariff and a start time, not from a share estimate. The `flat` and `tou` modes are unchanged.
+
+The tariff has seasons (each a set of months), and each season has a weekday and a weekend schedule. A day type has a base rate with a name, plus up to 8 non-overlapping windows. Each window has a name, a start, an end, and a rate. Hours that no window covers use the base rate. Times are wall-clock times in the instance time zone (the top-level `timezone`), written `HH:MM`, and a window's end can be `24:00`. Saturdays, Sundays, and the dates listed in `holidays` use the weekend schedule.
+
+For a part with per-unit time _h_, quantity _q_, and printer power _W_:
+
+1. The print runs continuously from its start for _h_ × _q_ hours. Units print back to back.
+2. printpaca splits that span at every window edge, at midnight, and where the season changes. A change of day also changes the day type, so a print that crosses midnight into Saturday switches to the weekend schedule.
+3. Each segment costs _W_ ÷ 1000 × segment hours × segment rate. The electricity batch cost is the sum of the segments, and the per-unit cost is the batch cost ÷ _q_.
+4. The breakdown lists the hours and cost for each named period. Periods with the same name, such as "Off-peak" in summer and winter, add together.
+
+The hours are real elapsed hours, so a daylight saving change inside the print shortens or lengthens the wall-clock span but not the number of hours billed. A wall-clock time that happens twice resolves to the first occurrence. A wall-clock time that doesn't exist (the skipped hour in spring) resolves to the first instant after the gap, so 02:30 on a spring-forward day starts at 03:00.
+
+Each part has an optional print start, and the order has one that parts inherit. The start is wall-clock `YYYY-MM-DDTHH:MM` in the instance time zone. The quote saves the resolved start together with a copy of the tariff, so reopening or repricing a saved quote gives the same electricity cost even after you edit the tariff. The editor keeps using the stored tariff, time zone, and start when it reopens a quote, until you change a rate or a start, or press **Use current rates**. The Electricity line's formula names a missing start ("needs a print start") and shows a start as "Jul 3, 2026 2:00 PM". Public quotes start at the next occurrence of `energy.schedule.defaultStartTime` at the time of the request. Spans longer than 366 days simulate the first 366 days and scale that average for the rest, which only matters for very large batches.
+
+The public quote preview and the public quote submit each compute the next default start time when the request arrives. A preview requested just before the default start time and a submit sent just after it can therefore price the same quote differently, because the submit uses the following day's start.
+
+`server/energy_schedule.go` and `web/src/lib/engine/schedule.ts` implement the same algorithm. `testdata/schedule-vectors.json` holds shared test vectors (midnight, a season boundary, daylight saving changes in both directions, a holiday, quantity above 1, and a span past 366 days) that both the Go tests and the Vitest tests read.
+
 ## Pricing
 
 - margin:  `exTax = unitCost ÷ (1 − margin%)`
 - markup:  `exTax = unitCost × multiplier`
-- price (recommended) = `exTax × (1 + tax% ÷ 100)`, which is `exTax` when the tax rate is 0
+- price (recommended) = `⌈exTax × (1 + tax% ÷ 100)⌉` to the cent, which is `⌈exTax⌉` when the tax rate is 0. **Changed in v1.1 (intentional):** the recommended price rounds **up** to the next cent, not to the nearest, so the realized margin or markup is at least the target (a 30% margin target no longer shows 29.9%). A float that is an exact cent plus rounding noise stays at that cent. The result differs from the old nearest-cent price by at most 1¢ per unit. An override price is never rounded this way.
 - revenue = `price × qty + shippingCharge`
 - fees    = `Σ fixed + Σ pct% × revenue`  (per configured fee schedule; each line rounded). Every percent fee's `base` must be the literal string `"revenue"`; any other value (for example `"profit"` or `"subtotal"`) is rejected outright with an `invalid-enum` warning, not silently computed on revenue anyway.
 - tax     = `price × qty × tax% ÷ (100 + tax%)` (not on shipping)
@@ -83,7 +104,7 @@ The bound doesn't protect `1 ÷ (1 − margin%)` mid-quote: `recommendedPrice` i
 
 ### Markup ceiling
 
-`markupMultiplier` has the same one-ceiling rule at 1000 inclusive (`maxMarkupMultiplier`), agreed by `server/pricing.go`, `server/config.go`, `web/src/lib/settingsRules.ts`, and `config/config.schema.json`'s `maximum`, and pinned together by `server/config_test.go`. The multiplier is a plain product with no singularity, so the ceiling catches operator mistakes rather than protecting a formula. With the saturating arithmetic in [Input bounds](#input-bounds), it keeps `recommendedPrice` and `revenue` non-negative for any accepted multiplier.
+`markupMultiplier` has the same one-ceiling rule at 10000 inclusive (`maxMarkupMultiplier`), agreed by `server/pricing.go`, `server/config.go`, `web/src/lib/settingsRules.ts`, and `config/config.schema.json`'s `maximum`, and pinned together by `server/config_test.go`. The multiplier is a plain product with no singularity, so the ceiling catches operator mistakes rather than protecting a formula. With the saturating arithmetic in [Input bounds](#input-bounds), it keeps `recommendedPrice` and `revenue` non-negative for any accepted multiplier.
 
 ### Sale price override
 
@@ -102,13 +123,16 @@ Every money, quantity, and duration input carries an inclusive plausibility maxi
 | `timeHours`, `machineLifeHours`, `monthlyHours` | 100000 | `maxHoursInput` |
 | `prepMinutes` | 6,000,000 | `maxMinutesInput` (`maxHoursInput × 60`) |
 | `quantity`, `hardware[i].qtyPerUnit` | 100000 | `maxQuantity` |
-| `watts` | 5000 | `maxPrinterWatts` |
-| `offPeakFrac` (TOU mode only) | 1 | Rejected above 1 like any bound, and also clamped to [0, 1] inside `effectiveRate` (see [Cost per unit](#cost-per-unit)), so an invalid `offPeakFrac = 1.5` never extrapolates the blended rate past pure off-peak or peak. |
-| `markupMultiplier` | 1000 | `maxMarkupMultiplier`, see [Markup ceiling](#markup-ceiling) above |
+| `watts` | 10000 | `maxPrinterWatts` |
+| Schedule: seasons, windows per day type, holidays | 6, 8, 100 | `maxScheduleSeasons`, `maxScheduleWindows`, `maxScheduleHolidays`; schedule rates are also capped at `maxMoneyAmount` |
+| `offPeakFrac` (simple `tou` mode only) | 1 | Rejected above 1 like any bound, and also clamped to [0, 1] inside `effectiveRate` (see [Cost per unit](#cost-per-unit)), so an invalid `offPeakFrac = 1.5` never extrapolates the blended rate past pure off-peak or peak. |
+| `markupMultiplier` | 10000 | `maxMarkupMultiplier`, see [Markup ceiling](#markup-ceiling) above |
 | `hardware` (array length, admin quotes only) | 200 | `maxConfigCollectionSize`, shared with the `config.yaml` hardware catalog's limit |
 | `timeMinutes` | **59** | Semantic, not a plausibility bound: it is the minutes remainder, so 60 or more belongs in `timeHours`. `timeMinutes = 60` blanks the quote with an above-max warning. `splitPublicSeconds` in `server/public.go` converts raw seconds into an hours and minutes pair that never trips it. |
 
 Bounds make an absurd magnitude on one field a named field error. They don't bound every product or sum built from several fields: `perUnitTotal`, `batchTotal`, `itemRevenue`, the fee total, and `netProfit` can exceed `int64` from inputs that are each within their maximum. For example, `monthlyFixed` 1e9 ÷ `monthlyHours` 1 × `timeHours` 1e5 reaches about 1e16 cents on the overhead line. A bare `int64(x)` conversion of an out-of-range float64 is implementation-defined in Go and wraps a huge positive amount into a large negative one on amd64.
+
+See [Numeric limits](configuration.md#numeric-limits) for every cap in the app, including the ones outside the quote engine.
 
 **Saturating arithmetic** prevents that wrap. `roundCents` (every line and every price, fee, and tax figure) and the integer-domain `addCents`, `subCents`, and `mulCents` (batch and revenue totals, fee sums, net profit) clamp at ±`maxCents` (`int64`'s maximum magnitude). In-range values, and so every frozen golden vector, are unaffected. A quote can still report `Valid: true` while overstating an absurd magnitude, but it can never report a negative total, revenue, or price from individually legal inputs.
 
@@ -161,6 +185,7 @@ Notable design decisions behind printpaca's cost and pricing math, and the reaso
 | Optional tax % line, computed **price-inclusive** (VAT-style) | EU/AU audience; the quoted price is what the customer pays, and the tax inside it was never the seller's money |
 | Hardware is admin-quote-only, never applied to a public quote | A visitor cannot select add-ons or know which ones a part needs; applying the catalog to everyone would charge for parts their model may not use |
 | The failure buffer floors at zero | A failure buffer is a cost reserve, never a credit |
+| **v1.1:** the recommended price rounds up to the cent (`ceilCents`), not to the nearest | The operator picks a margin or markup as a floor. Nearest-cent rounding can land a fraction of a cent under it and display "29.9%" for a 30% target. Rounding up costs the customer under 1¢ per unit and never undershoots. This is an intentional pricing change: the shared golden vectors (`testdata/quote-vectors.json`) moved by at most 1¢ per unit for the three vectors it touched, and the frozen suite in `server/pricing_compat_test.go` (5¢ tolerance) is unaffected |
 | `salePriceOverride` resolves on presence, so an explicit 0 means $0.00 | A deliberate giveaway must be priced as one, not silently replaced by the recommended price |
 | Separate `shippingCharge` (revenue) and `shippingCost` (postage + packaging expense) in net profit | Under-charged shipping is a real loss that a single combined "shipping" field would hide |
 | Multi-part quotes: fees apply once to the order, not per part | A marketplace or payment fee is charged on the sale, not on each file; a fixed listing fee per part would overstate cost, and rounding a percent fee per part would drift a cent from the real charge |
@@ -225,13 +250,16 @@ total           = max(0, subtotal − invoiceDiscountCents) + tax
 - **Rounding.** `roundHalfUp(x)` is `floor(x + 0.500000001)`. The `1e-9` epsilon corrects IEEE 754 ties that land just under .5, such as `1.005 × 100`, which is stored as `100.49999999999999` and would otherwise round down to 100. Go and TypeScript use the same constant, so a preview and a stored total agree. Quantity is the only float on an invoice; every other amount is integer cents or basis points.
 - **Line kind.** Each line has a `kind` of `item` (the default) or `shipping`. Only `shipping` lines are exempt from tax; they still count toward the subtotal and the total. The description is free text and never affects tax.
 - **Discounts.** A line discount is taken off its own line and can push the line negative. The invoice discount comes off the taxable base (items only) before tax, and off the whole subtotal for the total. Both floors are zero, so a discount larger than the invoice never produces a negative tax or total.
-- **Tax rate.** `taxBp` is the rate in basis points, 0 to 3000. A new invoice that doesn't send `taxBp` takes `invoicing.salesTaxPct`. This is sales tax added on top; it is not the same setting as `pricing.taxRatePct`, which is already inside a quoted price.
+- **What the totals rows show.** The invoice editor, the sent view, and the printed invoice list the totals in the same rows: **Subtotal** (the item lines), **Shipping** (the shipping-kind lines, only when there are any), **Discount** (the invoice discount, shown as a negative, only when there is one), **Tax**, and **Total**. Subtotal plus Shipping minus Discount plus Tax equals Total, except when a discount larger than the invoice clamps the total at zero.
+- **Money inputs.** The editor refuses a unit price, line discount, invoice discount, or payment with more than two decimal places, and a line quantity of zero or less, before it sends anything, so a sub-cent value is never rounded away silently. The server enforces the same bounds.
+- **Versions.** Every invoice carries a `version` that starts at 1 and goes up by one on every write to the invoice (an edit, a status change, a send, or a payment that changes its status). A `PUT` that carries a `version` other than the current one is refused with a 409 ("This was changed in another tab or by another user."), and the editor offers **Reload** and **Overwrite**. A `PUT` with no `version` is accepted, for API callers that predate the field.
+- **Tax rate.** `taxBp` is the rate in basis points, 0 to 10000. A new invoice that doesn't send `taxBp` takes `invoicing.salesTaxPct`. This is sales tax added on top; it is not the same setting as `pricing.taxRatePct`, which is already inside a quoted price.
 - **Where `taxBp` is 0.** A quote or public request whose price already included tax converts with `taxBp = 0`, so the invoice doesn't add the tax a second time. See [Request to invoice](#request-to-invoice).
 
 ## Payments and balance
 
-- A payment can be recorded only on a `sent` invoice. Its amount is 1 cent or more, and it carries a `paidDate` (`YYYY-MM-DD`).
-- `balance = total − Σ payments`. Overpaying is allowed, so the balance can go negative.
+- A payment can be recorded on a `draft` or a `sent` invoice. Its amount is 1 cent or more, and it carries a `paidDate` (`YYYY-MM-DD`). Recording one on a draft sends the invoice first, exactly as **Mark sent** does: the issue date becomes today (in the configured time zone) if it is empty, the due date comes from the default terms if it is empty, a manual delivery event is recorded, and linked items come off the shelf. All of it commits in the same transaction as the payment.
+- `balance = total − Σ payments`. Overpaying is allowed, so the balance can go negative. The web app asks "This is $10.17 more than the balance. Record anyway?" first, and the invoice then shows "Overpaid $10.17".
 - When the payments reach the total (`Σ payments ≥ total`), the invoice flips from `sent` to `paid` in the same transaction. Deleting a payment that leaves a `paid` invoice below its total flips it back to `sent`.
 - Marking a `sent` invoice `paid` by hand adds one balancing payment for the open balance, with method `other`, note `marked as paid`, and today's date in the configured time zone. Moving `paid` back to `sent` removes that balancing payment and any other payment with the same method and note.
 - Canceling an invoice that has payments is refused with a 409 that asks you to remove the payments first, so a refunded deposit can't keep counting as revenue. Deleting a payment is allowed on `sent` and `paid` invoices, and is refused on drafts and canceled invoices.
@@ -241,9 +269,10 @@ total           = max(0, subtotal − invoiceDiscountCents) + tax
 Every figure on the Dashboard is computed on the server from the `payments`, `invoices`, and `quotes` tables.
 
 - **Time zone.** The top-level `timezone` setting (an IANA name, default `UTC`) decides what "today", "this month", and "this year" mean. Stored timestamps stay UTC; payments carry a plain local date. At 8:30 PM on October 31 in Los Angeles, "this month" is October, even though it is already November in UTC. The zone data is embedded in the binary, so the setting works in the scratch image.
-- **Revenue.** Revenue is cash basis: the sum of payment amounts bucketed by `paidDate`, not by invoice date or status. "Revenue this month" and "Revenue this year" cover the half-open local calendar month and year. "Revenue by month" shows the last 12 local months, with empty months as zero. Revenue includes the sales tax collected on an invoice and any overpayment, because it sums what was paid.
+- **Revenue.** Revenue is cash basis: the sum of payment amounts bucketed by `paidDate`, not by invoice date or status. "Revenue this month" and "Revenue this year" cover the half-open local calendar month and year. "Revenue by month" shows the last 12 local months, with empty months as zero. Revenue includes the sales tax collected on an invoice, but never an overpayment: payments count in paid-date order, and each is capped at what the invoice total still needed, so an invoice contributes at most its total. The excess shows as "Overpaid" on the invoice instead.
 - **Outstanding.** The sum of `total − paid` over `sent` invoices that still have a positive balance. Drafts, paid, and canceled invoices are excluded.
 - **Overdue.** A count of `sent` invoices with a positive balance and a `dueDate` earlier than today in the configured zone.
+- **Needs attention.** The list above the tiles puts money first: up to three rows each of overdue invoices (oldest due date first), draft invoices, requests that still need a print time, new requests, and sent quotes still waiting for a reply, with the full count behind each so the page can say "View all 7 draft invoices" and link to that list. Requests appear only for a user who may open the Requests tab, invoices only for one who may open Invoices, and quotes only for one who may open Quotes. Each row opens the request, invoice, or quote, and each stat card links to its list. The Dashboard is also the default landing tab once the shop has any quote, request, or invoice; New quote is the landing tab only on a fresh install, and a link or a remembered tab always wins.
 - **Quote tiles.** "Quotes saved this month" counts `quotes.savedAt` in the local month. "Invoiced share" is the share of those quotes that have been converted. "Average margin" is the unweighted mean of `achievedMarginPct` over all invoiced quotes, taken when each quote was saved, so a $2 quote counts as much as a $2,000 one.
 
 ## Top items
@@ -272,7 +301,7 @@ weight_g   = volume_cm3 × density_g_per_cm3 × solidityPct ÷ 100
 
 - **Volume.** The parser sums one signed tetrahedron term per triangle (the divergence theorem), so it needs a closed mesh. STL files are read as binary when the header's triangle count accounts for the whole file length, and as ASCII otherwise. In a 3MF, each `<mesh>` is summed on its own and the absolute value is taken per mesh, so objects with opposite winding can't cancel. Coordinates are scaled to millimeters from the model's `unit` (micron, millimeter, centimeter, meter, inch, or foot; millimeter when unset). Parts stored in other files of the archive (the Production Extension's `p:path` references) are followed, and a part referenced N times counts N times. Item and component transforms (placement, rotation, scale) aren't applied.
 - **Density** comes from the selected material, in g/cm³.
-- **Solidity** is an operator-adjustable percentage, 30 by default and clamped to 5 to 100. It stands in for infill plus shells; a cleared or invalid value falls back to 30. The result is shown as an estimate, with its inputs, and print time is left for you to enter.
+- **Solidity** is an operator-adjustable percentage, 30 by default and clamped to 5 to 100. It stands in for infill plus shells; a cleared or invalid value falls back to 30. The result is shown as an estimate, with its inputs. printpaca never estimates print time from volume: the time fields stay blank with a note that the file has no slicer time, and the quote can't be priced until you enter the print time from your slicer. The Price and profit card lists what is still missing, and each item links to its field.
 - **Sliced 3MF.** A 3MF that carries slicer metadata (Bambu Studio and OrcaSlicer `slice_info.config`, or an embedded g-code file) uses the slicer's own weight and time instead. The geometry estimate applies only when no such metadata exists.
 - **Limits.** Files over the upload cap, or a 3MF model entry over its geometry cap, are reported as too large rather than estimated. An empty or non-closed file reports an empty or malformed result and no weight.
 
@@ -280,7 +309,9 @@ weight_g   = volume_cm3 × density_g_per_cm3 × solidityPct ÷ 100
 
 Converting a public request into an invoice (the Requests tab's **Convert to invoice**) goes through `web/src/lib/convertRequest.ts`, which mirrors the saved-quote path in `web/src/lib/convertQuote.ts`.
 
-- **Product line.** One line with the request's quantity and `round(priceCents ÷ quantity)` as the unit price. A gallery item order uses the item name and option, and is never linked to the gallery item, because finalizing the order already counted the sale and took the stock.
+- **Product line.** One line with the request's quantity and `round(priceCents ÷ quantity)` as the unit price. A shop item order uses the item name and option, and its line is linked to the shop item with the option summary. Converting finalizes the request without recording a sale or taking stock, so sending the invoice counts the sale and takes the stock once. The server drops the link instead when the order was already finalized (that sale is already counted), when the item has been deleted, or when the option no longer exists in the item's groups.
+- **Linking.** `POST /api/invoices` accepts a `requestId`. The server creates the invoice, then in the same transaction marks the request finalized and stores the invoice id on it (`quote_requests.invoice_id`), so the Requests tab shows the request as Invoiced with the invoice number and a link both ways. Converting also fills the issue date with today and the due date from the default terms. A second conversion is refused with a 409 while the first invoice exists and isn't canceled. Deleting the draft invoice, or canceling the invoice, frees the request to be converted again.
+- **Print time.** A public estimate submitted without a print time (`needsPrintTime`) has no price. It can't be converted until the owner enters the time: `POST /api/requests/{id}/print-time` prices it with the same engine call as the public submit, against the current settings.
 - **Shipping line.** The public quote page shows the visitor `pricing.defaultShippingCharge` beside the price. That amount is stored on the request at submit (`shippingCents`), so the invoice adds the same `Shipping` line (kind `shipping`, untaxed) the visitor saw, even if the setting changes afterward. A request with no stored shipping adds no line. Gallery item orders carry no shipping.
 - **Tax.** A quote request's public price already includes `pricing.taxRatePct` when that setting is above 0, so the invoice gets `taxBp = 0` and doesn't add tax again. The request stores that basis at submit (`taxInclusive`), so a later change to `pricing.taxRatePct` doesn't alter the conversion. This is the same rule as `convertTaxBp` for saved quotes. When `pricing.taxRatePct` was 0 at submit, and for gallery item orders (an item's listed price has no tax in it), the invoice takes the `invoicing.salesTaxPct` default, applied to the product line only.
 - **Check.** With `pricing.taxRatePct = 20`, a $12.00 price, and $4.00 shipping, the visitor saw $16.00 and the invoice totals $16.00 with no tax line, not $14.40.

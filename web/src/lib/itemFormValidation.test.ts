@@ -6,7 +6,7 @@ function baseForm(overrides: Partial<ItemFormShape> = {}): ItemFormShape {
     price: 10,
     stockMode: "ready_to_print",
     stockQty: null,
-    options: [],
+    groups: [],
     ...overrides,
   };
 }
@@ -61,24 +61,51 @@ describe("validateItemForm", () => {
     expect(validateItemForm(baseForm({ stockMode: "in_stock", stockQty: 5 }))).toEqual([]);
   });
 
+  const grp = (options: { name: string; delta: number | null }[], label = "Color") => baseForm({ groups: [{ label, options }] });
+
   it("rejects a null, non-finite, or out-of-range option delta", () => {
-    expect(
-      validateItemForm(baseForm({ options: [{ name: "", delta: null }] })),
-    ).toEqual(["Option 1: enter a valid price adjustment."]);
-    expect(
-      validateItemForm(baseForm({ options: [{ name: "Red", delta: 1e308 }] })),
-    ).toEqual(["Option 1 (Red): enter a valid price adjustment."]);
-    expect(
-      validateItemForm(baseForm({ options: [{ name: "Red", delta: -1000000.01 }] })),
-    ).toEqual(["Option 1 (Red): enter a valid price adjustment."]);
-    expect(
-      validateItemForm(baseForm({ options: [{ name: "Red", delta: 1000000.01 }] })),
-    ).toEqual(["Option 1 (Red): enter a valid price adjustment."]);
+    expect(validateItemForm(grp([{ name: "Red", delta: null }]))).toEqual([
+      "Option group 1 (Color), choice 1 (Red): enter a valid price adjustment.",
+    ]);
+    for (const delta of [1e308, -1000000.01, 1000000.01]) {
+      expect(validateItemForm(grp([{ name: "Red", delta }]))).toEqual([
+        "Option group 1 (Color), choice 1 (Red): enter a valid price adjustment.",
+      ]);
+    }
   });
 
   it("accepts option deltas at the exact min/max boundary", () => {
-    expect(validateItemForm(baseForm({ options: [{ name: "", delta: -1000000 }] }))).toEqual([]);
-    expect(validateItemForm(baseForm({ options: [{ name: "", delta: 1000000 }] }))).toEqual([]);
+    expect(validateItemForm(grp([{ name: "A", delta: -1000000 }]))).toEqual([]);
+    expect(validateItemForm(grp([{ name: "A", delta: 1000000 }]))).toEqual([]);
+  });
+
+  it("requires a group label, at least one option, and an option name", () => {
+    expect(validateItemForm(grp([{ name: "A", delta: 0 }], " "))).toEqual(["Option group 1: enter a label."]);
+    expect(validateItemForm(grp([]))).toEqual(["Option group 1 (Color): add at least one choice."]);
+    expect(validateItemForm(grp([{ name: " ", delta: 0 }]))).toEqual(["Option group 1 (Color), choice 1: enter a name."]);
+  });
+
+  it("rejects duplicate option names in a group and duplicate group labels, ignoring case", () => {
+    expect(
+      validateItemForm(
+        grp([
+          { name: "Red", delta: 0 },
+          { name: "red", delta: 0 },
+        ]),
+      ),
+    ).toEqual(["Option group 1 (Color), choice 2 (red): another choice in this group has the same name."]);
+    const two = baseForm({
+      groups: [
+        { label: "Color", options: [{ name: "A", delta: 0 }] },
+        { label: "color", options: [{ name: "A", delta: 0 }] },
+      ],
+    });
+    expect(validateItemForm(two)).toEqual(["Option group 2 (color): another group already uses this label."]);
+    // The same option name in different groups is fine.
+    expect(validateItemForm(baseForm({ groups: [
+      { label: "Color", options: [{ name: "A", delta: 0 }] },
+      { label: "Size", options: [{ name: "A", delta: 0 }] },
+    ] }))).toEqual([]);
   });
 
   it("collects multiple errors across fields and options", () => {
@@ -88,17 +115,15 @@ describe("validateItemForm", () => {
           price: null,
           stockMode: "in_stock",
           stockQty: null,
-          options: [
-            { name: "A", delta: null },
-            { name: "", delta: 1e308 },
-          ],
+          groups: [{ label: "Color", options: [{ name: "A", delta: null }, { name: "", delta: 1e308 }] }],
         }),
       ),
     ).toEqual([
       "Price: enter a valid amount.",
       "Quantity in stock: enter a valid amount.",
-      "Option 1 (A): enter a valid price adjustment.",
-      "Option 2: enter a valid price adjustment.",
+      "Option group 1 (Color), choice 1 (A): enter a valid price adjustment.",
+      "Option group 1 (Color), choice 2: enter a name.",
+      "Option group 1 (Color), choice 2: enter a valid price adjustment.",
     ]);
   });
 });

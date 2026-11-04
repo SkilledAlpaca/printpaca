@@ -7,7 +7,7 @@
 #   mkdir -p ./demo-config && sudo chown 65532:65532 ./demo-config
 #   docker compose -f docker-compose.demo.yml up -d
 #
-# Admin demo: http://127.0.0.1:8080/admin/ (password `demo`). Front door:
+# Admin demo: http://127.0.0.1:8080/admin/ (password `demo`). Shop:
 # http://127.0.0.1:8080/. Customer-only listener: http://127.0.0.1:8081/.
 # To reseed, stop the container, delete ./demo-config, and start it again.
 #

@@ -1,5 +1,6 @@
 import type { CurrencyConfig } from "./money";
 import type { ConfigUser } from "../permissions";
+import type { EnergySchedule } from "./schedule";
 
 interface MaterialConfig {
   id: string;
@@ -28,9 +29,11 @@ export interface HardwareConfig {
 }
 
 export interface EnergyConfig {
-  mode: "flat" | "tou";
+  mode: "flat" | "tou" | "schedule";
   flatRate: number;
   tou: { peakRate: number; offPeakRate: number; defaultOffPeakFrac: number };
+  /** Used when mode is "schedule"; server/energy_schedule.go validates it. */
+  schedule: EnergySchedule;
 }
 
 export interface FeeSchedule {
@@ -76,12 +79,18 @@ interface PublicQuotesConfig {
   introText: string;
 }
 
-// Mirrors server/config.go's Site: what the main port serves at its root and where the front door's Staff
-// sign-in button points. Applies without a restart.
+// Mirrors server/config.go's Site: what the main port serves at its root and where the shop footer's Staff
+// sign-in link points. Applies without a restart.
 interface SiteConfig {
   shopOnMainPort: boolean;
   staffLink: boolean;
   adminUrl: string;
+}
+
+// Mirrors server/config.go's Shop: customer-facing shop limits. Applies without a restart.
+interface ShopConfig {
+  /** The largest quantity one public estimate request or gallery order may carry (1 to 10000). */
+  maxOrderQty: number;
 }
 
 // Mirrors server/config.go's Smtp. The password never travels here; it comes only from SMTP_PASSWORD.
@@ -138,10 +147,13 @@ export interface EffectiveConfig {
     paymentInstructions: string;
     termsText: string;
     validDays: number;
+    /** Prefix of the customer-facing order reference; "" derives it from the business name. */
+    referencePrefix: string;
   };
   invoicing: InvoicingConfig;
   publicQuotes: PublicQuotesConfig;
   site: SiteConfig;
+  shop: ShopConfig;
   // Operator-authored CSS served verbatim and unsanitized at GET /custom.css on both listeners
   // (server/config.go's Config.CustomCss). The admin app loads it with media="print" only, so it styles
   // printed quotes and invoices, never the on-screen UI.

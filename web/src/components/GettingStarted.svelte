@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { GUIDE_TOPICS } from "../lib/guideContent";
+  import { GUIDE_TOPICS, SHORTCUTS } from "../lib/guideContent";
   import { splitHash } from "../lib/hashRoute";
 
   onMount(async () => {
@@ -27,7 +27,7 @@
     <h2>Getting started</h2>
     <ol class="steps">
       <li><strong>Pick a printer and material.</strong> Choose them in the Print box. Your printer and material settings fill in power draw, filament price, and waste.</li>
-      <li><strong>Add the print job.</strong> Drop a sliced .gcode file on the G-code box to fill weight and time automatically, or type them in.</li>
+      <li><strong>Add the print job.</strong> Drop a sliced .gcode file on the Model file box to fill weight and time automatically, or type them in.</li>
       <li><strong>Set your costs.</strong> The Costs box holds your shop rates. Cost breakdown updates live as you type.</li>
       <li><strong>Set a price.</strong> Turn on Set a selling price in the Price and profit card to get a recommended price that accounts for margin, fees, shipping, and tax.</li>
       <li><strong>Save and share.</strong> Save the quote in the Saved quotes panel, open any of your last 5 saves, and print a client-ready copy.</li>
@@ -56,6 +56,19 @@
         </section>
       {/each}
     </div>
+  </div>
+
+  <div class="card">
+    <h2 id="keyboard-shortcuts">Keyboard shortcuts</h2>
+    <p>The sidebar footer lists the shortcuts that work on the page you are on. Shortcuts need Ctrl (or Cmd on a Mac), so typing letters never triggers them. Ctrl+K does nothing while you are typing in a text box.</p>
+    <table>
+      <thead><tr><th scope="col">Keys</th><th scope="col">What it does</th><th scope="col">Where</th></tr></thead>
+      <tbody>
+        {#each SHORTCUTS as sc (sc.keys)}
+          <tr><th scope="row">{sc.keys}</th><td>{sc.action}</td><td>{sc.where}</td></tr>
+        {/each}
+      </tbody>
+    </table>
   </div>
 
   <p class="footnote">

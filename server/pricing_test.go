@@ -240,6 +240,37 @@ func TestValidateFieldMessagesNameTheBound(t *testing.T) {
 	}
 }
 
+// A blank print time (null on the wire, NaN once decoded) is a "required" error reading "Enter the print time",
+// not the generic non-finite copy, and still invalidates the cost.
+func TestBlankPrintTimeIsARequiredError(t *testing.T) {
+	inputs := boundaryBaseInputs()
+	inputs.TimeHours = F(math.NaN())
+	inputs.TimeMinutes = F(math.NaN())
+	bd := ComputeQuote(inputs, DefaultEngineOptions)
+	if bd.Valid {
+		t.Error("a quote with no print time priced as valid")
+	}
+	for _, field := range []string{"timeHours", "timeMinutes"} {
+		w, ok := warningFor(bd.Warnings, field, "required")
+		if !ok {
+			t.Errorf("no %s/required warning; warnings = %+v", field, bd.Warnings)
+			continue
+		}
+		if w.Message != "Enter the print time" || w.Severity != "error" {
+			t.Errorf("%s warning = %+v, want message %q, severity error", field, w, "Enter the print time")
+		}
+		if hasWarning(bd.Warnings, field, "nan") {
+			t.Errorf("%s still carries a nan warning", field)
+		}
+	}
+	// Range checks on a typed time are unchanged.
+	inputs.TimeHours = F(-1)
+	inputs.TimeMinutes = F(0)
+	if !hasWarning(ComputeQuote(inputs, DefaultEngineOptions).Warnings, "timeHours", "below-min") {
+		t.Error("negative timeHours lost its below-min warning")
+	}
+}
+
 // A Strategy that is not exactly "margin" once priced by the MARKUP formula while echoing the unrecognized name back. Both legitimate values keep their behavior; anything else is an error.
 func TestStrategyAndEnergyModeAreValidatedEnums(t *testing.T) {
 	price := func(strategy string) PricingResult {
@@ -451,6 +482,7 @@ func TestOutOfRangeMagnitudesAreNamedErrors(t *testing.T) {
 			return p
 		}(), "salePriceOverride"},
 		{"markupMultiplier", 1000, markupPricing(1e17), "markupMultiplier"},
+		{"markupMultiplier-just-above-ceiling", 1000, markupPricing(maxMarkupMultiplier + 0.5), "markupMultiplier"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inputs := boundaryBaseInputs()
@@ -492,7 +524,7 @@ func TestOutOfRangeMagnitudesAreNamedErrors(t *testing.T) {
 func TestBoundaryVectors(t *testing.T) {
 	// Inclusive maxima accept the boundary value and reject one past it. Expected amounts are derived from boundaryBaseInputs'
 	// lines: wastePct 100 doubles material (100 g x 2 x $20/kg = 400c); failureRatePct 100 makes the buffer the whole $2.10 consumables;
-	// timeMinutes 59 gives 1.98333 h x 1 kW x $0.10 = 20c (60 belongs in timeHours); maxPrinterWatts 5000 is 1 h x 5 kW x $0.10 = 50c.
+	// timeMinutes 59 gives 1.98333 h x 1 kW x $0.10 = 20c (60 belongs in timeHours); maxPrinterWatts 10000 is 1 h x 10 kW x $0.10 = 100c.
 	inclusive := []struct {
 		name        string
 		mutate      func(*QuoteInputs)
@@ -507,8 +539,8 @@ func TestBoundaryVectors(t *testing.T) {
 		{"failureRatePct-100-rejected", func(q *QuoteInputs) { q.FailureRatePct = F(100) }, "", 0, 0, "failureRatePct"},
 		{"timeMinutes-59-inclusive-max", func(q *QuoteInputs) { q.TimeMinutes = F(59) }, "electricity", 20, 0, ""},
 		{"timeMinutes-60-rejected", func(q *QuoteInputs) { q.TimeMinutes = F(60) }, "", 0, 0, "timeMinutes"},
-		{"watts-5000-inclusive-max", func(q *QuoteInputs) { q.Watts = F(maxPrinterWatts) }, "electricity", 50, 0, ""},
-		{"watts-5001-rejected", func(q *QuoteInputs) { q.Watts = F(maxPrinterWatts + 1) }, "", 0, 0, "watts"},
+		{"watts-10000-inclusive-max", func(q *QuoteInputs) { q.Watts = F(maxPrinterWatts) }, "electricity", 100, 0, ""},
+		{"watts-10001-rejected", func(q *QuoteInputs) { q.Watts = F(maxPrinterWatts + 1) }, "", 0, 0, "watts"},
 	}
 	for _, tc := range inclusive {
 		t.Run(tc.name, func(t *testing.T) {
@@ -993,7 +1025,7 @@ func TestRecommendedPriceTaxCarveOut(t *testing.T) {
 		inputs.Pricing = &PricingInputs{Strategy: "margin", MarginPct: OptF{Value: 20, Present: true}, TaxRatePct: F(rate)}
 		p := ComputeQuote(inputs, DefaultEngineOptions).Pricing
 		exTax := 1210 / 0.8
-		if want := roundCents(exTax * (1 + rate/100)); p.RecommendedPrice != want {
+		if want := ceilCents(exTax * (1 + rate/100)); p.RecommendedPrice != want {
 			t.Errorf("rate %v: recommended = %d, want %d", rate, p.RecommendedPrice, want)
 		}
 		wantTax := exTax * rate / 100
@@ -1044,5 +1076,140 @@ func TestBatchLaborRoundsOnceAtBatch(t *testing.T) {
 	}
 	if got := lineAmount(t, bd, "labor"); got != 33 {
 		t.Errorf("per-unit labor = %d, want 33 (round(100 / 3))", got)
+	}
+}
+
+// v1.1 intentional change: the recommended price rounds UP to the cent, so the realized margin or markup is
+// never below the target (a nearest-cent price showed 29.9% for a 30% target).
+func TestCeilCents(t *testing.T) {
+	cases := []struct {
+		in   float64
+		want int64
+	}{
+		{0, 0}, {142.857, 143}, {142.001, 143}, {143, 143}, {200.00000000000003, 200}, {223999.9999999998, 224000},
+		{224000.0000000002, 224000}, {0.2, 1}, {-0.2, 0}, {math.NaN(), 0}, {math.Inf(1), 0},
+	}
+	for _, c := range cases {
+		if got := ceilCents(c.in); got != c.want {
+			t.Errorf("ceilCents(%v) = %d, want %d", c.in, got, c.want)
+		}
+	}
+	if got := ceilCents(1e30); got != maxCents {
+		t.Errorf("ceilCents(1e30) = %d, want saturation at %d", got, maxCents)
+	}
+}
+
+func TestRecommendedPriceRoundsUpToTarget(t *testing.T) {
+	// Unit cost 1210c. 30% margin: 1210 / 0.7 = 1728.57 -> 1729 (nearest would also be 1729); 20%: 1512.5 -> 1513;
+	// 17% margin: 1210 / 0.83 = 1457.83 -> 1458; 21%: 1210 / 0.79 = 1531.65 -> 1532. Realized margin >= target.
+	for _, margin := range []float64{10, 17, 20, 21, 29.9, 30, 33.3, 45} {
+		inputs := boundaryBaseInputs()
+		inputs.Pricing = &PricingInputs{Strategy: "margin", MarginPct: OptF{Value: margin, Present: true}}
+		p := ComputeQuote(inputs, DefaultEngineOptions).Pricing
+		realized := (float64(p.RecommendedPrice) - 1210) / float64(p.RecommendedPrice) * 100
+		if realized < margin-1e-9 {
+			t.Errorf("margin %v: price %d realizes %.4f%%, below the target", margin, p.RecommendedPrice, realized)
+		}
+		if lower := float64(p.RecommendedPrice - 1); (lower-1210)/lower*100 >= margin+1e-9 {
+			t.Errorf("margin %v: price %d is not the lowest cent that meets the target", margin, p.RecommendedPrice)
+		}
+	}
+	for _, mult := range []float64{1.1, 1.37, 2.5} {
+		inputs := boundaryBaseInputs()
+		inputs.Pricing = &PricingInputs{Strategy: "markup", MarkupMultiplier: OptF{Value: mult, Present: true}}
+		p := ComputeQuote(inputs, DefaultEngineOptions).Pricing
+		if float64(p.RecommendedPrice) < 1210*mult-1e-6 {
+			t.Errorf("markup %v: price %d is below cost x multiplier %.4f", mult, p.RecommendedPrice, 1210*mult)
+		}
+	}
+}
+
+// Raising maxMarkupMultiplier to 10000 must not open an int64 overflow: markup x quantity x unit cost is a product
+// the per-field maxima don't bound, so the saturating helpers (roundCents, ceilCents, addCents, mulCents) carry it.
+// At every extreme the quote either prices without wrapping (revenue and prices >= 0, ordering consistent) or
+// saturates at maxCents; it never goes negative while Valid.
+func TestLimitsExtremesDoNotOverflow(t *testing.T) {
+	assertSane := func(t *testing.T, name string, p *PricingResult) {
+		t.Helper()
+		if p == nil {
+			t.Fatalf("%s: no pricing result", name)
+		}
+		if p.RecommendedPrice < 0 || p.ResolvedPrice < 0 || p.Revenue < 0 || p.Fees < 0 || p.Tax < 0 {
+			t.Errorf("%s: negative amount (recommended %d, resolved %d, revenue %d, fees %d, tax %d); a positive input must never wrap negative", name, p.RecommendedPrice, p.ResolvedPrice, p.Revenue, p.Fees, p.Tax)
+		}
+	}
+
+	t.Run("markup-10000-at-max-quantity-and-unit-cost", func(t *testing.T) {
+		inputs := boundaryBaseInputs()
+		inputs.PricePerKg = F(maxMoneyAmount)
+		inputs.WeightG = F(maxWeightG)
+		inputs.Quantity = F(maxQuantity)
+		inputs.Hardware = []HardwareLine{{Name: "x", UnitCost: F(maxMoneyAmount), QtyPerUnit: F(maxQuantity)}}
+		inputs.Pricing = markupPricing(maxMarkupMultiplier)
+		bd := ComputeQuote(inputs, DefaultEngineOptions)
+		assertSane(t, "extreme", bd.Pricing)
+		if bd.BatchTotal < 0 || bd.PerUnitTotal < 0 {
+			t.Errorf("batchTotal/perUnitTotal = %d/%d, neither may be negative", bd.BatchTotal, bd.PerUnitTotal)
+		}
+	})
+
+	t.Run("markup-10000-at-realistic-large-run-is-exact", func(t *testing.T) {
+		// $12.10 unit cost x 10000 markup = $121,000.00 per unit; x 100000 units = 1.21e12 cents, far inside int64.
+		inputs := boundaryBaseInputs()
+		inputs.Quantity = F(maxQuantity)
+		inputs.Pricing = markupPricing(maxMarkupMultiplier)
+		bd := ComputeQuote(inputs, DefaultEngineOptions)
+		p := bd.Pricing
+		if !p.Valid {
+			t.Fatalf("valid = false; warnings = %+v", p.Warnings)
+		}
+		want := mulCents(p.RecommendedPrice, maxQuantity)
+		if p.Revenue != want || p.Revenue <= 0 {
+			t.Errorf("revenue = %d, want %d (recommended %d x %d)", p.Revenue, want, p.RecommendedPrice, int64(maxQuantity))
+		}
+	})
+
+	t.Run("override-at-max-money-times-max-quantity-saturates", func(t *testing.T) {
+		// 1e9 dollars = 1e11 cents x 100000 = 1e16 cents: inside int64 (9.2e18), still exact.
+		inputs := boundaryBaseInputs()
+		inputs.Quantity = F(maxQuantity)
+		inputs.Pricing = markupPricing(maxMarkupMultiplier)
+		inputs.Pricing.SalePriceOverride = OptF{Value: maxMoneyAmount, Present: true}
+		p := ComputeQuote(inputs, DefaultEngineOptions).Pricing
+		assertSane(t, "override", p)
+		if p.Revenue != 100_000_000_000*maxQuantity {
+			t.Errorf("revenue = %d, want %d", p.Revenue, int64(100_000_000_000)*maxQuantity)
+		}
+	})
+
+	t.Run("saturating-helpers-at-the-limits", func(t *testing.T) {
+		// A maximal line (1e11 cents x 100000 units) summed across a maximal fee/line count stays below
+		// maxCents, and anything beyond clamps instead of wrapping.
+		line := mulCents(100_000_000_000, maxQuantity)
+		sum := int64(0)
+		for range 900 {
+			sum = addCents(sum, line)
+		}
+		if sum != 9_000_000_000_000_000_000 {
+			t.Errorf("900 maximal lines sum to %d, want 9e18", sum)
+		}
+		for range 30 {
+			sum = addCents(sum, line)
+		}
+		if sum != maxCents {
+			t.Errorf("sum past int64 = %d, want saturation at maxCents", sum)
+		}
+		if got := mulCents(int64(maxMarkupMultiplier)*100_000_000_000, maxQuantity*1000); got != maxCents {
+			t.Errorf("mulCents past int64 = %d, want maxCents", got)
+		}
+	})
+}
+
+func TestFormatfShowsADashForABlankInput(t *testing.T) {
+	if got := formatf(math.NaN()); got != "–" {
+		t.Errorf("formatf(NaN) = %q, want an en dash", got)
+	}
+	if got := formatf(1.5); got != "1.5" {
+		t.Errorf("formatf(1.5) = %q, want 1.5", got)
 	}
 }

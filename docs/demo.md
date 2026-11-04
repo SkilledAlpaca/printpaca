@@ -1,5 +1,7 @@
 # Run the demo yourself
 
+To look around without installing anything, use the hosted demo: the [admin app](https://demo.printpaca.com/admin/) (password `demo`) and the [customer shop](https://demo-cust.printpaca.com/). It runs the same read-only demo mode described below.
+
 printpaca ships a read-only demo mode, seeded with fake data, so you can look around without entering your own clients or prices. `DEMO_MODE=1` is in the normal image behind a flag that is off by default, and [`docker-compose.demo.yml`](../docker-compose.demo.yml) turns it on.
 
 Don't use demo mode for your own deployment. It waives the admin password length floor and disarms the Cloudflare tunnel guard.
@@ -8,8 +10,9 @@ Don't use demo mode for your own deployment. It waives the admin password length
 
 - Read-only admin: every change is blocked with a friendly message. Sign in with the password `demo` (shown on the sign-in screen).
 - Seeded history: on first start, about six months of fake clients, quotes, invoices, payments, and requests, plus three gallery items with generated images and one item order.
-- Customer pages (front door at `/`, shop at `/order`): the real customer flow, but nothing is stored.
-- Spoolman and Moonraker pages render fake sample data.
+- Option groups on the shop: the Cable Clip 8-Pack item has a required Color group and an optional Mounting group, and both groups show option photos. The Desk Organizer Tray has a required Size group.
+- Customer pages (the shop at `/`, also served at `/order`): the real customer flow, but nothing is stored.
+- Spoolman and Moonraker pages render fake sample data. The Spoolman inventory card on the Filament tab lists the sample spools but can't change them.
 - Multi-user mode with two employees, `sam` (quotes, invoices, clients, dashboard) and `riley` (items, requests, filament), both with the password `demo`.
 - The demo banner offers per-visitor display preferences (theme, currency, single-user or multi-user view). They stay in the visitor's browser.
 
@@ -23,8 +26,8 @@ docker compose -f docker-compose.demo.yml up -d
 Then open:
 
 - Admin app: `http://127.0.0.1:8080/admin/`
-- Front door: `http://127.0.0.1:8080/`
-- Customer-only listener: `http://127.0.0.1:8081/` (front door) and `http://127.0.0.1:8081/order` (shop)
+- Shop: `http://127.0.0.1:8080/`
+- Customer-only listener: `http://127.0.0.1:8081/` (shop, also at `/order`)
 
 To reseed, stop the container, delete `./demo-config`, and start it again. `DEMO_MODE=1` starts only against an empty data directory or one the demo seeded itself. Any other existing database makes the container crash-loop by design.
 

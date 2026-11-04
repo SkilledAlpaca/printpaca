@@ -120,13 +120,38 @@
 # energy: electricity rate used for the electricity cost line.
 # ---------------------------------------------------------------------------
 # energy:
-#   mode: flat                      # "flat" | "tou" (time-of-use)
+#   mode: flat                      # "flat" | "tou" (simple time-of-use) | "schedule" (time-of-use schedule)
 #   flatRate: 0.15                  # currency per kWh, used when mode: flat
 #   tou:
 #     peakRate: 0.30                 # currency per kWh during peak hours
 #     offPeakRate: 0.10              # currency per kWh during off-peak hours
 #     defaultOffPeakFrac: 0.7        # default fraction of a print assumed off-peak;
 #                                     # effective rate = offPeakFrac*offPeakRate + (1-offPeakFrac)*peakRate
+#
+#   # mode: schedule prices a print against a full tariff: seasons, weekday and weekend day types, and
+#   # named windows. Times are wall-clock in the top-level timezone. Hours outside every window cost
+#   # baseRate. Saturdays, Sundays, and listed holidays use "weekend". The example rates are placeholders;
+#   # copy yours from your utility bill.
+#   schedule:
+#     defaultStartTime: "22:00"       # HH:MM; when a quote has no print start, the next occurrence of this
+#     holidays: ["2026-12-25"]        # YYYY-MM-DD, up to 100
+#     seasons:                        # up to 6; every month 1-12 belongs to exactly one season
+#       - name: Summer
+#         months: [6, 7, 8, 9]
+#         weekday:
+#           baseName: Off-peak
+#           baseRate: 0.33
+#           windows:                  # up to 8, no overlap, start < end, end may be "24:00"
+#             - { name: On-peak, start: "16:00", end: "21:00", rate: 0.55 }
+#         weekend:
+#           baseName: Off-peak
+#           baseRate: 0.33
+#           windows:
+#             - { name: Mid-peak, start: "16:00", end: "21:00", rate: 0.44 }
+#       - name: Winter
+#         months: [1, 2, 3, 4, 5, 10, 11, 12]
+#         weekday: { baseName: Off-peak, baseRate: 0.30, windows: [] }
+#         weekend: { baseName: Off-peak, baseRate: 0.30, windows: [] }
 
 # ---------------------------------------------------------------------------
 # presets: named bundles of failure rate / labor / overhead assumptions,
@@ -160,9 +185,9 @@
 # are also served unauthenticated to visitors of the public quote page.
 # ---------------------------------------------------------------------------
 # quote:
-#   businessName: ""               # also shown on the front door and shop, unauthenticated
+#   businessName: ""               # also shown on the shop, unauthenticated
 #   logoUrl: ""                    # shown on printed quotes; any URL or path your browser can load
-#                                   # (also shown on the front door and shop, unauthenticated)
+#                                   # (also shown on the shop, unauthenticated)
 #   address: ""                    # multiline; shown under the business name on printed quotes/invoices
 #   email: ""
 #   phone: ""
@@ -170,6 +195,8 @@
 #   paymentInstructions: ""       # max 2000 bytes (also sent in quote/invoice emails)
 #   termsText: ""                 # max 2000 bytes (also sent in quote/invoice emails)
 #   validDays: 14                  # "this quote is valid for N days" note
+#   referencePrefix: ""            # 1-10 letters/digits starting the short order reference customers
+#                                   # see (for example, HL-1001); blank uses your business initials
 
 # ---------------------------------------------------------------------------
 # invoicing: invoice numbering and defaults, plus the payment method list.
@@ -203,7 +230,7 @@
 # ---------------------------------------------------------------------------
 # customCss: your own CSS, served verbatim and NEVER sanitized, because it's CSS
 # you wrote for your own instance. Max 32 KiB. Applies on two surfaces:
-#   - the front door and shop, at GET /custom.css, loaded after the page's
+#   - the shop, at GET /custom.css, loaded after the page's
 #     own stylesheets on screen: override theme tokens like --accent, or
 #     target any selector on those pages.
 #   - printed quotes and invoices, at GET /admin/custom.css, loaded with
@@ -270,13 +297,21 @@
 # ---------------------------------------------------------------------------
 # site: what the main port (PORT) serves at its root. The admin app always
 # lives under /admin/. shopOnMainPort: false makes / redirect to /admin/ and
-# the public routes (/order, /api/public/*) return 404 on PORT; PUBLIC_PORT is
-# unaffected. staffLink shows the Staff sign-in button on the front door on
-# PORT. adminUrl is the Staff sign-in target on the PUBLIC_PORT front door (an
-# absolute http or https URL); empty hides the button there. A change applies
+# the public routes (/, /order, /api/public/*) return 404 on PORT; PUBLIC_PORT is
+# unaffected. staffLink shows the Staff sign-in link in the shop footer on
+# PORT. adminUrl is the Staff sign-in target in the PUBLIC_PORT shop footer (an
+# absolute http or https URL); empty hides the link there. A change applies
 # without a restart.
 # ---------------------------------------------------------------------------
 # site:
 #   shopOnMainPort: true
 #   staffLink: true
 #   adminUrl: ""     # for example, https://admin.example.com/admin/
+
+# ---------------------------------------------------------------------------
+# shop: limits for the customer-facing shop. maxOrderQty is the largest
+# quantity one estimate request or gallery order may carry (1 to 10000). The
+# page and the server both enforce it. A change applies without a restart.
+# ---------------------------------------------------------------------------
+# shop:
+#   maxOrderQty: 100

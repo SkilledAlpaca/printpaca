@@ -18,7 +18,7 @@ test("card help renders in flow on click, never on hover", async ({ page }) => {
   await expect(costsNote).toBeHidden();
 
   // Hovering the card must never reveal its help note.
-  await page.getByRole("group", { name: "Costs" }).hover();
+  await page.locator(".tile").filter({ has: page.getByRole("button", { name: "About Costs" }) }).hover();
   await expect(costsNote).toBeHidden();
 
   await page.getByRole("button", { name: "About Costs" }).click();

@@ -1,18 +1,11 @@
 <script lang="ts">
-  import FrontDoor from "./FrontDoor.svelte";
   import LiveAnnouncer from "../components/LiveAnnouncer.svelte";
   import PublicQuotePage from "./PublicQuotePage.svelte";
-  import { publicViewFor } from "./publicRoute";
 
-  // The server serves this entry at "/" and "/order" with the same HTML; the path picks the view. Each view
-  // is a full page load (links between them are plain anchors), so there is no client-side router.
-  const view = publicViewFor(location.pathname);
+  // The server serves this entry at both "/" and "/order" with the same HTML, and both show the shop, so there
+  // is no router: the storefront is the landing page, and /order stays only so old links keep working.
 </script>
 
 <LiveAnnouncer />
 
-{#if view === "order"}
-  <PublicQuotePage />
-{:else}
-  <FrontDoor />
-{/if}
+<PublicQuotePage />

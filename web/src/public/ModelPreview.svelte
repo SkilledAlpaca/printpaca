@@ -198,6 +198,10 @@
    * matches the drawing. Must match MAX_CSS_SIZE in the script. */
   .preview-block { display: flex; flex-direction: column; gap: var(--space-2); }
   .rotate-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
+  /* 44 px tap targets on phones; the app-wide quiet button is 32 px. */
+  @media (max-width: 600px) {
+    .rotate-controls button { min-height: 44px; }
+  }
   .model-preview {
     width: 100%;
     max-width: 320px;

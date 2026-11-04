@@ -6,6 +6,7 @@
   import LabeledNumber from "./LabeledNumber.svelte";
   import SettingsEditor from "./settings/SettingsEditor.svelte";
   import MaterialsSettings from "./settings/MaterialsSettings.svelte";
+  import SpoolmanInventory from "./SpoolmanInventory.svelte";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 
@@ -58,6 +59,8 @@
       <MaterialsSettings {form} {hasError} />
     {/snippet}
   </SettingsEditor>
+
+  <SpoolmanInventory {cfg} />
 
   <div class="stack">
     <div class="card">

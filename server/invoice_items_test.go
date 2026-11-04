@@ -90,11 +90,11 @@ func stockOf(t *testing.T, db *sql.DB, itemID string) int {
 
 func TestInvoiceLinkValidation(t *testing.T) {
 	mux, _ := newInvoiceItemsMux(t)
-	item := mustPostItem(t, mux, `{"name":"Dragon","priceCents":1000,"optionLabel":"Color","options":[{"name":"Red","deltaCents":0}],"stockMode":"in_stock","stockQty":5}`)
+	item := mustPostItem(t, mux, `{"name":"Dragon","priceCents":1000,"optionGroups":[{"label":"Color","required":true,"options":[{"name":"Red","deltaCents":0}]},{"label":"Size","required":false,"options":[{"name":"XL","deltaCents":300}]}],"stockMode":"in_stock","stockQty":5}`)
 
 	for _, tc := range []struct{ name, body string }{
 		{"unknown item", itemInvoiceBody("nope", "", 1, "")},
-		{"bad option", itemInvoiceBody(item.ID, "Green", 1, "")},
+		{"bad option", itemInvoiceBody(item.ID, "Color: Green", 1, "")}, {"same group twice", itemInvoiceBody(item.ID, "Size: XL · Size: XL", 1, "")}, {"bare option name", itemInvoiceBody(item.ID, "Red", 1, "")},
 		{"fractional quantity", strings.Replace(itemInvoiceBody(item.ID, "", 1, ""), `"quantity":1`, `"quantity":1.5`, 1)},
 		{"zero quantity", itemInvoiceBody(item.ID, "", 0, "")},
 		{"too-large quantity", itemInvoiceBody(item.ID, "", maxItemOrderQty+1, "")},
@@ -108,7 +108,7 @@ func TestInvoiceLinkValidation(t *testing.T) {
 	}
 
 	// The same rules apply on PUT.
-	draft := mustPostInvoice(t, mux, itemInvoiceBody(item.ID, "Red", 2, ""))
+	draft := mustPostInvoice(t, mux, itemInvoiceBody(item.ID, "Color: Red", 2, ""))
 	if rec := putInvoice(t, mux, draft.ID, itemInvoiceBody("nope", "", 1, "")); rec.Code != http.StatusBadRequest {
 		t.Errorf("PUT unknown item: %d, want 400", rec.Code)
 	}
@@ -122,9 +122,9 @@ func TestInvoiceLinkValidation(t *testing.T) {
 	}
 
 	// A linked line keeps its link, an editable price, and ignores a client-sent stockTaken.
-	ok := mustPostInvoice(t, mux, strings.Replace(itemInvoiceBody(item.ID, "Red", 2, ""), `"itemId"`, `"stockTaken":99,"itemId"`, 1))
-	if ln := ok.Lines[0]; ln.ItemID != item.ID || ln.OptionName != "Red" || ln.StockTaken != 0 {
-		t.Errorf("line = item %q option %q taken %d, want %q Red 0", ln.ItemID, ln.OptionName, ln.StockTaken, item.ID)
+	ok := mustPostInvoice(t, mux, strings.Replace(itemInvoiceBody(item.ID, "Size: XL · Color: Red", 2, ""), `"itemId"`, `"stockTaken":99,"itemId"`, 1))
+	if ln := ok.Lines[0]; ln.ItemID != item.ID || ln.OptionName != "Size: XL · Color: Red" || ln.StockTaken != 0 {
+		t.Errorf("line = item %q option %q taken %d, want %q \"Size: XL · Color: Red\" 0", ln.ItemID, ln.OptionName, ln.StockTaken, item.ID)
 	}
 }
 
@@ -283,24 +283,24 @@ func issueDaysAgo(n int) string {
 
 func TestTopItemsCountsInPersonInvoiceLines(t *testing.T) {
 	mux, db := newInvoiceItemsMux(t)
-	item := mustPostItem(t, mux, `{"name":"Dragon","priceCents":1000,"optionLabel":"Color","options":[{"name":"Red","deltaCents":0},{"name":"Blue","deltaCents":0}],"stockMode":"ready_to_print"}`)
+	item := mustPostItem(t, mux, `{"name":"Dragon","priceCents":1000,"optionGroups":[{"label":"Color","required":true,"options":[{"name":"Red","deltaCents":0},{"name":"Blue","deltaCents":0}]}],"stockMode":"ready_to_print"}`)
 
-	sentInv := mustPostInvoice(t, mux, itemInvoiceBody(item.ID, "Red", 2, issueDaysAgo(3)))
+	sentInv := mustPostInvoice(t, mux, itemInvoiceBody(item.ID, "Color: Red", 2, issueDaysAgo(3)))
 	mustSetStatus(t, mux, sentInv.ID, "sent")
-	paidInv := mustPostInvoice(t, mux, itemInvoiceBody(item.ID, "Blue", 3, issueDaysAgo(5)))
+	paidInv := mustPostInvoice(t, mux, itemInvoiceBody(item.ID, "Color: Blue", 3, issueDaysAgo(5)))
 	mustSetStatus(t, mux, paidInv.ID, "sent")
 	mustSetStatus(t, mux, paidInv.ID, "paid")
-	mustPostInvoice(t, mux, itemInvoiceBody(item.ID, "Red", 7, issueDaysAgo(1))) // draft: never counts
-	canceled := mustPostInvoice(t, mux, itemInvoiceBody(item.ID, "Red", 11, issueDaysAgo(1)))
+	mustPostInvoice(t, mux, itemInvoiceBody(item.ID, "Color: Red", 7, issueDaysAgo(1))) // draft: never counts
+	canceled := mustPostInvoice(t, mux, itemInvoiceBody(item.ID, "Color: Red", 11, issueDaysAgo(1)))
 	mustSetStatus(t, mux, canceled.ID, "sent")
 	mustSetStatus(t, mux, canceled.ID, "canceled")
-	old := mustPostInvoice(t, mux, itemInvoiceBody(item.ID, "Red", 13, issueDaysAgo(60)))
+	old := mustPostInvoice(t, mux, itemInvoiceBody(item.ID, "Color: Red", 13, issueDaysAgo(60)))
 	mustSetStatus(t, mux, old.ID, "sent")
 	// An unlinked line on a sent invoice never counts.
 	plain := mustPostInvoice(t, mux, `{"clientName":"Walk-in","lines":[{"description":"Hours","quantity":4,"unitPriceCents":100}]}`)
 	mustSetStatus(t, mux, plain.ID, "sent")
 	// A gallery sale for the same item merges into one ranking row.
-	insertSale(t, db, item.ID, "Dragon", "Red", 4, 4000, 2)
+	insertSale(t, db, item.ID, "Dragon", "Color: Red", 4, 4000, 2)
 
 	var got topItemsResponse
 	getJSON(t, mux, "/api/dashboard/top-items", &got)
@@ -315,8 +315,8 @@ func TestTopItemsCountsInPersonInvoiceLines(t *testing.T) {
 	if got.TotalUnits != 9 || got.GalleryUnits != 4 || got.InPersonUnits != 5 || got.TotalRevenueCents != 9000 {
 		t.Errorf("totals = %d/%d/%d/%d, want 9/4/5/9000", got.TotalUnits, got.GalleryUnits, got.InPersonUnits, got.TotalRevenueCents)
 	}
-	if fmt.Sprint(it.Options) != fmt.Sprint([]topItemOption{{"Red", 6}, {"Blue", 3}}) {
-		t.Errorf("options = %v, want Red 6, Blue 3", it.Options)
+	if fmt.Sprint(it.Options) != fmt.Sprint([]topItemOption{{"Color: Red", 6}, {"Color: Blue", 3}}) {
+		t.Errorf("options = %v, want Color: Red 6, Color: Blue 3", it.Options)
 	}
 
 	// Issue-date windowing: the 60-day-old invoice joins the 90-day window.

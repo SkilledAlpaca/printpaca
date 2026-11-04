@@ -2,7 +2,7 @@
   import { timezoneOptions as timezoneOptionList } from "../lib/timezones";
   import { nextKey, type ServerConfig } from "../lib/settings";
   import { settingsWarnings } from "../lib/settingsRules";
-  import { presetDisplayName, warnFor } from "../lib/format";
+  import { presetDisplayName, feeScheduleDisplayName, warnFor } from "../lib/format";
   import { extractConfigUser } from "../lib/permissions";
   import { appConfig } from "../lib/state.svelte";
   import SettingsEditor from "./settings/SettingsEditor.svelte";
@@ -16,6 +16,7 @@
   import LabeledNumber from "./LabeledNumber.svelte";
   import LabeledText from "./LabeledText.svelte";
   import { focusAfterUpdate } from "../lib/a11y.svelte";
+  import { MediaQuery } from "svelte/reactivity";
   import { stickyInset } from "../lib/stickyInset";
   import { focusAfterRowRemoval, keySelector } from "../lib/a11yFocus";
 
@@ -55,6 +56,9 @@
   ];
   // Suggestions for the time zone field; a typed name outside the list is still accepted if Intl knows it.
   const timezoneOptions = timezoneOptionList();
+  // The jump nav is sticky only at >=600px (see the CSS below); below that it reserves no scroll-padding.
+  const stickyNavQuery = new MediaQuery("min-width: 600px", true);
+  const stickyNav = $derived(stickyNavQuery.current);
   function jumpTo(id: string) {
     const section = document.getElementById(id);
     if (!section) return;
@@ -72,7 +76,7 @@
     { id: "quotes", label: "Quotes" },
     { id: "requests", label: "Requests" },
     { id: "invoices", label: "Invoices" },
-    { id: "items", label: "Items" },
+    { id: "items", label: "Shop items" },
     { id: "clients", label: "Clients" },
     { id: "dashboard", label: "Dashboard" },
     { id: "filament", label: "Filament" },
@@ -142,7 +146,7 @@
       {@const builtinFeeScheduleKeys = new Set(Object.keys(builtin.feeSchedules))}
       {@const warnings = settingsWarnings(form)}
 
-      <nav class="jump-nav" aria-label="Settings sections" use:stickyInset={{ edge: "top" }}>
+      <nav class="jump-nav" aria-label="Settings sections" use:stickyInset={{ edge: "top", active: stickyNav }}>
         {#each JUMP_SECTIONS as s (s.id)}
           <button
             type="button"
@@ -168,7 +172,7 @@
             maxlength={3}
             bind:value={form.currency.code}
             warn={warnFor(warnings, "currency.code")}
-            hint="Optional ISO 4217 code, such as USD. Only used to put the amount in the PayPal.me link."
+            hint="Optional three-letter code for your currency, such as USD or EUR. Only used to put the amount in the PayPal.me link."
           />
           <LabeledNumber
             label="Decimals"
@@ -237,7 +241,7 @@
             <span>Default fee schedule</span>
             <select bind:value={form.pricing.defaultFeeSchedule}>
               <option value="none">None (direct sale)</option>
-              {#each Object.keys(form.feeSchedules) as key (key)}<option value={key}>{presetDisplayName(key)}</option>{/each}
+              {#each Object.keys(form.feeSchedules) as key (key)}<option value={key}>{feeScheduleDisplayName(key)}</option>{/each}
             </select>
           </label>
         </div>
@@ -265,7 +269,7 @@
             <datalist id="timezone-options">
               {#each timezoneOptions as tz (tz)}<option value={tz}></option>{/each}
             </datalist>
-            <small id="timezone-hint" class="field-hint">An IANA name, such as UTC or America/New_York.</small>
+            <small id="timezone-hint" class="field-hint">Type the name of a city or region, such as America/New_York or Europe/London. UTC means no offset. Times in printpaca are shown in this time zone.</small>
             {#if warnFor(warnings, "timezone")}<small id="timezone-warn" class="warn-text">{warnFor(warnings, "timezone")}</small>{/if}
           </div>
         </div>
@@ -277,7 +281,7 @@
         {#each Object.entries(form.feeSchedules) as [key, fs] (key)}
           <div class="subcard">
             <div class="subhead">
-              <h3>{key}</h3>
+              <h3>{feeScheduleDisplayName(key)}</h3>
               {#if builtinFeeScheduleKeys.has(key)}
                 <span class="pill">built-in</span>
               {:else}
@@ -443,18 +447,26 @@
 </div>
 
 <style>
-  /* Sticky jump nav: buttons, not href="#..." anchors, because location.hash is the tab router. Sticks to
-   * the viewport top since no ancestor sets its own scroll container. */
+  /* Sticky jump nav: buttons, not href="#..." anchors, because location.hash is the tab router. At >=600px it
+   * sticks to the top of the scroll container (<main> at >=900px, the window below that) and the pills wrap
+   * onto as many lines as the content column needs, so it never scrolls sideways. <main> has no padding, so
+   * top: 0 is flush with the scrollport edge; below 900px --demo-banner-h clears the sticky demo banner.
+   * Below 600px the wrapped nav would cover a large share of the screen, so it scrolls with the page and
+   * stickyInset reserves no height. */
   .jump-nav {
-    position: sticky;
-    top: 0;
     z-index: 2;
     display: flex;
+    flex-wrap: wrap;
     gap: 0.3rem;
-    overflow-x: auto;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     padding: 0.4rem 0;
+  }
+  @media (min-width: 600px) {
+    .jump-nav {
+      position: sticky;
+      top: var(--demo-banner-h, 0px);
+    }
   }
   /* button.quiet (theme.css) supplies tap sizing and hover fill; here only the jump-link look (transparent
    * pill, muted, no wrap) and the error state. */
@@ -468,9 +480,10 @@
   }
   .jump-link.has-error { color: var(--danger); }
 
-  /* scroll-margin-top matches the sticky .jump-nav height so a card's heading isn't hidden after
-   * scrollIntoView. :global() by id because several cards (account, quote, custom-css, smtp, hardware,
-   * users) are separate components; targets are exactly the ids in JUMP_SECTIONS. */
+  /* Anchor jumps: the scroll container's scroll-padding-top (App.svelte) already reserves the sticky nav's
+   * measured height, so a card's heading lands fully visible below the nav; scroll-margin-top only adds a
+   * little air. :global() by id because several cards (account, quote, custom-css, smtp, hardware, users)
+   * are separate components; targets are exactly the ids in JUMP_SECTIONS. */
   :global(:is(
     #section-account,
     #section-currency,
@@ -489,7 +502,7 @@
     #section-data,
     #section-diagnostics
   )) {
-    scroll-margin-top: 3.5rem;
+    scroll-margin-top: 0.25rem;
   }
 
   .section-label { margin: 0.6rem 0 0.3rem; }

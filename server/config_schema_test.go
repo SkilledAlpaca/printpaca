@@ -175,9 +175,9 @@ func TestConfigSchemaNumericBoundsMatchGoConstants(t *testing.T) {
 		{[]string{"invoicing", "paymentMethods"}, "maxItems", 20, "validatePaymentMethods: 1-20 entries"},
 		{[]string{"invoicing", "paymentMethods", "[]"}, "maxLength", paymentMethodMaxBytes, "paymentMethodMaxBytes (bytes vs characters: see the caveat above)"},
 		{[]string{"invoicing", "salesTaxPct"}, "minimum", 0, "validate(): salesTaxPct out of range [0,30]"},
-		{[]string{"invoicing", "salesTaxPct"}, "maximum", 30, "validate(): salesTaxPct out of range [0,30]"},
+		{[]string{"invoicing", "salesTaxPct"}, "maximum", maxSalesTaxPct, "validate(): maxSalesTaxPct"},
 		{[]string{"invoicing", "dueDays"}, "minimum", 0, "validate(): dueDays out of range [0,365]"},
-		{[]string{"invoicing", "dueDays"}, "maximum", 365, "validate(): dueDays out of range [0,365]"},
+		{[]string{"invoicing", "dueDays"}, "maximum", maxDueDays, "validate(): maxDueDays"},
 
 		{[]string{"users", "accessAdminEmail"}, "maxLength", maxEmailLength, "normalizeEmail: maxEmailLength"},
 

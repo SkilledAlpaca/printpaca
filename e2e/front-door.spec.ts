@@ -1,10 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { ADMIN_URL, navButton } from "./helpers";
+import { ADMIN_URL, navButton, requestIdByReference } from "./helpers";
 
-// The front door (/), the shop (/order) and the admin app (/admin/) on one hostname: the main port. Runs
-// against the :8099 server (authentication off) and, for the Staff sign-in button, the :9099 server (password
-// set). playwright.config.ts sets ADMIN_TRUST_PROXY on :8099 so this spec can order from its own address
-// (X-Forwarded-For) without spending the per-IP submission budget the public-listener specs share.
+// The shop is the landing page: "/" and "/order" both render it, next to the admin app (/admin/), all on one
+// hostname: the main port. Runs against the :8099 server (authentication off) and, for the Staff sign-in link,
+// the :9099 server (password set). playwright.config.ts sets ADMIN_TRUST_PROXY on :8099 so this spec can
+// order from its own address (X-Forwarded-For) without spending the per-IP submission budget the
+// public-listener specs share.
 
 const CUSTOMER_NAME = "Front Door Visitor";
 const CUSTOMER_EMAIL = "front-door@example.com";
@@ -13,20 +14,23 @@ const VISITOR_IP = "203.0.113.77";
 
 test.describe.configure({ mode: "serial" });
 
-test("the front door shows the business name and both buttons", async ({ page }) => {
+test("/ renders the shop with the business name and a Staff sign-in footer link", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "printpaca" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Order" })).toHaveAttribute("href", "/order");
-  await expect(page.getByRole("link", { name: "Staff sign-in" })).toHaveAttribute("href", "/admin/");
+  await expect(page.getByRole("heading", { level: 1, name: "printpaca" })).toBeVisible();
+  // The shop itself: its estimate flow, or its empty state on a fresh config. No separate landing page.
+  await expect(page.getByRole("link", { name: "Order or get an estimate" })).toHaveCount(0);
+  const footer = page.locator("footer.shop-footer");
+  await expect(footer.getByRole("link", { name: "Staff sign-in" })).toHaveAttribute("href", "/admin/");
+  // One page, so no Home or Shop links.
+  await expect(footer.getByRole("link", { name: "Home" })).toHaveCount(0);
+  await expect(footer.getByRole("link", { name: "Shop" })).toHaveCount(0);
 });
 
-test("Order opens the shop", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("link", { name: "Order" }).click();
+test("/order renders the same shop, so old links keep working", async ({ page }) => {
+  await page.goto("/order");
   await expect(page).toHaveURL(/\/order$/);
-  await expect(page.getByRole("heading", { name: "printpaca" })).toBeVisible();
-  // The shop page, not the front door: it has the estimate flow, or its empty state on a fresh config.
-  await expect(page.getByRole("link", { name: "Staff sign-in" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1, name: "printpaca" })).toBeVisible();
+  await expect(page.locator("footer.shop-footer").getByRole("link", { name: "Staff sign-in" })).toBeVisible();
 });
 
 test("Staff sign-in reaches the admin login", async ({ page }) => {
@@ -37,6 +41,11 @@ test("Staff sign-in reaches the admin login", async ({ page }) => {
   await expect(page).toHaveURL(new RegExp(`^${origin}/admin/(#.*)?$`));
   await expect(page.getByLabel("Password")).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
+  // The sign-in page says who it is for and leads back to the shop.
+  await expect(page.getByText(/^For .+ staff$/)).toBeVisible();
+  await page.getByRole("link", { name: "Back to shop" }).click();
+  await expect(page).toHaveURL(new RegExp(`^${origin}/(#.*)?$`));
+  await expect(page.locator("footer.shop-footer")).toBeVisible();
 });
 
 test("/api/* on the main port is a 404 and /admin redirects", async ({ request }) => {
@@ -65,7 +74,7 @@ test("the admin bundle is not served from the root", async ({ request }) => {
   expect(res.status()).toBe(404);
 });
 
-test.describe("an item order placed through /order on the main port", () => {
+test.describe("an item order placed through the shop at / on the main port", () => {
   let itemId: string | null = null;
   let requestId: string | null = null;
 
@@ -80,8 +89,6 @@ test.describe("an item order placed through /order on the main port", () => {
         name: ITEM_NAME,
         description: "A small printed planter.",
         priceCents: 1200,
-        optionLabel: "",
-        options: [],
         public: true,
         stockMode: "in_stock",
         stockQty: 3,
@@ -103,7 +110,7 @@ test.describe("an item order placed through /order on the main port", () => {
       .toBe(true);
 
     await page.setExtraHTTPHeaders({ "X-Forwarded-For": VISITOR_IP });
-    await page.goto("/order");
+    await page.goto("/");
     await page.getByRole("button", { name: new RegExp(ITEM_NAME) }).click();
     await expect(page.getByRole("heading", { name: ITEM_NAME })).toBeVisible();
     await page.getByLabel("Name").fill(CUSTOMER_NAME);
@@ -114,7 +121,7 @@ test.describe("an item order placed through /order on the main port", () => {
     const refText = (await page.locator(".confirmation .ref").textContent())?.trim() ?? "";
     const refMatch = refText.match(/^Reference: (.+)$/);
     expect(refMatch).not.toBeNull();
-    requestId = refMatch![1]!;
+    requestId = await requestIdByReference(request, refMatch![1]!);
 
     await page.setExtraHTTPHeaders({});
     await page.goto("/admin/");

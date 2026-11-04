@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { ADMIN_URL, gotoSettings, loginAsAdmin, navButton, resetServerState } from "./helpers";
+import { ADMIN_URL, gotoSettings, loginAsAdmin, navButton, quotesRow, resetServerState, seedQuoteBody } from "./helpers";
 
 // Multi-user mode needs ADMIN_PASSWORD, which the shared :8099 server never has, so this spec uses the
 // :9099 server from auth.spec.ts. Tests run in file order on one server, and the last restores
@@ -143,12 +143,33 @@ test("an invoice created by the employee shows its attribution stamp to admin", 
   await expect(page.getByText(`Created by ${EMPLOYEE_USERNAME}`)).toBeVisible();
 });
 
+test("staff holding only the quotes grant see no editor entry points and are told to ask an admin about email", async ({ page }) => {
+  // The employee here is the "staff" role: Quotes and Invoices grants, no "quote" (editor) grant, not an admin.
+  await loginAsAdmin(page);
+  const seeded = await page.request.post(`${ADMIN_URL}api/quotes`, { data: seedQuoteBody("E2E staff grant quote") });
+  expect(seeded.ok()).toBe(true);
+  await logOut(page);
+
+  await loginAsEmployee(page, EMPLOYEE_NEW_PASSWORD);
+  await navButton(page, "Quotes").click();
+  await expect(page.getByRole("heading", { name: "Quotes", level: 1 })).toBeVisible();
+  await expect(quotesRow(page, "E2E staff grant quote")).toBeVisible();
+
+  // Without the quote grant, the editor buttons are gone, not left to lead to "No access".
+  await expect(page.getByRole("button", { name: "New quote", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open in editor" })).toHaveCount(0);
+
+  // Email isn't configured on this server: staff can't open Settings' setup cards, so the note names an admin.
+  await expect(page.getByText("Ask an admin to set up email.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Set it up in Settings." })).toHaveCount(0);
+});
+
 test("cleanup: admin deletes the employee and turns multi-user mode back off", async ({ page }) => {
   await loginAsAdmin(page);
   await gotoSettings(page, { load: false });
 
   await page.getByRole("button", { name: `Delete ${EMPLOYEE_USERNAME}` }).click();
-  await page.getByRole("button", { name: `Delete? ${EMPLOYEE_USERNAME}` }).click();
+  await page.getByRole("button", { name: `Yes, delete ${EMPLOYEE_USERNAME}` }).click();
   await expect(page.getByRole("cell", { name: EMPLOYEE_USERNAME })).toHaveCount(0);
 
   await page.getByLabel("Multi-user mode").uncheck();

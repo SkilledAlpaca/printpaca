@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseGcodeText, resolveGcode, type GcodeResult } from "../lib/engine/index";
-import { describeGcode, gcodeStatusFor } from "./PublicQuotePage.svelte";
+import { DEFAULT_INTRO_TEXT, describeGcode, gcodeStatusFor } from "./PublicQuotePage.svelte";
 
 // A slicer that reports weight but no print time must not be styled as green success: hasExactParse
 // would hide the manual time inputs and leave Submit stuck disabled.
@@ -55,5 +55,12 @@ describe("PublicQuotePage: describeGcode / gcodeStatusFor", () => {
     expect(result.status).toBe("invalid-profile");
     expect(gcodeStatusFor(result)).toBe("invalid-profile");
     expect(describeGcode(result, "part.gcode")).toContain("weight couldn't be derived");
+  });
+});
+
+describe("PublicQuotePage: default intro", () => {
+  it("promises a price estimate, never an instant one", () => {
+    expect(DEFAULT_INTRO_TEXT).toContain("price estimate");
+    expect(DEFAULT_INTRO_TEXT.toLowerCase()).not.toContain("instant");
   });
 });

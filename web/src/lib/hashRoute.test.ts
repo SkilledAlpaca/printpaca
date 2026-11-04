@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { splitHash, syncDetail } from "./hashRoute";
+import { describe, expect, it, vi } from "vitest";
+import { splitHash, syncDetail, invoiceHash } from "./hashRoute";
 
 describe("splitHash", () => {
   it("returns the whole hash as base with no fragment when there's no second #", () => {
@@ -62,5 +62,24 @@ describe("syncDetail", () => {
     let closed = false;
     syncDetail(INVOICES, INVOICES, null, false, () => {}, () => (closed = true));
     expect(closed).toBe(false);
+  });
+});
+
+describe("invoice routes", () => {
+  it("reads #/invoices/<id> and the older #/invoices#<id> alike", () => {
+    expect(splitHash("#/invoices/7a1c")).toEqual({ base: "#/invoices", fragment: "7a1c" });
+    expect(splitHash("#/invoices#7a1c")).toEqual({ base: "#/invoices", fragment: "7a1c" });
+    expect(splitHash("#/invoices")).toEqual({ base: "#/invoices", fragment: null });
+  });
+  it("builds the new address", () => {
+    expect(invoiceHash("7a1c")).toBe("#/invoices/7a1c");
+  });
+  it("syncDetail opens and closes with the new form", () => {
+    const open = vi.fn();
+    const close = vi.fn();
+    syncDetail("#/invoices/9", "#/invoices", null, false, open, close);
+    expect(open).toHaveBeenCalledWith("9");
+    syncDetail("#/invoices", "#/invoices", "9", true, open, close);
+    expect(close).toHaveBeenCalled();
   });
 });

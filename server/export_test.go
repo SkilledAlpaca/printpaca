@@ -61,7 +61,7 @@ func TestExportBundlesEverythingWithNestedInvoiceDetail(t *testing.T) {
 	}
 
 	itemRec := postItem(t, mux, `{"name":"Benchy","priceCents":1500,"public":true,`+
-		`"optionLabel":"Color","options":[{"name":"Red","deltaCents":0}]}`)
+		`"optionGroups":[{"label":"Color","required":true,"options":[{"name":"Red","deltaCents":0}]}]}`)
 	if itemRec.Code != http.StatusCreated {
 		t.Fatalf("create item: %d %s", itemRec.Code, itemRec.Body.String())
 	}
@@ -137,7 +137,7 @@ func TestExportBundlesEverythingWithNestedInvoiceDetail(t *testing.T) {
 		t.Fatalf("items = %+v, want one item named Benchy", resp.Items)
 	}
 	item := resp.Items[0]
-	if item.PriceCents != 1500 || !item.Public || item.OptionLabel != "Color" || len(item.Options) != 1 || item.Options[0].Name != "Red" {
+	if item.PriceCents != 1500 || !item.Public || len(item.OptionGroups) != 1 || item.OptionGroups[0].Label != "Color" || item.OptionGroups[0].ID == "" || item.OptionGroups[0].Options[0].Name != "Red" {
 		t.Fatalf("items[0] = %+v, want the seeded item's full fields", item)
 	}
 }

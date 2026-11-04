@@ -1,0 +1,502 @@
+{
+ "description": "Shared by server/energy_schedule_test.go and web/src/lib/engine/schedule.test.ts. Each vector prices a continuous print: span = hoursPerUnit x quantity from start (wall-clock in timezone). The 'sce' schedule is the example the Settings button loads (example rates, not real tariff rates). Regenerate expected with UPDATE_SCHEDULE_VECTORS=1 go test ./server -run ScheduleVectors, then review the diff.",
+ "schedules": {
+  "flat": {
+   "defaultStartTime": "20:00",
+   "holidays": [],
+   "seasons": [
+    {
+     "name": "All year",
+     "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+     ],
+     "weekday": {
+      "baseName": "Standard",
+      "baseRate": 0.2,
+      "windows": []
+     },
+     "weekend": {
+      "baseName": "Standard",
+      "baseRate": 0.2,
+      "windows": []
+     }
+    }
+   ]
+  },
+  "gap": {
+   "defaultStartTime": "22:00",
+   "holidays": [],
+   "seasons": [
+    {
+     "name": "All year",
+     "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+     ],
+     "weekday": {
+      "baseName": "Base",
+      "baseRate": 0.1,
+      "windows": [
+       {
+        "name": "Night",
+        "start": "02:30",
+        "end": "05:00",
+        "rate": 0.3
+       }
+      ]
+     },
+     "weekend": {
+      "baseName": "Base",
+      "baseRate": 0.1,
+      "windows": [
+       {
+        "name": "Night",
+        "start": "02:30",
+        "end": "05:00",
+        "rate": 0.3
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "sce": {
+   "defaultStartTime": "22:00",
+   "holidays": [],
+   "seasons": [
+    {
+     "name": "Summer",
+     "months": [
+      6,
+      7,
+      8,
+      9
+     ],
+     "weekday": {
+      "baseName": "Off-peak",
+      "baseRate": 0.33,
+      "windows": [
+       {
+        "name": "On-peak",
+        "start": "16:00",
+        "end": "21:00",
+        "rate": 0.55
+       }
+      ]
+     },
+     "weekend": {
+      "baseName": "Off-peak",
+      "baseRate": 0.33,
+      "windows": [
+       {
+        "name": "Mid-peak",
+        "start": "16:00",
+        "end": "21:00",
+        "rate": 0.44
+       }
+      ]
+     }
+    },
+    {
+     "name": "Winter",
+     "months": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      10,
+      11,
+      12
+     ],
+     "weekday": {
+      "baseName": "Off-peak",
+      "baseRate": 0.34,
+      "windows": [
+       {
+        "name": "Super off-peak",
+        "start": "08:00",
+        "end": "16:00",
+        "rate": 0.28
+       },
+       {
+        "name": "Mid-peak",
+        "start": "16:00",
+        "end": "21:00",
+        "rate": 0.44
+       }
+      ]
+     },
+     "weekend": {
+      "baseName": "Off-peak",
+      "baseRate": 0.34,
+      "windows": [
+       {
+        "name": "Super off-peak",
+        "start": "08:00",
+        "end": "16:00",
+        "rate": 0.28
+       },
+       {
+        "name": "Mid-peak",
+        "start": "16:00",
+        "end": "21:00",
+        "rate": 0.44
+       }
+      ]
+     }
+    }
+   ]
+  }
+ },
+ "vectors": [
+  {
+   "name": "winter weekday super off-peak only",
+   "schedule": "sce",
+   "timezone": "America/Los_Angeles",
+   "start": "2026-03-10T10:00",
+   "hoursPerUnit": 2,
+   "quantity": 1,
+   "watts": 1000,
+   "expected": {
+    "total": 0.56,
+    "periods": [
+     {
+      "name": "Super off-peak",
+      "hours": 2,
+      "cost": 0.56
+     }
+    ]
+   }
+  },
+  {
+   "name": "summer weekday spans off-peak and on-peak",
+   "schedule": "sce",
+   "timezone": "America/Los_Angeles",
+   "start": "2026-07-03T14:00",
+   "hoursPerUnit": 8,
+   "quantity": 1,
+   "watts": 1000,
+   "expected": {
+    "total": 3.74,
+    "periods": [
+     {
+      "name": "Off-peak",
+      "hours": 3,
+      "cost": 0.99
+     },
+     {
+      "name": "On-peak",
+      "hours": 5,
+      "cost": 2.75
+     }
+    ]
+   }
+  },
+  {
+   "name": "across midnight into a weekend",
+   "schedule": "sce",
+   "timezone": "America/Los_Angeles",
+   "start": "2026-07-03T20:00",
+   "hoursPerUnit": 8,
+   "quantity": 1,
+   "watts": 1000,
+   "expected": {
+    "total": 2.8600000000000003,
+    "periods": [
+     {
+      "name": "On-peak",
+      "hours": 1,
+      "cost": 0.55
+     },
+     {
+      "name": "Off-peak",
+      "hours": 7,
+      "cost": 2.31
+     }
+    ]
+   }
+  },
+  {
+   "name": "weekend mid-peak",
+   "schedule": "sce",
+   "timezone": "America/Los_Angeles",
+   "start": "2026-07-04T15:00",
+   "hoursPerUnit": 3,
+   "quantity": 1,
+   "watts": 1000,
+   "expected": {
+    "total": 1.21,
+    "periods": [
+     {
+      "name": "Off-peak",
+      "hours": 1,
+      "cost": 0.33
+     },
+     {
+      "name": "Mid-peak",
+      "hours": 2,
+      "cost": 0.88
+     }
+    ]
+   }
+  },
+  {
+   "name": "across the summer to winter season boundary",
+   "schedule": "sce",
+   "timezone": "America/Los_Angeles",
+   "start": "2026-09-30T20:00",
+   "hoursPerUnit": 8,
+   "quantity": 1,
+   "watts": 1000,
+   "expected": {
+    "total": 2.9000000000000004,
+    "periods": [
+     {
+      "name": "On-peak",
+      "hours": 1,
+      "cost": 0.55
+     },
+     {
+      "name": "Off-peak",
+      "hours": 7,
+      "cost": 2.35
+     }
+    ]
+   }
+  },
+  {
+   "name": "holiday uses the weekend schedule",
+   "schedule": "sce",
+   "timezone": "America/Los_Angeles",
+   "start": "2026-07-03T15:00",
+   "hoursPerUnit": 3,
+   "quantity": 1,
+   "watts": 1000,
+   "holidays": [
+    "2026-07-03"
+   ],
+   "expected": {
+    "total": 1.21,
+    "periods": [
+     {
+      "name": "Off-peak",
+      "hours": 1,
+      "cost": 0.33
+     },
+     {
+      "name": "Mid-peak",
+      "hours": 2,
+      "cost": 0.88
+     }
+    ]
+   }
+  },
+  {
+   "name": "quantity 3 runs back to back",
+   "schedule": "sce",
+   "timezone": "America/Los_Angeles",
+   "start": "2026-07-03T14:00",
+   "hoursPerUnit": 2.5,
+   "quantity": 3,
+   "watts": 800,
+   "expected": {
+    "total": 2.8600000000000003,
+    "periods": [
+     {
+      "name": "Off-peak",
+      "hours": 2.5,
+      "cost": 0.6600000000000001
+     },
+     {
+      "name": "On-peak",
+      "hours": 5,
+      "cost": 2.2
+     }
+    ]
+   }
+  },
+  {
+   "name": "spring forward DST change",
+   "schedule": "sce",
+   "timezone": "America/Los_Angeles",
+   "start": "2026-03-07T22:00",
+   "hoursPerUnit": 12,
+   "quantity": 1,
+   "watts": 1000,
+   "expected": {
+    "total": 3.9000000000000004,
+    "periods": [
+     {
+      "name": "Off-peak",
+      "hours": 9,
+      "cost": 3.0600000000000005
+     },
+     {
+      "name": "Super off-peak",
+      "hours": 3,
+      "cost": 0.8400000000000001
+     }
+    ]
+   }
+  },
+  {
+   "name": "fall back DST change",
+   "schedule": "sce",
+   "timezone": "America/Los_Angeles",
+   "start": "2026-10-31T22:00",
+   "hoursPerUnit": 12,
+   "quantity": 1,
+   "watts": 1000,
+   "expected": {
+    "total": 4.0200000000000005,
+    "periods": [
+     {
+      "name": "Off-peak",
+      "hours": 11,
+      "cost": 3.74
+     },
+     {
+      "name": "Super off-peak",
+      "hours": 1,
+      "cost": 0.28
+     }
+    ]
+   }
+  },
+  {
+   "name": "single flat season in UTC",
+   "schedule": "flat",
+   "timezone": "UTC",
+   "start": "2026-05-05T09:30",
+   "hoursPerUnit": 5,
+   "quantity": 1,
+   "watts": 250,
+   "expected": {
+    "total": 0.25,
+    "periods": [
+     {
+      "name": "Standard",
+      "hours": 5,
+      "cost": 0.25
+     }
+    ]
+   }
+  },
+  {
+   "name": "long span beyond 366 days extrapolates",
+   "schedule": "sce",
+   "timezone": "America/Los_Angeles",
+   "start": "2026-01-01T00:00",
+   "hoursPerUnit": 20,
+   "quantity": 1000,
+   "watts": 250,
+   "expected": {
+    "total": 1751.8556466302377,
+    "periods": [
+     {
+      "name": "Off-peak",
+      "hours": 11388.88888888889,
+      "cost": 954.861111111111
+     },
+     {
+      "name": "Super off-peak",
+      "hours": 4444.444444444444,
+      "cost": 311.111111111112
+     },
+     {
+      "name": "Mid-peak",
+      "hours": 3164.8451730418947,
+      "cost": 348.13296903460855
+     },
+     {
+      "name": "On-peak",
+      "hours": 1001.8214936247724,
+      "cost": 137.7504553734062
+     }
+    ]
+   }
+  },
+  {
+   "name": "zero hours",
+   "schedule": "sce",
+   "timezone": "America/Los_Angeles",
+   "start": "2026-07-03T14:00",
+   "hoursPerUnit": 0,
+   "quantity": 1,
+   "watts": 1000,
+   "expected": {
+    "total": 0,
+    "periods": []
+   }
+  },
+  {
+   "name": "window starting inside the spring-forward gap clamps to 03:00",
+   "schedule": "gap",
+   "timezone": "America/Los_Angeles",
+   "start": "2026-03-08T00:00",
+   "hoursPerUnit": 6,
+   "quantity": 1,
+   "watts": 1000,
+   "expected": {
+    "total": 1,
+    "periods": [
+     {
+      "name": "Base",
+      "hours": 4,
+      "cost": 0.4
+     },
+     {
+      "name": "Night",
+      "hours": 2,
+      "cost": 0.6
+     }
+    ]
+   }
+  }
+ ],
+ "nextStart": [
+  {
+   "name": "before the clock the same day",
+   "clock": "22:00",
+   "timezone": "America/Los_Angeles",
+   "now": "2026-03-10T00:30:00Z",
+   "expected": "2026-03-09T22:00"
+  },
+  {
+   "name": "after the clock rolls to tomorrow",
+   "clock": "22:00",
+   "timezone": "America/Los_Angeles",
+   "now": "2026-03-10T06:30:00Z",
+   "expected": "2026-03-10T22:00"
+  },
+  {
+   "name": "UTC at the exact minute rolls to tomorrow",
+   "clock": "08:15",
+   "timezone": "UTC",
+   "now": "2026-12-31T08:15:00Z",
+   "expected": "2027-01-01T08:15"
+  }
+ ]
+}

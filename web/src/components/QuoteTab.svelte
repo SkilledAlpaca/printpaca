@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, tick } from "svelte";
   import type { EffectiveConfig, EngineOptions, OrderBreakdown, OrderInputs } from "../lib/engine/index";
-  import { quote, activePart, partLabel, toOrderInputs, engineOptions, applyPrinter, applyMaterial, printJob, quoteClient, quoteMeta, nameOrId } from "../lib/state.svelte";
+  import { quote, activePart, partLabel, toOrderInputs, quoteEngineOptions, applyPrinter, applyMaterial, printJob, quoteClient, quoteMeta, nameOrId, quoteSession, quoteActions, storedRatesDiffer, useCurrentRates } from "../lib/state.svelte";
   import { computeOrder, type ComputeOrderResult } from "../lib/quotesApi";
   import { EMPTY_ORDER, orderPrintBlockerHint, partBreakdown } from "../lib/orderView";
   import PartsList from "./PartsList.svelte";
@@ -16,12 +16,18 @@
   import HistoryPanel from "./HistoryPanel.svelte";
   import SpoolPicker from "./SpoolPicker.svelte";
   import RecentPrints from "./RecentPrints.svelte";
+  import PrintStartFields from "./PrintStartFields.svelte";
   import { moonrakerEnabled } from "../lib/moonraker";
+  import { prefillFor } from "../lib/prefill.svelte";
+  import { saveAttempt } from "../lib/saveAttempt.svelte";
   import QuoteSummaryBar from "./QuoteSummaryBar.svelte";
   import CardHelp from "./CardHelp.svelte";
   import { helpState, setAllHelp } from "../lib/help.svelte";
   import { TILE_HELP, TILE_IDS, type TileId } from "../lib/guideContent";
   import { focusAfterRowRemoval } from "../lib/a11yFocus";
+  import { findFieldByLabel } from "../lib/fieldErrors";
+  import { presetDisplayName } from "../lib/format";
+  import SlicerHelp from "./SlicerHelp.svelte";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 
@@ -50,7 +56,7 @@
   onDestroy(() => preview.dispose());
 
   $effect(() => {
-    preview.update({ inputs: toOrderInputs(cfg), options: engineOptions(cfg) });
+    preview.update({ inputs: toOrderInputs(cfg), options: quoteEngineOptions(cfg) });
   });
 
   // HistoryPanel's save gate must tell "waiting on a recompute" from "the last answer is invalid". Passed as
@@ -106,11 +112,28 @@
     window.print();
   }
 
+  // The client is one field, in the Saved quotes panel beside the label; the print toolbar only shows it.
+  function focusClientField(e: MouseEvent) {
+    e.preventDefault();
+    const el = document.getElementById("history-client");
+    el?.scrollIntoView({ block: "center" });
+    el?.focus();
+  }
+
+  const ratesChanged = $derived(storedRatesDiffer(cfg));
+
+  // The print fields sit below the model drop zone, Recent prints and the part list; keyboard users get
+  // there in one Tab instead of dozens.
+  function skipToPrintFields(e: MouseEvent) {
+    e.preventDefault();
+    findFieldByLabel("Model weight")?.focus();
+  }
+
   // Accessible group labels for each tile's role="group" div, and the h2 text for the three tiles rendered
   // here (gcode, print, costs); the others' h2 and CardHelp live in their own components, so it is only their
   // aria-label.
   const TILE_LABELS: Record<TileId, string> = {
-    gcode: "G-code",
+    gcode: "Model file",
     print: "Print",
     costs: "Costs",
     breakdown: "Cost breakdown",
@@ -144,8 +167,15 @@
 
   let onboarded = $state(readOnboarded());
 
+  // Only on a shop with no saved quote: once one exists the steps are old news. savedCount is null until
+  // the saved-quote list has loaded, which keeps the panel from flashing in for a returning user.
   const showFirstRun = $derived(
-    quote.parts.length === 1 && part.weightG === null && part.timeHours === null && part.timeMinutes === null && !onboarded,
+    quoteSession.savedCount === 0 &&
+      quote.parts.length === 1 &&
+      part.weightG === null &&
+      part.timeHours === null &&
+      part.timeMinutes === null &&
+      !onboarded,
   );
 
   function dismissFirstRun() {
@@ -170,13 +200,26 @@
   const hoursWarn = $derived(warnFor(w, "timeHours"));
   const minutesWarn = $derived(warnFor(w, "timeMinutes"));
   const timeWarn = $derived(hoursWarn || minutesWarn);
-  let timeTouched = $state(false);
+  let timeTouchedByUser = $state(false);
+  // Errors stay quiet until the user leaves the field, or asks to save, or jumps here from the pricing panel's
+  // list of what is missing (all three bump saveAttempt).
+  const timeTouched = $derived(timeTouchedByUser || saveAttempt.count > 0);
   function markTimeTouched() {
-    timeTouched = true;
+    timeTouchedByUser = true;
   }
   function timeBlur(value: number | null) {
-    if (value !== null) timeTouched = true;
+    if (value !== null) timeTouchedByUser = true;
   }
+  // A geometry-only STL/3MF estimate fills the weight but has no slicer time. While both halves are blank the
+  // note says so, and leaving the pair (not just tabbing between the halves) counts as touched.
+  const noSlicerTime = $derived(prefillFor(part)?.source === "model" && part.timeHours === null && part.timeMinutes === null);
+  function timeGroupFocusOut(e: FocusEvent) {
+    if (!noSlicerTime) return;
+    const next = e.relatedTarget;
+    if (next instanceof Node && e.currentTarget instanceof Node && e.currentTarget.contains(next)) return;
+    timeTouchedByUser = true;
+  }
+  const timeDescribedBy = $derived([noSlicerTime ? "print-time-note" : "", timeWarn !== "" && timeTouched ? "print-time-warn" : ""].filter(Boolean).join(" ") || undefined);
 
   // Costs card: collapsed shop rates
   const COSTS_OPEN_KEY = "printpaca-costs-open";
@@ -251,30 +294,76 @@
   // Money values carry the currency symbol, like PresetChips' tooltip: "12 per h labor" reads as a unitless
   // number next to the percentages.
   const ratesSummary = $derived(
-    `${part.presetName || "custom"}${part.presetModified ? " (modified)" : ""}: ${
-      cfg.energy.mode === "tou"
-        ? `time-of-use electricity (${Math.round(part.offPeakFrac * 100)}% off-peak)`
-        : `${part.flatRate === null ? "?" : moneyPrecise(part.flatRate, cfg, 3)} per kWh electricity`
+    `${part.presetName ? presetDisplayName(part.presetName) : "Custom"}${part.presetModified ? " (modified)" : ""}: ${
+      cfg.energy.mode === "schedule"
+        ? "time-of-use schedule electricity"
+        : cfg.energy.mode === "tou"
+          ? `time-of-use electricity (${Math.round(part.offPeakFrac * 100)}% off-peak)`
+          : `${part.flatRate === null ? "?" : moneyPrecise(part.flatRate, cfg, 3)} per kWh electricity`
     }, ${part.laborRate === null ? "?" : moneyAmount(part.laborRate, cfg)} per hour labor, ${part.failureRatePct ?? "?"}% failure`,
   );
 </script>
 
 <div class="page">
+  <a class="local-skip" href="#main" onclick={skipToPrintFields}>Skip to model weight and print time</a>
   <div class="head-row">
-    <h1>New quote</h1>
+    <h1>{quoteSession.loadedId ? `Edit quote: ${quoteSession.label.trim() || "Untitled"}` : "New quote"}</h1>
     <button type="button" class="explain-toggle" aria-pressed={allHelpOpen} onclick={toggleAllHelp}>
       Explain this page
     </button>
   </div>
 
-  <QuoteSummaryBar {cfg} {order} />
-  {#if previewState.status === "pending"}
-    <p class="muted preview-status" role="status">Updating price…</p>
-  {:else if previewState.status === "error"}
-    <p class="warn-text preview-status" role="alert">
-      {previewState.errors[0]} Showing the last known price. It retries on the next change.
-    </p>
+  {#if quoteSession.loadedId}
+    <div class="card edit-bar" role="group" aria-label="Save changes to this quote">
+      <p>You are editing a saved quote. Your changes aren't saved until you update it.</p>
+      <div class="edit-actions">
+        <button
+          type="button"
+          class="primary"
+          onclick={() => quoteActions.update?.()}
+          disabled={!quoteActions.busy && quoteActions.blocked}
+          aria-disabled={quoteActions.busy}
+          aria-busy={quoteActions.busy}
+        >{quoteActions.busy ? "Saving…" : "Update quote"}</button>
+        <button
+          type="button"
+          onclick={() => quoteActions.saveAsNew?.()}
+          disabled={!quoteActions.busy && quoteActions.blocked}
+          aria-disabled={quoteActions.busy}
+        >Save as new</button>
+        <!-- aria-hidden: HistoryPanel's status line below is the live region; this repeats it where the
+             buttons are so the result is seen without scrolling. -->
+        <span class="edit-status" class:failed={quoteSession.status.failed} aria-hidden="true">{quoteSession.status.text}</span>
+      </div>
+    </div>
   {/if}
+
+  {#if quoteSession.conflict}
+    <div class="card banner-warn" role="alert">
+      <p>This was changed in another tab or by another user.</p>
+      <div class="edit-actions">
+        <button type="button" onclick={() => quoteActions.reload?.()}>Reload</button>
+        <button type="button" onclick={() => quoteActions.overwrite?.()}>Overwrite</button>
+      </div>
+      <p class="hint">Reload discards your edits and shows the saved version. Overwrite saves your edits over it.</p>
+    </div>
+  {/if}
+
+  {#if ratesChanged}
+    <div class="card banner-warn" role="status">
+      <p>
+        Shop electricity rates changed since this quote was saved. This quote still uses the rates it was saved with.
+        <button type="button" class="quiet" onclick={useCurrentRates}>Use current rates</button>
+      </p>
+    </div>
+  {/if}
+
+  <QuoteSummaryBar
+    {cfg}
+    {order}
+    previewStatus={previewState.status}
+    previewError={previewState.status === "error" ? `${previewState.errors[0]} Showing the last known price. It retries on the next change.` : ""}
+  />
 
   {#if showFirstRun}
     <div class="card first-run">
@@ -294,7 +383,7 @@
   <div class="tile" role="group" aria-label={TILE_LABELS.gcode} aria-describedby="help-gcode">
     <div class="card">
       <div class="head-row with-help">
-        <h2>G-code</h2>
+        <h2>Model file</h2>
         <CardHelp id="gcode" title={TILE_LABELS.gcode} text={TILE_HELP.gcode} />
       </div>
       {#key part.id}
@@ -316,7 +405,7 @@
         <LabeledNumber label="Model weight" suffix="g" bind:value={part.weightG} warn={warnFor(w, "weightG")} help="The weight of the model from your slicer, without supports or waste." />
         <div class="field">
           <label for={timeHoursId}>Print time</label>
-          <div class="time-pair" role="group" aria-label="Print time">
+          <div class="time-pair" role="group" aria-label="Print time" onfocusout={timeGroupFocusOut}>
             <span class="time-input">
               <input
                 id={timeHoursId}
@@ -328,7 +417,7 @@
                 oninput={markTimeTouched}
                 onblur={() => timeBlur(part.timeHours)}
                 aria-invalid={hoursWarn !== "" && timeTouched}
-                aria-describedby={timeWarn !== "" && timeTouched ? "print-time-warn" : undefined}
+                aria-describedby={timeDescribedBy}
               />
               <span class="suffix">h</span>
             </span>
@@ -343,14 +432,21 @@
                 oninput={markTimeTouched}
                 onblur={() => timeBlur(part.timeMinutes)}
                 aria-invalid={minutesWarn !== "" && timeTouched}
-                aria-describedby={timeWarn !== "" && timeTouched ? "print-time-warn" : undefined}
+                aria-describedby={timeDescribedBy}
               />
               <span class="suffix">min</span>
             </span>
           </div>
+          {#if noSlicerTime}
+            <small id="print-time-note" class="field-hint">This file has no slicer time. Enter the print time from your slicer.</small>
+            <SlicerHelp />
+          {/if}
           {#if timeWarn !== "" && timeTouched}<small id="print-time-warn" class="warn-text">{timeWarn}</small>{/if}
         </div>
         <LabeledNumber label="Quantity" suffix="units" bind:value={part.quantity} min={1} step={1} warn={warnFor(w, "quantity")} help="How many copies you are printing. Costs are shown per unit and as an order total." />
+        {#if cfg.energy.mode === "schedule"}
+          <PrintStartFields {cfg} {part} warn={warnFor(w, "printStart") || warnFor(w, "schedule")} />
+        {/if}
         <label class="field">
           <span>Printer</span>
           <select
@@ -397,7 +493,7 @@
               <span>Off-peak share: {Math.round(part.offPeakFrac * 100)}%</span>
               <input type="range" min="0" max="1" step="0.05" bind:value={part.offPeakFrac} />
             </label>
-          {:else}
+          {:else if cfg.energy.mode !== "schedule"}
             <LabeledNumber label="Electricity rate" suffix={`${cfg.currency.symbol} per kWh`} step={0.01} bind:value={part.flatRate} warn={warnFor(w, "flatRate")} help="What your utility charges per kilowatt-hour." />
           {/if}
           <LabeledNumber label="Printer power" suffix="W" bind:value={part.watts} warn={warnFor(w, "watts")} help="Average power draw while printing, in watts." />
@@ -444,18 +540,11 @@
   <div class="tile" role="group" aria-label={TILE_LABELS.breakdown} aria-describedby="help-breakdown">
     {#if sellingEnabled}
       <div class="card toolbar">
-        {#if quoteClient.id}
-          <div class="field field-inline">
-            <span>Client</span>
-            <span class="linked-customer">{quoteClient.name || "Linked client"}</span>
-            <small class="linked-customer-hint">From the Saved quotes panel's client picker below.</small>
-          </div>
-        {:else}
-          <label class="field field-inline">
-            <span>Client (optional)</span>
-            <input placeholder="Client name" bind:value={quoteClient.name} />
-          </label>
-        {/if}
+        <div class="field field-inline">
+          <span>Client</span>
+          <span class="linked-customer">{quoteClient.name || (quoteClient.id ? "Linked client" : "No client")}</span>
+          <small class="linked-customer-hint">Set in <a href="#main" onclick={focusClientField}>Client for this quote</a> under Saved quotes.</small>
+        </div>
         <label class="field field-inline">
           <span>Project (optional)</span>
           <input placeholder="Project name" bind:value={quoteMeta.project} />
@@ -494,12 +583,26 @@
     color: var(--accent-text);
   }
 
+  .local-skip {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 5;
+    padding: 0.4rem 0.8rem;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    border-radius: var(--radius);
+  }
+  .local-skip:focus { left: 0.5rem; top: 0.5rem; }
+
+  .edit-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
+  .edit-bar p { margin: 0; }
+  .edit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+  .edit-status { font-size: var(--text-sm); color: var(--ok); }
+  .edit-status.failed { color: var(--danger); }
+
   .first-run ol { margin: 0 0 0.75rem; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.3rem; }
 
-  .muted { color: var(--muted); }
-  /* Quiet, not alarming: covers the debounce wait and the round trip (same rationale as PublicQuotePage's
-   * preview status line). */
-  .preview-status { margin: -0.4rem 0 0; font-size: var(--text-sm); }
 
   .tile { display: flex; flex-direction: column; gap: 0.4rem; }
 

@@ -39,14 +39,28 @@ func deriveMoonraker(demoMode bool, cfg *Config) bool {
 	return raw != "" || demoMode
 }
 
-// deriveFluiddURL returns the resolved FLUIDD_URL (env, else config), or "". It is link-only, but a bad env
-// value still fails fast via mustValidLinkURL; config values were validated at PUT/LoadConfig time.
+// deriveFluiddURL returns the resolved FLUIDD_URL (env, else config), or "". It is link-only. A bad env value
+// fails fast at startup (checkIntegrationEnv); config values were validated at PUT/LoadConfig time, so a value
+// that still fails here (never expected) yields "" instead of a link the browser would follow blindly.
 func deriveFluiddURL(cfg *Config) string {
 	raw, _ := resolveIntegrationURL(os.Getenv("FLUIDD_URL"), cfg.IntegrationsUrls.FluiddURL)
 	if raw == "" {
 		return ""
 	}
-	return mustValidLinkURL("FLUIDD_URL", raw)
+	if _, err := validProxyURL("FLUIDD_URL", raw); err != nil {
+		return ""
+	}
+	return raw
+}
+
+// checkIntegrationEnv fails fast at startup on an invalid SPOOLMAN_URL, MOONRAKER_URL or FLUIDD_URL, so a
+// typo shows in the log at boot instead of as a 502 later. Config-sourced values are validated on save.
+func checkIntegrationEnv() {
+	for _, name := range []string{"SPOOLMAN_URL", "MOONRAKER_URL", "FLUIDD_URL"} {
+		if raw := os.Getenv(name); raw != "" {
+			mustValidLinkURL(name, raw)
+		}
+	}
 }
 
 // deriveDemoPublicURL returns the validated DEMO_PUBLIC_URL, or "" when demoMode is off. It is read only in
@@ -63,7 +77,7 @@ func deriveDemoPublicURL(demoMode bool) string {
 }
 
 // IntegrationSources reports whether each integration came from "env", "config" or "unset", for the Settings
-// page to label rows and lock env-sourced fields. Computed once at startup, like the proxy targets.
+// page to label rows and lock env-sourced fields. Computed per request, like the proxy targets.
 type IntegrationSources struct {
 	Spoolman  string `json:"spoolman"`
 	Moonraker string `json:"moonraker"`
@@ -215,20 +229,16 @@ func writeHealthzUnavailable(w http.ResponseWriter) {
 	fmt.Fprintln(w, "unhealthy")
 }
 
-// configExtras groups handleConfig's env-derived extras by name: authEnabled and moonraker are adjacent
-// bools that a positional call could swap silently.
+// configExtras groups handleConfig's startup-fixed extras by name. The integration URLs are not here: they
+// resolve per request from the live config so a Settings save shows at once.
 type configExtras struct {
 	authEnabled bool
-	moonraker   bool
-	fluiddURL   string
 	// demoMode surfaces DEMO_MODE to the SPA.
 	demoMode bool
-	// integrationSources surfaces which of env/config/unset resolved each integration URL.
-	integrationSources IntegrationSources
 }
 
 // auth backs the "user" extra, resolved per request, unlike the startup-fixed extras.
-func handleConfig(store *ConfigStore, integ Integrations, extras configExtras, auth *authState) http.HandlerFunc {
+func handleConfig(store *ConfigStore, extras configExtras, auth *authState) http.HandlerFunc {
 	type payload struct {
 		*Config
 		Integrations Integrations `json:"integrations"`
@@ -266,13 +276,13 @@ func handleConfig(store *ConfigStore, integ Integrations, extras configExtras, a
 		}
 		if err := json.NewEncoder(w).Encode(payload{
 			Config:             cfg,
-			Integrations:       integ,
+			Integrations:       deriveIntegrations(extras.demoMode, cfg),
 			Version:            version,
 			AuthEnabled:        extras.authEnabled,
-			Moonraker:          extras.moonraker,
-			FluiddURL:          extras.fluiddURL,
+			Moonraker:          deriveMoonraker(extras.demoMode, cfg),
+			FluiddURL:          deriveFluiddURL(cfg),
 			DemoMode:           extras.demoMode,
-			IntegrationSources: extras.integrationSources,
+			IntegrationSources: deriveIntegrationSources(cfg),
 			User:               user,
 		}); err != nil {
 			log.Printf("encode config: %v", err)
@@ -353,12 +363,10 @@ func main() {
 	store := NewConfigStore(cfg)
 	warnIfSmtpAuthMisconfigured(cfg)
 
-	integ := deriveIntegrations(demoMode, cfg)
-	// FLUIDD_URL is validated here (log.Fatal if bad), MOONRAKER_URL in registerProxies; both before listening.
-	moonraker := deriveMoonraker(demoMode, cfg)
-	fluiddURL := deriveFluiddURL(cfg)
+	// Integration URLs resolve per request from the live config (handleConfig, registerProxies); an invalid
+	// environment value is the one startup failure.
+	checkIntegrationEnv()
 	demoPublicURL := deriveDemoPublicURL(demoMode)
-	integrationSources := deriveIntegrationSources(cfg)
 
 	// Fail fast if CONFIG_DIR isn't writable: otherwise openDB's "unable to open database file" doesn't name the
 	// fix. Same check as handleHealthz; catches the common wrong-uid bind mount.
@@ -438,12 +446,9 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/config", handleConfig(store, integ, configExtras{
-		authEnabled:        authSt.enabled,
-		moonraker:          moonraker,
-		fluiddURL:          fluiddURL,
-		demoMode:           demoMode,
-		integrationSources: integrationSources,
+	mux.HandleFunc("GET /api/config", handleConfig(store, configExtras{
+		authEnabled: authSt.enabled,
+		demoMode:    demoMode,
 	}, authSt))
 	// GET /api/settings: admin or any identity granted filament/electricity/printers (their embedded
 	// SettingsEditor can't load without it; GET /api/config already exposes the config). PUT's scoped case
@@ -452,7 +457,7 @@ func main() {
 	mux.HandleFunc("PUT /api/settings", handleSettingsPut(configDir, store, authSt))
 	registerRoutes(mux, db, store, authSt, configDir, demoMode) // static + quotes + clients + invoices + items + ... + proxies
 
-	// The admin chain serves /admin/* on the main port; the public routes (front door, shop, /api/public/*)
+	// The admin chain serves /admin/* on the main port; the public routes (the shop, /api/public/*)
 	// sit beside it behind newMainRouter. PUBLIC_PORT, when set, mounts the same public routes on their own
 	// listener. Both share one publicShared, so rate limits, the upload bound and the notify queue are
 	// per process, not per listener.

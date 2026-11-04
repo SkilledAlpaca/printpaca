@@ -240,6 +240,72 @@ var migrations = []string{
 	);
 	CREATE INDEX item_sales_sold_at ON item_sales(sold_at);
 	`,
+
+	// 1 -> 2: option groups. items.option_groups_json holds the groups (server/items.go's ItemOptionGroup).
+	// Each item with a legacy option_label + options_json becomes one required group with generated ids and
+	// no option photos. option_label and options_json stay in the table but nothing reads or writes them.
+	`
+	ALTER TABLE items ADD COLUMN option_groups_json TEXT NOT NULL DEFAULT '[]';
+
+	UPDATE items SET option_groups_json = json_array(json_object(
+	  'id', 'g_' || lower(hex(randomblob(4))),
+	  'label', option_label,
+	  'required', json('true'),
+	  'options', json((SELECT json_group_array(json_object(
+	      'id', 'o_' || lower(hex(randomblob(4))),
+	      'name', json_extract(value, '$.name'),
+	      'deltaCents', json_extract(value, '$.deltaCents'),
+	      'imageFile', ''))
+	    FROM json_each(items.options_json)))
+	))
+	WHERE option_label != '' AND json_array_length(options_json) > 0;
+
+	-- Stored option names change shape with the groups: a v1.0.5 order or invoice line recorded the bare
+	-- option ("Red"), and the new code reads "Color: Red" (itemoptions.go optionSummaryDelta). Rewrite each
+	-- row linked to an item that was just converted, when its option_name is one of that item's legacy
+	-- option names. This lives in migration 2 (unreleased) so an upgrade is one consistent step.
+	UPDATE invoice_lines SET option_name = (SELECT i.option_label || ': ' || invoice_lines.option_name FROM items i WHERE i.id = invoice_lines.item_id)
+	WHERE option_name != '' AND item_id != '' AND EXISTS (SELECT 1 FROM items i, json_each(i.options_json) o
+	  WHERE i.id = invoice_lines.item_id AND i.option_label != '' AND json_extract(o.value, '$.name') = invoice_lines.option_name);
+	UPDATE quote_requests SET option_name = (SELECT i.option_label || ': ' || quote_requests.option_name FROM items i WHERE i.id = quote_requests.item_id)
+	WHERE option_name != '' AND item_id != '' AND EXISTS (SELECT 1 FROM items i, json_each(i.options_json) o
+	  WHERE i.id = quote_requests.item_id AND i.option_label != '' AND json_extract(o.value, '$.name') = quote_requests.option_name);
+	UPDATE item_sales SET option_name = (SELECT i.option_label || ': ' || item_sales.option_name FROM items i WHERE i.id = item_sales.item_id)
+	WHERE option_name != '' AND item_id != '' AND EXISTS (SELECT 1 FROM items i, json_each(i.options_json) o
+	  WHERE i.id = item_sales.item_id AND i.option_label != '' AND json_extract(o.value, '$.name') = item_sales.option_name);
+	`,
+
+	// 2 -> 3: public usability fixes.
+	// needs_print_time marks a public estimate submitted without a print time (an unsliced STL or 3MF the visitor
+	// cannot time): price_cents is 0 and means "to be confirmed", not free. The owner enters the time when quoting.
+	// reference is the short, per-shop order reference the visitor sees (for example "HL-1001"); the hex id stays
+	// the primary key. Rows created before this migration keep reference ''. The counter behind it lives in
+	// app_state under 'request_ref_seq' (server/reference.go) and needs no schema.
+	`
+	ALTER TABLE quote_requests ADD COLUMN needs_print_time INTEGER NOT NULL DEFAULT 0 CHECK (needs_print_time IN (0, 1));
+	ALTER TABLE quote_requests ADD COLUMN reference TEXT NOT NULL DEFAULT '';
+	`,
+
+	// 3 -> 4: optimistic concurrency for items. items.version starts at 1 and the trigger bumps it on
+	// every update, whichever code path wrote the row, so a stale editor save (PUT with the loaded version)
+	// is detectable. recursive_triggers is off, so the trigger's own UPDATE does not re-fire it.
+	`
+	ALTER TABLE items ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+	CREATE TRIGGER items_bump_version AFTER UPDATE ON items
+	WHEN NEW.version = OLD.version
+	BEGIN
+	  UPDATE items SET version = OLD.version + 1 WHERE id = NEW.id;
+	END;
+	`,
+
+	// 4 -> 5: invoice concurrency token and the request-to-invoice link (v1.1.0 usability fixes).
+	// invoices.version starts at 1 and every write to the invoices row bumps it; a PUT that carries a stale
+	// version is a 409. quote_requests.invoice_id is the invoice a request was converted to ('' while not
+	// converted); the invoice's number is read through it, so there is no second column to keep in sync.
+	`
+	ALTER TABLE invoices ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE quote_requests ADD COLUMN invoice_id TEXT NOT NULL DEFAULT '';
+	`,
 }
 
 // openDB opens the SQLite database in configDir, creating it on first run, and runs pending migrations.

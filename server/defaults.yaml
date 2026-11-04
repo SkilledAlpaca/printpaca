@@ -35,6 +35,7 @@ energy:
   mode: flat
   flatRate: 0.15
   tou: { peakRate: 0.30, offPeakRate: 0.10, defaultOffPeakFrac: 0.7 }
+  schedule: { defaultStartTime: "22:00", holidays: [], seasons: [] }
 presets:
   hobby:       { failureRatePct: 3, prepMinutes: 0, laborRate: 0,  monthlyFixed: 0,   monthlyHours: 50 }
   side-hustle: { failureRatePct: 5, prepMinutes: 5, laborRate: 12, monthlyFixed: 0,   monthlyHours: 100 }
@@ -54,6 +55,7 @@ quote:
   paymentInstructions: ""
   termsText: ""
   validDays: 14
+  referencePrefix: ""
 invoicing:
   numberPrefix: "INV"
   salesTaxPct: 0
@@ -84,3 +86,5 @@ site:
   shopOnMainPort: true
   staffLink: true
   adminUrl: ""
+shop:
+  maxOrderQty: 100

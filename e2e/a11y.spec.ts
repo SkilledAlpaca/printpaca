@@ -1,10 +1,10 @@
 import { test, expect } from "@playwright/test";
 import type { APIRequestContext, Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { navButton, seedQuoteBody, ADMIN_URL } from "./helpers";
+import { navButton, requestIdByReference, seedQuoteBody, ADMIN_URL } from "./helpers";
 
 // Regression gate for WCAG 2.2 AA (docs: obsidian-ai/43 - 3D Printing/printpaca/wcag-fix-spec.md). Runs axe on
-// the login screen, front door, shop, every admin tab, and one open detail view per record type, in light and
+// the login screen, the shop (at /), every admin tab, and one open detail view per record type, in light and
 // dark, at desktop and 390 px, and asserts no horizontal page scroll at 320 px. Zero violations are required.
 // Focus checks cover the mobile drawer, a delete confirm, and the public submit confirmations.
 
@@ -101,8 +101,10 @@ test.beforeAll(async ({ request }) => {
       name: ITEM_NAME,
       description: "A small printed planter.",
       priceCents: 1200,
-      optionLabel: "",
-      options: [],
+      optionGroups: [
+        { label: "Color", required: true, options: [{ name: "Sage", deltaCents: 0 }, { name: "Clay", deltaCents: 150 }] },
+        { label: "Finish", required: false, options: [{ name: "Matte", deltaCents: 0 }] },
+      ],
       public: true,
       stockMode: "in_stock",
       stockQty: 3,
@@ -110,7 +112,9 @@ test.beforeAll(async ({ request }) => {
     },
   });
   expect(item.ok()).toBeTruthy();
-  const itemId = (await item.json()).id as string;
+  const createdItem = (await item.json()) as { id: string; optionGroups: { id: string; options: { id: string }[] }[] };
+  const itemId = createdItem.id;
+  const firstGroup = createdItem.optionGroups[0]!;
   created.items.push(itemId);
 
   const invoice = await request.post("/admin/api/invoices", {
@@ -132,7 +136,7 @@ test.beforeAll(async ({ request }) => {
 
   const order = await request.post("/api/public/item-order", {
     headers: { "X-Forwarded-For": `203.0.113.${100 + Math.floor(Math.random() * 100)}` },
-    data: { itemId, optionName: "", quantity: 1, name: "Gate Visitor", email: "visitor@example.com", note: "" },
+    data: { itemId, selections: [{ groupId: firstGroup.id, optionId: firstGroup.options[0]!.id }], quantity: 1, name: "Gate Visitor", email: "visitor@example.com", note: "" },
   });
   expect(order.ok()).toBeTruthy();
   requestId = (await order.json()).id;
@@ -172,11 +176,11 @@ test.describe("login", () => {
 });
 
 test.describe("public pages", () => {
-  test("front door", async ({ page }) => {
+  test("shop at /", async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto("/");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await scanAll(page, "front door");
+    await scanAll(page, "shop at /");
   });
 
   test("shop: gallery, item panel, empty form, and form with an estimate", async ({ page }) => {
@@ -213,22 +217,23 @@ test.describe("public pages", () => {
     await scanAll(page, "shop estimate form (validation)");
   });
 
-  test("a submitted item order moves focus to the confirmation heading", async ({ page }) => {
+  test("a submitted item order moves focus to the confirmation heading", async ({ page, request }) => {
     await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.20" });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/order");
     await page.getByRole("button", { name: new RegExp(ITEM_NAME) }).click();
+    await page.getByLabel("Color").selectOption({ label: "Sage" });
     await page.getByLabel("Name").fill("Focus Visitor");
     await page.getByLabel("Email").fill("focus@example.com");
     await page.getByRole("button", { name: "Place order" }).click();
     const heading = page.getByRole("heading", { name: "Order received" });
     await expect(heading).toBeFocused();
     const ref = (await page.locator(".confirmation .ref").textContent())?.replace("Reference: ", "").trim() ?? "";
-    if (ref) created.requests.push(ref);
+    if (ref) created.requests.push(await requestIdByReference(request, ref));
     await scanAll(page, "shop order confirmation");
   });
 
-  test("a submitted estimate request moves focus to the confirmation heading", async ({ page }) => {
+  test("a submitted estimate request moves focus to the confirmation heading", async ({ page, request }) => {
     await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.30" });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/order");
@@ -243,7 +248,7 @@ test.describe("public pages", () => {
     await page.getByRole("button", { name: "Request an estimate" }).click();
     await expect(page.getByRole("heading", { name: "Request received" })).toBeFocused();
     const ref = (await page.locator(".confirmation .ref").textContent())?.replace("Reference: ", "").trim() ?? "";
-    if (ref) created.requests.push(ref);
+    if (ref) created.requests.push(await requestIdByReference(request, ref));
     await scanAll(page, "shop estimate confirmation");
   });
 });
@@ -315,7 +320,7 @@ test.describe("admin detail views", () => {
     await expectOneH1AndRecordTitle(page);
     await page.getByRole("button", { name: /^Delete client/ }).click();
     // The trigger is replaced by the confirm and cancel buttons; focus must land on the confirm button, not <body> or Cancel.
-    await expect(page.getByRole("button", { name: "Delete client?" })).toBeFocused();
+    await expect(page.getByRole("button", { name: "Yes, delete client" })).toBeFocused();
   });
 });
 

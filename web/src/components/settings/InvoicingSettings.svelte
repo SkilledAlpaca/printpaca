@@ -39,11 +39,11 @@
       bind:value={form.invoicing.numberPrefix}
       warn={warnFor(warnings, "invoicing.numberPrefix")}
     />
-    <!-- min/max mirror server/config.go's validate(): salesTaxPct out of range [0,30]. -->
+    <!-- min/max mirror server/config.go's validate(): salesTaxPct out of range [0,100]. -->
     <LabeledNumber
       label="Sales tax added to invoices (%)"
       min={0}
-      max={30}
+      max={100}
       step={0.01}
       bind:value={form.invoicing.salesTaxPct}
       warn={warnFor(warnings, "invoicing.salesTaxPct")}
@@ -60,7 +60,7 @@
     <LabeledNumber
       label="Payment due (days after issue)"
       min={0}
-      max={365}
+      max={10000}
       step={1}
       bind:value={form.invoicing.dueDays}
       warn={warnFor(warnings, "invoicing.dueDays")}

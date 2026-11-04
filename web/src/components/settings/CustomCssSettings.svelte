@@ -1,13 +1,12 @@
 <script lang="ts">
+  import { characterCountText } from "../../lib/countText";
   import type { ServerConfig } from "../../lib/settings";
   import { settingsWarnings, CUSTOM_CSS_MAX_BYTES } from "../../lib/settingsRules";
   import { warnFor } from "../../lib/format";
-  import { utf8ByteLength } from "../../lib/publicFormLimits";
 
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 
   const warnings = $derived(settingsWarnings(form));
-  const customCssBytes = $derived(utf8ByteLength(form.customCss));
 </script>
 
 <div id="section-custom-css" class="card roomy" class:danger-border={hasError("customCss")}>
@@ -31,7 +30,7 @@
       aria-invalid={warnFor(warnings, "customCss") !== ""}
       aria-describedby={warnFor(warnings, "customCss") !== "" ? "custom-css-count custom-css-warn" : "custom-css-count"}
     ></textarea>
-    <small id="custom-css-count" class="field-hint">{customCssBytes} / {CUSTOM_CSS_MAX_BYTES} bytes</small>
+    <small id="custom-css-count" class="field-hint">{characterCountText(form.customCss, CUSTOM_CSS_MAX_BYTES)}</small>
     {#if warnFor(warnings, "customCss") !== ""}
       <small id="custom-css-warn" class="warn-text">{warnFor(warnings, "customCss")}</small>
     {/if}

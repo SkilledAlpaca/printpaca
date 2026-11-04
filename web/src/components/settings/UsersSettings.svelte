@@ -335,8 +335,8 @@
                       </button>
                     {/if}
                     {#if confirmDeleteId === u.id}
-                      <button type="button" class="danger" onclick={() => remove(u)} aria-label={`Delete? ${u.username}`} use:confirmFocus={{ restore: keySelector(`delete-user-${u.id}`), cancel: cancelDeleteRow }}>
-                        Delete?
+                      <button type="button" class="danger" onclick={() => remove(u)} use:confirmFocus={{ restore: keySelector(`delete-user-${u.id}`), cancel: cancelDeleteRow }}>
+                        Yes, delete {u.username}
                       </button>
                       <button type="button" onclick={cancelDeleteRow} aria-label={`Cancel deleting ${u.username}`}>Cancel</button>
                     {:else}

@@ -49,7 +49,7 @@ func TestSpoolmanProxyRejectsNonAllowlistedPath(t *testing.T) {
 	defer backend.Close()
 
 	mux := proxyMux(t, backend.URL)
-	for _, path := range []string{"/api/v1/filament", "/api/v1/spool/1", "/api/v1/vendor"} {
+	for _, path := range []string{"/api/v1/health", "/api/v1/export", "/api/v1/setting", "/api/v1/spool/1/extra", "/api/v1/filament/1", "/api/v1/vendor/1", "/api/v1/spool/abc", "/api/v1/spool/01"} {
 		rec := serveReq(mux, httptest.NewRequest("GET", "/api/spoolman"+path, nil))
 		if rec.Code != http.StatusForbidden {
 			t.Errorf("%s: status = %d, want 403", path, rec.Code)
@@ -64,7 +64,7 @@ func TestSpoolmanProxyRejectsWriteMethods(t *testing.T) {
 	defer backend.Close()
 
 	mux := proxyMux(t, backend.URL)
-	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch} {
+	for _, method := range []string{http.MethodPut, http.MethodDelete, http.MethodPatch} {
 		rec := serveReq(mux, httptest.NewRequest(method, "/api/spoolman/api/v1/spool", strings.NewReader("{}")))
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Errorf("%s: want 405, got %d", method, rec.Code)
@@ -507,56 +507,123 @@ func TestRegisterProxiesEnvWinsOverConfig(t *testing.T) {
 
 // POST /api/integrations/test validates kind/url, then live-probes. Demo-mode blocking is covered in demo_test.go since it depends on the auth middleware chain.
 
-func TestIntegrationsTestValidSpoolman(t *testing.T) {
-	var gotPath string
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`[]`))
-	}))
-	defer backend.Close()
+type integrationsProbeResp struct {
+	Ok       bool   `json:"ok"`
+	Detail   string `json:"detail"`
+	Count    *int   `json:"count"`
+	Hostname string `json:"hostname"`
+}
 
+func postIntegrationsTest(t *testing.T, kind, target string) integrationsProbeResp {
+	t.Helper()
 	mux := newTestMux(t, t.TempDir())
-	body := `{"kind":"spoolman","url":"` + backend.URL + `"}`
+	body := `{"kind":"` + kind + `","url":"` + target + `"}`
 	rec := serveReq(mux, httptest.NewRequest("POST", "/api/integrations/test", strings.NewReader(body)))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+		t.Fatalf("status = %d, want 200 (a probe failure is reported in the body); body: %s", rec.Code, rec.Body.String())
 	}
-	var resp struct {
-		Ok     bool   `json:"ok"`
-		Detail string `json:"detail"`
-	}
+	var resp integrationsProbeResp
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if !resp.Ok {
-		t.Errorf("ok = false, want true; detail = %q", resp.Detail)
-	}
-	if !strings.Contains(resp.Detail, "200") {
-		t.Errorf("detail = %q, want it to mention HTTP 200", resp.Detail)
+	return resp
+}
+
+func TestIntegrationsTestSpoolmanCountsActiveSpools(t *testing.T) {
+	var gotPath string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Write([]byte(`[{"id":1},{"id":2},{"id":3}]`))
+	}))
+	defer backend.Close()
+
+	resp := postIntegrationsTest(t, "spoolman", backend.URL)
+	if !resp.Ok || resp.Detail != "Connected. 3 active spools." || resp.Count == nil || *resp.Count != 3 {
+		t.Errorf("resp = %+v, want ok with \"Connected. 3 active spools.\"", resp)
 	}
 	if gotPath != "/api/v1/spool" {
 		t.Errorf("probed path = %q, want /api/v1/spool (the same allowlisted endpoint the real proxy uses)", gotPath)
 	}
 }
 
-func TestIntegrationsTestValidMoonraker(t *testing.T) {
-	var gotPath string
+func TestIntegrationsTestSpoolmanPrefersTotalCountHeader(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"result":{}}`))
+		w.Header().Set("X-Total-Count", "14")
+		w.Write([]byte(`[{"id":1}]`))
+	}))
+	defer backend.Close()
+	if resp := postIntegrationsTest(t, "spoolman", backend.URL); resp.Detail != "Connected. 14 active spools." {
+		t.Errorf("detail = %q", resp.Detail)
+	}
+}
+
+func TestIntegrationsTestSpoolmanNotSpoolman(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<html>router login</html>`))
+	}))
+	defer backend.Close()
+	resp := postIntegrationsTest(t, "spoolman", backend.URL)
+	if resp.Ok || !strings.Contains(resp.Detail, "not like Spoolman") {
+		t.Errorf("resp = %+v, want a not-Spoolman failure", resp)
+	}
+}
+
+func TestIntegrationsTestMoonrakerReportsHostnameAndJobs(t *testing.T) {
+	var paths []string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/server/history/list":
+			w.Write([]byte(`{"result":{"count":2,"jobs":[{"job_id":"1"},{"job_id":"2"}]}}`))
+		case "/printer/info":
+			w.Write([]byte("{\"result\":{\"hostname\":\" voron\\u0007-2 \",\"state\":\"ready\"}}"))
+		default:
+			t.Errorf("unexpected probe path %q", r.URL.Path)
+		}
 	}))
 	defer backend.Close()
 
-	mux := newTestMux(t, t.TempDir())
-	body := `{"kind":"moonraker","url":"` + backend.URL + `"}`
-	rec := serveReq(mux, httptest.NewRequest("POST", "/api/integrations/test", strings.NewReader(body)))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	resp := postIntegrationsTest(t, "moonraker", backend.URL)
+	if !resp.Ok || resp.Hostname != "voron-2" || resp.Detail != "Connected to voron-2 (Klipper ready). 2 recent jobs." {
+		t.Errorf("resp = %+v", resp)
 	}
-	if gotPath != "/server/history/list" {
-		t.Errorf("probed path = %q, want /server/history/list", gotPath)
+}
+
+func TestIntegrationsTestMoonrakerWithoutPrinterInfo(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/printer/info" {
+			http.Error(w, "klippy down", http.StatusServiceUnavailable)
+			return
+		}
+		w.Write([]byte(`{"result":{"jobs":[]}}`))
+	}))
+	defer backend.Close()
+	resp := postIntegrationsTest(t, "moonraker", backend.URL)
+	if !resp.Ok || resp.Hostname != "" || !strings.Contains(resp.Detail, "0 recent jobs") {
+		t.Errorf("resp = %+v, want ok, no hostname, 0 jobs", resp)
+	}
+}
+
+func TestIntegrationsTestFailureHints(t *testing.T) {
+	cases := []struct {
+		name    string
+		handler http.HandlerFunc
+		want    string
+	}{
+		{"unauthorized", func(w http.ResponseWriter, r *http.Request) { http.Error(w, "no", 401) }, "refused access"},
+		{"not found", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }, "isn't Spoolman"},
+		{"server error", func(w http.ResponseWriter, r *http.Request) { http.Error(w, "boom", 500) }, "HTTP 500"},
+		{"redirect", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "https://x.invalid/", 302) }, "redirects"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := httptest.NewServer(tc.handler)
+			defer backend.Close()
+			resp := postIntegrationsTest(t, "spoolman", backend.URL)
+			if resp.Ok || !strings.Contains(resp.Detail, tc.want) {
+				t.Errorf("resp = %+v, want failure containing %q", resp, tc.want)
+			}
+		})
 	}
 }
 
@@ -565,24 +632,12 @@ func TestIntegrationsTestUnreachableIsOkFalse(t *testing.T) {
 	addr := backend.URL
 	backend.Close() // nothing listens on addr anymore; connections refuse
 
-	mux := newTestMux(t, t.TempDir())
-	body := `{"kind":"spoolman","url":"` + addr + `"}`
-	rec := serveReq(mux, httptest.NewRequest("POST", "/api/integrations/test", strings.NewReader(body)))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (the probe failure is reported in the body, not the HTTP status); body: %s", rec.Code, rec.Body.String())
-	}
-	var resp struct {
-		Ok     bool   `json:"ok"`
-		Detail string `json:"detail"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
+	resp := postIntegrationsTest(t, "spoolman", addr)
 	if resp.Ok {
 		t.Errorf("ok = true, want false for an unreachable target")
 	}
-	if resp.Detail == "" {
-		t.Error("detail is empty, want an operator-facing error message")
+	if !strings.Contains(resp.Detail, "Check") || strings.Contains(resp.Detail, "dial tcp") {
+		t.Errorf("detail = %q, want plain words about what to check, not the raw dial error", resp.Detail)
 	}
 }
 
@@ -637,5 +692,77 @@ func TestProxyForcesJSONAndHardeningHeaders(t *testing.T) {
 	h := rec.Header()
 	if h.Get("Content-Type") != "application/json" || h.Get("X-Content-Type-Options") != "nosniff" || h.Get("Content-Security-Policy") != "sandbox" {
 		t.Fatalf("headers = %v, want forced JSON, nosniff and CSP sandbox", h)
+	}
+}
+
+// A Settings save applies to the running proxy without a restart: the next request goes to the new URL.
+func TestProxyFollowsSettingsChangeWithoutRestart(t *testing.T) {
+	var hitA, hitB int
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hitA++; w.Write([]byte(`[]`)) }))
+	defer a.Close()
+	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hitB++; w.Write([]byte(`[]`)) }))
+	defer b.Close()
+
+	t.Setenv("SPOOLMAN_URL", "")
+	dir := t.TempDir()
+	db, cfg, store := openTestEnv(t, dir)
+	cfg.IntegrationsUrls.SpoolmanURL = a.URL
+	mux := routesMux(db, store, newAuthState("", nil), dir, false)
+
+	if rec := serveReq(mux, httptest.NewRequest("GET", "/api/spoolman/api/v1/spool", nil)); rec.Code != 200 || hitA != 1 {
+		t.Fatalf("first: code=%d hitA=%d", rec.Code, hitA)
+	}
+	next := *cfg
+	next.IntegrationsUrls.SpoolmanURL = b.URL
+	store.Set(&next)
+	if rec := serveReq(mux, httptest.NewRequest("GET", "/api/spoolman/api/v1/spool", nil)); rec.Code != 200 || hitB != 1 || hitA != 1 {
+		t.Fatalf("after change: code=%d hitA=%d hitB=%d", rec.Code, hitA, hitB)
+	}
+	next2 := next
+	next2.IntegrationsUrls.SpoolmanURL = ""
+	store.Set(&next2)
+	if rec := serveReq(mux, httptest.NewRequest("GET", "/api/spoolman/api/v1/spool", nil)); rec.Code != http.StatusNotFound {
+		t.Fatalf("after clearing the URL: code=%d, want 404", rec.Code)
+	}
+}
+
+func TestMoonrakerProxyAllowsPrinterInfo(t *testing.T) {
+	var gotPath string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Write([]byte(`{"result":{"hostname":"voron"}}`))
+	}))
+	defer backend.Close()
+	mux := moonrakerMux(t, backend.URL)
+	rec := serveReq(mux, httptest.NewRequest("GET", "/api/moonraker/printer/info", nil))
+	if rec.Code != 200 || gotPath != "/printer/info" {
+		t.Fatalf("got %d path %q", rec.Code, gotPath)
+	}
+	// Neighbours stay closed.
+	for _, p := range []string{"/printer/info/x", "/printer/objects/list", "/printer/emergency_stop"} {
+		if rec := serveReq(mux, httptest.NewRequest("GET", "/api/moonraker"+p, nil)); rec.Code != http.StatusForbidden {
+			t.Errorf("%s: %d, want 403", p, rec.Code)
+		}
+	}
+}
+
+// An empty url tests the effective URL (environment first), so the Settings card can test an
+// environment-set URL it can't display; with no URL anywhere it's a 400.
+func TestIntegrationsTestEmptyURLUsesEffectiveURL(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`[{"id":1}]`))
+	}))
+	defer backend.Close()
+
+	mux := newTestMux(t, t.TempDir())
+	rec := serveReq(mux, httptest.NewRequest("POST", "/api/integrations/test", strings.NewReader(`{"kind":"spoolman","url":""}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("no URL anywhere: status = %d, want 400; body %s", rec.Code, rec.Body.String())
+	}
+
+	t.Setenv("SPOOLMAN_URL", backend.URL)
+	rec = serveReq(mux, httptest.NewRequest("POST", "/api/integrations/test", strings.NewReader(`{"kind":"spoolman","url":""}`)))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"ok":true`) {
+		t.Fatalf("env URL: status = %d body %s, want 200 ok", rec.Code, rec.Body.String())
 	}
 }

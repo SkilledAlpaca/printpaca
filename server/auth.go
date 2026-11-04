@@ -577,10 +577,18 @@ func (a *authState) handleLogout(w http.ResponseWriter, r *http.Request) {
 //
 // multiUser is the login screen's pre-auth mode signal, carried here instead of a new endpoint. It is
 // false when a.configStore is nil (tests that skip registerRoutes).
+//
+// shopUrl is "/" while site.shopOnMainPort is on, so the sign-in page can offer a Back to shop link, and is
+// omitted otherwise (the shop isn't on this port).
 func (a *authState) handleDemo(w http.ResponseWriter, r *http.Request) {
 	var multiUser bool
+	var shopURL string
 	if a.configStore != nil {
-		multiUser = a.configStore.Get().Users.MultiUser
+		cfg := a.configStore.Get()
+		multiUser = cfg.Users.MultiUser
+		if cfg.Site.ShopOnMainPort {
+			shopURL = "/"
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -588,7 +596,8 @@ func (a *authState) handleDemo(w http.ResponseWriter, r *http.Request) {
 		DemoMode  bool   `json:"demoMode"`
 		PublicURL string `json:"publicUrl,omitempty"`
 		MultiUser bool   `json:"multiUser"`
-	}{DemoMode: a.demoMode, PublicURL: a.publicURL, MultiUser: multiUser})
+		ShopURL   string `json:"shopUrl,omitempty"`
+	}{DemoMode: a.demoMode, PublicURL: a.publicURL, MultiUser: multiUser, ShopURL: shopURL})
 }
 
 // resolveSession reports whether token names a live session and returns the identity. Sessions have a
@@ -834,8 +843,8 @@ func tokenWriteSameOrigin(r *http.Request, allowedHosts []string) bool {
 	return r.Header.Get("Sec-Fetch-Site") == "same-origin"
 }
 
-// isItemImageUploadRoute matches "POST /api/items/{id}/image". The id is the only variable part, so a
-// prefix/suffix match is unambiguous.
+// isItemImageUploadRoute matches "POST /api/items/{id}/image" and "POST /api/items/{id}/options/{optionId}/image".
+// The ids are the only variable parts, so a prefix/suffix match is unambiguous.
 func isItemImageUploadRoute(method, path string) bool {
 	return method == http.MethodPost && strings.HasPrefix(path, "/api/items/") && strings.HasSuffix(path, "/image")
 }

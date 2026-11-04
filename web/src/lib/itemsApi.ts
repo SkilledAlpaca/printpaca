@@ -1,10 +1,30 @@
 import { errorsFrom } from "./clientsApi";
 import { DEFAULT_FETCH_TIMEOUT_MS, IMAGE_UPLOAD_TIMEOUT_MS } from "./fetchTimeouts";
 
-/** One selectable item variant (e.g. a color); mirrors server/items.go's ItemOption. */
+/** One selectable item variant (e.g. a color); mirrors server/items.go's ItemOption. `id` and `imageFile`
+ * are server-owned: a new option is sent without an id, and imageFile is set by the option photo endpoints. */
 export interface ItemOption {
+  id: string;
   name: string;
   deltaCents: number;
+  imageFile: string;
+}
+
+/** One choice an item offers (e.g. "Color"); mirrors server/items.go's ItemOptionGroup. Array order is
+ * display order. */
+export interface ItemOptionGroup {
+  id: string;
+  label: string;
+  required: boolean;
+  options: ItemOption[];
+}
+
+/** An option group as sent in an item body: ids are optional (absent for new rows), imageFile is ignored. */
+export interface ItemOptionGroupInput {
+  id?: string;
+  label: string;
+  required: boolean;
+  options: { id?: string; name: string; deltaCents: number }[];
 }
 
 /** The JSON shape of every /api/items endpoint (server/items.go's Item). */
@@ -13,8 +33,7 @@ export interface Item {
   name: string;
   description: string;
   priceCents: number;
-  optionLabel: string;
-  options: ItemOption[];
+  optionGroups: ItemOptionGroup[];
   imageFile: string;
   public: boolean;
   stockMode: "ready_to_print" | "in_stock";
@@ -28,11 +47,27 @@ export interface Item {
   /** Who created/last wrote this item (server/items.go). "" when unattributed. */
   createdBy: string;
   updatedBy: string;
+  /** Counts every write to the item (server/items.go's Item.Version). Send it back on a PUT so a save from a
+   * stale form is rejected (ConflictError) instead of silently overwriting a newer write. */
+  version?: number;
 }
 
 /** The POST/PUT body: every client-writable field. id, imageFile, timestamps and attribution are
  * server-assigned (imageFile is owned by uploadItemImage). */
-export type ItemInput = Omit<Item, "id" | "imageFile" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy">;
+export type ItemInput = Omit<Item, "id" | "imageFile" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy" | "optionGroups" | "version"> & {
+  optionGroups: ItemOptionGroupInput[];
+  /** The Item.version the form was loaded with; omit to skip the stale-save check. */
+  version?: number;
+};
+
+/** The server answered 409: the item changed since the form loaded it (another tab or user, a photo upload,
+ * or a stock change). The UI offers Reload or Overwrite. */
+export class ConflictError extends Error {
+  constructor() {
+    super("This was changed in another tab or by another user.");
+    this.name = "ConflictError";
+  }
+}
 
 /** A network failure returns null so the page can show an offline note. */
 export async function listItems(): Promise<Item[] | null> {
@@ -64,6 +99,7 @@ export async function updateItem(id: string, input: ItemInput): Promise<Item> {
     body: JSON.stringify(input),
     signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS),
   });
+  if (res.status === 409) throw new ConflictError();
   if (!res.ok) throw await errorsFrom(res);
   return (await res.json()) as Item;
 }
@@ -90,6 +126,30 @@ export async function uploadItemImage(id: string, blob: Blob): Promise<Item> {
     headers: { "Content-Type": contentType },
     body: blob,
     signal: AbortSignal.timeout(IMAGE_UPLOAD_TIMEOUT_MS),
+  });
+  if (!res.ok) throw await errorsFrom(res);
+  return (await res.json()) as Item;
+}
+
+/** Posts the blob as an option's photo (server/items.go's handleOptionImageUpload); same body and limits as
+ * uploadItemImage. Resolves to the updated item. */
+export async function uploadOptionImage(itemId: string, optionId: string, blob: Blob): Promise<Item> {
+  const contentType = acceptedImageContentTypes.has(blob.type) ? blob.type : "image/jpeg";
+  const res = await fetch(`api/items/${encodeURIComponent(itemId)}/options/${encodeURIComponent(optionId)}/image`, {
+    method: "POST",
+    headers: { "Content-Type": contentType },
+    body: blob,
+    signal: AbortSignal.timeout(IMAGE_UPLOAD_TIMEOUT_MS),
+  });
+  if (!res.ok) throw await errorsFrom(res);
+  return (await res.json()) as Item;
+}
+
+/** Removes an option's photo. Resolves to the updated item. */
+export async function deleteOptionImage(itemId: string, optionId: string): Promise<Item> {
+  const res = await fetch(`api/items/${encodeURIComponent(itemId)}/options/${encodeURIComponent(optionId)}/image`, {
+    method: "DELETE",
+    signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS),
   });
   if (!res.ok) throw await errorsFrom(res);
   return (await res.json()) as Item;

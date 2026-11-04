@@ -1,13 +1,14 @@
 /** Pure helpers behind InvoicesTab's detail/edit and payment forms, so the money/units boundary (dollars in
  * the form, cents and basis points in the API) and draft-vs-sent email gating are unit-testable. */
 
-import { formatDateTime } from "./format";
+import { formatDate, formatDateTime } from "./format";
 import { toCents, invoiceTotals, type InvoiceTotals } from "./engine/index";
 import { pctToBp, bpToPct, type Invoice, type InvoiceInput, type InvoiceLineKind } from "./invoicesApi";
 import { todayInTimezone } from "./invoiceStatus";
 import type { Client } from "./clientsApi";
 import type { Item } from "./itemsApi";
 import { itemUnitCents } from "./itemMath";
+import { optionSummary, selectedDeltaCents, type Selected } from "./itemOptions";
 
 // The editable form keeps money in currency units and tax in percent; buildInput() converts to cents and
 // basis points at the API edge.
@@ -131,18 +132,19 @@ export function buildInput(form: InvoiceForm): InvoiceInput {
   };
 }
 
-/** Links a line to a gallery item: fills the description ("Name" or "Name (Option)"), the unit price (item
- * price plus the option's delta), and the link fields. A quantity that isn't a whole number is rounded to
+/** Links a line to a gallery item: fills the description ("Name" or "Name (Color: Red · Size: Large)"), the
+ * unit price (item price plus the selected options' deltas), and the link fields; optionName holds the same
+ * summary the server stores for gallery orders. A quantity that isn't a whole number is rounded to
  * one, since linked lines move stock in whole units. Description and price stay editable afterward. */
-export function linkLineToItem(line: LineForm, item: Item, optionName: string): LineForm {
-  const option = item.options.find((o) => o.name === optionName);
+export function linkLineToItem(line: LineForm, item: Item, selected: Selected): LineForm {
+  const summary = optionSummary(item.optionGroups, selected);
   return {
     ...line,
-    description: option ? `${item.name} (${option.name})` : item.name,
-    unitPrice: itemUnitCents(item.priceCents, option?.deltaCents ?? 0) / 100,
+    description: summary ? `${item.name} (${summary})` : item.name,
+    unitPrice: itemUnitCents(item.priceCents, selectedDeltaCents(item.optionGroups, selected)) / 100,
     quantity: Math.max(1, Math.round(line.quantity)),
     itemId: item.id,
-    optionName: option ? option.name : "",
+    optionName: summary,
   };
 }
 
@@ -155,12 +157,18 @@ export function unlinkLine(line: LineForm): LineForm {
  * server recomputes on save. kind is passed per line so a shipping line previews exempt exactly as stored. */
 export function previewTotalsFor(form: InvoiceForm): InvoiceTotals {
   return invoiceTotals(
-    form.lines.map((l) => ({
-      quantity: l.quantity,
-      unitPriceCents: toCents(l.unitPrice),
-      discountCents: toCents(l.discount),
-      kind: l.kind,
-    })),
+    form.lines.map((l) =>
+      // A line with a problem (negative or zero quantity, a sub-cent price) is left out of the preview rather
+      // than priced from a value that can't be saved.
+      lineHasProblem(l)
+        ? { quantity: 0, unitPriceCents: 0, discountCents: 0, kind: l.kind }
+        : {
+            quantity: l.quantity,
+            unitPriceCents: toCents(l.unitPrice),
+            discountCents: toCents(l.discount),
+            kind: l.kind,
+          },
+    ),
     toCents(form.discount),
     pctToBp(form.taxPct),
   );
@@ -205,6 +213,20 @@ export function defaultPaymentForm(
   };
 }
 
+/**
+ * The Amount the payment form should hold after the invoice's balance changed (a save, a new total, a
+ * payment). A user-typed amount stays; an untouched one (still equal to the previous default) follows the
+ * balance, so a freshly saved invoice never offers "Record $0.00". Returns the amount in currency units.
+ */
+export function followBalanceAmount(
+  current: number | null | undefined,
+  previousDefaultCents: number,
+  balanceCents: number,
+): number | null | undefined {
+  const untouched = current === null || current === undefined || current === 0 || toCents(current) === previousDefaultCents;
+  return untouched ? balanceCents / 100 : current;
+}
+
 // Disabled reason for "Email to client", from cfg.smtp.host (already loaded). "to" is never overridden here:
 // the server defaults it to the invoice's frozen client-snapshot email, which emailDisabledReason checks
 // exists.
@@ -219,4 +241,133 @@ export function emailDisabledReason(smtpHost: string, inv: Invoice): InvoiceEmai
 // YYYY-MM-DD issueDate/dueDate.
 export function formatSentAt(iso: string): string {
   return formatDateTime(iso);
+}
+
+// Money validation. The form keeps currency units in number inputs; toCents() would round a third decimal
+// away silently ($0.333 becomes $0.33), so a value with more than two decimals is refused before it is sent.
+
+/** True when `value` has at most two decimal places once float noise is ignored (0.1 + 0.2 passes). */
+export function hasAtMostTwoDecimals(value: number): boolean {
+  return Number.isFinite(value) && Math.abs(value * 100 - Math.round(value * 100)) < 1e-6;
+}
+
+/** A cleared number input binds as null; money fields treat that as zero, as toCents(0) does on save. */
+function amountOf(value: number | null | undefined): number {
+  return typeof value === "number" ? value : 0;
+}
+
+function moneyProblem(label: string, value: number | null | undefined): string | null {
+  const v = amountOf(value);
+  if (!Number.isFinite(v)) return `${label}: enter a number.`;
+  if (v < 0) return `${label}: can't be negative.`;
+  if (!hasAtMostTwoDecimals(v)) return `${label}: use at most two decimal places.`;
+  return null;
+}
+
+/** The problems that stop an invoice save, one sentence each, naming the line (1-based) and field. The server
+ * checks the same bounds; this runs first so a sub-cent price never reaches it. */
+export function invoiceFormProblems(form: InvoiceForm): string[] {
+  const problems: string[] = [];
+  const add = (p: string | null) => {
+    if (p) problems.push(p);
+  };
+  add(moneyProblem("Invoice discount", form.discount));
+  form.lines.forEach((l, i) => {
+    const n = i + 1;
+    const qty = amountOf(l.quantity);
+    if (!Number.isFinite(qty) || qty <= 0) problems.push(`Line ${n} quantity: must be greater than zero.`);
+    add(moneyProblem(`Line ${n} unit price`, l.unitPrice));
+    add(moneyProblem(`Line ${n} discount`, l.discount));
+  });
+  return problems;
+}
+
+/** The problems that stop a payment from being recorded. */
+export function paymentFormProblems(form: PaymentForm): string[] {
+  const problems: string[] = [];
+  const amount = amountOf(form.amount);
+  if (!Number.isFinite(amount) || amount <= 0) problems.push("Amount: must be greater than zero.");
+  else if (!hasAtMostTwoDecimals(amount)) problems.push("Amount: use at most two decimal places.");
+  if (form.paidDate === "") problems.push("Date: choose the day the payment was received.");
+  return problems;
+}
+
+/** The overpayment, in cents: how far the payments on an invoice exceed its total (0 when they don't). The
+ * Dashboard counts at most the total as revenue, so this is the part that never reaches it. */
+export function overpaidCents(inv: Pick<Invoice, "paidCents" | "totalCents">): number {
+  return Math.max(0, inv.paidCents - inv.totalCents);
+}
+
+/** "Record $7.35 cash, today": the button states what it will record. `amount` is the formatted money
+ * string; the method is lowercased and omitted when empty; the date reads "today" when it is. */
+export function recordPaymentLabel(amount: string, method: string, paidDate: string, today: string): string {
+  const parts = [method.trim().toLowerCase(), paidDate === today ? "today" : `on ${formatDate(paidDate)}`].filter(Boolean);
+  return `Record ${amount} ${parts.join(", ")}`.replace(/\s+/g, " ");
+}
+
+/** The confirm question for a payment above the balance. */
+export function overpaymentQuestion(excess: string): string {
+  return `This is ${excess} more than the balance. Record anyway?`;
+}
+
+export type TotalsRowKey = "subtotal" | "shipping" | "discount" | "tax" | "total";
+export interface TotalsRow {
+  key: TotalsRowKey;
+  label: string;
+  /** Signed: the discount row is negative, so it renders as "-$1.00" and the rows add up to the total. */
+  cents: number;
+}
+
+/** The rows under an invoice's lines, shared by the editor, the sent view and the print view so they can't
+ * disagree. Shipping lines are shown apart from the item subtotal and the invoice discount gets its own row,
+ * so subtotal + shipping - discount + tax equals the total. Shipping and Discount appear only when non-zero.
+ * (When the discount exceeds the subtotal the server clamps the total at tax-only, so the rows can then
+ * overshoot; that is an edge a real invoice doesn't reach.) */
+export function totalsRows(t: {
+  lineKinds: string[];
+  lineAmountsCents: number[];
+  subtotalCents: number;
+  discountCents: number;
+  taxCents: number;
+  totalCents: number;
+}): TotalsRow[] {
+  const shipping = t.lineAmountsCents.reduce((sum, c, i) => sum + (t.lineKinds[i] === "shipping" ? c : 0), 0);
+  const rows: TotalsRow[] = [{ key: "subtotal", label: "Subtotal", cents: t.subtotalCents - shipping }];
+  if (shipping !== 0) rows.push({ key: "shipping", label: "Shipping", cents: shipping });
+  if (t.discountCents > 0) rows.push({ key: "discount", label: "Discount", cents: -t.discountCents });
+  rows.push({ key: "tax", label: "Tax", cents: t.taxCents });
+  rows.push({ key: "total", label: "Total", cents: t.totalCents });
+  return rows;
+}
+
+/** Per-field problems of one invoice line, as short sentences for the message under the field. */
+export interface LineProblems {
+  quantity?: string;
+  unitPrice?: string;
+  discount?: string;
+}
+
+function moneyFieldProblem(value: number | null | undefined): string | undefined {
+  const v = amountOf(value);
+  if (!Number.isFinite(v)) return "Enter a number.";
+  if (v < 0) return "Can't be negative.";
+  if (!hasAtMostTwoDecimals(v)) return "Use at most two decimal places.";
+  return undefined;
+}
+
+/** What is wrong with a line right now, as you type: a quantity of zero or less, a negative or sub-cent price
+ * or discount. Empty when the line can be saved. */
+export function lineProblems(l: Pick<LineForm, "quantity" | "unitPrice" | "discount">): LineProblems {
+  const out: LineProblems = {};
+  const qty = amountOf(l.quantity);
+  if (!Number.isFinite(qty) || qty <= 0) out.quantity = "Must be greater than zero.";
+  const price = moneyFieldProblem(l.unitPrice);
+  if (price) out.unitPrice = price;
+  const discount = moneyFieldProblem(l.discount);
+  if (discount) out.discount = discount;
+  return out;
+}
+
+export function lineHasProblem(l: Pick<LineForm, "quantity" | "unitPrice" | "discount">): boolean {
+  return Object.keys(lineProblems(l)).length > 0;
 }

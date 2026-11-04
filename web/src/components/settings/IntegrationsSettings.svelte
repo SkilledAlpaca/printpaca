@@ -1,11 +1,12 @@
 <script lang="ts">
   import type { ServerConfig } from "../../lib/settings";
+  import { loadSettings, saveSettings, newPrinter } from "../../lib/settings";
+  import { loadConfig } from "../../lib/api";
   import { testIntegration } from "../../lib/sendApi";
   import { appConfig } from "../../lib/state.svelte";
+  import { announce, focusAfterUpdate } from "../../lib/a11y.svelte";
 
-  // Restart-to-apply: proxy targets are resolved once at boot (server/proxy.go's registerProxies), so a saved
-  // change to any URL below needs a container restart, unlike every other Settings card. The restart notice
-  // exists for that reason.
+  // Saved URLs apply at once: the server resolves them on every request (server/proxy.go's registerProxies).
   let {
     form,
     original,
@@ -68,28 +69,25 @@
     return demoMode || sourceFor(kind) === "env";
   }
 
-  // Restart notice: fires only when a save just changed one of the three fields, not merely on render or
-  // another section's save. `original`'s identity changes only on a successful SettingsEditor save (or
-  // initial load), never on discard(). Comparing by JSON lets edit-revert-save no-op. lastKnown starts null
-  // so the first effect run sets the baseline without a spurious notice.
-  let lastKnown = $state<string | null>(null);
-  let showRestartNotice = $state(false);
-  $effect(() => {
-    const current = JSON.stringify(original.integrationsUrls);
-    if (lastKnown === null) {
-      lastKnown = current;
-      return;
-    }
-    if (current !== lastKnown) {
-      lastKnown = current;
-      showRestartNotice = true;
-    }
-  });
-
   // Per-row test state keyed by kind, so ROWS render through one #each instead of three duplicated Test
-  // buttons.
+  // buttons. `url` is the value that was tested: a result describes that URL only, so it is hidden once the
+  // field changes.
   let testing = $state<Partial<Record<Kind, boolean>>>({});
-  let testResult = $state<Partial<Record<Kind, { ok: boolean; detail: string }>>>({});
+  let testResult = $state<Partial<Record<Kind, { ok: boolean; detail: string; hostname?: string; url: string }>>>({});
+
+  // What Test sends. A URL set by an environment variable is never shown in the (disabled) field, so the
+  // request carries "" and the server probes the effective URL (server/proxy.go's handleIntegrationsTest).
+  function testUrl(row: (typeof ROWS)[number]): string {
+    return sourceFor(row.kind) === "env" ? "" : form.integrationsUrls[row.field];
+  }
+  function canTest(row: (typeof ROWS)[number]): boolean {
+    return !demoMode && (sourceFor(row.kind) === "env" || form.integrationsUrls[row.field].trim() !== "");
+  }
+
+  function visibleResult(kind: "spoolman" | "moonraker", url: string) {
+    const r = testResult[kind];
+    return r && r.url === url ? r : undefined;
+  }
 
   async function runTest(kind: "spoolman" | "moonraker", url: string) {
     if (testing[kind]) return;
@@ -97,30 +95,84 @@
     testResult[kind] = undefined;
     try {
       const result = await testIntegration(kind, url);
-      testResult[kind] = result.ok ? result.data : { ok: false, detail: result.error };
+      testResult[kind] = result.ok
+        ? { ok: result.data.ok, detail: result.data.detail, hostname: result.data.hostname, url }
+        : { ok: false, detail: result.error, url };
     } catch (err) {
-      testResult[kind] = { ok: false, detail: err instanceof Error ? err.message : "Couldn't reach the server." };
+      testResult[kind] = { ok: false, detail: err instanceof Error ? err.message : "Couldn't reach the server.", url };
     } finally {
       testing[kind] = false;
     }
+  }
+
+  // Auto-create a printer from Moonraker (v1.1 item 10). The prompt shows after a passing Moonraker test that
+  // reported a hostname no printer is already named. "Not now" hides it for that URL; testing a different URL
+  // (or the same one after an edit) shows it again.
+  let dismissedUrl = $state<string | null>(null);
+  let addingPrinter = $state(false);
+  let addError = $state("");
+  let addedName = $state("");
+
+  const moonrakerResult = $derived(visibleResult("moonraker", form.integrationsUrls.moonrakerUrl));
+  const hostnameToAdd = $derived.by(() => {
+    const host = moonrakerResult?.ok ? (moonrakerResult.hostname ?? "").trim() : "";
+    if (host === "" || dismissedUrl === moonrakerResult?.url) return "";
+    const lower = host.toLowerCase();
+    const known = [...form.printers, ...original.printers].some((p) => p.name.trim().toLowerCase() === lower);
+    return known ? "" : host;
+  });
+
+  async function addPrinterFromMoonraker() {
+    if (addingPrinter || hostnameToAdd === "") return;
+    const name = hostnameToAdd;
+    addingPrinter = true;
+    addError = "";
+    // Saved on its own, from the server's current config, so the click doesn't also save unrelated unsaved
+    // edits in the form below.
+    const payload = await loadSettings();
+    if (!payload) {
+      addError = "Couldn't load the saved settings, so the printer wasn't added. Try again.";
+      addingPrinter = false;
+      return;
+    }
+    const config = payload.config;
+    const printer = newPrinter(config.printers.map((p) => p.id), name);
+    config.printers = [...config.printers, printer];
+    const saved = await saveSettings(config);
+    addingPrinter = false;
+    if (!saved.ok) {
+      addError = `Couldn't add the printer: ${saved.errors.join(" ")}`;
+      return;
+    }
+    // Keep the editor's draft and its saved baseline in step with the server, or the next Save changes
+    // would drop the new printer.
+    form.printers.push({ ...printer });
+    original.printers.push({ ...printer });
+    addedName = name;
+    announce(`Added printer ${name}. Check its wattage, cost, and lifespan on the Printers tab.`);
+    const fresh = await loadConfig();
+    if (fresh) appConfig.current = fresh;
+    void focusAfterUpdate("[data-printer-added]");
+  }
+
+  function dismissPrinterPrompt() {
+    dismissedUrl = moonrakerResult?.url ?? null;
+    announce("Printer prompt dismissed.");
+    void focusAfterUpdate("[data-moonraker-test]");
   }
 </script>
 
 <div id="section-integrationsUrls" class="card roomy" class:danger-border={hasError("integrationsUrls")}>
   <h2>Integrations</h2>
   <p class="hint">
-    Spoolman, Moonraker, and Fluidd URLs. An environment variable on the container always overrides the value
-    here. Saving a change here needs a container restart to take effect. Every other setting on this page applies
-    immediately, because printpaca connects to them only at startup.
+    Spoolman, Moonraker, and Fluidd URLs. Saved changes apply right away, with no restart. An environment variable
+    on the container always overrides the value here.
   </p>
   {#if demoMode}
     <p class="banner-warn" role="status">
       This is a read-only demo: Spoolman and Moonraker serve sample data regardless of the fields below, which are
       disabled and can't be tested.
     </p>
-  {/if}
-  {#if showRestartNotice}
-    <p class="banner-warn" role="status">Saved. Restart the container to apply integration changes.</p>
   {/if}
 
   {#each ROWS as row (row.kind)}
@@ -136,30 +188,68 @@
           bind:value={form.integrationsUrls[row.field]}
           placeholder={row.placeholder}
           disabled={locked(row.kind)}
+          aria-describedby={sourceFor(row.kind) === "env" ? `env-${row.kind}` : undefined}
         />
         {#if sourceFor(row.kind) === "env"}
-          <small class="field-hint">{row.envVar} is set on the container and overrides this field.</small>
+          <small id={`env-${row.kind}`} class="field-hint">{row.envVar} is set on the container and overrides this field. Test checks that URL. Remove the variable to manage the URL here.</small>
         {/if}
       </label>
+      <p class="used-in">
+        Used for:
+        {#if row.kind === "spoolman"}
+          <a href="#/quote">Spool picker on New quote</a> and <a href="#/filament">Spool inventory on the Filament tab</a>.
+        {:else if row.kind === "moonraker"}
+          <a href="#/quote">Recent prints on New quote</a>.
+        {:else}
+          A link to Fluidd in the sidebar.
+        {/if}
+      </p>
       {#if row.testable}
         {@const kind = row.kind as "spoolman" | "moonraker"}
+        {@const result = visibleResult(kind, testUrl(row))}
+        {@const testable = canTest(row)}
         <div class="test-row">
           <button
             type="button"
-            onclick={() => runTest(kind, form.integrationsUrls[row.field])}
-            disabled={demoMode || locked(row.kind) || form.integrationsUrls[row.field] === ""}
-            aria-disabled={testing[kind] === true} aria-busy={testing[kind] === true}
+            data-moonraker-test={kind === "moonraker" ? "" : undefined}
+            onclick={() => { if (testable) void runTest(kind, testUrl(row)); }}
+            disabled={demoMode}
+            aria-disabled={demoMode || testing[kind] === true || !testable}
+            aria-describedby={!testable && !demoMode ? `test-help-${kind}` : undefined}
+            aria-busy={testing[kind] === true}
           >
             {testing[kind] ? "Testing…" : "Test"}
           </button>
+          {#if !testable && !demoMode}<small id={`test-help-${kind}`} class="field-hint">Enter a URL to test it.</small>{/if}
           <span
             class="status-line"
-            role={testResult[kind] && !testResult[kind]?.ok ? "alert" : "status"}
-            aria-live={testResult[kind] && !testResult[kind]?.ok ? "assertive" : "polite"}
+            class:test-ok={result?.ok}
+            role={result && !result.ok ? "alert" : "status"}
+            aria-live={result && !result.ok ? "assertive" : "polite"}
           >
-            {testResult[kind]?.detail ?? ""}
+            {result?.detail ?? ""}
           </span>
         </div>
+        {#if kind === "moonraker"}
+          {#if hostnameToAdd !== ""}
+            <div class="printer-prompt" role="group" aria-label="Add printer from Moonraker">
+              <p>Add printer '{hostnameToAdd}' to your printers?</p>
+              <div class="prompt-actions">
+                <button type="button" class="primary" onclick={addPrinterFromMoonraker} aria-disabled={addingPrinter} aria-busy={addingPrinter}>
+                  {addingPrinter ? "Adding…" : "Add printer"}
+                </button>
+                <button type="button" onclick={dismissPrinterPrompt}>Not now</button>
+              </div>
+              {#if addError}<p class="warn-text" role="alert">{addError}</p>{/if}
+            </div>
+          {/if}
+          {#if addedName !== ""}
+            <p class="printer-added" role="status" tabindex="-1" data-printer-added>
+              Added printer '{addedName}'. It starts with default values, so check its wattage, cost, and lifespan on
+              the <a href="#/printers">Printers tab</a>.
+            </p>
+          {/if}
+        {/if}
       {/if}
     </div>
   {/each}
@@ -167,6 +257,12 @@
 
 <style>
   .test-row { display: flex; align-items: center; gap: 0.6rem; margin-top: var(--space-2); }
+  .used-in { margin: var(--space-2) 0 0; color: var(--muted); font-size: var(--text-sm); }
+  .test-ok { color: var(--ok); }
+  .printer-prompt { margin-top: var(--space-2); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); }
+  .printer-prompt p { margin: 0 0 var(--space-2); }
+  .prompt-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .printer-added { margin: var(--space-2) 0 0; }
   .subcard:not(:last-child) { margin-bottom: 1rem; }
 
   /* .pill (theme.css) is neutral by default; this card tints "something answers here" (env, config or the

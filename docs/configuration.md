@@ -40,15 +40,18 @@ The preset, printer, material, failure rate, and quantity a brand new quote star
 
 ### Business identity
 
-Your business name, logo URL, contact details, tax ID, and how many days a quote stays valid. Printed on quotes and invoices, along with payment instructions and terms text you write here.
+Your business name, logo, contact details, tax ID, and how many days a quote stays valid. Printed on quotes and invoices, along with payment instructions and terms text you write here.
 
-The business name and logo also appear on the front door and the shop. The shared footer on every customer page shows your **email**, **phone**, and **address** when you set them here (the `quote.email`, `quote.phone`, and `quote.address` keys in `config.yaml`), as a `mailto:` link, a `tel:` link, and plain text. With none of the three set, the footer shows only its **Home** and **Shop** links. The tax ID, payment instructions, and terms text stay private.
+You can paste a logo URL, or upload a PNG, JPG, WebP, or SVG image of up to 64 KB with a preview before you save. An uploaded logo is stored in `config.yaml` as a `data:` URL in `quote.logoUrl`, so backups and the demo carry it with the rest of your settings. An uploaded logo appears in the app and on printed quotes and invoices, but emails show your business name instead, because mail clients don't display embedded images; to show a logo in emails, paste a public `https://` URL. Larger pictures are shrunk to fit; an SVG over the limit is refused. **Remove logo** clears it.
+
+**Order reference prefix** (`quote.referencePrefix`) starts the short reference a customer sees after sending an order or estimate, such as `HL-1001`, so they can quote it by phone. Leave it blank to use your business initials: two or more words give their initials (Hot Layer Prints becomes `HLP`), one word gives its first three letters, and no usable letters gives `REQ`. Set it to 1 to 10 letters or digits to choose your own. The numbers count up per shop, starting at 1001, across orders and estimates together. Changing the prefix keeps the count going under the new prefix, and references already issued keep the prefix they had. The Requests tab still identifies each request by its long internal ID.
+The business name and logo also appear on the shop, and in the admin app: the sidebar (and the top bar on a phone) shows them in place of the printpaca name and mark, the browser tab title ends with the name, and a logo that fails to load falls back to the printpaca mark. They update when you save Settings, with no reload. In the admin app, the name and logo are a link to the first tab (usually New quote). The shared footer on every customer page shows your **email**, **phone**, and **address** when you set them here (the `quote.email`, `quote.phone`, and `quote.address` keys in `config.yaml`), as a `mailto:` link, a `tel:` link, and plain text. The footer also shows a **Staff sign-in** link when [`site.staffLink`](#site-settings) or `site.adminUrl` provides one. The tax ID, payment instructions, and terms text stay private.
 
 ### Custom CSS
 
 Your own CSS, saved to the top-level `customCss` key in `config.yaml` and served verbatim and unsanitized, because it's CSS you wrote for your own instance, the same trust level as every other free-text field on this page. It applies on two surfaces:
 
-- The front door and the shop (see [Public quote page](#public-quote-page)), loaded on screen after the page's own stylesheets, so it can override theme tokens like `--accent` or target any selector on those pages.
+- The shop (see [Public quote page](#public-quote-page)), loaded on screen after the page's own stylesheets, so it can override theme tokens like `--accent` or target any selector on those pages.
 - Printed quotes and invoices, loaded with `media="print"` by the admin app. It never touches the on-screen admin UI, only what comes out of **Print client quote**, **Print cost audit**, and an invoice's own print view. Target `#print-view.quote` for printed quotes, `#print-view.invoice` for printed invoices, or `#print-view` for both.
 
 The customer pages load the stylesheet from `GET /custom.css`, and the admin app loads its print copy from `GET /admin/custom.css`.
@@ -101,13 +104,60 @@ A few settings live on the tab they affect instead of on the Settings tab itself
 
 ![The Filament tab: material profiles with density, price per kg, waste percentage, and the Public checkbox](screenshots/filament.png)
 
+Material rows are read-only so a stray keystroke can't change what every quote costs. Press **Edit** on a row to change its name, price per kg, waste percentage, or Public checkbox, and **Done** to lock it again. The **Show ID and density (advanced)** checkbox adds the ID and density columns; a wrong density skews every price that uses the material by weight, so change it only when you know the figure.
+
 ![The Printers tab: machine profiles and named presets for failure rate, labor, and overhead](screenshots/printers.png)
 
-![The Electricity tab: flat-rate or time-of-use pricing for the electricity cost line](screenshots/electricity.png)
+![The Electricity tab: flat-rate, simple time-of-use, or time-of-use schedule pricing for the electricity cost line](screenshots/electricity.png)
 
 The **Data** section at the bottom has a **Download data export** button. It exports your clients, invoices, payments, quotes, requests, items, and a snapshot of your settings (including the SMTP host and username, never `SMTP_PASSWORD` or the admin password) as one JSON file. Uploaded G-code, 3MF, and STL files and item images are not included. This export is one-way: printpaca can't import it. For a restorable backup, copy the `config` directory; see [Where your data lives](getting-started.md#where-your-data-lives) and [Restoring a backup](getting-started.md#restoring-a-backup).
 
 Updates are one-way too: the database schema only grows forward, and an older binary refuses to open a newer database (`database schema version N is newer than this binary knows`). To roll back, restore a pre-update backup; see [Updating printpaca](getting-started.md#updating-printpaca).
+
+### Time-of-use schedule
+
+The Electricity tab's **Mode** list offers three choices: **Flat rate**, **Time-of-use (simple)**, and **Time-of-use schedule**. The simple mode blends a peak and an off-peak rate by an off-peak share that you estimate. The schedule mode prices each print by the hours it runs, so the print start changes the cost. See [Time-of-use schedule in formulas.md](formulas.md#time-of-use-schedule) for the math.
+
+In schedule mode you edit the tariff on the Electricity tab (or Settings):
+
+- **Default print start** is a 24-hour `HH:MM` time. New orders and public quotes start at the next time that clock time comes round.
+- **Holidays** are dates written `YYYY-MM-DD`, one per line, up to 100. A holiday uses the weekend schedule.
+- **Seasons** (up to 6) each have a name and the months they cover. Every month from 1 to 12 must belong to exactly one season.
+- Each season has a **Weekday** and a **Weekend and holidays** schedule. Each has a base period name and rate, and up to 8 windows with a name, a start, an end (`24:00` is allowed), and a rate. Windows in one schedule can't overlap. Hours outside every window use the base rate.
+- A window that runs past midnight, such as 22:00 to 06:00, is accepted. The editor explains that it will be split, and Save turns it into two windows with the same name and rate (22:00 to 24:00 and 00:00 to 06:00), because the server needs each window's start before its end.
+
+The editor writes a problem in your terms, for example "Season 2 › Weekday › Window 1: enter a time like 16:00", marks the fields that need attention, and keeps **Save changes** disabled until the schedule is valid.
+
+Times are wall-clock times in the [time zone](#time-zone) from Settings.
+
+**Load SCE TOU-D-4-9PM example** fills in the structure of Southern California Edison's TOU-D-4-9PM plan: a summer season (June to September) and a winter season (October to May), each with weekday and weekend hours, an on-peak window from 4 to 9 pm, and a winter super off-peak window from 8 am to 4 pm. The rates it loads are examples, not SCE's published rates, which change. Check every rate against your own bill. If you already have a schedule, printpaca asks you to confirm before it replaces it. The structure comes from [SCE's time-of-use plans page](https://www.sce.com/save-money/rates-financing/residential-rate-plans/time-of-use-plans).
+
+On **New quote**, the **Print start (order)** field defaults to the next default print start. Each part has an optional **Print start (this part)** field. The quote saves the starts you used, so a reopened quote prices the same. On the **Electricity** tab, the calculator takes a start, a duration, and the printer power, and shows how the hours split across periods.
+
+The same keys in `config.yaml`:
+
+```yaml
+energy:
+  mode: schedule
+  schedule:
+    defaultStartTime: "22:00"
+    holidays: ["2026-12-25"]
+    seasons:
+      - name: Summer
+        months: [6, 7, 8, 9]
+        weekday:
+          baseName: Off-peak
+          baseRate: 0.33
+          windows:
+            - { name: On-peak, start: "16:00", end: "21:00", rate: 0.55 }
+        weekend:
+          baseName: Off-peak
+          baseRate: 0.33
+          windows:
+            - { name: Mid-peak, start: "16:00", end: "21:00", rate: 0.44 }
+```
+
+printpaca rejects a schedule with a month in no season or in two seasons, overlapping windows, a start that isn't before its end, a time that isn't `HH:MM`, a negative rate, or more than 6 seasons, 8 windows per schedule, or 100 holidays. In `flat` and `tou` mode the schedule isn't used, and an empty one is accepted.
 
 ### Diagnostics
 
@@ -117,19 +167,36 @@ printpaca writes no log files; everything goes to stderr, which Docker collects.
 
 Each integration is opt-in: with its URL unset, the feature is absent from the UI.
 
-You can set each of the three URLs below from the Settings page's **Integrations** card, as an alternative to the environment variable, for operators who can edit `config.yaml` through the UI but not the container's environment. The environment variable wins when both are set. Unlike other Settings sections, a change here applies only after you **restart the container**, because proxy targets resolve once at start. The card labels each row "Configured via environment" (locked), "Configured in settings", or "Not configured".
+You can set each of the three URLs below from the Settings page's **Integrations** card, as an alternative to the environment variable, for operators who can edit `config.yaml` through the UI but not the container's environment. The environment variable wins when both are set, and the card says so on a locked row. A saved URL applies right away, with no restart: printpaca reads the URL on every request. The card labels each row "Configured via environment" (locked), "Configured in settings", or "Not configured", and lists where the integration is used, with links. **Test** works on a locked row too: it checks the URL the environment variable sets (the request to `POST /api/integrations/test` sends an empty `url`, which the server resolves to the effective URL).
 
 ### Spoolman
 
-[Spoolman](https://github.com/Donkie/Spoolman) is a self-hosted inventory tracker for 3D-printer filament spools. Set `SPOOLMAN_URL` (or the Settings page's Spoolman field) to the base URL of your Spoolman instance (for example `http://spoolman.local:7912`) to add a spool picker to the New quote page, along with warnings when a spool is running low on remaining material. The Settings page can test a URL against Spoolman's API directly, before you save it.
+[Spoolman](https://github.com/Donkie/Spoolman) is a self-hosted inventory tracker for 3D-printer filament spools. Set `SPOOLMAN_URL` (or the Settings page's Spoolman field) to the base URL of your Spoolman instance (for example `http://spoolman.local:7912`) to turn on two features:
+
+- A spool picker on the New quote page, with warnings when a spool is running low on remaining material.
+- A **Spoolman inventory** card on the Filament tab. It lists spool ID, vendor and filament name, material, colour, remaining grams, price, location, and archived state, with a filter box, a **Show archived** toggle, and **Refresh**. An admin can add a spool for an existing Spoolman filament, set the remaining weight, edit the location and price, and archive or unarchive a spool (archiving asks first). Employees with the Filament grant can view the inventory but not change it.
+
+The Settings page can test a URL against Spoolman before you save it. A passing test reports what it found, for example "Connected. 14 active spools."; a failing test says what to check, in plain words (the URL, the port, or the network).
 
 ### Moonraker and Fluidd
 
-[Moonraker](https://github.com/Arksine/moonraker) is the API server most Klipper-based 3D printers run alongside their firmware; [Fluidd](https://github.com/fluidd-core/fluidd) is a web interface built on top of it. Set `MOONRAKER_URL` (or the Settings page's Moonraker field) to your printer's Moonraker address (for example `http://printer.local:7125`) to add a **Recent print (from Moonraker)** picker to the New quote page, which fills in a quote's weight and print time from a completed print job's actual filament use and duration, instead of you typing them in. The Settings page can test a URL against Moonraker's API directly, before you save it.
+[Moonraker](https://github.com/Arksine/moonraker) is the API server most Klipper-based 3D printers run alongside their firmware; [Fluidd](https://github.com/fluidd-core/fluidd) is a web interface built on top of it. Set `MOONRAKER_URL` (or the Settings page's Moonraker field) to your printer's Moonraker address (for example `http://printer.local:7125`) to add a **Recent print (from Moonraker)** picker to the New quote page, which fills in a quote's weight and print time from a completed print job's actual filament use and duration, instead of you typing them in. The picker shows 50 completed jobs at a time with each job's status and end time, a **Load more prints** button, and a file name filter.
+
+The Settings page can test a URL against Moonraker before you save it, for example "Connected to voron (Klipper ready). 20 recent jobs." When the test finds a printer host name that isn't already the name of one of your printers, it asks "Add printer '<name>' to your printers?". **Add printer** saves a printer with that name and the standard starting values (250 W, 400 purchase cost, 4000 hour lifespan, 1.75 mm filament), then links to the Printers tab so you can check the wattage, cost, and lifespan. **Not now** hides the question until you change the URL.
 
 Set `FLUIDD_URL` (or the Settings page's Fluidd field) to add a **Fluidd** link to the sidebar that opens your printer's Fluidd interface in a new tab. This is link-only: printpaca never sends anything to it, so there's no test button.
 
-The Spoolman and Moonraker proxies exist so the browser needs no CORS configuration against them. Both accept only `GET` and `HEAD` and enforce an exact-path allowlist: `/admin/api/spoolman/*` reaches `/api/v1/spool` only, and `/admin/api/moonraker/*` reaches `/server/history/list` and `/server/files/metadata` only, because Moonraker's API also exposes printer control and arbitrary file download. Neither grants write access to the upstream service.
+The Spoolman and Moonraker proxies exist so the browser needs no CORS configuration against them. Spoolman has no authentication of its own, so the proxy is the only gate in front of it. Each proxy enforces an exact method and path allowlist and rejects everything else before any request reaches the upstream service:
+
+| Method | Path under `/admin/api/spoolman/` | Who |
+| --- | --- | --- |
+| `GET`, `HEAD` | `api/v1/spool`, `api/v1/spool/{id}`, `api/v1/filament`, `api/v1/vendor` | Admin, or an employee with the Filament grant |
+| `POST` | `api/v1/spool` | Admin only |
+| `PATCH` | `api/v1/spool/{id}` | Admin only |
+
+`{id}` is digits only. Writes need a JSON body of at most 16 KiB with only these fields: `POST` accepts `filament_id` (required), `initial_weight`, `remaining_weight`, `price`, `location`, and `comment`; `PATCH` accepts `remaining_weight`, `price`, `location`, `archived`, and `comment`. printpaca rebuilds the body from the validated fields, so nothing else reaches Spoolman. Writes also pass the same CSRF check as every other change and are blocked in demo mode.
+
+`/admin/api/moonraker/*` accepts only `GET` and `HEAD` and reaches `/server/history/list`, `/server/files/metadata`, and `/printer/info` only, because Moonraker's API also exposes printer control and arbitrary file download. It grants no write access to Moonraker.
 
 ## Routing and hostnames
 
@@ -142,7 +209,7 @@ printpaca serves everything from one port, `PORT` (default `8080`). One hostname
 | `/healthz` | The readiness probe that the Docker `HEALTHCHECK` uses: it checks the database and `CONFIG_DIR`. It sits outside the admin checks, behind the Host allowlist only, so a monitor that reaches the server through a tunnel, or a Cloudflare Access application scoped to `/admin`, still gets an answer. |
 | `/api/public/*` | The public API: config, items, estimate preview, and submissions. |
 | any other `/api/*` | A JSON `404`. The admin API lives under `/admin/api/`, and nothing redirects to it. |
-| everything else | The front door (`/`), the shop (`/order`), item images, `/custom.css`, and the public page's static files. |
+| everything else | The shop (`/`, also served at `/order`), item images, `/custom.css`, and the public page's static files. |
 
 Nothing outside `/admin/` serves the admin app or its API, so a single Cloudflare Access application with the path `/admin` protects the whole admin surface and leaves every customer path open. See [Cloudflare Tunnel](cloudflare-tunnel.md).
 
@@ -154,29 +221,29 @@ Nothing outside `/admin/` serves the admin app or its API, so a single Cloudflar
 
 ### Site settings
 
-The `site` section of `config.yaml`, also under **Front door and shop** on the Requests tab, controls the root of `PORT`. A change applies without a restart.
+The `site` section of `config.yaml`, also under **Storefront** on the Requests tab, controls the root of `PORT`. A change applies without a restart.
 
 | Key | Default | Effect |
 |---|---|---|
-| `site.shopOnMainPort` | `true` | Serves the front door, the shop, and `/api/public/*` on `PORT`. When `false`, `/` returns `302` to `/admin/` and the public routes return `404` on `PORT`. `PUBLIC_PORT` is unaffected. |
-| `site.staffLink` | `true` | Shows the **Staff sign-in** button on the front door served on `PORT`. It links to `/admin/`. |
-| `site.adminUrl` | empty | The **Staff sign-in** target on the `PUBLIC_PORT` front door: an absolute `http` or `https` URL such as `https://printpaca.example.com/admin/`. When empty, the button is hidden there. |
+| `site.shopOnMainPort` | `true` | Serves the shop (at `/` and `/order`) and `/api/public/*` on `PORT`. When `false`, `/` returns `302` to `/admin/` and the public routes return `404` on `PORT`. `PUBLIC_PORT` is unaffected. |
+| `site.staffLink` | `true` | Shows the **Staff sign-in** link in the footer of the shop served on `PORT`. It links to `/admin/`. |
+| `site.adminUrl` | empty | The **Staff sign-in** target in the footer of the shop on `PUBLIC_PORT`: an absolute `http` or `https` URL such as `https://printpaca.example.com/admin/`. When empty, the link is hidden there. |
 
-`GET /api/public/config` returns the result as `staffUrl`, computed per listener: on `PORT` it's `/admin/` when `site.staffLink` is `true` and empty otherwise, and on `PUBLIC_PORT` it's `site.adminUrl`. The front door shows the button only when `staffUrl` isn't empty.
+`GET /api/public/config` returns the result as `staffUrl`, computed per listener: on `PORT` it's `/admin/` when `site.staffLink` is `true` and empty otherwise, and on `PUBLIC_PORT` it's `site.adminUrl`. The shop footer shows the link only when `staffUrl` isn't empty.
 
 ## Public quote page
 
-The main port already serves the front door and the shop (see [Routing and hostnames](#routing-and-hostnames)). Set `PUBLIC_PORT` as well to run a second, customer-only listener for people who want isolation: the admin app is never served there, so you can expose that port without exposing `/admin/`. Only the routes below are reachable through it.
+The main port already serves the shop (see [Routing and hostnames](#routing-and-hostnames)). Set `PUBLIC_PORT` as well to run a second, customer-only listener for people who want isolation: the admin app is never served there, so you can expose that port without exposing `/admin/`. Only the routes below are reachable through it.
 
 ![The public quote page: a visitor-facing estimate form with a material picker, G-code drop zone, and instant price](screenshots/public-quote.png)
 
 **Routes.**
 
-- `GET /` and `GET /order`: the front door at `/` shows your business name, logo, intro text, an **Order** button, and a **Staff sign-in** button when `staffUrl` is set. The shop at `/order` is the estimate page. A visitor picks a material you opted in (`materials[].public: true`), drops a G-code file or enters weight and time, and gets a live price.
+- `GET /` and `GET /order`: both serve the shop, so the storefront is the landing page and old `/order` links keep working. It shows your business name, logo, and intro text at the top, the item gallery and estimate page, and a **Staff sign-in** link in the footer when `staffUrl` is set. A visitor picks a material you opted in (`materials[].public: true`), drops a G-code file or enters weight and time, and gets a live price.
 - `GET /api/public/config`: display data only: materials, currency, upload limits, demo-mode flag, business name, logo, email, phone, and address, intro text, and the printer's filament diameter (for client-side weight estimation). No cost-model field (rate, margin, markup, fee schedule, or printer cost input) is in the payload.
 - `GET /api/public/items` and `GET /item-images/{file}`: the [item gallery](#items-gallery).
 - `POST /api/public/quote/preview`: returns the price and the shipping charge (`pricing.defaultShippingCharge`) the page displays, computed by the server. It has its own per-IP rate limit, separate from submissions, so typing doesn't spend a visitor's submission budget.
-- `POST /api/public/quote-request` and `POST /api/public/item-order`: the two ways a visitor's request lands in your **Requests** tab for manual review.
+- `POST /api/public/quote-request` and `POST /api/public/item-order`: the two ways a visitor's request lands in your **Requests** tab for manual review. Both answer `201` with the request's `id`, its short `reference` (see [Business identity](#business-identity)), and `priceCents`. The estimate also returns `needsPrintTime`.
 - `GET /custom.css`: the top-level `customCss` key, verbatim and unsanitized; `200` with an empty body when unset. The admin app serves its own copy at `/admin/custom.css`, for printed quotes and invoices (see [Custom CSS](#custom-css)).
 - `GET /healthz`: liveness only, on `PUBLIC_PORT`. The main port serves the readiness probe at the same path.
 
@@ -190,7 +257,7 @@ The public routes enforce fixed limits so an anonymous visitor can't fill your d
 
 - Each submission's whole upload is capped at 32 MiB total: the file (G-code, 3MF, or STL) plus the accompanying form fields (name, email, note, material, quantity, weight, time) and their MIME headers, not the file alone. A file a few hundred bytes under 32 MiB can still trip the cap.
 - Uploaded files accumulate in `CONFIG_DIR/uploads/` until they total 2 GiB. After that, the public page still accepts submissions but stores them without the attached file (the visitor is told the estimate went through) until you free space by deleting old requests from the Requests tab, or until the automatic retention below catches up. Item-gallery images under `uploads/items/` don't count against this cap.
-- Each visitor IP address is limited to 5 submissions per hour. IPv6 addresses are keyed on their /64 network, not the exact address (a single /64 holds 2^64 addresses), so every device behind one residential prefix shares one 5-per-hour budget; IPv4 stays keyed on the exact address.
+- Each visitor IP address is limited to 10 item orders per hour and, separately, 10 estimate requests per hour, so sending estimates doesn't use up a visitor's orders. IPv6 addresses are keyed on their /64 network, not the exact address (a single /64 holds 2^64 addresses), so every device behind one residential prefix shares one budget of each kind; IPv4 stays keyed on the exact address. A visitor who hits a limit is told to try again later and, when you've set them, sees your email and phone number.
 - Once 500 `quote_requests` rows sit in a non-finalized state (`new` or `viewed`), every new submission is refused with `503` and the message "too many pending requests, try again later" until you finalize or delete some from the Requests tab. Letting Requests pile up silently turns away new customers.
 - Only 2 submissions may be mid-upload at once across the whole process (both listeners); a third is refused immediately with `503` and the message "server is busy handling other uploads, please retry shortly" rather than queued.
 
@@ -198,7 +265,7 @@ Uploaded files are deleted automatically after their request is finalized: G-cod
 
 ### Counter sales of gallery items
 
-In the Invoices tab, pick a gallery item (public or not) on a draft line to fill its description and price, and choose an option if the item has them. You can still edit the description and price, for example to give a counter discount; **Unlink** removes the link. Linked quantities must be whole numbers.
+In the Invoices tab, pick a shop item (public or not) on a draft line to fill its description and price, and choose an option in each of its groups if the item has them. You can still edit the description and price, for example to give a counter discount; **Unlink** removes the link. Linked quantities must be whole numbers.
 
 - A linked line counts in the Dashboard's Top items panel while its invoice is sent or paid, dated by the invoice's issue date. Drafts and canceled invoices never count.
 - Sending the invoice (Mark sent or Email) takes the quantity off an in-stock item, down to zero at most. Canceling a sent invoice puts back exactly the units that were taken. Paid and back to sent changes nothing. Ready-to-print and deleted items take no stock.
@@ -211,6 +278,14 @@ On the public page, a customer:
 - Either drops a G-code, sliced 3MF, or STL/plain-3MF file to fill in weight and print time automatically (see [Quoting from files](#quoting-from-files) below), or enters weight and print time by hand.
 - Enters their name, email, and an optional note, then submits. The email must look like `name@example.com`: one `@`, text before it, and a domain with a dot that isn't first or last, and no spaces. The page checks this when the visitor submits, and the server checks it again and refuses a malformed address with `422`. It confirms the shape only, not that the address works.
 
+In the Requests tab, filter the list by name, email, item, material, or file name (Ctrl+K focuses the filter) and by status. **Reply by email** opens a message to the customer with the request reference in the subject. **Finalize** marks a request handled and doesn't email the customer. **Convert to invoice** creates the invoice and marks the request **Invoiced** with a link both ways, and the request can't be converted twice. Check the boxes beside viewed requests and choose **Finalize selected** to handle several at once. **Delete all new** is in the **More** menu; its confirm states how many requests it deletes and that their stored files go too. A request submitted without a print time says **Needs print time**: enter the time from your slicer and printpaca prices it from your current settings before you convert it.
+
+### Requests without a print time
+
+An unsliced STL or 3MF has no print time the visitor can know. The public page lets them send it anyway. The price panel says "We'll confirm the price after we prepare your file for printing", and the confirmation says "Price to be confirmed". If the visitor does enter a print time, the page shows an "Estimated price" as before and the confirmation says so, with the file name and the print time used.
+
+The server accepts a public estimate with the `timeSeconds` field blank or absent and stores it with `needs_print_time` set, `time_seconds` 0, and `price_cents` 0. In that row a price of 0 means "to be confirmed", never "free". The Requests API returns `needsPrintTime: true` for it, and your new-request email says "Print time: not provided" and "Price: to be confirmed". You enter the print time yourself when you quote or convert it.
+
 The estimate and order buttons say "You won't be charged now" because submitting only sends you a request. You review it in the Requests tab and follow up by email, and nothing is charged.
 
 Choose which printer and preset the public page prices every visitor's estimate against on the Requests tab, in its **Public estimates** section.
@@ -221,11 +296,33 @@ Every submission lands in your **Requests** tab for you to review before you con
 
 ## Items gallery
 
-The **Items** tab lets you list ready-made or made-to-order products alongside your quote calculator, so customers can order something directly instead of always requesting a custom estimate.
+The **Shop items** tab (called Items in earlier versions) lets you list ready-made or made-to-order products alongside your quote calculator, so customers can order something directly instead of always requesting a custom estimate.
 
-![The Items tab: a list of ready-made and made-to-order products with price, stock, and the Public toggle](screenshots/items.png)
+![The Shop items tab: a list of ready-made and made-to-order products with price, stock, and the Public toggle](screenshots/items.png)
 
-An item has a name, description, price, an optional image, and an optional set of named options (for example a color choice), each of which can add or subtract from the base price. Uploaded images are stored under `CONFIG_DIR/uploads/items/` and served back to the gallery; deleting an item removes its image file too, unless another item still references the same file (this happens when two items are uploaded with identical image bytes, which share one stored file).
+An item has a name, description, price, an optional image, and optional option groups (see [Option groups](#option-groups)). Uploaded images are stored under `CONFIG_DIR/uploads/items/` and served back to the gallery; deleting an item, or removing an option or its photo, removes the image file too, unless an item photo or another option photo still references the same file (this happens when two uploads have identical image bytes, which share one stored file).
+
+### Saving and editing items
+
+After you save an item, the form shows **Saved.** under the Save button. A new item starts hidden, so the first save says "Saved. Hidden from the shop." with a **Show in shop** button that turns on Public and saves again. Turning **Public** on or off from the list states the result and offers **Undo**. Ctrl+S (⌘S on macOS) saves the open item, and Ctrl+K focuses the list filter, which matches the name and description.
+
+If someone else saves the same item while you have it open (another tab, another browser, or a staff account), your next Save is refused with "This was changed in another tab or by another user." **Reload** discards your edits and shows the stored item. **Overwrite** saves your edits over it. The server counts each item's writes in a `version` that every change moves on, including photo uploads and stock changes from finalized orders. A `PUT /api/items/{id}` that sends the `version` it loaded gets `409 Conflict` when the item has changed since. A request without a `version` is saved as before.
+
+### Option groups
+
+An option group is one choice the customer makes, such as Color or Size. An item can have up to 5 groups, and a group up to 20 options. In the item's **Options** section:
+
+- **Group name** names the group. Group names are unique within an item, ignoring case. Choice names are unique within a group.
+- **Customer must choose one** is on by default. A group with it on must be answered before the customer can order: the order panel shows a "Choose *label*" placeholder and blocks the order until the customer picks a choice. With it off, the group starts on **None**, which adds nothing to the price.
+- Each option has a **price adjustment**, positive or negative. The price is the item price plus the adjustments of the selected options, times the quantity. The server computes it, and the cheapest possible selection can't make the price negative.
+- Each option can have a **photo**. The order panel shows the photo of the option the customer changed most recently, or the item photo when none of the selected options has one. The gallery card always shows the item photo. Photos upload after you save the item, the same as the item photo. A new option shows a note until you save.
+- **Move up** and **Move down** reorder groups and options. The customer sees them in this order, and focus stays on the button you pressed.
+
+The server gives each group and option a stable ID. Saving keeps the IDs and photos of the rows you edit, rename, or reorder, and gives new rows new IDs.
+
+A request, invoice line, and the Top items panel record the choice as text, for example `Color: Red · Size: Large`, listing only the groups the customer answered, in display order. In an invoice line, pick a gallery item, then pick an option in each of its groups, or **No** *label* to skip an optional group.
+
+Upgrading from an earlier version converts each item's single option list into one required group with the same label, options, and prices. The earlier `option_label` and `options_json` columns stay in the database but nothing reads them.
 
 ### Stock modes
 
@@ -236,25 +333,65 @@ Each item uses one of two stock modes:
 
 ### The public flag
 
-An item only appears on the public gallery once you check its **Public** column on the Items tab, the same opt-in pattern the Filament tab uses for materials on the [public quote page](#public-quote-page). New items default to not public.
+An item only appears on the public gallery once you check **Public** in its form, or its **Public** checkbox in the Shop items list, the same opt-in pattern the Filament tab uses for materials on the [public quote page](#public-quote-page). New items default to not public.
 
 ### Ordering flow
 
-The public gallery shares the shop page at `/order` with the [public quote page](#public-quote-page) (on `PORT`, and on `PUBLIC_PORT` when set): a visitor can switch between browsing items and requesting a custom quote from the same page. Picking an item, an option (if any), and a quantity, then submitting, creates a new entry in your **Requests** tab, priced entirely server-side so nothing the visitor's browser sends is trusted for money. From there, an item order behaves like any other request: review it, then finalize it once you've confirmed you can fulfill it. Finalizing an order against an **in stock** item is what decrements that item's stock quantity.
+The public gallery shares the shop page at `/order` with the [public quote page](#public-quote-page) (on `PORT`, and on `PUBLIC_PORT` when set): a visitor can switch between browsing items and requesting a custom quote from the same page. Picking an item, an option in each required group, and a quantity, then submitting, creates a new entry in your **Requests** tab, priced entirely server-side so nothing the visitor's browser sends is trusted for money. From there, an item order behaves like any other request: review it, then finalize it once you've confirmed you can fulfill it. Finalizing an order against an **in stock** item is what decrements that item's stock quantity.
 
-Item orders share the per-IP limit of quote requests (see [Operational limits](#operational-limits)): 5 submissions per hour, counted across both together.
+Item orders have their own per-IP limit, separate from estimate requests (see [Operational limits](#operational-limits)): 10 orders per hour.
+
+Each item has its own address in the shop, `/#/item/<id>`, so a visitor can use the browser's Back button, reload the page, or share the link. The custom estimate form is at `/#/estimate`. These addresses use the part of the URL after `#`, which the server never sees, so no routing setup is needed. If a link points at an item that no longer exists, or at a confirmation that is gone (for example, in a new browser tab), the visitor returns to the gallery with a short note.
+
+After an order, the visitor sees the order's short reference (see [Business identity](#business-identity)), what happens next, and an **Order another item** button. The item page shows the stock on hand, and a note that shipping, if any, is confirmed by email.
 
 ## Quoting from files
 
-Dropping a file on the G-code box (on the New quote page or the public quote page) gives you different results depending on the file type:
+Dropping a file on the Model file box (on the New quote page) or the file box on the public quote page gives you different results depending on the file type:
 
 - **G-code**: an exact weight, filament length, and print time, read directly from the slicer's own comments in the file.
 - **Sliced `.gcode.3mf`** (from Bambu Studio or OrcaSlicer): the same exact figures as G-code, taken from the slicer's own prediction and summed across every plate in the file.
-- **STL, or a plain (unsliced) 3MF**: an estimated weight only, calculated from the model's volume and an adjustable solidity percentage. Print time still needs entering by hand. Treat this as a starting point: adjust the weight after you've actually sliced the model, since a volume-based estimate can't know about supports, infill patterns, or purge waste the way a slicer does.
+- **STL, or a plain (unsliced) 3MF**: an estimated weight only, calculated from the model's volume and an adjustable solidity percentage. Print time still needs entering by hand: the cost bar at the top of New quote says "Price needs a print time" and links to the field. Dropping a new model file clears a print time that didn't come from a slicer file, so one model's time is never reused for the next. Treat this as a starting point: adjust the weight after you've actually sliced the model, since a volume-based estimate can't know about supports, infill patterns, or purge waste the way a slicer does. On the public page the print time is optional: printpaca never estimates it from the model's volume (see [Requests without a print time](#requests-without-a-print-time)).
+
+On the public page, a dropped STL or 3MF also shows the model's size in millimeters, with a warning when it looks exported in inches (under 2 mm) or larger than 1 m, and the visitor can type their own weight over the estimate. The default solidity there is 20%, inside the "15 to 25%" the hint gives.
 
 All file parsing happens in your browser. On the New quote page, no file is ever uploaded to the server. On the public quote page, the dropped file (G-code, sliced `.gcode.3mf`, plain 3MF, or STL) is uploaded along with the visitor's submission, so you can inspect it, provided the whole submission (the file plus the form fields) fits the server's 32 MiB cap. The server stores it gzipped under `$CONFIG_DIR/uploads/` and serves it back to you as `application/octet-stream` from the request's detail view. An oversized file degrades to estimate-only: only the parsed weight and print time (and the original filename) are sent with the request, and the visitor is told they may need to send the file separately.
 
 Retention and the storage cap follow the [Operational limits](#operational-limits) above.
+
+## Numeric limits
+
+Every numeric cap is enforced on the server and mirrored in `config/config.schema.json`, `web/src/lib/settingsRules.ts`, and the input `max` attributes, so a value the UI accepts is never rejected on save. Public-page copy such as "Max 10000 per order." is built from the same constant. A cap is raised only where the larger value is plausible. Mathematical limits stay.
+
+| Limit | Old | New | Reason |
+|---|---|---|---|
+| `pricing.markupMultiplier` (`maxMarkupMultiplier`) | 1000 | 10000 | Owner request. A 10000x markup is extreme but legal. Saturating cent arithmetic stops overflow; see [Input bounds](formulas.md#input-bounds). |
+| Printer `watts` (`maxPrinterWatts`) | 5000 | 10000 | Industrial and multi-printer rigs exceed 5 kW. |
+| Gallery item order quantity (`maxItemOrderQty`), also the invoice item-line quantity | 100 | 10000 | Bulk orders. Stock still caps an in-stock item without backorder. |
+| Public quote and request quantity (`maxPublicQuoteQty`) | 1000 | 10000 | Production runs. The 32 MiB upload cap and rate limits still guard abuse. |
+| `invoicing.salesTaxPct` and invoice `taxBp` | 30% (3000 bp) | 100% (10000 bp) | A percentage can't mathematically exceed 100. |
+| `invoicing.dueDays` | 365 | 10000 | About 27 years. Long net terms are plausible, and the date math has no limit near it. |
+| `pricing.marginPct` | 99.9 | 99.9 (kept) | Mathematical. The price is cost / (1 - margin), which is undefined at 100. |
+| `failureRatePct` (defaults, presets, quotes) | 90 | 90 (kept) | Mathematical. The failure buffer grows as p / (1 - p) and is undefined at 100. |
+| `taxRatePct`, `wastePct`, fee `pct` | 100 | 100 (kept) | Percentages. |
+| `timeMinutes`, public time-minutes input | 59 | 59 (kept) | The minutes remainder. 60 or more belongs in hours. |
+| `offPeakFrac` | 1 | 1 (kept) | A fraction of time. |
+| `currency.decimals` | 4 | 4 (kept) | Display precision, not a magnitude. |
+| `smtp.port` | 65535 | 65535 (kept) | TCP port range. |
+| Filament `diameterMm`, `density` | 5, 25 | 5, 25 (kept) | Physical ranges. |
+| `weightG` (quotes and the public form) | 100000 | 100000 (kept) | Already above 10000 (100 kg). |
+| `timeHours`, `machineLifeHours`, `monthlyHours` | 100000 | 100000 (kept) | Already above 10000. |
+| Public print time (`maxTimeSeconds`) | 30 days | 30 days (kept) | A public abuse guard. A job longer than a month needs a conversation. |
+| `quantity`, `hardware[i].qtyPerUnit`, invoice and quote line quantity | 100000 | 100000 (kept) | Already above 10000. |
+| Money inputs (`maxMoneyAmount`) | 1,000,000,000 | 1,000,000,000 (kept) | Already above 10000. |
+| Cents on a stored price, invoice line, discount, payment, or option delta | 100,000,000 (1,000,000.00) | 100,000,000 (kept) | Already above 10000. Keeps invoice sums far from `int64`. |
+| Item `stockQty` | 1,000,000 | 1,000,000 (kept) | Already above 10000. |
+| Collection sizes: materials, printers, hardware, presets, fee schedules | 200 | 200 (kept) | Counts, not values. Bounds the startup parse. |
+| Option groups per item, options per group | 5, 20 | 5, 20 (kept) | Counts that bound page layout. |
+| Order parts, invoice lines, payment methods | 20, 100, 20 | 20, 100, 20 (kept) | Counts that bound page layout and body size. |
+| Pagination page size | 500 | 500 (kept) | Response size guard. |
+| Top-items window | 30, 90, 365 | 30, 90, 365 (kept) | A fixed set of choices, not a range. |
+| Text, upload, and rate limits | - | unchanged (kept) | Abuse guards; see [Operational limits](#operational-limits). |
 
 ## The config file
 
@@ -267,7 +404,7 @@ printpaca merges `config.yaml` over the built-in defaults:
 - **Arrays** (`materials`, `printers`, `hardware`, `invoicing.paymentMethods`, `ui.disabledTabs`) replace the default list wholesale. If you set one, list every entry you want. `paymentMethods` is the usual trap: setting it drops the four built-in methods (cash, bank transfer, PayPal, other), and validation then requires 1-20 entries.
 - A `config.yaml` with more than one YAML document (a second `---`) is rejected at startup.
 
-At startup the server validates the merged configuration and, on a problem, exits with a path-level error such as `defaults.material: "abs" not in materials`. These numeric fields have hard range checks that crash-loop the container when violated: `currency.decimals` (0-4), `pricing.marginPct` (0-99.9), `pricing.markupMultiplier` (0-1000), material `density` (> 0) and `wastePct` (0-100), printer `filamentDiameterMm` (> 0), `defaults.quantity` (>= 1), `invoicing.salesTaxPct` (0-30), `invoicing.dueDays` (0-365), hardware `unitCost` (>= 0), and `smtp.port` (1-65535, checked only when `smtp.host` is set). [`config.schema.json`](../config/config.schema.json) lists the complete set. Other rate-like values, such as a negative energy or labor rate, are accepted at startup; the calculator shows a field warning on the affected line. `defaults.failureRatePct` and each preset `failureRatePct` also have a hard range check (0-90).
+At startup the server validates the merged configuration and, on a problem, exits with a path-level error such as `defaults.material: "abs" not in materials`. These numeric fields have hard range checks that crash-loop the container when violated: `currency.decimals` (0-4), `pricing.marginPct` (0-99.9), `pricing.markupMultiplier` (0-10000), material `density` (> 0) and `wastePct` (0-100), printer `filamentDiameterMm` (> 0), `defaults.quantity` (>= 1), `invoicing.salesTaxPct` (0-100), `invoicing.dueDays` (0-10000), hardware `unitCost` (>= 0), and `smtp.port` (1-65535, checked only when `smtp.host` is set). [`config.schema.json`](../config/config.schema.json) lists the complete set. A schedule that breaks the rules in [Time-of-use schedule](#time-of-use-schedule) also fails at startup. Other rate-like values, such as a negative flat energy rate or labor rate, are accepted at startup; the calculator shows a field warning on the affected line. `defaults.failureRatePct` and each preset `failureRatePct` also have a hard range check (0-90).
 
 The Settings page edits this configuration through `GET`/`PUT /admin/api/settings` with the same validation. A save writes `config.yaml` as sparse overrides, keeps the previous file as `config.yaml.bak`, drops comments, and applies immediately with no restart.
 
@@ -275,12 +412,12 @@ The Settings page edits this configuration through `GET`/`PUT /admin/api/setting
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PORT` | `8080` | Main port: the front door, the shop, and the admin app under `/admin/`. See [Routing and hostnames](#routing-and-hostnames). |
+| `PORT` | `8080` | Main port: the shop and the admin app under `/admin/`. See [Routing and hostnames](#routing-and-hostnames). |
 | `CONFIG_DIR` | `/config` | Directory holding `config.yaml`, `printpaca.db`, and uploads. |
-| `SPOOLMAN_URL` | unset | Base URL of a Spoolman instance, for example `http://spoolman.local:7912` (scheme required). Enables the spool picker. |
+| `SPOOLMAN_URL` | unset | Base URL of a Spoolman instance, for example `http://spoolman.local:7912` (scheme required). Enables the spool picker and the Spoolman inventory card. |
 | `MOONRAKER_URL` | unset | Base URL of a Moonraker instance, for example `http://printer.local:7125` (scheme required). Enables the recent-prints picker. |
 | `FLUIDD_URL` | unset | Link-only (never proxied): adds a Fluidd link to the sidebar, for example `http://printer.local`. |
-| `PUBLIC_PORT` | unset | Port for an optional customer-only listener (front door, shop, and public API; never the admin app). Unset means the listener doesn't start. See [Public quote page](#public-quote-page). |
+| `PUBLIC_PORT` | unset | Port for an optional customer-only listener (the shop and public API; never the admin app). Unset means the listener doesn't start. See [Public quote page](#public-quote-page). |
 | `PUBLIC_TRUST_PROXY` | unset | Set to `1` when one reverse proxy sits in front of `PUBLIC_PORT` and sets or appends the client address as the last `X-Forwarded-For` element. Leave it unset on a directly exposed listener, where trusting the header would let a client rotate fabricated values to bypass the rate limit. Put only one such proxy in front: a second appending hop collapses every visitor into that hop's bucket. |
 | `SMTP_PASSWORD` | unset | Password for `smtp.username`; never stored in `config.yaml`. Changing it requires a restart. |
 | `ADMIN_PASSWORD` | unset | Admin login password (at least 8 characters). Unset generates a random password on first start, stores it at `CONFIG_DIR/admin-password`, and logs it once. An explicitly empty value (`ADMIN_PASSWORD=`) disables authentication; it is the only way to opt out. See [Authentication](#authentication). |
@@ -292,7 +429,7 @@ The Settings page edits this configuration through `GET`/`PUT /admin/api/setting
 | `DEMO_MODE` | unset | `1` runs a read-only public demo: admin writes are blocked except login and logout, public submissions are simulated, and Spoolman and Moonraker serve fake data. An empty database is seeded with about three months of sample data. Not for your own deployment; see [Run the demo yourself](demo.md). |
 | `DEMO_PUBLIC_URL` | unset | Demo only (ignored without `DEMO_MODE=1`). A link shown on the demo sign-in screen so visitors find the public quote page. A malformed value stops startup. |
 
-`ADMIN_PASSWORD` and the `CF_ACCESS_*` variables affect only `/admin/`. `ALLOWED_HOSTS` and `ADMIN_TRUST_PROXY` apply to everything on `PORT`. The front door and the shop are built for anonymous visitors and carry no admin capability to protect.
+`ADMIN_PASSWORD` and the `CF_ACCESS_*` variables affect only `/admin/`. `ALLOWED_HOSTS` and `ADMIN_TRUST_PROXY` apply to everything on `PORT`. The shop is built for anonymous visitors and carry no admin capability to protect.
 
 The three integration URLs can also be set in the Settings page; see [Optional integrations](#optional-integrations) for the precedence rule.
 
@@ -302,7 +439,7 @@ The admin app (`/admin/` on `PORT`) is secure by default. With no `ADMIN_PASSWOR
 
 With authentication enabled:
 
-- Every `/admin/api/*` route needs a valid session except `/admin/api/login` and `GET /admin/api/demo` (a pre-login signal for the sign-in screen). The admin app's static files stay reachable so the sign-in screen can load, and `/healthz` needs no session. Logging in sets a `printpaca_session` cookie (`HttpOnly`, `SameSite=Strict`, `Path=/admin/`) that expires 30 days after login, whatever the activity. Because of its path, the browser never sends it to the front door or the shop. The cookie gets `Secure` when the request arrived over TLS, directly or through `X-Forwarded-Proto: https` with `ADMIN_TRUST_PROXY=1`. The primary deployment is a LAN container on plain HTTP, where an unconditional `Secure` flag would make the cookie unusable.
+- Every `/admin/api/*` route needs a valid session except `/admin/api/login` and `GET /admin/api/demo` (a pre-login signal for the sign-in screen). The admin app's static files stay reachable so the sign-in screen can load, and `/healthz` needs no session. Logging in sets a `printpaca_session` cookie (`HttpOnly`, `SameSite=Strict`, `Path=/admin/`) that expires 30 days after login, whatever the activity. Because of its path, the browser never sends it to the shop. The cookie gets `Secure` when the request arrived over TLS, directly or through `X-Forwarded-Proto: https` with `ADMIN_TRUST_PROXY=1`. The primary deployment is a LAN container on plain HTTP, where an unconditional `Secure` flag would make the cookie unusable.
 - Sessions live in memory, so a restart logs everyone out. printpaca removes expired sessions hourly.
 - When the request is known to be HTTPS (directly, or through `X-Forwarded-Proto: https` with `ADMIN_TRUST_PROXY=1` or `PUBLIC_TRUST_PROXY=1`) and the Host is a DNS name, responses carry `Strict-Transport-Security: max-age=31536000`. printpaca never sends it over plain HTTP or to an IP address host. Browsers then refuse plain HTTP to that hostname for a year, on every port, so don't point the same hostname at printpaca's LAN address for plain-HTTP access. Use an IP address or a separate LAN-only name for that. To clear a mistaken entry in Chrome, open `chrome://net-internals/#hsts` and delete the domain.
 - Username logins are refused without any password hashing while multi-user mode is off, and at most four password hashes run at once; extra attempts get a `429`.
@@ -312,8 +449,8 @@ With authentication enabled:
   - Once either budget is exhausted, every attempt from that source, right or wrong, waits 1-2 seconds before the password is compared. Once 10 attempts are queued in that wait, the 11th gets `429` ("too many login attempts are already being throttled; try again shortly") before any comparison.
 
   Outside the queue-full case, a correct password is slowed, never rejected.
-- The `Host` header is checked against an allowlist, a DNS-rebinding defense: a malicious page could otherwise point a DNS name it controls at your LAN address and ride your browser's same-origin request. IP literals and `localhost` always pass; any other hostname must be in `ALLOWED_HOSTS`, for example `ALLOWED_HOSTS=printpaca.local,printpaca.example.com`. A disallowed `Host` gets `403` with a one-line explanation, on every request on `PORT` including the front door, the shop, and static files, even with authentication disabled.
-- The tunnel guard decides what a request carrying a header only Cloudflare's edge adds (`CF-Connecting-IP` or `Cf-Ray`) can do at `/admin/`. It never applies to the front door, the shop, or `/api/public/*`. Outside `DEMO_MODE`, it has three outcomes:
+- The `Host` header is checked against an allowlist, a DNS-rebinding defense: a malicious page could otherwise point a DNS name it controls at your LAN address and ride your browser's same-origin request. IP literals and `localhost` always pass; any other hostname must be in `ALLOWED_HOSTS`, for example `ALLOWED_HOSTS=printpaca.local,printpaca.example.com`. A disallowed `Host` gets `403` with a one-line explanation, on every request on `PORT` including the shop and static files, even with authentication disabled.
+- The tunnel guard decides what a request carrying a header only Cloudflare's edge adds (`CF-Connecting-IP` or `Cf-Ray`) can do at `/admin/`. It never applies to the shop or `/api/public/*`. Outside `DEMO_MODE`, it has three outcomes:
   - **Cloudflare Access configured** (`CF_ACCESS_TEAM` and `CF_ACCESS_AUD`): the request needs a valid `Cf-Access-Jwt-Assertion` token or gets `403` with the reason (for example `missing` or `audience`). A verified request skips the Host allowlist, gets a `Secure` cookie without `ADMIN_TRUST_PROXY`, and is rate-limited by `CF-Connecting-IP`. In multi-user mode the token's email picks the identity (`users.accessAdminEmail` for the admin, an employee's Email field for that employee). See [Cloudflare Tunnel](cloudflare-tunnel.md#remote-admin-access-with-cloudflare-access).
   - **No Access, authentication enabled**: the request is allowed and continues to the CSRF and session checks. The printpaca password and the login rate limits are then the only lock. printpaca logs `admin reached through Cloudflare without Cloudflare Access` at most once a minute. This is supported but not recommended.
   - **No Access, authentication disabled** (`ADMIN_PASSWORD=`): the request gets `403`. Set `ADMIN_PASSWORD` or configure Access.
@@ -369,7 +506,7 @@ To run `PORT` behind a TLS-terminating proxy:
 - Set `ADMIN_TRUST_PROXY=1` so printpaca trusts `X-Forwarded-Proto` from the proxy and applies the `Secure` flag to the session cookie.
 - Add your public hostname to `ALLOWED_HOSTS`, for example `ALLOWED_HOSTS=printpaca.example.com`. Without this, printpaca returns `403` for every request carrying that `Host` header (see [Authentication](#authentication)).
 
-`ADMIN_TRUST_PROXY=1` also makes the per-IP rate limits on the front door and the shop read the visitor's real address. If you also expose `PUBLIC_PORT` through a proxy, set `PUBLIC_TRUST_PROXY=1` for that listener.
+`ADMIN_TRUST_PROXY=1` also makes the per-IP rate limits on the shop read the visitor's real address. If you also expose `PUBLIC_PORT` through a proxy, set `PUBLIC_TRUST_PROXY=1` for that listener.
 
 In `docker-compose.yml`:
 

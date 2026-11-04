@@ -1,5 +1,6 @@
 import type { CurrencyConfig } from "../lib/engine/index";
 import { DEFAULT_FETCH_TIMEOUT_MS } from "../lib/fetchTimeouts";
+import type { ChoiceGroup } from "../lib/itemOptions";
 
 // Shapes match server/public.go's publicConfigResponse and publicMaterial field for field: deliberately
 // narrow, never the full admin Config. Pricing is server-side (POST /api/public/quote/preview), so this
@@ -14,8 +15,8 @@ interface PublicMaterial {
 export interface PublicConfig {
   /** email/phone/address mirror server/config.go's QuoteBranding fields; "" when unset. */
   branding: { businessName: string; logoUrl: string; email: string; phone: string; address: string };
-  /** Where the front door's Staff sign-in button points: "/admin/" on the main port, site.adminUrl on the
-   * public port, "" to hide the button (server/public.go's staffURLFunc). */
+  /** Where the shop footer's Staff sign-in link points: "/admin/" on the main port, site.adminUrl on the
+   * public port, "" to hide the link (server/public.go's staffURLFunc). */
   staffUrl: string;
   introText: string;
   currency: CurrencyConfig;
@@ -29,6 +30,9 @@ export interface PublicConfig {
   /** Whether DEMO_MODE=1 (server/main.go): the submission is simulated (validated and priced, nothing
    * persisted), so the page shows a banner. */
   demoMode: boolean;
+  /** shop.maxOrderQty: the largest quantity one request or order may carry. Absent from a server that predates
+   * the setting; the page then assumes 100. */
+  maxOrderQty?: number;
 }
 
 /** A plain fetch/json cast like web/src/lib/api.ts's loadConfig(): null on any network failure or non-2xx,
@@ -57,8 +61,8 @@ const PUBLIC_FIELD_LABELS: Record<string, string> = {
   email: "Email",
 };
 
-/** Maps one server validation error to customer-facing copy. `optionName` prefers the item's own option
- * label. An unrecognized identifier prefix gets a generic message rather than a raw field name; a string
+/** Maps one server validation error to customer-facing copy. A `selections` error already names the group
+ * ("selections: choose Color"), so only the prefix is dropped. An unrecognized identifier prefix gets a generic message rather than a raw field name; a string
  * without the "field: message" shape (no colon, or a non-identifier prefix) passes through as prose. Wire
  * strings are untouched. */
 function sentence(s: string): string {
@@ -68,7 +72,7 @@ function sentence(s: string): string {
   return /[.!?]$/.test(c) ? c : `${c}.`;
 }
 
-function humanizePublicFieldError(raw: string, optionLabel?: string): string {
+function humanizePublicFieldError(raw: string): string {
   const idx = raw.indexOf(":");
   if (idx === -1) return raw; // no "field: message" shape at all -- already-friendly prose, leave it alone
   const field = raw.slice(0, idx);
@@ -76,13 +80,13 @@ function humanizePublicFieldError(raw: string, optionLabel?: string): string {
   if (!/^[a-zA-Z][a-zA-Z0-9]*$/.test(field)) return raw;
   // The price error is a shop-side problem the customer can't fix by editing a field, so show the sentence alone.
   if (field === "price") return sentence(raw.slice(idx + 1));
-  if (field === "optionName") return sentence(`${optionLabel || "Option"}${raw.slice(idx)}`);
+  if (field === "selections") return sentence(raw.slice(idx + 1));
   const label = PUBLIC_FIELD_LABELS[field];
   return label ? sentence(`${label}${raw.slice(idx)}`) : "Check the form and try again.";
 }
 
-function humanizePublicFieldErrors(errors: string[], optionLabel?: string): string[] {
-  return errors.map((e) => humanizePublicFieldError(e, optionLabel));
+function humanizePublicFieldErrors(errors: string[]): string[] {
+  return errors.map((e) => humanizePublicFieldError(e));
 }
 
 export interface SubmitResult {
@@ -90,7 +94,11 @@ export interface SubmitResult {
   status: number;
   errors: string[];
   id?: string;
+  /** The short order reference to show the customer ("HL-1001"); falls back to `id` for a server that predates it. */
+  reference?: string;
   priceCents?: number;
+  /** True when an estimate was accepted without a print time: priceCents is 0 and means "to be confirmed". */
+  needsPrintTime?: boolean;
   /** Set on every successful submission (absent on failures). The storage-full path (server/public.go)
    * accepts the submission without the file and signals fileStored: false in the 201 body; true when the
    * file persisted or none was sent. */
@@ -102,18 +110,13 @@ export interface SubmitResult {
 // Shapes match server/public.go's publicItem/publicItemStock field for field: a narrow wire shape, not the
 // admin-only Item/ItemOption from lib/itemsApi.ts (CRUD concerns have no place in the public entry).
 
-interface ItemOption {
-  name: string;
-  deltaCents: number;
-}
 
 export interface PublicItem {
   id: string;
   name: string;
   description: string;
   priceCents: number;
-  optionLabel: string;
-  options: ItemOption[];
+  optionGroups: ChoiceGroup[];
   imageUrl: string;
   stock: { mode: "ready_to_print" | "in_stock"; qty?: number; allowBackorder: boolean };
 }
@@ -137,13 +140,12 @@ export async function loadPublicItems(): Promise<PublicItem[] | null> {
 export async function submitItemOrder(
   body: {
     itemId: string;
-    optionName: string;
+    selections: { groupId: string; optionId: string }[];
     quantity: number;
     name: string;
     email: string;
     note: string;
   },
-  optionLabel?: string,
 ): Promise<SubmitResult> {
   let res: Response;
   try {
@@ -165,13 +167,13 @@ export async function submitItemOrder(
   }
 
   if (res.ok) {
-    const b = parsed as { id: string; priceCents: number } | null;
-    return { ok: true, status: res.status, errors: [], id: b?.id, priceCents: b?.priceCents };
+    const b = parsed as { id: string; reference?: string; priceCents: number } | null;
+    return { ok: true, status: res.status, errors: [], id: b?.id, reference: b?.reference || b?.id, priceCents: b?.priceCents };
   }
 
   const errBody = parsed as { errors?: string[] } | null;
   const errors = errBody?.errors?.length
-    ? humanizePublicFieldErrors(errBody.errors, optionLabel)
+    ? humanizePublicFieldErrors(errBody.errors)
     : ["Something went wrong submitting the order."];
   return { ok: false, status: res.status, errors };
 }
@@ -198,8 +200,17 @@ export async function submitQuoteRequest(form: FormData): Promise<SubmitResult> 
   }
 
   if (res.ok) {
-    const b = body as { id: string; priceCents: number; fileStored: boolean } | null;
-    return { ok: true, status: res.status, errors: [], id: b?.id, priceCents: b?.priceCents, fileStored: b?.fileStored };
+    const b = body as { id: string; reference?: string; priceCents: number; needsPrintTime?: boolean; fileStored: boolean } | null;
+    return {
+      ok: true,
+      status: res.status,
+      errors: [],
+      id: b?.id,
+      reference: b?.reference || b?.id,
+      priceCents: b?.priceCents,
+      needsPrintTime: b?.needsPrintTime === true,
+      fileStored: b?.fileStored,
+    };
   }
 
   // A 413 comes from http.MaxBytesReader (publicMaxUploadBytes) and carries Go's plain-text page, not

@@ -85,8 +85,8 @@ test.describe("served HTML, JavaScript disabled", () => {
         const block = /<script type="application\/json" id="shop-config">(.*?)<\/script>/s.exec(raw);
         expect(block).not.toBeNull();
         // No raw markup characters can close the block early: the title's "<3D>" arrives escaped.
-        expect(block![1]).not.toMatch(/[<>&]/);
-        const embedded = JSON.parse(block![1]);
+        expect(block![1] ?? "").not.toMatch(/[<>&]/);
+        const embedded = JSON.parse(block![1] ?? "");
         const api = await (await request.get("/api/public/config")).json();
         expect(embedded).toEqual(api);
         expect(embedded.branding.businessName).toBe(NAME);

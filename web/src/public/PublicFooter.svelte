@@ -80,7 +80,7 @@
     overflow-wrap: anywhere;
   }
   .inner {
-    max-width: 60rem;
+    max-width: calc(var(--measure-record) * 1.4);
     margin: 0 auto;
     display: flex;
     flex-direction: column;

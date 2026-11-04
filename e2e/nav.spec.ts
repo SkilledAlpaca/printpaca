@@ -51,3 +51,36 @@ test("skip link is the first tab stop and focuses main without changing the rout
   // the tab router.
   await expect(page).toHaveURL(/#\/quote$/);
 });
+
+// <main> takes script focus (tabindex="-1") when a destination opens, so the skip target and the scroll container
+// are focused. theme.css's :focus-visible ring must not frame the whole content area for that; real controls keep it.
+test("opening a destination leaves no focus ring on the main area, on any admin route", async ({ page }) => {
+  await page.goto("/admin/");
+  const nav = page.getByRole("navigation", { name: "Sections" });
+  await expect(nav.getByRole("button").first()).toBeVisible();
+  const names = (await nav.getByRole("button").allInnerTexts()).map((t) => t.trim().split("\n")[0]!.trim()).filter(Boolean);
+  expect(names.length).toBeGreaterThan(8);
+  const main = page.locator("#main");
+  for (const how of ["click", "keyboard"] as const) {
+    for (const name of names) {
+      const button = navButton(page, name);
+      if (how === "click") await button.click();
+      else {
+        await button.focus();
+        await page.keyboard.press("Enter");
+      }
+      await expect(button).toHaveAttribute("aria-current", "page");
+      await expect(main).toHaveAttribute("tabindex", "-1");
+      await expect.poll(() => main.evaluate((el) => getComputedStyle(el).outlineStyle), `${how} ${name}`).toBe("none");
+    }
+  }
+});
+
+test("keyboard focus on real controls keeps the focus ring", async ({ page }) => {
+  await page.goto("/admin/");
+  await navButton(page, "Settings").click();
+  await page.keyboard.press("Tab");
+  const focused = page.locator(":focus");
+  await expect(focused).toBeVisible();
+  expect(await focused.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe("solid");
+});

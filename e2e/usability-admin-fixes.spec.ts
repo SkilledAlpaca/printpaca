@@ -1,6 +1,10 @@
 import { test, expect } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
+import { fillCanonicalQuote, gotoSettings, navButton } from "./helpers";
 
-// Regression tests for the v1.2 usability review's admin findings (A1-A17), in id order.
+// Regression tests for the v1.2 usability review's admin findings (A1-A17), in id order. The file name sorts it
+// after the specs that expect an empty shop (fresh-install, clients): A10 and A11 must record a payment, and a
+// paid invoice can be cancelled but not deleted.
 
 function gcode(weightG: number, minutes: number, name: string): { name: string; mimeType: string; buffer: Buffer } {
   return {
@@ -69,3 +73,44 @@ test.describe("A1: a missing-field link names the part it was written for", () =
     }
   });
 });
+
+test.describe("A2: Add part moves focus to the new part", () => {
+  test("Add part from a single part, and Duplicate, both land on the new part's name field", async ({ page }) => {
+    await page.goto("/admin/");
+    await page.getByRole("button", { name: "Add part" }).click();
+    await expect(page.getByRole("tab")).toHaveCount(2);
+    const name = page.getByLabel("Part name");
+    await expect(name).toBeFocused();
+    await expect(name).toHaveValue("Part 2");
+    await page.getByRole("button", { name: "+ Add part" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("tab")).toHaveCount(3);
+    await expect(name).toBeFocused();
+    await expect(name).toHaveValue("Part 3");
+    await page.getByRole("button", { name: /^Duplicate Part 3/ }).click();
+    await expect(page.getByRole("tab")).toHaveCount(4);
+    await expect(name).toBeFocused();
+    await expect(name).toHaveValue("Part 3 (copy)");
+  });
+});
+
+test.describe("A3: weight and print time come before the Recent prints picker", () => {
+  test("with Moonraker on, Model weight and Print time precede the picker in the DOM", async ({ page }) => {
+    await page.goto("http://127.0.0.1:9199/admin/");
+    const picker = page.getByLabel("Recent print (from Moonraker)");
+    await expect(picker).toBeVisible();
+    const weight = page.getByLabel(/Model weight/);
+    const hours = page.getByLabel(/^Print time \(h/);
+    const order = await page.evaluate(() => {
+      const w = [...document.querySelectorAll("label")].find((l) => /^Model weight/.test(l.textContent ?? ""))!;
+      const t = document.getElementById(document.querySelector<HTMLInputElement>('input[aria-label="Print time (hours)"]')!.id)!;
+      const p = [...document.querySelectorAll("label")].find((l) => /Recent print/.test(l.textContent ?? ""))!;
+      const follows = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      return { weight: follows(w, p), time: follows(t, p) };
+    });
+    expect(order).toEqual({ weight: true, time: true });
+    await expect(weight).toBeVisible();
+    await expect(hours).toBeVisible();
+  });
+});
+

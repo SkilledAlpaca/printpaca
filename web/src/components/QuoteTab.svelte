@@ -390,9 +390,6 @@
               </div>
               {#key part.id}
                 <GcodeDrop {cfg} {part} />
-                {#if moonrakerEnabled(cfg)}
-                  <RecentPrints {cfg} {part} />
-                {/if}
               {/key}
               <FormGrid align="controls">
                 <LabeledNumber label="Model weight" suffix="g" bind:value={part.weightG} warn={warnFor(w, "weightG")} help="The weight of the model from your slicer, without supports or waste." />
@@ -439,6 +436,12 @@
                   <SlicerHelp />
                 </div>
               {/if}
+              <!-- After the weight and time (A3): a long picker must not push the two fields the price needs below the fold. -->
+              {#key part.id}
+                {#if moonrakerEnabled(cfg)}
+                  <RecentPrints {cfg} {part} />
+                {/if}
+              {/key}
             </Fieldset>
           </Card>
         </div>

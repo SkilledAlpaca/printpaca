@@ -483,6 +483,14 @@ describe("shop storefront rules", () => {
     expect(shopWarningsOf(baseConfig())).toEqual([]);
   });
 
+  it("a settings response from an older config file, with no shop.pageTitle, raises nothing", () => {
+    const c = baseConfig();
+    delete (c.shop as Partial<typeof c.shop>).pageTitle;
+    expect(shopWarningsOf(c)).toEqual([]);
+    c.shop.pageTitle = "x".repeat(71);
+    expect(shopWarningsOf(c).map((w) => w.field)).toEqual(["shop.pageTitle"]);
+  });
+
   it("rejects the gallery and custom estimates both off, and allows either alone", () => {
     const c = baseConfig();
     c.shop.gallery = false;

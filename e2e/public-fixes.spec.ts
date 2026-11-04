@@ -503,3 +503,22 @@ test.describe("P9: small polish", () => {
   });
 });
 
+test.describe("P10: the default intro matches what the shop offers", () => {
+  test("with custom estimates off, the built-in intro does not mention uploading a model; an owner's intro is untouched", async ({ page, request }) => {
+    await page.setExtraHTTPHeaders(xff());
+    try {
+      await page.goto("/");
+      await expect(page.locator(".intro")).toContainText("upload your own 3D model");
+      await setShop(request, { customEstimates: false });
+      await page.reload();
+      await expect(page.locator(".intro")).toHaveText("Order a ready-made 3D print.");
+      const config = await getConfig(request);
+      config.publicQuotes = { ...config.publicQuotes, introText: "Upload your STL and we will print it." };
+      await putConfig(request, config);
+      await page.reload();
+      await expect(page.locator(".intro")).toHaveText("Upload your STL and we will print it.");
+    } finally {
+      await resetShop(request);
+    }
+  });
+});

@@ -20,6 +20,12 @@
   /** The intro shown when the shop wrote none. "Estimate", not "instant estimate": an unsliced file gets no
    * number until the shop has its print time. */
   export const DEFAULT_INTRO_TEXT = "Order a ready-made 3D print, or upload your own 3D model for a price estimate.";
+  /** The built-in intro when custom estimates aren't offered: it can't promise an upload the shop doesn't take. */
+  export const DEFAULT_INTRO_NO_ESTIMATES = "Order a ready-made 3D print.";
+  /** The owner's own intro text always wins; the built-in default depends on whether estimates are offered. */
+  export function introTextFor(owned: string | undefined, estimatesOffered: boolean): string {
+    return owned ? owned : estimatesOffered ? DEFAULT_INTRO_TEXT : DEFAULT_INTRO_NO_ESTIMATES;
+  }
 
   export function describeGcode(result: GcodeResult, fname: string): string {
     if (result.status === "not-found") {
@@ -1038,7 +1044,7 @@
   );
 
   const introText = $derived(
-    cfg?.introText ? cfg.introText : DEFAULT_INTRO_TEXT,
+    introTextFor(cfg?.introText, shop.customEstimates && (cfg?.materials.length ?? 0) > 0),
   );
 </script>
 

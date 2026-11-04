@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseGcodeText, resolveGcode, type GcodeResult } from "../lib/engine/index";
-import { DEFAULT_INTRO_TEXT, describeGcode, gcodeStatusFor } from "./PublicQuotePage.svelte";
+import { DEFAULT_INTRO_NO_ESTIMATES, DEFAULT_INTRO_TEXT, describeGcode, gcodeStatusFor, introTextFor } from "./PublicQuotePage.svelte";
 
 // A slicer that reports weight but no print time must not be styled as green success: hasExactParse
 // would hide the manual time inputs and leave Submit stuck disabled.
@@ -62,5 +62,17 @@ describe("PublicQuotePage: default intro", () => {
   it("promises a price estimate, never an instant one", () => {
     expect(DEFAULT_INTRO_TEXT).toContain("price estimate");
     expect(DEFAULT_INTRO_TEXT.toLowerCase()).not.toContain("instant");
+  });
+});
+
+describe("PublicQuotePage: introTextFor", () => {
+  it("keeps the owner's own intro whatever the estimate setting", () => {
+    expect(introTextFor("Hand-made in Ohio.", false)).toBe("Hand-made in Ohio.");
+    expect(introTextFor("Hand-made in Ohio.", true)).toBe("Hand-made in Ohio.");
+  });
+  it("mentions uploading a model in the default only when estimates are offered", () => {
+    expect(introTextFor("", true)).toContain("upload your own 3D model");
+    expect(introTextFor("", false)).not.toMatch(/upload|model|estimate/i);
+    expect(introTextFor(undefined, false)).toBe(DEFAULT_INTRO_NO_ESTIMATES);
   });
 });

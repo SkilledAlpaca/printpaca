@@ -3,6 +3,7 @@
   import { money, formatDate } from "../lib/format";
   import { bpToPct, type Invoice } from "../lib/invoicesApi";
   import { printLogo } from "../lib/printLogo.svelte";
+  import { totalsRows } from "../lib/invoiceForm";
   import { paypalPayLink } from "../lib/paypal";
   import QrCode from "./QrCode.svelte";
 
@@ -14,8 +15,19 @@
   const hasShipTo = $derived(
     !!invoice.clientShippingAddress && invoice.clientShippingAddress !== invoice.clientBillingAddress,
   );
-  const hasDiscount = $derived(invoice.discountCents > 0);
   const hasTax = $derived(invoice.taxCents !== 0 || invoice.taxBp !== 0);
+  // The same rows as the editor and the sent view (invoiceForm.ts's totalsRows): Subtotal, Shipping and
+  // Discount only when present, then Sales tax and Total, so the printed rows add up.
+  const rows = $derived(
+    totalsRows({
+      lineKinds: invoice.lines.map((l) => l.kind),
+      lineAmountsCents: invoice.lines.map((l) => l.amountCents),
+      subtotalCents: invoice.subtotalCents,
+      discountCents: invoice.discountCents,
+      taxCents: invoice.taxCents,
+      totalCents: invoice.totalCents,
+    }).filter((r) => r.key !== "total" && (r.key !== "tax" || hasTax)),
+  );
   const hasPayments = $derived(invoice.payments.length > 0);
   // A fully paid invoice prints "PAID" instead of "$0.00", which read as unpaid. <= 0, not === 0: an
   // overpayment still reads as satisfied, never a negative balance due.
@@ -90,22 +102,12 @@
   </table>
 
   <div class="totals">
-    <div class="totals-row">
-      <span>Subtotal</span>
-      <span class="num">{money(invoice.subtotalCents, cfg)}</span>
-    </div>
-    {#if hasDiscount}
+    {#each rows as row (row.key)}
       <div class="totals-row">
-        <span>Invoice discount</span>
-        <span class="num">-{money(invoice.discountCents, cfg)}</span>
+        <span>{row.key === "tax" ? `Sales tax (${taxPct.toFixed(2)}%)` : row.key === "discount" ? "Invoice discount" : row.label}</span>
+        <span class="num">{money(row.cents, cfg)}</span>
       </div>
-    {/if}
-    {#if hasTax}
-      <div class="totals-row">
-        <span>Sales tax ({taxPct.toFixed(2)}%)</span>
-        <span class="num">{money(invoice.taxCents, cfg)}</span>
-      </div>
-    {/if}
+    {/each}
     <div class="totals-row">
       <span>Total</span>
       <span class="num">{money(invoice.totalCents, cfg)}</span>

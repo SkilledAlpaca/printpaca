@@ -40,7 +40,7 @@
   /* Round, not the shared rectangle: a bordered square holding one "?" at the 44px tap target reads as an
    * empty text field next to the heading. A circle is the conventional help affordance at the same size. */
   .help-toggle {
-    width: 44px;
+    width: var(--space-12);
     min-width: 44px;
     padding: 0;
     border-radius: 999px;
@@ -58,10 +58,10 @@
    * BreakdownTable, PricingPanel, HistoryPanel); it keeps the note on its own full-width row. */
   .help-note {
     grid-column: 1 / -1;
-    background: var(--surface-2);
+    background: var(--inset-bg);
     border-left: 3px solid var(--muted);
     border-radius: calc(var(--radius) / 2);
-    padding: 0.5rem 0.7rem;
+    padding: var(--space-2) var(--space-3);
     font-size: var(--text-sm);
     color: var(--text);
     max-width: var(--measure-prose);
@@ -71,6 +71,6 @@
   }
   .help-note a {
     display: inline-block;
-    margin-top: 0.35rem;
+    margin-top: var(--space-1);
   }
 </style>

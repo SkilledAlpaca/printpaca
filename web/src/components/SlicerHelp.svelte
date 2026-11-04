@@ -14,7 +14,7 @@
 </details>
 
 <style>
-  .slicer-help { font-size: var(--text-sm); margin-top: 0.2rem; }
+  .slicer-help { font-size: var(--text-sm); margin-top: var(--space-1); }
   .slicer-help summary { cursor: pointer; color: var(--accent-text); width: fit-content; }
-  .slicer-help p { margin: 0.3rem 0 0; color: var(--muted); max-width: 60ch; }
+  .slicer-help p { margin: var(--space-1) 0 0; color: var(--muted); max-width: var(--measure-prose); }
 </style>

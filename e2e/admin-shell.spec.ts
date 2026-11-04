@@ -146,7 +146,7 @@ test("Settings saves with Ctrl+S", async ({ page, request }) => {
   const original = (await (await request.get("/admin/api/settings")).json()).config;
   try {
     await page.goto("/admin/#/settings");
-    const phone = page.getByLabel("Phone");
+    const phone = page.getByLabel("Phone", { exact: true });
     await phone.fill("555-0100");
     await phone.press("Control+s");
     await expect(page.getByText("Settings saved.")).toBeVisible();
@@ -320,7 +320,7 @@ test("Integrations Test works for a URL set by an environment variable", async (
   await page.goto("http://127.0.0.1:9199/admin/#/settings");
   const card = page.locator("#section-integrationsUrls");
   await expect(card.getByText("SPOOLMAN_URL is set on the container")).toBeVisible();
-  const test = card.locator(".subcard", { hasText: "Spoolman" }).getByRole("button", { name: "Test" });
+  const test = card.locator(".card", { hasText: "Spoolman" }).getByRole("button", { name: "Test" });
   await expect(test).not.toBeDisabled();
   await expect(test).toHaveAttribute("aria-disabled", "false");
   await test.click();

@@ -14,6 +14,7 @@
   import { announce } from "../../lib/a11y.svelte";
   import { stickyInset } from "../../lib/stickyInset";
   import ErrorSummary from "../ErrorSummary.svelte";
+  import Card from "../ui/Card.svelte";
   import { findFieldByLabel, errorLabel, type ErrorTarget } from "../../lib/fieldErrors";
   import { fieldLabel, hasFieldLabel } from "../../lib/format";
   import { refocusIfLost } from "../../lib/a11yFocus";
@@ -38,6 +39,10 @@
           // possibly dirty `form`.
           original: ServerConfig;
           hasError: (section: string) => boolean;
+          // For state the server changed outside the Save button (the shop's hero image has its own
+          // endpoints): applies the same edit to the draft and to the saved baseline, so it never reads as an
+          // unsaved change and a later discard keeps it.
+          sync: (mutate: (config: ServerConfig) => void) => void;
         },
       ]
     >;
@@ -137,6 +142,12 @@
     }
   }
 
+  function sync(mutate: (config: ServerConfig) => void) {
+    if (!form || !original) return;
+    mutate(form);
+    mutate(original);
+  }
+
   function discard() {
     if (!original) return;
     // Same proxy caveat as save(): snapshot first; it is already detached from `original`.
@@ -163,18 +174,18 @@
   {#if loading}
     <p role="status">Loading…</p>
   {:else if loadFailed}
-    <div class="card banner-error">
+    <Card class="card banner-error">
       <p>Couldn't load settings from the server. Check that printpaca's backend is running.</p>
       <button type="button" onclick={refresh}>Retry</button>
-    </div>
+    </Card>
   {:else if form && original && builtin}
     {#if loadErrorMsg}
-      <div class="card banner-warn">
+      <Card class="card banner-warn">
         <p>config.yaml on disk is invalid, so this page ignores it: {loadErrorMsg}. Saving overwrites it.</p>
-      </div>
+      </Card>
     {/if}
 
-    {@render children({ form, builtin, original, hasError })}
+    {@render children({ form, builtin, original, hasError, sync })}
 
     <p class="hint" role="status" tabindex="-1" data-settings-status>{dirty ? "" : savedNotice}</p>
 
@@ -194,24 +205,24 @@
 </div>
 
 <style>
-  .settings-editor { display: flex; flex-direction: column; gap: 1.5rem; }
+  .settings-editor { display: flex; flex-direction: column; gap: var(--gap-section); }
 
   /* Sticky to the bottom of the scroll container (<main> at >=900px, the window below that), flush with its
-   * edge because <main> has no padding. It spans the same content column as the tab's jump nav. This component
-   * doesn't own the page layout (each embedding tab does), so it is self-contained with its own top border and
-   * padding, no negative margins. */
+   * edge because <main> has no padding. It spans the same content column as the tab's cards. This component
+   * doesn't own the page layout (each embedding tab does), so it is self-contained: a card tint instead of an
+   * outline (D6), and its own padding. */
   .save-bar {
     position: sticky;
     bottom: 0;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
+    z-index: 2;
+    background: var(--card-bg);
     border-radius: var(--radius) var(--radius) 0 0;
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
-  .save-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+  .save-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
   /* The save bar's flex gap already spaces the error list; theme's .errors bottom margin would double it. */
   .save-bar :global(.errors) { margin-bottom: 0; }
 </style>

@@ -178,6 +178,7 @@ function maxBytesWarning(f: string, value: string, maxBytes: number): FieldWarni
 const SHOP_HEADING_MAX = 120;
 const SHOP_LONG_TEXT_MAX = 300; // announcement, pausedMessage, shippingNote, turnaroundNote
 const SHOP_HERO_ALT_MAX = 200;
+const SHOP_PAGE_TITLE_MAX = 70; // D30
 const SHOP_FOOTER_LINKS_MAX = 6;
 const SHOP_FOOTER_LABEL_MAX = 40;
 const SHOP_FOOTER_URL_MAX = 500;
@@ -220,6 +221,7 @@ export function shopWarnings(shop: ServerConfig["shop"]): FieldWarning[] {
   const warnings: FieldWarning[] = [
     ...field("shop.maxOrderQty", shop.maxOrderQty, { min: 1, max: 10000, integer: true }),
     ...plainTextWarning("shop.heading", shop.heading, SHOP_HEADING_MAX),
+    ...plainTextWarning("shop.pageTitle", shop.pageTitle ?? "", SHOP_PAGE_TITLE_MAX),
     ...plainTextWarning("shop.announcement", shop.announcement, SHOP_LONG_TEXT_MAX),
     ...plainTextWarning("shop.pausedMessage", shop.pausedMessage, SHOP_LONG_TEXT_MAX),
     ...plainTextWarning("shop.shippingNote", shop.shippingNote, SHOP_LONG_TEXT_MAX),

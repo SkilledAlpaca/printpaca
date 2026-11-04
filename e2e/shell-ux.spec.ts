@@ -22,34 +22,57 @@ test("a wheel over the right gutter scrolls main at 1920 px", async ({ page }) =
   await expect.poll(() => main.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
 });
 
-test("the Settings jump nav is flush with the top, wraps, and never scrolls sideways", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+test("the Settings section rail stays in view at 1366x768, scrolls on its own, and reaches every card", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
   await page.goto("/admin/");
   await gotoSettings(page, { load: false });
   const nav = page.getByRole("navigation", { name: "Settings sections" });
   await expect(nav).toBeVisible();
-  await page.locator("main#main").evaluate((el) => (el.scrollTop = 900));
-  await expect.poll(async () => (await nav.boundingBox())!.y).toBe(0);
+  // A rail beside the cards, not a bar across the top: a narrow share of the width, so the cards keep the rest.
+  const first = (await nav.boundingBox())!;
+  expect(first.width / 1366).toBeLessThan(0.2);
+  await page.locator("main#main").evaluate((el) => (el.scrollTop = 1200));
+  // Sticky: still on screen after scrolling, and never taller than the screen.
+  await expect.poll(async () => (await nav.boundingBox())!.y).toBeLessThan(40);
+  const box = (await nav.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(768);
   expect(await nav.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
 
-  // Anchor jump: the heading lands fully visible below the sticky nav.
-  await nav.getByRole("button", { name: "Hardware" }).click();
-  await expect
-    .poll(async () => {
-      const navBottom = (await nav.boundingBox())!.y + (await nav.boundingBox())!.height;
-      const heading = await page.locator("#section-hardware h2").boundingBox();
-      return heading!.y >= navBottom;
-    })
-    .toBe(true);
+  // Every section is reachable from the rail, the last one included, and its heading lands in view.
+  for (const name of ["Storefront", "Hardware", "Diagnostics"]) {
+    const link = nav.getByRole("button", { name });
+    await link.scrollIntoViewIfNeeded();
+    await link.click();
+    const id = { Storefront: "#section-storefront", Hardware: "#section-hardware", Diagnostics: "#section-diagnostics" }[name]!;
+    await expect
+      .poll(async () => {
+        const heading = (await page.locator(`${id} h2`).boundingBox())!;
+        return heading.y >= 0 && heading.y + heading.height <= 768;
+      })
+      .toBe(true);
+  }
 });
 
-test("the Settings jump nav is not sticky below 600 px", async ({ page }) => {
+test("on a phone the Settings sections are a collapsed list that closes after a jump", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/admin/#/settings");
   const nav = page.getByRole("navigation", { name: "Settings sections" });
   await expect(nav).toBeVisible();
   expect(await nav.evaluate((el) => getComputedStyle(el).position)).toBe("static");
-  expect(await nav.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  const toggle = nav.getByRole("button", { name: "Jump to a section" });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(nav.getByRole("button", { name: "Hardware" })).toHaveCount(0);
+  // The collapsed control is a full-size tap target.
+  expect((await toggle.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await nav.getByRole("button", { name: "Hardware" }).click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#section-hardware h2")).toBeFocused();
+  // No sideways scrolling anywhere.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
 test("stepping Solidity never moves the field", async ({ page }) => {

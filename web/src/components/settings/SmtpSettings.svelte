@@ -3,6 +3,10 @@
   import { settingsWarnings } from "../../lib/settingsRules";
   import { warnFor } from "../../lib/format";
   import { testSmtp } from "../../lib/sendApi";
+  import { cardClass } from "../../lib/settings";
+  import Card from "../ui/Card.svelte";
+  import Field from "../ui/Field.svelte";
+  import FormGrid from "../ui/FormGrid.svelte";
   import LabeledNumber from "../LabeledNumber.svelte";
   import LabeledText from "../LabeledText.svelte";
 
@@ -47,19 +51,19 @@
   }
 </script>
 
-<div id="section-smtp" class="card roomy" class:danger-border={hasError("smtp")}>
-  <h2>Email</h2>
+<Card id="section-smtp" class={cardClass(hasError("smtp"))} heading="Email">
   <p class="hint">Notifies you of each new estimate request and sends quotes and invoices to clients from the
     Quotes and Invoices pages. Leave host empty to disable both. The password is read from the SMTP_PASSWORD
     environment variable and never stored in config.yaml.</p>
   {#if form.smtp.host === ""}
     <p class="hint">The other fields are checked once you enter a host.</p>
   {/if}
-  <div class="field-rows">
-    <label class="field">
-      <span>Host</span>
-      <input bind:value={form.smtp.host} placeholder="smtp.example.com" />
-    </label>
+  <FormGrid align="controls">
+    <Field id="smtp-host" label="Host" size="m">
+      {#snippet children(a)}
+        <input id={a.id} aria-describedby={a.describedby} bind:value={form.smtp.host} placeholder="smtp.example.com" />
+      {/snippet}
+    </Field>
     <!-- min/max mirror server/config.go's validate(): smtp.port out of range [1,65535]. -->
     <LabeledNumber
       label="Port"
@@ -69,10 +73,11 @@
       bind:value={form.smtp.port}
       warn={warnFor(warnings, "smtp.port")}
     />
-    <label class="field">
-      <span>Username</span>
-      <input bind:value={form.smtp.username} />
-    </label>
+    <Field id="smtp-username" label="Username" size="m">
+      {#snippet children(a)}
+        <input id={a.id} aria-describedby={a.describedby} bind:value={form.smtp.username} />
+      {/snippet}
+    </Field>
     <LabeledText
       label="From address"
       type="email"
@@ -81,12 +86,12 @@
     />
     <LabeledText
       label="Notification address"
-      hint="Where new request notifications go."
+      help="Where new request notifications go."
       type="email"
       bind:value={form.smtp.to}
       warn={warnFor(warnings, "smtp.to")}
     />
-  </div>
+  </FormGrid>
   <div class="test-row">
     <!-- aria-disabled, not disabled: the button stays focusable so its reason is reachable, and the two states
          can't disagree. -->
@@ -104,9 +109,9 @@
   <p class="status-line" role={testFailed ? "alert" : "status"} aria-live={testFailed ? "assertive" : "polite"}>
     {testStatus}
   </p>
-</div>
+</Card>
 
 <style>
-  .test-row { display: flex; align-items: center; gap: 0.6rem; margin-top: var(--space-2); }
+  .test-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-2); }
   .test-row .hint { margin: 0; }
 </style>

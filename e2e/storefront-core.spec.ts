@@ -223,38 +223,87 @@ test("accepting orders off: the message replaces every submit, the server refuse
   await setShop(request, { acceptingOrders: false, pausedMessage: PAUSED });
   try {
     const order = await request.post("/api/public/item-order", { headers: xff(), data: orderBody(itemId) });
-    expect(order.status()).toBe(403);
-    expect(await order.json()).toMatchObject({ paused: true, pausedMessage: PAUSED, errors: [PAUSED] });
+    expect(order.status()).toBe(503);
+    expect(await order.json()).toMatchObject({ paused: true, pausedMessage: PAUSED, error: PAUSED, errors: [PAUSED] });
     const preview = await request.post("/api/public/quote/preview", { data: { material: "PLA", quantity: 1, weightG: 10, timeSeconds: 600 } });
-    expect(preview.status()).toBe(403);
+    expect(preview.status()).toBe(503);
     expect((await preview.json()).pausedMessage).toBe(PAUSED);
     const submit = await request.post("/api/public/quote-request", {
       headers: xff(),
       multipart: { name: "V", email: "v@example.com", material: "PLA", quantity: "1", weightG: "10", timeSeconds: "600" },
     });
-    expect(submit.status()).toBe(403);
+    expect(submit.status()).toBe(503);
     expect((await submit.json()).paused).toBe(true);
 
     // The owner still sees and can work the request that came in before the pause.
     expect((await request.get(`/admin/api/requests/${existingId}`)).status()).toBe(200);
 
-    // UI: the item page and the estimate form show the message and no submit button.
-    await page.goto("/");
-    await expect(page.getByText(PAUSED).first()).toBeVisible();
-    await page.getByRole("button", { name: new RegExp(ITEM_NAME) }).click();
-    await expect(page.getByText(PAUSED)).toBeVisible();
-    await expect(page.getByRole("button", { name: /place order|order/i })).toHaveCount(0);
-    await page.goto("/#/estimate");
-    await page.reload();
-    await expect(page.getByRole("heading", { name: "Custom estimate" })).toBeVisible();
-    await expect(page.getByText(PAUSED)).toBeVisible();
-    await expect(page.getByRole("button", { name: "Request an estimate" })).toHaveCount(0);
+    // UI (D27): every public route shows the Closed page with the owner's message, and no order or estimate UI.
+    for (const route of ["/", `/#/item/${itemId}`, "/#/estimate", "/#/category/anything", "/#/order/received"]) {
+      await page.goto(route);
+      await page.reload();
+      await expect(page.getByRole("heading", { level: 1, name: "We're closed right now" })).toBeVisible();
+      await expect(page.getByText(PAUSED)).toBeVisible();
+      await expect(page.getByRole("button", { name: new RegExp(ITEM_NAME) })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /place order|request an estimate/i })).toHaveCount(0);
+      await expect(page.getByRole("group", { name: "View" })).toHaveCount(0);
+      await expect(page.getByRole("navigation", { name: "Footer" })).toBeVisible();
+    }
   } finally {
     await resetShop(request);
   }
   const reopened = await request.post("/api/public/item-order", { headers: xff(), data: orderBody(itemId) });
   expect(reopened.status()).toBe(201);
   createdRequests.push((await reopened.json()).id);
+});
+
+test("styled storefront: accent vars, stock and from-price switches, turnaround note, Closed page contact, mid-session pause", async ({ page, request }) => {
+  const config = await getConfig(request);
+  const item = await request.post("/admin/api/items", {
+    data: { name: "Core Optioned", description: "d", priceCents: 700, public: true, stockMode: "in_stock", stockQty: 4, sortOrder: 60, optionGroups: [{ label: "Color", required: false, options: [{ name: "Red", deltaCents: 300 }] }] },
+  });
+  expect(item.ok()).toBeTruthy();
+  const optioned = (await item.json()).id as string;
+  createdItems.push(optioned);
+  await pollItems(request, (r) => r.items.some((i) => i.id === optioned));
+  try {
+    await setShop(request, { accentColor: "#9c4212", showStock: false, showFromPrice: false, turnaroundNote: "Ships in 3 days." }, { quote: { ...config.quote, email: "shop@example.com", phone: "555-0100" } });
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.goto("/");
+    const card = page.getByRole("button", { name: /Core Optioned/ });
+    await expect(card).toBeVisible();
+    await expect(card).not.toContainText("In stock");
+    await expect(card).not.toContainText("from");
+    expect(await page.evaluate(() => document.documentElement.style.getPropertyValue("--accent"))).toBe("#9c4212");
+    const dark = (await publicShop(request)).accent.dark.accent as string;
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue("--accent"))).toBe(dark);
+    // Customer tap targets stay 44 px on a phone.
+    const box = await page.getByRole("link", { name: "Staff sign-in" }).boundingBox().catch(() => null);
+    if (box) expect(box.height).toBeGreaterThanOrEqual(44);
+    await card.click();
+    await expect(page.getByText("Ships in 3 days.")).toBeVisible();
+    await setShop(request, { showStock: true, showFromPrice: true });
+    await page.goto("/");
+    await page.reload();
+    await expect(page.getByRole("button", { name: /Core Optioned/ })).toContainText("from");
+    await expect(page.getByRole("button", { name: /Core Optioned/ })).toContainText("In stock: 4");
+
+    // The shop closes while an order form is open: the refused submit flips the page to the Closed page.
+    await page.goto(`/#/item/${optioned}`);
+    await page.reload();
+    await page.getByLabel("Name", { exact: true }).fill("Mid Session");
+    await page.getByLabel("Email").fill("mid@example.com");
+    await setShop(request, { acceptingOrders: false, pausedMessage: PAUSED });
+    await page.getByRole("button", { name: "Place order" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "We're closed right now" })).toBeVisible();
+    await expect(page.getByText(PAUSED)).toBeVisible();
+    await expect(page.getByRole("link", { name: "shop@example.com" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "555-0100" })).toBeVisible();
+  } finally {
+    await resetShop(request);
+  }
 });
 
 test("the temporary Settings inputs (Requests tab, Public estimates) reach the server rules", async ({ page, request }) => {
@@ -454,14 +503,13 @@ test("axe: the shop passes with the storefront settings on and with each flow sw
 
     await setShop(request, { acceptingOrders: false });
     await page.goto("/");
-    await expect(page.getByText(PAUSED).first()).toBeVisible();
-    await page.getByRole("button", { name: new RegExp(ITEM_NAME) }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "We're closed right now" })).toBeVisible();
     await expect(page.getByText(PAUSED)).toBeVisible();
-    problems.push(...(await axeProblems(page, "paused item")));
+    problems.push(...(await axeProblems(page, "closed page")));
     await page.goto("/#/estimate");
     await page.reload();
     await expect(page.getByText(PAUSED)).toBeVisible();
-    problems.push(...(await axeProblems(page, "paused estimate")));
+    problems.push(...(await axeProblems(page, "closed estimate route")));
 
     await setShop(request, { acceptingOrders: true, customEstimates: false });
     await page.goto("/#/estimate");

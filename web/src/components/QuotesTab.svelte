@@ -12,7 +12,7 @@
     type ServerQuote,
     type QuoteInput,
   } from "../lib/quotesApi";
-  import { toOrderInputs, toFormState, parseFormState, engineOptions, pendingOpen } from "../lib/state.svelte";
+  import { toOrderInputs, toFormState, parseFormState, engineOptions, pendingOpen, startNewQuote } from "../lib/state.svelte";
   import { buildQuotesFile, parseQuotesFile, sortQuotes, type QuoteSortOrder } from "../lib/quotesFile";
   import { formatSavedAt, quoteRowStats } from "../lib/quoteRow";
   import { money } from "../lib/format";
@@ -747,7 +747,7 @@
   <div class="head-row">
     <h1 tabindex="-1">Quotes</h1>
     <div class="head-actions">
-      <button type="button" class="primary" onclick={() => (location.hash = "#/quote")}>New quote</button>
+      <button type="button" class="primary" onclick={() => { if (startNewQuote(cfg)) location.hash = "#/quote"; }}>New quote</button>
       <button type="button" class="quiet" onclick={exportQuotes} aria-disabled={quotes.length === 0 || backfill.backfilling}>
         Export
       </button>

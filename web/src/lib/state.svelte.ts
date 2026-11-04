@@ -3,6 +3,7 @@ import {
   MAX_PART_LABEL_CHARS,
   defaultEngineOptions,
   type EffectiveConfig,
+  type EnergyInputs,
   type EngineOptions,
   type OrderBreakdown,
   type OrderInputs,
@@ -14,6 +15,7 @@ import type { Invoice } from "./invoicesApi";
 import { energyInputsFor } from "./quoteInputs";
 import { nextStartWall } from "./engine/schedule";
 import { demoLocal, resolveCurrencyPreset } from "./demoLocal.svelte";
+import { prefill } from "./prefill.svelte";
 
 interface SpoolOverrideState {
   label: string;
@@ -231,7 +233,45 @@ export function startOnePartQuote(cfg: EffectiveConfig): PartForm {
   quote.parts = [part];
   quote.activePartId = part.id;
   seedPart(cfg, quote.parts[0]!);
+  clearQuoteSession();
   return quote.parts[0]!;
+}
+
+/** Empties everything that belongs to the quote being edited but isn't a part or order field: the saved
+ * quote it is bound to, its label, client and meta, the picker records, the pinned rates. */
+function clearQuoteSession(): void {
+  prefill.byPart = {};
+  quoteClient.id = "";
+  quoteClient.name = "";
+  quoteMeta.project = "";
+  quoteMeta.reference = "";
+  quoteSession.loadedId = null;
+  quoteSession.version = "";
+  quoteSession.label = "";
+  quoteSession.pin = null;
+  quoteSession.conflict = false;
+  quoteSession.status = { text: "", failed: false };
+}
+
+/** A blank quote: one part and the order reseeded from shop defaults, no label, client, meta or bound saved
+ * quote. Every "New quote" entry point goes through here (see startNewQuote), so nothing carries over from
+ * the last quote; "Duplicate" on a saved quote is the explicit way to carry values over. */
+export function resetQuote(cfg: EffectiveConfig): void {
+  const part = newPart("Part 1");
+  seedPart(cfg, part);
+  quote.parts = [part];
+  quote.activePartId = part.id;
+  Object.assign(quote.order, orderBase(cfg));
+  clearQuoteSession();
+  captureQuoteBaseline();
+}
+
+/** Starts a blank quote after asking when there are unsaved edits. Returns false, changing nothing, when
+ * the user declines. */
+export function startNewQuote(cfg: EffectiveConfig): boolean {
+  if (quoteIsDirty() && !confirm("You have unsaved changes to this quote. Start a new quote anyway?")) return false;
+  resetQuote(cfg);
+  return true;
 }
 
 let seeded = false;
@@ -361,7 +401,14 @@ type PartSource = PartFormState & { id?: string };
 
 /** One part's engine inputs. `selling` gates the per-part sale price override, sent only with an order
  * pricing block (a costed-only quote has no price to override). */
-function toPartInputs(cfg: EffectiveConfig, src: PartSource, index: number, selling: boolean, orderStart: string): PartInputs {
+function toPartInputs(
+  cfg: EffectiveConfig,
+  src: PartSource,
+  index: number,
+  selling: boolean,
+  orderStart: string,
+  pin: EnergyPin | null,
+): PartInputs {
   const time = timePair(src.timeHours, src.timeMinutes);
   const inputs: PartInputs = {
     label: partLabel(src, index),
@@ -371,10 +418,13 @@ function toPartInputs(cfg: EffectiveConfig, src: PartSource, index: number, sell
     timeHours: time.hours,
     timeMinutes: time.minutes,
     watts: num(src.watts),
-    energy: energyInputsFor(cfg.energy, src.offPeakFrac, num(src.flatRate), {
-      timezone: cfg.timezone || "UTC",
-      start: src.printStart !== "" ? src.printStart : orderStart,
-    }),
+    energy:
+      pin?.energy[index] !== undefined
+        ? (structuredClone($state.snapshot(pin.energy[index]!)) as EnergyInputs)
+        : energyInputsFor(cfg.energy, src.offPeakFrac, num(src.flatRate), {
+            timezone: cfg.timezone || "UTC",
+            start: src.printStart !== "" ? src.printStart : orderStart,
+          }),
     failureRatePct: num(src.failureRatePct),
     prepMinutes: num(src.prepMinutes),
     laborRate: num(src.laborRate),
@@ -410,8 +460,10 @@ export function toOrderInputs(
   src: { parts: PartSource[]; order: OrderForm } = quote,
 ): OrderInputs {
   const { order } = src;
+  // A reopened saved quote keeps its stored rates; imports and other bags never do.
+  const pin = src === quote ? activeEnergyPin() : null;
   const out: OrderInputs = {
-    parts: src.parts.map((p, i) => toPartInputs(cfg, p, i, order.sellingEnabled, order.printStart)),
+    parts: src.parts.map((p, i) => toPartInputs(cfg, p, i, order.sellingEnabled, order.printStart, pin)),
   };
   if (order.sellingEnabled) {
     out.pricing = {
@@ -520,6 +572,13 @@ export function engineOptions(cfg: EffectiveConfig): EngineOptions {
   return { ...defaultEngineOptions, laborPerUnit: cfg.pricing.laborPerUnit };
 }
 
+/** The engine options for the quote being edited: the stored ones while a reopened quote's rates are
+ * pinned, else the shop's current ones. */
+export function quoteEngineOptions(cfg: EffectiveConfig): EngineOptions {
+  const pin = activeEnergyPin();
+  return pin ? (structuredClone($state.snapshot(pin.options)) as EngineOptions) : engineOptions(cfg);
+}
+
 export interface PrintJob {
   mode: "client" | "internal";
   meta: { customer: string; project: string; reference: string };
@@ -584,8 +643,137 @@ export function consumePendingOpen(tab: string): string | null {
   return id;
 }
 
-/** The quote tab's primary save action (Update when a quote is loaded, Save current otherwise), registered
- * by HistoryPanel on mount and cleared on unmount. App's Ctrl+S/Cmd+S handler calls it so the shortcut
- * shares the loaded-quote logic and disabled guard. null while no HistoryPanel is mounted, when the
- * shortcut is a no-op beyond preventDefault. */
-export const quoteActions: { save: (() => void) | null } = $state({ save: null });
+/** The quote tab's save actions, registered by HistoryPanel on mount and cleared on unmount. App's
+ * Ctrl+S/Cmd+S handler calls `save` so the shortcut shares the loaded-quote logic and disabled guard; the
+ * editor's top controls call `update`/`saveAsNew`/`reload`/`overwrite`. All null while no HistoryPanel is
+ * mounted, when the shortcut is a no-op beyond preventDefault. */
+export const quoteActions: {
+  save: (() => void) | null;
+  update: (() => void) | null;
+  saveAsNew: (() => void) | null;
+  reload: (() => void) | null;
+  overwrite: (() => void) | null;
+  /** True while a save is running or the quote can't be saved yet; mirrors the save row's disabled state. */
+  busy: boolean;
+  blocked: boolean;
+} = $state({ save: null, update: null, saveAsNew: null, reload: null, overwrite: null, busy: false, blocked: false });
+
+/** What the editor knows about the saved quote it is bound to, plus its save feedback. One box, shared by
+ * the heading, the sidebar highlight, the top save controls and HistoryPanel's save row, none of which can
+ * reach HistoryPanel's local state. `loadedId` null = a new, unsaved quote. */
+export const quoteSession: {
+  loadedId: string | null;
+  /** The loaded quote's savedAt as last read or written; sent as If-Match so a stale save gets a 409. */
+  version: string;
+  /** The Label field's text; shown in the heading while a quote is loaded. */
+  label: string;
+  pin: EnergyPin | null;
+  /** Set when the last save was refused because someone else saved first. */
+  conflict: boolean;
+  status: { text: string; failed: boolean };
+  /** How many saved quotes exist, or null until the saved-quote list has loaded. */
+  savedCount: number | null;
+  /** JSON of the editor as of the last clean point (open, save, reset); null before the first capture. */
+  baseline: string | null;
+} = $state({ loadedId: null, version: "", label: "", pin: null, conflict: false, status: { text: "", failed: false }, savedCount: null, baseline: null });
+
+/** The stored rates of a reopened saved quote. Its price must match the list, so the editor sends these
+ * (the energy block of each part, and the engine options) instead of the shop's current rates, until the
+ * user edits an energy field or picks "Use current rates". */
+export interface EnergyPin {
+  /** Each part's stored energy inputs, by part index. */
+  energy: EnergyInputs[];
+  options: EngineOptions;
+  /** The energy-related form values at restore; the pin lapses as soon as any of them changes. */
+  watch: string;
+}
+
+function energyWatch(src: { parts: PartSource[]; order: OrderForm }): string {
+  return JSON.stringify([src.order.printStart, src.parts.map((p) => [p.flatRate, p.offPeakFrac, p.printStart])]);
+}
+
+/** Pins the current form to a saved quote's stored rates. A part-count mismatch (an unusable stored bag)
+ * pins nothing. */
+export function pinStoredRates(stored: { inputs?: OrderInputs; options?: EngineOptions } | null): void {
+  const energy = stored?.inputs?.parts?.map((p) => p.energy);
+  if (!stored || !energy || !stored.options || energy.length !== quote.parts.length || energy.some((e) => !e)) {
+    quoteSession.pin = null;
+    return;
+  }
+  quoteSession.pin = { energy: structuredClone(energy) as EnergyInputs[], options: structuredClone(stored.options), watch: energyWatch(quote) };
+}
+
+/** The pin, or null once it has lapsed (the user edited a flat rate, off-peak share or print start, or the
+ * part count changed). */
+export function activeEnergyPin(): EnergyPin | null {
+  const pin = quoteSession.pin;
+  if (!pin || pin.energy.length !== quote.parts.length || pin.watch !== energyWatch(quote)) return null;
+  return pin;
+}
+
+/** Key-sorted JSON, so two energy blocks compare by content, not property order. */
+function stableJson(v: unknown): string {
+  return JSON.stringify(v, (_k, val) =>
+    val && typeof val === "object" && !Array.isArray(val)
+      ? Object.fromEntries(Object.entries(val as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1)))
+      : val,
+  );
+}
+
+/** True while the editor prices from stored rates that differ from what the shop's settings would give
+ * now: the cue for the "Shop electricity rates changed" note. */
+export function storedRatesDiffer(cfg: EffectiveConfig): boolean {
+  const pin = activeEnergyPin();
+  if (!pin) return false;
+  const { order } = quote;
+  const current = quote.parts.map((p, i) => toPartInputs(cfg, p, i, order.sellingEnabled, order.printStart, null));
+  return (
+    pin.energy.some((e, i) => stableJson(e) !== stableJson(current[i]?.energy)) ||
+    stableJson(pin.options) !== stableJson(engineOptions(cfg))
+  );
+}
+
+/** Drops the pin so the quote reprices at the shop's current rates. */
+export function useCurrentRates(): void {
+  quoteSession.pin = null;
+}
+
+function quoteSnapshot(): string {
+  return JSON.stringify({
+    form: toFormState(),
+    clientId: quoteClient.id,
+    clientName: quoteClient.name,
+    project: quoteMeta.project,
+    reference: quoteMeta.reference,
+    label: quoteSession.label,
+    pinned: activeEnergyPin() !== null,
+  });
+}
+
+/** Marks the editor clean: the point later edits are measured from. */
+export function captureQuoteBaseline(): void {
+  quoteSession.baseline = quoteSnapshot();
+}
+
+/** True once the editor differs from its last clean point. Reactive, so it can feed a $derived. */
+export function quoteIsDirty(): boolean {
+  return quoteSession.baseline !== null && quoteSnapshot() !== quoteSession.baseline;
+}
+
+/** The URL for the quote being edited: `#/quote/<id>` when a saved quote is open, `#/quote` when new.
+ * Rewrites the address in place (no history entry) and only while the address is on the editor. */
+export function syncQuoteUrl(): void {
+  if (typeof location === "undefined" || !/^#\/quote(\/|$)/.test(location.hash)) return;
+  const want = quoteSession.loadedId ? `#/quote/${encodeURIComponent(quoteSession.loadedId)}` : "#/quote";
+  if (location.hash !== want) history.replaceState(null, "", want);
+}
+
+// Reload and tab close discard the draft, which lives only in memory. beforeunload only prompts when the
+// page has been interacted with, which is the case that matters.
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", (e) => {
+    if (!quoteIsDirty()) return;
+    e.preventDefault();
+    e.returnValue = "";
+  });
+}

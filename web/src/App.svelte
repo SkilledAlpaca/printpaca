@@ -27,7 +27,7 @@
   import { fluiddUrl } from "./lib/moonraker";
   import { extractConfigUser, hasTabAccess, ungrantedTabs } from "./lib/permissions";
   import { signOutAction } from "./lib/accessSignIn";
-  import { applyConfig, appConfig, effectiveConfig, printJob, invoicePrintJob, quoteActions, pendingOpen } from "./lib/state.svelte";
+  import { applyConfig, appConfig, effectiveConfig, printJob, invoicePrintJob, quoteActions, pendingOpen, quoteSession, startNewQuote } from "./lib/state.svelte";
   import {
     demoLocal,
     initDemoLocal,
@@ -45,7 +45,7 @@
   import { unreadRequests, refreshUnread } from "./lib/requestsBadge.svelte";
   import { fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab } from "./lib/navFilter";
   import { loadPublicConfig } from "./public/api";
-  import { splitHash } from "./lib/hashRoute";
+  import { splitHash, quoteRouteBase, quoteIdFromHash } from "./lib/hashRoute";
   import { focusAfterUpdate } from "./lib/a11y.svelte";
   import { pageTitle as pageTitleState } from "./lib/pageTitle.svelte";
   import LiveAnnouncer from "./components/LiveAnnouncer.svelte";
@@ -129,7 +129,7 @@
     const { base } = splitHash(hash);
     // A hash naming a disabled tab resolves to null like an unrecognized one; every caller already falls back
     // from null (Quote on initial load, no-op on hashchange).
-    return resolveHashTab(base, HASH_TABS, disabledTabs);
+    return resolveHashTab(quoteRouteBase(base), HASH_TABS, disabledTabs);
   }
 
   // Hands a deep-linked invoice/request/client id to the tab about to mount via pendingOpen (state.svelte.ts)
@@ -138,6 +138,12 @@
   // box just before its own bare-hash activate() isn't clobbered. Once mounted, the tab owns its id changes
   // via its own hashchange listener.
   function routePendingOpen(t: Tab, hash: string) {
+    // The quote editor's address is #/quote/<id>: the id travels the same way as the other tabs' fragments.
+    if (t === "quote") {
+      const id = quoteIdFromHash(hash);
+      if (id) pendingOpen.current = { tab: "quote", id };
+      return;
+    }
     if (t !== "invoices" && t !== "requests" && t !== "clients") return;
     const { fragment: id } = splitHash(hash);
     if (!id) return;
@@ -501,6 +507,18 @@
   const navHidden = $derived(new Set([...disabledTabs, ...ungrantedTabs(Object.keys(TABS) as Tab[], configUser)]));
   const navSections = $derived(filterNavSections(NAV_SECTIONS, navHidden));
 
+  // The sidebar item that is "you are here". A saved quote open in the editor belongs to Quotes, not to New
+  // quote, so the highlight (and aria-current) follows the quote's home when that item is in the nav.
+  const navCurrent = $derived<Tab>(tab === "quote" && quoteSession.loadedId !== null && !navHidden.has("quotes") ? "quotes" : tab);
+
+  // The sidebar's New quote starts a blank quote (asking first when the open one has unsaved edits), then goes
+  // to the editor. Other ways into the editor (Back, the Requests tab's Open in quote, a saved quote's link)
+  // go through activate() or the hash and keep what is open.
+  function newQuote() {
+    if (config && !startNewQuote(config)) return;
+    activate("quote");
+  }
+
   // Catches every other way the app sits on a tab it shouldn't: the initial resolution ran before config
   // loaded, a settings save disabled the open tab, or the landing tab isn't granted. replaceState (not
   // activate()) throughout, so it neither fights the data-loss confirm() nor pushes a spurious history entry.
@@ -638,10 +656,10 @@
 {#snippet navButton(id: Tab, collapsed: boolean)}
   <button
     type="button"
-    class:active={tab === id}
-    aria-current={tab === id ? "page" : undefined}
+    class:active={navCurrent === id}
+    aria-current={navCurrent === id ? "page" : undefined}
     title={collapsed ? TABS[id].label : undefined}
-    onclick={() => activate(id)}
+    onclick={() => (id === "quote" ? newQuote() : activate(id))}
   >
     <Icon path={TABS[id].icon} />
     <!-- The label is always in the DOM (visually hidden when collapsed), so the button's accessible name is its

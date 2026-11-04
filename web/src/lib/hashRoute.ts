@@ -25,3 +25,20 @@ export function syncDetail(
     onClose();
   }
 }
+
+/** The editor's address for a saved quote is `#/quote/<id>`. Maps it to the tab's own hash (`#/quote`) so the
+ * router finds the tab; any other base passes through. */
+export function quoteRouteBase(base: string): string {
+  return base.startsWith("#/quote/") ? "#/quote" : base;
+}
+
+/** The saved quote id in a `#/quote/<id>` address, or null for `#/quote` and every other route. */
+export function quoteIdFromHash(hash: string): string | null {
+  const m = /^#\/quote\/([^/#]+)/.exec(hash);
+  if (!m) return null;
+  try {
+    return decodeURIComponent(m[1]!);
+  } catch {
+    return null;
+  }
+}

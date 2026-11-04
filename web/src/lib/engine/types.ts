@@ -197,8 +197,11 @@ export interface EffectiveConfig {
   authEnabled: boolean;
   /** Whether MOONRAKER_URL is configured (server/main.go), so /api/moonraker/* is proxied. */
   moonraker: boolean;
-  /** FLUIDD_URL when configured, link-only (never proxied); "" when unset. */
+  /** FLUIDD_URL when configured, link-only (never proxied); "" when unset, and "" for employees (D31). */
   fluiddUrl: string;
+  /** Whether outgoing mail has an SMTP host. Every role gets it: employees' `smtp` block is blank (D31), so the
+   * Email buttons read this instead of smtp.host. */
+  smtpConfigured: boolean;
   /** Whether DEMO_MODE=1 (server/main.go): a read-only demo. The server rejects admin writes regardless;
    * this only sets expectations in the UI. */
   demoMode: boolean;

@@ -530,11 +530,11 @@ test.describe("quotes list", () => {
     await page.keyboard.press("End");
     await expect(items.last()).toBeFocused();
     await page.keyboard.press("ArrowDown");
-    await expect(items.first()).toBeFocused(); // wraps
-    await page.keyboard.press("ArrowUp");
-    await expect(items.last()).toBeFocused();
+    await expect(items.last()).toBeFocused(); // stops at the end: wrapping onto the first action is a mis-press waiting to happen
     await page.keyboard.press("Home");
     await expect(items.first()).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(items.first()).toBeFocused(); // and at the start
 
     await page.keyboard.press("Tab");
     await expect(page.locator(".menu-panel")).toHaveCount(0);

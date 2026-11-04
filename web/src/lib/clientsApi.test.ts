@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listClients, type Client } from "./clientsApi";
+import { errorsFrom, forbiddenMessage, listClients, type Client } from "./clientsApi";
 
 function client(overrides: Partial<Client> = {}): Client {
   return {
@@ -69,5 +69,20 @@ describe("listClients", () => {
   it("returns null on a non-2xx response even when a page is passed", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500 } as unknown as Response));
     expect(await listClients({ limit: 100, offset: 0 })).toBeNull();
+  });
+});
+
+describe("forbiddenMessage (A13)", () => {
+  it("names the area the server refused", () => {
+    expect(forbiddenMessage("missing permission: clients")).toBe("You don't have access to Clients.");
+    expect(forbiddenMessage("missing permission: quote")).toBe("You don't have access to New quote.");
+  });
+  it("falls back to a plain sentence for anything else", () => {
+    expect(forbiddenMessage("")).toBe("You don't have access to do that.");
+    expect(forbiddenMessage("nope")).toBe("You don't have access to do that.");
+  });
+  it("replaces the generic message when the response is a 403", async () => {
+    const res = new Response(JSON.stringify({ error: "missing permission: invoices" }), { status: 403 });
+    expect((await errorsFrom(res)).message).toBe("You don't have access to Invoices.");
   });
 });

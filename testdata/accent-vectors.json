@@ -148,7 +148,7 @@
     },
     "suggestion": "#ad4a18"
    },
-   "problem": "shop.accentColor: #e06020 doesn't have enough contrast on the shop background: links measure 2.94:1 and button text 5.14:1, and both need 4.5:1; try #ad4a18"
+   "problem": "Accent color: #e06020 doesn't have enough contrast on the shop background: links measure 2.94:1, but need 4.5:1; try #ad4a18"
   },
   {
    "name": "bright yellow fails",
@@ -172,7 +172,7 @@
     },
     "suggestion": "#7a6700"
    },
-   "problem": "shop.accentColor: #ffd700 doesn't have enough contrast on the shop background: links measure 1.15:1 and button text 13.13:1, and both need 4.5:1; try #7a6700"
+   "problem": "Accent color: #ffd700 doesn't have enough contrast on the shop background: links measure 1.15:1, but need 4.5:1; try #7a6700"
   },
   {
    "name": "light gray fails",
@@ -196,7 +196,7 @@
     },
     "suggestion": "#696969"
    },
-   "problem": "shop.accentColor: #cccccc doesn't have enough contrast on the shop background: links measure 1.31:1 and button text 11.47:1, and both need 4.5:1; try #696969"
+   "problem": "Accent color: #cccccc doesn't have enough contrast on the shop background: links measure 1.31:1, but need 4.5:1; try #696969"
   },
   {
    "name": "white fails",
@@ -220,7 +220,7 @@
     },
     "suggestion": "#696969"
    },
-   "problem": "shop.accentColor: #ffffff doesn't have enough contrast on the shop background: links measure 1.03:1 and button text 18.42:1, and both need 4.5:1; try #696969"
+   "problem": "Accent color: #ffffff doesn't have enough contrast on the shop background: links measure 1.03:1, but need 4.5:1; try #696969"
   },
   {
    "name": "mid teal fails narrowly",
@@ -244,7 +244,7 @@
     },
     "suggestion": "#1f756a"
    },
-   "problem": "shop.accentColor: #2a9d8f doesn't have enough contrast on the shop background: links measure 2.73:1 and button text 5.54:1, and both need 4.5:1; try #1f756a"
+   "problem": "Accent color: #2a9d8f doesn't have enough contrast on the shop background: links measure 2.73:1, but need 4.5:1; try #1f756a"
   },
   {
    "name": "pure red fails narrowly",
@@ -268,7 +268,7 @@
     },
     "suggestion": "#c92626"
    },
-   "problem": "shop.accentColor: #d62828 doesn't have enough contrast on the shop background: links measure 4.11:1 and button text 5.00:1, and both need 4.5:1; try #c92626"
+   "problem": "Accent color: #d62828 doesn't have enough contrast on the shop background: links measure 4.11:1, but need 4.5:1; try #c92626"
   },
   {
    "name": "borderline blue",
@@ -292,7 +292,7 @@
     },
     "suggestion": "#1c5cea"
    },
-   "problem": "shop.accentColor: #2563eb doesn't have enough contrast on the shop background: links measure 4.24:1 and button text 5.16:1, and both need 4.5:1; try #1c5cea"
+   "problem": "Accent color: #2563eb doesn't have enough contrast on the shop background: links measure 4.24:1, but need 4.5:1; try #1c5cea"
   },
   {
    "name": "short form is not accepted",
@@ -316,7 +316,7 @@
     },
     "suggestion": ""
    },
-   "problem": "shop.accentColor: must be a color like #9c4212 (six hex digits), or empty for the theme accent"
+   "problem": "Accent color: must be a color like #9c4212 (six hex digits), or empty for the theme accent"
   },
   {
    "name": "missing hash is not accepted",
@@ -340,7 +340,7 @@
     },
     "suggestion": ""
    },
-   "problem": "shop.accentColor: must be a color like #9c4212 (six hex digits), or empty for the theme accent"
+   "problem": "Accent color: must be a color like #9c4212 (six hex digits), or empty for the theme accent"
   },
   {
    "name": "named color is not accepted",
@@ -364,7 +364,7 @@
     },
     "suggestion": ""
    },
-   "problem": "shop.accentColor: must be a color like #9c4212 (six hex digits), or empty for the theme accent"
+   "problem": "Accent color: must be a color like #9c4212 (six hex digits), or empty for the theme accent"
   }
  ]
 }

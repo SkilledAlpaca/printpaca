@@ -73,6 +73,9 @@ func handleSettingsGet(configDir string, store *ConfigStore) http.HandlerFunc {
 		} else {
 			resp.Config = pending
 		}
+		if !identityFor(r).isAdmin {
+			resp.Config = redactConfigForEmployee(resp.Config) // D31
+		}
 
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			// Response already partially written; nothing more to do.
@@ -177,6 +180,18 @@ func handleSettingsPut(configDir string, store *ConfigStore, auth *authState) ht
 		}
 		id := identityFor(r)
 		if !id.isAdmin {
+			// D31: an employee's GET /api/settings omits the SMTP block and the integration URLs, so an editor
+			// that sends the whole config back sends them (and users.accessAdminEmail) blank. A blank block reads as "not sent": keep the
+			// stored one. Any other value still reaches the scoped check below and is refused.
+			if desired.Smtp == (Smtp{}) {
+				desired.Smtp = current.Smtp
+			}
+			if desired.IntegrationsUrls == (IntegrationsUrls{}) {
+				desired.IntegrationsUrls = current.IntegrationsUrls
+			}
+			if desired.Users.AccessAdminEmail == "" {
+				desired.Users.AccessAdminEmail = current.Users.AccessAdminEmail
+			}
 			perms, err := userPermissions(auth.db, id.username)
 			if err != nil {
 				http.Error(w, "permission check failed", http.StatusInternalServerError)

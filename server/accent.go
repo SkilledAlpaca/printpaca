@@ -260,7 +260,7 @@ func accentProblem(input string) string {
 		return ""
 	}
 	if !accentHexRe.MatchString(input) {
-		return "shop.accentColor: must be a color like #9c4212 (six hex digits), or empty for the theme accent"
+		return "Accent color: must be a color like #9c4212 (six hex digits), or empty for the theme accent"
 	}
 	res := checkAccentColor(input)
 	if res.OK {
@@ -268,12 +268,23 @@ func accentProblem(input string) string {
 	}
 	fl := func(v float64) float64 { return math.Floor(v*100) / 100 }
 	if !res.Light.Pass {
-		msg := fmt.Sprintf("shop.accentColor: %s doesn't have enough contrast on the shop background: links measure %.2f:1 and button text %.2f:1, and both need 4.5:1",
-			res.Accent, fl(res.Light.LinkRatio), fl(res.Light.ButtonRatio))
+		// Name only the pairs that fail: listing a passing ratio as if it failed misleads (A7).
+		var failing []string
+		if res.Light.LinkRatio < accentMinRatio {
+			failing = append(failing, fmt.Sprintf("links measure %.2f:1", fl(res.Light.LinkRatio)))
+		}
+		if res.Light.ButtonRatio < accentMinRatio {
+			failing = append(failing, fmt.Sprintf("button text measures %.2f:1", fl(res.Light.ButtonRatio)))
+		}
+		need := "but need 4.5:1"
+		if len(failing) == 2 {
+			need = "but both need 4.5:1"
+		}
+		msg := fmt.Sprintf("Accent color: %s doesn't have enough contrast on the shop background: %s, %s", res.Accent, strings.Join(failing, " and "), need)
 		if res.Suggestion != "" {
 			msg += "; try " + res.Suggestion
 		}
 		return msg
 	}
-	return fmt.Sprintf("shop.accentColor: no dark-mode variant of %s reaches 4.5:1; pick a different color", res.Accent)
+	return fmt.Sprintf("Accent color: no dark-mode variant of %s reaches 4.5:1; pick a different color", res.Accent)
 }

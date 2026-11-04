@@ -397,14 +397,14 @@ describe("defaultPaymentForm", () => {
 
 describe("emailDisabledReason", () => {
   it("\"unconfigured\" when smtp host is blank, regardless of client email", () => {
-    expect(emailDisabledReason("", makeInvoice({ clientEmail: "a@b.com" }))).toBe("unconfigured");
-    expect(emailDisabledReason("", makeInvoice({ clientEmail: "" }))).toBe("unconfigured");
+    expect(emailDisabledReason(false, makeInvoice({ clientEmail: "a@b.com" }))).toBe("unconfigured");
+    expect(emailDisabledReason(false, makeInvoice({ clientEmail: "" }))).toBe("unconfigured");
   });
   it("\"no-email\" when smtp is configured but the invoice has no client email", () => {
-    expect(emailDisabledReason("smtp.example.com", makeInvoice({ clientEmail: "" }))).toBe("no-email");
+    expect(emailDisabledReason(true, makeInvoice({ clientEmail: "" }))).toBe("no-email");
   });
   it("null (enabled) when smtp is configured and the invoice has a client email", () => {
-    expect(emailDisabledReason("smtp.example.com", makeInvoice({ clientEmail: "a@b.com" }))).toBeNull();
+    expect(emailDisabledReason(true, makeInvoice({ clientEmail: "a@b.com" }))).toBeNull();
   });
 });
 

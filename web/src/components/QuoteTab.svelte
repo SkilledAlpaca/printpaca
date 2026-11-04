@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, tick } from "svelte";
   import type { EffectiveConfig, EngineOptions, OrderBreakdown, OrderInputs } from "../lib/engine/index";
-  import { quote, activePart, partLabel, toOrderInputs, quoteEngineOptions, applyPrinter, applyMaterial, printJob, quoteClient, quoteMeta, nameOrId, quoteSession, quoteActions, storedRatesDiffer, useCurrentRates } from "../lib/state.svelte";
+  import { quote, orderStamp, activePart, partLabel, toOrderInputs, quoteEngineOptions, applyPrinter, applyMaterial, printJob, quoteClient, quoteMeta, nameOrId, quoteSession, quoteActions, storedRatesDiffer, useCurrentRates } from "../lib/state.svelte";
   import { computeOrder, type ComputeOrderResult } from "../lib/quotesApi";
   import { EMPTY_ORDER, orderPrintBlockerHint, partBreakdown } from "../lib/orderView";
   import PartsList from "./PartsList.svelte";
@@ -55,12 +55,19 @@
     toState: previewToState,
     onChange: (s) => {
       previewState = s;
-      if (s.status === "resolved") order = s.order;
+      if (s.status === "resolved") {
+        order = s.order;
+        // The answer is for the latest update() (a superseded run never publishes), so the ids sent with it
+        // say which editor part each of its entries describes.
+        orderStamp.partIds = requestedPartIds;
+      }
     },
   });
+  let requestedPartIds: string[] = [];
   onDestroy(() => preview.dispose());
 
   $effect(() => {
+    requestedPartIds = quote.parts.map((p) => p.id);
     preview.update({ inputs: toOrderInputs(cfg), options: quoteEngineOptions(cfg) });
   });
 
@@ -383,9 +390,6 @@
               </div>
               {#key part.id}
                 <GcodeDrop {cfg} {part} />
-                {#if moonrakerEnabled(cfg)}
-                  <RecentPrints {cfg} {part} />
-                {/if}
               {/key}
               <FormGrid align="controls">
                 <LabeledNumber label="Model weight" suffix="g" bind:value={part.weightG} warn={warnFor(w, "weightG")} help="The weight of the model from your slicer, without supports or waste." />
@@ -432,6 +436,12 @@
                   <SlicerHelp />
                 </div>
               {/if}
+              <!-- After the weight and time (A3): a long picker must not push the two fields the price needs below the fold. -->
+              {#key part.id}
+                {#if moonrakerEnabled(cfg)}
+                  <RecentPrints {cfg} {part} />
+                {/if}
+              {/key}
             </Fieldset>
           </Card>
         </div>

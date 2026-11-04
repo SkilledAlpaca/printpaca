@@ -62,3 +62,14 @@ describe("needSentence", () => {
     expect(needSentence([b("Print time (Lid)", "timeHours")])).toBe("Price needs a print time (Lid)");
   });
 });
+
+describe("quoteBlockers part ids", () => {
+  it("ties each blocker to the part id of its answer index", () => {
+    const b = quoteBlockers(order([[], [w("weightG", "required")]]), ["A", "B"], ["id-a", "id-b"]);
+    expect(b[0]).toMatchObject({ partIndex: 1, partId: "id-b" });
+  });
+  it("leaves order-level blockers without a part id", () => {
+    const b = quoteBlockers(order([[]], [w("marginPct", "above-max")]), ["A"], ["id-a"]);
+    expect(b[0]?.partId).toBeNull();
+  });
+});

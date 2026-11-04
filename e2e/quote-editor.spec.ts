@@ -57,10 +57,10 @@ test("a saved quote is edited under its own heading, stays bound after a save, a
   await page.goto("/admin/");
   const id = await saveCanonical(page, label);
 
-  // Saving bound the form: heading, label and sidebar follow the saved quote.
+  // Saving bound the form: heading and label follow the saved quote; the sidebar stays on the route's own tab (A4).
   await expect(page.getByRole("heading", { level: 1, name: `Edit quote: ${label}` })).toBeVisible();
-  await expect(navButton(page, "Quotes")).toHaveAttribute("aria-current", "page");
-  await expect(navButton(page, "New quote")).not.toHaveAttribute("aria-current", "page");
+  await expect(navButton(page, "New quote")).toHaveAttribute("aria-current", "page");
+  await expect(navButton(page, "Quotes")).not.toHaveAttribute("aria-current", "page");
 
   // A second Ctrl+S updates the same quote; it must not create another row.
   await page.getByLabel(/Model weight/).fill("55");

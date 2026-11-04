@@ -205,7 +205,7 @@ test.describe("item editor", () => {
     await page.keyboard.press("End");
     await expect(panel.getByRole("button", { name: "Remove group" })).toBeFocused();
     await page.keyboard.press("ArrowDown");
-    await expect(panel.getByRole("button", { name: "Move up" })).toBeFocused();
+    await expect(panel.getByRole("button", { name: "Remove group" })).toBeFocused(); // stops at the end, no wrap
 
     // Escape closes only the menu and puts focus back on the ⋯ button.
     await page.keyboard.press("Escape");
@@ -233,9 +233,12 @@ test.describe("item editor", () => {
     await expect(page.getByRole("button", { name: "Move down" })).toBeFocused();
     await page.keyboard.press("Escape");
 
-    // Delete the group that holds focus: focus lands on the ⋯ button of the row that took its place.
+    // Delete the group that holds focus: a saved group asks first, then focus lands on the ⋯ button of the row
+    // that took its place.
     await page.keyboard.press("Enter");
     await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("button", { name: "Yes, remove Size" })).toBeFocused();
     await page.keyboard.press("Enter");
     expect(await names()).toEqual(["Color", "Finish"]);
     await expect(trigger(page, "Option group 1: Color")).toBeFocused();
@@ -244,9 +247,11 @@ test.describe("item editor", () => {
     await page.keyboard.press("Enter");
     await page.keyboard.press("End");
     await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
     await expect(trigger(page, "Option group 1: Color")).toBeFocused();
     await page.keyboard.press("Enter");
     await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
     await page.keyboard.press("Enter");
     await expect(page.getByRole("button", { name: "Add group" })).toBeFocused();
 
@@ -274,6 +279,7 @@ test.describe("item editor", () => {
     await page.keyboard.press("Enter");
     await page.keyboard.press("End");
     await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter"); // a saved choice asks first; the confirm button has focus
     expect(await choices()).toEqual(["Red", "Blue"]);
     await expect(trigger(page, "Group 1 choice 2: Blue")).toBeFocused();
 

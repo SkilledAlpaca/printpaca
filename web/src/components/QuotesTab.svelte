@@ -30,7 +30,7 @@
   import { buildQuoteSendPayload, sendQuoteEmail } from "../lib/sendApi";
   import { sendWithEnteredEmail, type CreatedClients } from "../lib/walkInSend";
   import { clientEmailFor, emailDisabledReason, needsEmailEntry, validEntryEmail, canManageClientsFor } from "../lib/quoteEmail";
-  import { canConfigureShop, canEditQuotes, type ConfigUser } from "../lib/permissions";
+  import { canConfigureShop, canEditQuotes, hasTabAccess, type ConfigUser } from "../lib/permissions";
   import { computeMenuAnchor } from "../lib/menuAnchor";
   import { handleMenuKeydown } from "../lib/menuNav";
   import { matchesQuoteFilter, QUOTE_STATUS_CHIPS, type QuoteStatusFilter } from "../lib/quoteFilter";
@@ -52,6 +52,8 @@ import FormGrid from "./ui/FormGrid.svelte";
   // Staff without the quote grant can list and read saved quotes but not edit or create them (permissions.ts).
   const canEdit = $derived(canEditQuotes(user));
   const canConfigure = $derived(canConfigureShop(user));
+  // Converting creates an invoice, and the Invoices page is where the result opens (A13).
+  const canInvoice = $derived(hasTabAccess("invoices", user));
 
   // The full quote list with filter, sort, export/import, convert, duplicate and delete. `quotes` holds the
   // raw server shape because status-only mutations re-PUT the quote with inputs/options/formState echoed back
@@ -825,11 +827,15 @@ const COLUMNS: DataColumn[] = [
 
   <BackfillStatus backfilling={backfill.backfilling} backfillFailed={backfill.backfillFailed} verb="filter" />
 
-  {#if cfg.smtp.host === ""}
+  {#if !cfg.smtpConfigured}
     <p class="banner-muted">
       Email isn't configured, so quotes can't be emailed from here.
       {#if canConfigure}<a href="#/settings">Set it up in Settings.</a>{:else}Ask an admin to set up email.{/if}
     </p>
+  {/if}
+
+  {#if !canInvoice}
+    <p id="convert-no-access" class="banner-muted">Converting a quote creates an invoice. You don't have access to Invoices, so ask an admin to convert it.</p>
   {/if}
 
   <DataTable
@@ -879,7 +885,7 @@ const COLUMNS: DataColumn[] = [
               {@const stats = quoteRowStats(q)}
               {@const qty = extractQuantity(q.inputs)}
               {@const status = displayStatus(q, cfg.quote.validDays, Date.now())}
-              {@const emailReason = emailDisabledReason(q, cfg.smtp.host, clientsLoaded, clients, canManageClients)}
+              {@const emailReason = emailDisabledReason(q, cfg.smtpConfigured, clientsLoaded, clients, canManageClients)}
               {@const primaryT = primaryTransition(q)}
               <tr class="quote-row">
                 <td class="c-label">
@@ -907,9 +913,13 @@ const COLUMNS: DataColumn[] = [
                   {#if q.invoicedAs}
                     <!-- In the status cell, not the action cluster: the long "Invoiced INV-…" label made the
                          cluster wider than its column and clipped the ⋯ menu. -->
-                    <button type="button" class="pill invoiced-badge" onclick={() => openInvoiced(q)}>
-                      {invoicedLabel(q.invoicedAs)}
-                    </button>
+                    {#if canInvoice}
+                      <button type="button" class="pill invoiced-badge" onclick={() => openInvoiced(q)}>
+                        {invoicedLabel(q.invoicedAs)}
+                      </button>
+                    {:else}
+                      <span class="pill invoiced-badge">{invoicedLabel(q.invoicedAs)}</span>
+                    {/if}
                   {/if}
                 </td>
                 <td class="nowrap c-saved" data-label="Saved">{formatSavedAt(q.savedAt)}</td>
@@ -927,9 +937,10 @@ const COLUMNS: DataColumn[] = [
                       type="button"
                       class="quiet"
                       data-focus-key={`convert-${q.id}`}
-                      onclick={() => openConvert(q)}
+                      onclick={() => { if (canInvoice) void openConvert(q); }}
                       aria-label={q.invoicedAs ? `Invoice again: "${q.label}"` : `Convert to invoice: "${q.label}"`}
-                      aria-disabled={convertFor === q.id}
+                      aria-disabled={convertFor === q.id || !canInvoice}
+                      aria-describedby={canInvoice ? undefined : "convert-no-access"}
                     >
                       {q.invoicedAs ? "Invoice again" : "Convert to invoice"}
                     </button>

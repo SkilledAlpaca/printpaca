@@ -403,7 +403,7 @@ test.describe("staff", () => {
     expect(login.ok()).toBe(true);
     const cfgRes = await api.get("api/config");
     const cfg = (await cfgRes.json()) as Record<string, unknown> & { users: Record<string, unknown> };
-    for (const k of ["integrations", "version", "authEnabled", "moonraker", "fluiddUrl", "demoMode", "integrationSources", "user"]) delete cfg[k];
+    for (const k of ["integrations", "version", "authEnabled", "moonraker", "fluiddUrl", "smtpConfigured", "demoMode", "integrationSources", "user"]) delete cfg[k];
     cfg.users = { ...cfg.users, multiUser: true };
     expect((await api.put("api/settings", { data: { config: cfg } })).ok()).toBe(true);
     const user = await api.post("api/users", { data: { username: "polish_staff", password: "polish-staff-secret", permissions: ["invoices"] } });

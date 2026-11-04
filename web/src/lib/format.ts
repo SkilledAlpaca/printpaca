@@ -74,6 +74,7 @@ const FIELD_LABELS: Record<string, string> = {
   password: "Password",
   price: "Price",
   smtp: "Email",
+  accentColor: "Accent color",
   label: "Label",
   email: "Email",
   username: "Username",

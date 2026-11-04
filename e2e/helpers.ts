@@ -170,7 +170,7 @@ export async function resetServerState(): Promise<void> {
     const cfgRes = await api.get("api/config");
     const cfg = (await cfgRes.json()) as Record<string, unknown> & { users: { multiUser: boolean; accessAdminEmail: string } };
     if (cfg.users.multiUser || cfg.users.accessAdminEmail !== "") {
-      for (const k of ["integrations", "version", "authEnabled", "moonraker", "fluiddUrl", "demoMode", "integrationSources", "user"]) {
+      for (const k of ["integrations", "version", "authEnabled", "moonraker", "fluiddUrl", "smtpConfigured", "demoMode", "integrationSources", "user"]) {
         delete cfg[k];
       }
       cfg.users = { ...cfg.users, multiUser: false, accessAdminEmail: "" };

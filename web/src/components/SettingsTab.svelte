@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { settingsSectionFromHash } from "../lib/hashRoute";
   import { timezoneOptions as timezoneOptionList } from "../lib/timezones";
   import { nextKey, type ServerConfig } from "../lib/settings";
   import { settingsWarnings } from "../lib/settingsRules";
@@ -38,6 +39,11 @@
   // grants. So an employee sees only the Account card (GET /api/me, POST /api/me/password), never
   // SettingsEditor, which would show a perpetual "couldn't load settings" banner.
   const isAdminView = $derived(currentUser === null || currentUser.isAdmin);
+
+  // `#/settings/<section>` names a card. An employee has only the Account card, so any other section answers with
+  // "No access" rather than quietly showing Account (A16).
+  let hashSection = $state(settingsSectionFromHash(location.hash));
+  const forbiddenSection = $derived(!isAdminView && hashSection !== null && hashSection !== "account" ? hashSection : null);
 
   // Section nav: id, label and the error sections (settings.ts's errorSection) that mark it, in page order.
   // Buttons use scrollIntoView, not href="#..." anchors, because location.hash is the tab router in App.svelte.
@@ -144,8 +150,17 @@
   }
 </script>
 
+<svelte:window onhashchange={() => (hashSection = settingsSectionFromHash(location.hash))} />
+
 <div class="page">
   <PageHeader title="Settings" />
+
+  {#if forbiddenSection}
+    <div class="card banner-warn" role="alert">
+      <h2>No access</h2>
+      <p>You don't have access to the {forbiddenSection} settings. Ask an admin to change them.</p>
+    </div>
+  {/if}
 
   {#if !isAdminView}
     <!-- Employee view: GET /api/settings is hard admin-only, so SettingsEditor and its cards would only

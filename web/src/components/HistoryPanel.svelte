@@ -510,7 +510,11 @@
       {/if}
 
       {#if quoteSession.loadedId}
-        <p class="hint">You are editing a saved quote. Your changes aren't saved until you update it.</p>
+        {#if dirty}
+          <p class="hint">You are editing a saved quote. Your changes aren't saved until you update it.</p>
+        {:else}
+          <p class="hint">This quote is saved. Change anything, then press Update to save the changes.</p>
+        {/if}
       {/if}
 
       <Field id="history-client" label="Client for this quote">

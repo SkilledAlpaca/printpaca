@@ -1,7 +1,7 @@
 <script lang="ts">
   import { toCents, type EffectiveConfig } from "../../lib/engine/index";
   import { type Invoice } from "../../lib/invoicesApi";
-  import { overpaidCents, overpaymentQuestion, recordPaymentLabel, type PaymentForm } from "../../lib/invoiceForm";
+  import { overpaidCents, overpaymentQuestion, recordPaymentLabel, SAVE_BEFORE_PAYMENT, type PaymentForm } from "../../lib/invoiceForm";
   import { money, formatDate } from "../../lib/format";
   import { appConfig } from "../../lib/state.svelte";
   import { demoLocal } from "../../lib/demoLocal.svelte";
@@ -60,16 +60,18 @@
   const amountCents = $derived(toCents(paymentForm.amount ?? 0));
   const excessCents = $derived(Math.max(0, amountCents - detail.balanceCents));
   const overpaid = $derived(overpaidCents(detail));
+  // The blocked-click error repeats the hint that is already on screen while the draft has unsaved edits (A10).
+  const shownErrors = $derived(paymentErrors.filter((e) => !(dirty && e === SAVE_BEFORE_PAYMENT)));
   const recordLabel = $derived(recordPaymentLabel(money(amountCents, cfg), paymentForm.method, paymentForm.paidDate, today));
 </script>
 
 <div class="payments-card">
 <Card tone="inset">
-  <h3>Payments</h3>
-  {#if paymentErrors.length > 0}
+  <h3 tabindex="-1">Payments</h3>
+  {#if shownErrors.length > 0}
     <div role="alert">
       <ul class="errors">
-        {#each paymentErrors as e (e)}<li>{e}</li>{/each}
+        {#each shownErrors as e (e)}<li>{e}</li>{/each}
       </ul>
     </div>
   {/if}
@@ -116,8 +118,12 @@
   {/if}
 
   <p class="balance-line">
-    Paid {money(detail.paidCents, cfg)} of {money(detail.totalCents, cfg)}, balance {money(detail.balanceCents, cfg)}
-    {#if overpaid > 0}<span class="pill overpaid">Overpaid {money(overpaid, cfg)}</span>{/if}
+    {#if dirty}
+      Save to update the balance.
+    {:else}
+      Paid {money(detail.paidCents, cfg)} of {money(detail.totalCents, cfg)}, balance {money(detail.balanceCents, cfg)}
+      {#if overpaid > 0}<span class="pill overpaid">Overpaid {money(overpaid, cfg)}</span>{/if}
+    {/if}
   </p>
 
   {#if detail.status === "draft" || detail.status === "sent"}
@@ -130,7 +136,7 @@
     {#if detail.status === "draft"}
       <p class="hint">
         {#if dirty}
-          Save your changes to the invoice before recording a payment.
+          {SAVE_BEFORE_PAYMENT}
         {:else}
           This invoice is still a draft. Recording a payment marks it sent and fills in today's issue date and the due date.
         {/if}

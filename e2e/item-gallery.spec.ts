@@ -372,7 +372,7 @@ test("admin reorders option groups and options, and the order persists and reach
 
   // Unsaved photos note: an unsaved new option explains photos upload after saving.
   await page.getByRole("button", { name: "Add choice" }).nth(1).click();
-  await expect(page.getByText("Save the item first to add a photo.").first()).toBeVisible();
+  await expect(page.getByText(/^Save the item first to add a photo/).first()).toBeVisible();
   await page.getByRole("button", { name: /^More actions for Group 2 choice 3: / }).click();
   await page.getByRole("button", { name: "Remove", exact: true }).click();
 

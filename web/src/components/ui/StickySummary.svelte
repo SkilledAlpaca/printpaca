@@ -43,7 +43,7 @@
   const showBody = $derived(wide || expanded);
 </script>
 
-<div class="summary {className}" class:wide role="group" aria-label={label} use:stickyInset={{ edge: "bottom", active: !wide }}>
+<div class="summary {className}" class:wide role="group" tabindex="-1" aria-label={label} use:stickyInset={{ edge: "bottom", active: !wide }}>
   <div class="body" id={bodyId} hidden={!showBody}>{@render children()}</div>
   {#if !wide}
     <div class="bar">

@@ -52,7 +52,7 @@
   import { unreadRequests, refreshUnread } from "./lib/requestsBadge.svelte";
   import { brandTab, fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab } from "./lib/navFilter";
   import { loadPublicConfig } from "./public/api";
-  import { splitHash, quoteRouteBase, quoteIdFromHash } from "./lib/hashRoute";
+  import { splitHash, routeBase, quoteIdFromHash } from "./lib/hashRoute";
   import { focusAfterUpdate } from "./lib/a11y.svelte";
   import { pageTitle as pageTitleState } from "./lib/pageTitle.svelte";
   import LiveAnnouncer from "./components/LiveAnnouncer.svelte";
@@ -136,7 +136,7 @@
     const { base } = splitHash(hash);
     // A hash naming a disabled tab resolves to null like an unrecognized one; every caller already falls back
     // from null (Quote on initial load, no-op on hashchange).
-    return resolveHashTab(quoteRouteBase(base), HASH_TABS, disabledTabs);
+    return resolveHashTab(routeBase(base), HASH_TABS, disabledTabs);
   }
 
   // Hands a deep-linked invoice/request/client id to the tab about to mount via pendingOpen (state.svelte.ts)
@@ -558,9 +558,9 @@
   const navHidden = $derived(new Set([...disabledTabs, ...ungrantedTabs(Object.keys(TABS) as Tab[], configUser)]));
   const navSections = $derived(filterNavSections(NAV_SECTIONS, navHidden));
 
-  // The sidebar item that is "you are here". A saved quote open in the editor belongs to Quotes, not to New
-  // quote, so the highlight (and aria-current) follows the quote's home when that item is in the nav.
-  const navCurrent = $derived<Tab>(tab === "quote" && quoteSession.loadedId !== null && !navHidden.has("quotes") ? "quotes" : tab);
+  // The sidebar item that is "you are here": the tab the address is on. A saved quote open in the editor is
+  // still at #/quote/<id>, so the highlight stays on New quote after a save instead of jumping to Quotes (A4).
+  const navCurrent = $derived<Tab>(tab);
 
   // The sidebar's New quote starts a blank quote (asking first when the open one has unsaved edits), then goes
   // to the editor. Other ways into the editor (Back, the Requests tab's Open in quote, a saved quote's link)
@@ -746,7 +746,7 @@
          visible text plus the unread count below (WCAG 1.3.1, 2.5.3). -->
     <span class="label" class:visually-hidden={collapsed}>{TABS[id].label}</span>
     {#if id === "requests" && unreadRequests.count > 0}
-      <span class="unread-pill">{unreadRequests.count}<span class="visually-hidden"> unread requests</span></span>
+      <span class="unread-pill" title="All new requests, including those that need a print time">{unreadRequests.count}<span class="visually-hidden"> unread requests</span></span>
     {/if}
   </button>
 {/snippet}
@@ -992,7 +992,7 @@
   {:else if tab === "items"}
     <ItemsTab cfg={config} />
   {:else if tab === "requests"}
-    <RequestsTab cfg={config} onOpenInQuote={() => activate("quote")} onOpenInvoice={() => activate("invoices")} />
+    <RequestsTab cfg={config} user={configUser} onOpenInQuote={() => activate("quote")} onOpenInvoice={() => activate("invoices")} />
   {:else if tab === "dashboard"}
     <DashboardTab cfg={config} />
   {:else}

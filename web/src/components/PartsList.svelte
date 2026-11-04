@@ -22,11 +22,21 @@
     if (full) return;
     const part = addPart(cfg);
     setActivePart(part.id);
+    focusNewPart();
+  }
+  // The focused button was the "Add part" or "Duplicate" the user pressed; the new part's name field takes the
+  // focus so keyboard users start on the part they just made (A2). A single part has no name field until this
+  // press turns the list into tabs, which the update flush renders.
+  function focusNewPart() {
+    void focusAfterUpdate(`#${CSS.escape(`${labelInputId}-name`)}`);
   }
   function duplicate(id: string) {
     if (full) return;
     const copy = duplicatePart(id);
-    if (copy) setActivePart(copy.id);
+    if (copy) {
+      setActivePart(copy.id);
+      focusNewPart();
+    }
   }
 
   // Line total: the part's item revenue once the order is priced, else its production cost. The server answer

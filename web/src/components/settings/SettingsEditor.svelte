@@ -128,7 +128,9 @@
       errors = [];
       savedNotice = split > 0 ? `Settings saved. ${split === 1 ? "A window that ran past midnight was" : `${split} windows that ran past midnight were`} split at midnight.` : "Settings saved.";
       // The save bar unmounts now that the form is clean; keep focus on the saved notice (WCAG 2.4.3).
-      void refocusIfLost("[data-settings-status]");
+      // preventScroll: the notice sits at the end of the page, and a plain focus() jumped there from the card the
+      // user had just edited (A5). Focus still lands on the notice, a role=status region, so it is announced.
+      void refocusIfLost("[data-settings-status]", { preventScroll: true });
       // Refresh appConfig so every mounted tab sees what /api/config now serves (the server applies a saved
       // config immediately). Deliberately not applyConfig(fresh): that seeds QuoteTab's form once, on first
       // load (the `seeded` guard in state.svelte.ts), and would clobber what the user has mid-typed. A failed
@@ -155,14 +157,15 @@
     errors = [];
     savedNotice = "";
     announce("Changes discarded.");
-    void refocusIfLost("[data-settings-status]");
+    void refocusIfLost("[data-settings-status]", { preventScroll: true });
   }
 
   // A save error names a config path ("pricing.marginPct: ..."). Link it to its field when the path has a field
   // label, else to the first control of the card that holds it (errorSection), so the summary always leads somewhere.
   function resolveSettingsError(message: string): ErrorTarget | null {
     const path = errorLabel(message);
-    const named = path && hasFieldLabel(path) ? findFieldByLabel(fieldLabel(path)) : null;
+    // A path ("pricing.marginPct") maps to its label; a message that already leads with a label ("Accent color") is looked up as is.
+    const named = path ? findFieldByLabel(hasFieldLabel(path) ? fieldLabel(path) : path) : null;
     if (named) return { el: named, field: true };
     const card = document.getElementById(`section-${errorSection(message)}`);
     const first = card?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea, button");

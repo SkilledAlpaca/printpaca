@@ -255,7 +255,11 @@
     {#if detail?.requestId}
       <p class="hint">
         Created from request
-        <button type="button" class="quiet linkish" onclick={() => openRequest(detail!.requestId!)}>{requestReference({ id: detail.requestId, reference: detail.requestReference })}</button>.
+        {#if hasTabAccess("requests", user)}
+          <button type="button" class="quiet linkish" onclick={() => openRequest(detail!.requestId!)}>{requestReference({ id: detail.requestId, reference: detail.requestReference })}</button>.
+        {:else}
+          {requestReference({ id: detail.requestId, reference: detail.requestReference })}.
+        {/if}
       </p>
     {/if}
 
@@ -474,7 +478,7 @@
     {/if}
 
     {#if detail}
-      {@const emailReason = emailDisabledReason(cfg.smtp.host, detail)}
+      {@const emailReason = emailDisabledReason(cfg.smtpConfigured, detail)}
       <p class="status-line" role={statusActionFailed ? "alert" : "status"} aria-live={statusActionFailed ? "assertive" : "polite"}>
         {statusActionMessage}
       </p>

@@ -43,10 +43,10 @@ interface ConfirmFocusOptions {
 const REPEAT_GUARD_MS = 250;
 
 /** Focuses the element matching `selector` when focus has fallen to <body> (the focused control was replaced). */
-function restoreIfLost(selector: string): void {
+function restoreIfLost(selector: string, preventScroll = false): void {
   const active = document.activeElement;
   if (active && active !== document.body) return;
-  document.querySelector<HTMLElement>(selector)?.focus();
+  document.querySelector<HTMLElement>(selector)?.focus({ preventScroll });
 }
 
 /**
@@ -99,10 +99,11 @@ export function confirmFocus(node: HTMLElement, options: ConfirmFocusOptions = {
   };
 }
 
-/** After the DOM updates, focuses `selector` only if focus was lost to <body> (the focused control was replaced). */
-export async function refocusIfLost(selector: string): Promise<void> {
+/** After the DOM updates, focuses `selector` only if focus was lost to <body> (the focused control was replaced).
+ * `preventScroll` keeps the page where it is, for a target far from what the user was looking at. */
+export async function refocusIfLost(selector: string, opts: { preventScroll?: boolean } = {}): Promise<void> {
   await tick();
-  restoreIfLost(selector);
+  restoreIfLost(selector, opts.preventScroll ?? false);
 }
 
 /**

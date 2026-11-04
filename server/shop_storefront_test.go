@@ -116,7 +116,7 @@ func TestShopValidation(t *testing.T) {
 		{"hero file must be a stored image name", func(s *Shop) { s.HeroImage = ShopHeroImage{File: "../x.png", Alt: "a"} }, "shop.heroImage.file"},
 		{"hero alt too long", func(s *Shop) { s.HeroImage = ShopHeroImage{File: "0123456789abcdef.png", Alt: long(201)} }, "shop.heroImage.alt: at most 200"},
 		{"accent passes", func(s *Shop) { s.AccentColor = "#9c4212" }, ""},
-		{"accent fails contrast", func(s *Shop) { s.AccentColor = "#ffd700" }, "shop.accentColor"},
+		{"accent fails contrast", func(s *Shop) { s.AccentColor = "#ffd700" }, "Accent color"},
 		{"accent bad format", func(s *Shop) { s.AccentColor = "red" }, "six hex digits"},
 		{"six footer links", func(s *Shop) {
 			for i := 0; i < 6; i++ {

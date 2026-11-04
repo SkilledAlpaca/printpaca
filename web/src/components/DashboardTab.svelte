@@ -361,11 +361,13 @@
         {/if}
       </Card>
 
-      <Card>
+      <Card class="recent-card">
         <h2>Recent invoices</h2>
         {#if dashboard.recentInvoices.length === 0}
           <p class="empty-state">No invoices yet. Convert a saved quote on the Quotes page, or create one on the Invoices page.</p>
         {:else}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div class="recent-scroll" tabindex="0" role="region" aria-label="Recent invoices">
           <ul class="plain-list">
             {#each dashboard.recentInvoices as inv (inv.id)}
               <li>
@@ -378,6 +380,7 @@
               </li>
             {/each}
           </ul>
+          </div>
         {/if}
       </Card>
     </div>
@@ -479,7 +482,24 @@
     align-items: start;
   }
   @media (min-width: 900px) {
-    .cards { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+    .cards { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: stretch; }
+    /* D43: the Revenue by month card sets the row height; the Recent invoices card matches it and scrolls its
+     * list inside. contain: size keeps the list's own height out of the row's sizing. The min-height keeps a
+     * usable list when the chart card is short (no revenue yet). */
+  }
+  /* Recent invoices: a flex column so the list region takes the card's remaining height. On one column the
+   * region is capped at about six two-line rows and scrolls. */
+  .cards :global(.recent-card) { display: flex; flex-direction: column; }
+  .recent-scroll {
+    overflow-y: auto;
+    min-height: 0;
+    flex: 1 1 auto;
+    max-height: 26.4rem; /* six two-line rows */
+    scrollbar-gutter: stable;
+  }
+  @media (min-width: 900px) {
+    .recent-scroll { max-height: none; }
+    .cards :global(.recent-card) { contain: size; min-height: calc(var(--control-h) * 7); }
   }
   .year-total { margin: var(--space-3) 0 0; color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
 

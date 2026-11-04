@@ -61,7 +61,8 @@
     "web/src/components/settings/ScheduleEditor.svelte",
     "web/src/components/settings/EnergySettings.svelte",
     "web/src/components/settings/PrintersSettings.svelte",
-    "web/src/components/settings/HardwareSettings.svelte"
+    "web/src/components/settings/HardwareSettings.svelte",
+    "web/src/public/VisitorReset.svelte"
   ],
   "scan": [
     ".svelte",

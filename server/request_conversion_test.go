@@ -286,3 +286,41 @@ func TestRequestFinalizeRaceIsGuarded(t *testing.T) {
 		t.Errorf("item_sales for converted request = %d (err %v), want 0", sales, err)
 	}
 }
+
+// Converting a request finalizes it, so POST /api/invoices with a requestId needs the "requests" grant as well
+// as "invoices"; the refusal comes before any message naming the linked invoice.
+func TestRequestConversionNeedsRequestsPermission(t *testing.T) {
+	adminMux, publicMux, db, _ := newRequestsTestSetup(t, t.TempDir())
+	if _, _, err := createUser(db, "bob", "password123", []string{"invoices"}, ""); err != nil {
+		t.Fatalf("createUser: %v", err)
+	}
+	if _, _, err := createUser(db, "carol", "password123", []string{"invoices", "requests"}, ""); err != nil {
+		t.Fatalf("createUser: %v", err)
+	}
+	id := seedQuoteRequest(t, publicMux, "PLA")
+	getRequest(t, adminMux, id)
+	as := func(user, body string) *httptest.ResponseRecorder {
+		req := withCtxIdentity(httptest.NewRequest("POST", "/api/invoices", strings.NewReader(body)), identity{username: user})
+		return serveReq(adminMux, req)
+	}
+
+	if rec := as("bob", convertBody(id, "")); rec.Code != http.StatusForbidden {
+		t.Fatalf("invoices-only employee: want 403, got %d %s", rec.Code, rec.Body.String())
+	}
+	if got := loadRequestJSON(t, adminMux, id); got.Status == "finalized" || got.InvoiceID != "" {
+		t.Errorf("refused conversion changed the request: %+v", got)
+	}
+	// A plain invoice still works without the grant.
+	if rec := as("bob", `{"clientName":"X","lines":[{"description":"d","quantity":1,"unitPriceCents":100}]}`); rec.Code != http.StatusCreated {
+		t.Errorf("plain invoice as invoices-only: want 201, got %d %s", rec.Code, rec.Body.String())
+	}
+	rec := as("carol", convertBody(id, ""))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("employee with both grants: want 201, got %d %s", rec.Code, rec.Body.String())
+	}
+	inv := mustUnmarshalInvoice(t, rec)
+	// The 409 that names the invoice number is not shown to the caller without the grant.
+	if rec := as("bob", convertBody(id, "")); rec.Code != http.StatusForbidden || strings.Contains(rec.Body.String(), inv.Number) {
+		t.Errorf("already-converted as invoices-only: want 403 without the number, got %d %s", rec.Code, rec.Body.String())
+	}
+}

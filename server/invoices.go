@@ -636,6 +636,19 @@ func (iv *invoices) handlePost(w http.ResponseWriter, r *http.Request) {
 	in.RequestID = strings.TrimSpace(in.RequestID)
 	problems := validateInvoiceInput(&in)
 	if in.RequestID != "" {
+		// The route is gated on "invoices", but converting a request finalizes it, which is the "requests"
+		// area. Checked before prepareRequestConversion so its messages (they name the linked invoice) don't
+		// reach a caller without the grant.
+		ok, err := callerHasPermission(iv.db, r, "requests")
+		if err != nil {
+			log.Printf("invoices request permission: %v", err)
+			http.Error(w, "permission check failed", http.StatusInternalServerError)
+			return
+		}
+		if !ok {
+			writeAuthError(w, http.StatusForbidden, "missing permission: requests")
+			return
+		}
 		status, msg, err := prepareRequestConversion(iv.db, &in)
 		if err != nil {
 			log.Printf("invoices request conversion: %v", err)

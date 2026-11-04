@@ -925,17 +925,31 @@ const COLUMNS: DataColumn[] = [
                 <td class="nowrap c-saved" data-label="Saved">{formatSavedAt(q.savedAt)}</td>
                 <td class="c-actions">
                   <div class="row-actions">
+                    <!-- Two fixed slots, the same on every row, so nothing shifts between rows or after a status
+                         change (D50): slot 1 is the status action, slot 2 converts. A slot that does not apply is a
+                         disabled N/A button, never a gap. -->
                     {#if primaryT}
                       <button
                         type="button"
-                        class="quiet"
+                        class="quiet slot"
                         data-focus-key={`transition-${q.id}`}
                         onclick={() => askAction(q, primaryT, `transition-${q.id}`)}
                       >{TRANSITION_LABELS[primaryT]}</button>
+                    {:else}
+                      <button
+                        type="button"
+                        class="quiet slot slot-na"
+                        disabled
+                        aria-label="N/A, Change status: not available"
+                        aria-describedby={`status-na-${q.id}`}
+                      >N/A</button>
+                      <span id={`status-na-${q.id}`} class="visually-hidden">
+                        {q.status === "accepted" ? "An accepted quote can't change status." : "A declined quote can't change status."}
+                      </span>
                     {/if}
                     <button
                       type="button"
-                      class="quiet"
+                      class="quiet slot"
                       data-focus-key={`convert-${q.id}`}
                       onclick={() => { if (canInvoice) void openConvert(q); }}
                       aria-label={q.invoicedAs ? `Invoice again: "${q.label}"` : `Convert to invoice: "${q.label}"`}
@@ -1127,8 +1141,10 @@ const COLUMNS: DataColumn[] = [
   /* .status-line's app-wide min-height reserves room against layout shift, but before any action sets
    * actionStatus that plus .page's flex gap left a dead band above the table. Collapsed only while
    * actionStatus is empty (the live region stays mounted, so its role/aria-live never toggle); once a
-   * message is set it reverts to the reserved layout. */
-  .action-status.collapsed { min-height: 0; margin-top: calc(var(--space-6) * -1); margin-bottom: calc(var(--space-6) * -1); }
+   * message is set it reverts to the reserved layout. The margins cancel the two flex gaps around the empty line,
+   * so they must be the gap token itself: a hard-coded space-6 overshot in Compact density (gap space-3) and
+   * pulled the email notice up over the line above it. */
+  .action-status.collapsed { min-height: 0; margin-top: calc(var(--gap-section) * -1); margin-bottom: calc(var(--gap-section) * -1); }
 
   .linkish {
     border: none; background: none; color: var(--accent-text); padding: 0; text-align: left;
@@ -1150,6 +1166,9 @@ const COLUMNS: DataColumn[] = [
    * label/client columns give up the difference. .table-scroll is the escape hatch. */
   .row-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-2); }
   .row-actions > button, .row-actions .menu-toggle { white-space: nowrap; }
+  /* The action slots are one fixed width on every row (D50), sized from the field tokens to fit the longest label, "Convert to
+   * invoice", plus the button padding. Disabled N/A slots keep the same box. */
+  .row-actions > .slot { flex: none; inline-size: calc(var(--field-s) + var(--space-4)); box-sizing: border-box; overflow: hidden; text-overflow: clip; }
   .confirm-delete { white-space: nowrap; }
   .cancel-delete { white-space: nowrap; }
 
@@ -1209,7 +1228,10 @@ const COLUMNS: DataColumn[] = [
     .c-saved { grid-area: saved; color: var(--muted); font-size: var(--text-sm); }
     .c-saved::before { content: attr(data-label) " "; }
     .c-actions { grid-area: actions; margin-top: var(--space-1); }
-    .row-actions { flex-wrap: wrap; }
+    /* The same two slots on a card, as equal columns beside the ⋯ button. */
+    .row-actions { display: grid; grid-template-columns: 1fr 1fr auto; }
+    .row-actions > .slot { inline-size: auto; min-width: 0; }
+    .row-actions > button { min-height: 44px; }
     .convert-tr td { display: block; }
   }
 

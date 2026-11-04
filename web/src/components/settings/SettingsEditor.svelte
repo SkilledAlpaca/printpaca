@@ -174,13 +174,13 @@
   {#if loading}
     <p role="status">Loading…</p>
   {:else if loadFailed}
-    <Card class="card banner-error">
+    <Card class="banner-error">
       <p>Couldn't load settings from the server. Check that printpaca's backend is running.</p>
       <button type="button" onclick={refresh}>Retry</button>
     </Card>
   {:else if form && original && builtin}
     {#if loadErrorMsg}
-      <Card class="card banner-warn">
+      <Card class="banner-warn">
         <p>config.yaml on disk is invalid, so this page ignores it: {loadErrorMsg}. Saving overwrites it.</p>
       </Card>
     {/if}

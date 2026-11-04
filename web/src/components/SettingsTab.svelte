@@ -1,6 +1,6 @@
 <script lang="ts">
   import { timezoneOptions as timezoneOptionList } from "../lib/timezones";
-  import { cardClass, nextKey, type ServerConfig } from "../lib/settings";
+  import { nextKey, type ServerConfig } from "../lib/settings";
   import { settingsWarnings } from "../lib/settingsRules";
   import { presetDisplayName, feeScheduleDisplayName, warnFor } from "../lib/format";
   import { extractConfigUser } from "../lib/permissions";
@@ -180,7 +180,7 @@
         <div class="settings-cards">
           <AccountCard user={currentUser} />
 
-          <Card id="section-currency" class={cardClass(hasError("currency"))} heading="Currency">
+          <Card id="section-currency" tone={hasError("currency") ? "danger" : "default"} heading="Currency">
             <p class="hint">Symbol and decimal precision used everywhere money is displayed.</p>
             <FormGrid align="controls">
               <Field id="currency-symbol" label="Symbol" size="xs">
@@ -208,7 +208,7 @@
             </FormGrid>
           </Card>
 
-          <Card id="section-pricing" class={cardClass(hasError("pricing"))} heading="Pricing">
+          <Card id="section-pricing" tone={hasError("pricing") ? "danger" : "default"} heading="Pricing">
             <p class="hint">Default sale-price strategy, tax, shipping, and the fee schedule new quotes start with.</p>
             <FormGrid align="controls">
               <Field id="pricing-strategy" label="Strategy" size="m">
@@ -275,7 +275,7 @@
             </label>
           </Card>
 
-          <Card id="section-timezone" class={cardClass(hasError("timezone"))} heading="Time zone">
+          <Card id="section-timezone" tone={hasError("timezone") ? "danger" : "default"} heading="Time zone">
             <p class="hint">Decides which month a payment, a quote, and "today" belong to on the Dashboard, when an invoice is overdue, and the date a marked-paid payment gets. Stored timestamps stay UTC.</p>
             <FormGrid>
               <Field
@@ -303,9 +303,9 @@
             </FormGrid>
           </Card>
 
-          <Card id="section-fee-schedules" class={cardClass(hasError("feeSchedules"))} heading="Fee schedules">
+          <Card id="section-fee-schedules" tone={hasError("feeSchedules") ? "danger" : "default"} heading="Fee schedules">
             <p class="hint">Marketplace fee breakdowns: fixed charges plus percent-of-revenue charges. Built-in schedules can't be removed.</p>
-            <div class="stack">
+            <div class="stack spaced">
               {#each Object.entries(form.feeSchedules) as [key, fs] (key)}
                 <Card tone="inset">
                   <Fieldset legend={feeScheduleDisplayName(key)}>
@@ -376,7 +376,7 @@
 
           <HardwareSettings {form} {hasError} />
 
-          <Card id="section-defaults" class={cardClass(hasError("defaults"))} heading="Defaults">
+          <Card id="section-defaults" tone={hasError("defaults") ? "danger" : "default"} heading="Defaults">
             <p class="hint">What a fresh quote starts with.</p>
             <FormGrid align="controls">
               <Field id="defaults-preset" label="Preset" size="m">
@@ -427,7 +427,7 @@
 
           <UsersSettings {form} {original} {hasError} />
 
-          <Card id="section-features" class={cardClass(hasError("ui"))} heading="Features">
+          <Card id="section-features" tone={hasError("ui") ? "danger" : "default"} heading="Features">
             <p class="hint">Hide tabs you don't use from navigation. Data is kept and comes back when you re-enable a tab.</p>
             <Fieldset legend="Show these tabs">
               <div class="feature-grid">
@@ -549,7 +549,6 @@
     scroll-margin-top: var(--space-1);
   }
 
-  .stack { display: flex; flex-direction: column; gap: var(--gap); margin-block: var(--space-3); }
   .section-label { margin: var(--space-3) 0 var(--space-1); }
   .schedule-actions { display: flex; align-items: center; gap: var(--space-2); }
   .row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }

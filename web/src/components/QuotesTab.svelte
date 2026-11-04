@@ -40,6 +40,7 @@
   import StatusBadge from "./StatusBadge.svelte";
   import AttributionLine from "./AttributionLine.svelte";
   import DataTable, { type DataColumn } from "./ui/DataTable.svelte";
+  import PageHeader from "./ui/PageHeader.svelte";
 import Field from "./ui/Field.svelte";
 import FormGrid from "./ui/FormGrid.svelte";
   import BackfillStatus from "./BackfillStatus.svelte";
@@ -780,9 +781,8 @@ const COLUMNS: DataColumn[] = [
 <svelte:window onpointerdown={handleWindowPointerDown} onkeydown={handleWindowKeydown} onscrollcapture={handleWindowScroll} />
 
 <div class="page">
-  <div class="head-row">
-    <h1 tabindex="-1">Quotes</h1>
-    <div class="head-actions">
+  <PageHeader title="Quotes">
+    {#snippet actions()}
       {#if canEdit}
         <button type="button" class="primary" onclick={() => { if (startNewQuote(cfg)) location.hash = "#/quote"; }}>New quote</button>
       {/if}
@@ -799,8 +799,8 @@ const COLUMNS: DataColumn[] = [
         aria-label="Import quotes"
         onchange={handleImportFile}
       />
-    </div>
-  </div>
+    {/snippet}
+  </PageHeader>
 
   <p class="lede">
     Track each saved quote from draft to sent to accepted, convert quotes to invoices,
@@ -1111,10 +1111,6 @@ const COLUMNS: DataColumn[] = [
 
 <style>
   .parts-badge { margin-left: var(--space-2); color: var(--muted); font-size: var(--text-sm); }
-  .head-row h1 { margin: 0; }
-  /* Wraps at 320 CSS px (WCAG 1.4.10): New quote, Export, and Import no longer fit beside the heading. */
-  .head-row { flex-wrap: wrap; }
-  .head-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
   .lede { color: var(--muted); font-size: var(--text-sm); margin: 0; }
 
   /* .status-line's app-wide min-height reserves room against layout shift, but before any action sets

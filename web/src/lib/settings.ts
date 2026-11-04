@@ -115,12 +115,6 @@ export function errorSection(msg: string): string {
   return SECTION_IDS.has(token) ? token : "general";
 }
 
-/** The class list for a settings card: `card`, plus the danger marker when the card holds a rejected field. Passed
- * as `class` to ui/Card, which would otherwise lose the base class to the spread. */
-export function cardClass(invalid: boolean): string {
-  return invalid ? "card danger-border" : "card";
-}
-
 /** First unused key of the form "base", "base-2", "base-3", ... for freshly added entries. */
 export function nextKey(existing: string[], base: string): string {
   if (!existing.includes(base)) return base;

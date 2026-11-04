@@ -75,7 +75,13 @@
   --gap: var(--space-4);
   --gap-section: var(--space-6);
   --card-pad: var(--space-5);
+  --tile-pad: var(--space-5);
   --cell-pad-y: 0.6rem;
+
+  /* Navigation rail widths (App.svelte): the desktop sidebar, its icon-only collapsed form, and the phone drawer. */
+  --sidebar-w: 220px;
+  --sidebar-w-collapsed: 64px;
+  --drawer-w: min(280px, 85vw);
 
   /* Content widths. --content-max is the admin content cap (D10): it holds the wide column of lists and
    * tables. The narrow reading column of the public pages is set by the public page itself. */
@@ -121,8 +127,15 @@
   --gap: var(--space-2);
   --gap-section: var(--space-3);
   --card-pad: var(--space-3);
+  --tile-pad: var(--space-3);
   --cell-pad-y: 0.3rem;
   --tap-sm: 28px;
+}
+/* Phone card padding (both densities): the one token every card and every block that bleeds to a card's edge
+ * (ui/KeyValueTable) reads. --tile-pad is the same padding without the phone step, for StatTile and StickySummary,
+ * whose phone padding stays as it was. Same specificity as the density sets above and later in the file, so it wins. */
+@media (max-width: 600px) {
+  :root, :root[data-density="compact"] { --card-pad: var(--space-4); }
 }
 /* Tri-state theme: no attribute follows the OS preference (media query below); an explicit choice
  * (demo-local only -- see web/src/lib/demoLocal.svelte.ts) sets data-theme on <html> and wins over the OS
@@ -453,18 +466,19 @@ input.warn, textarea.warn { border-color: var(--danger); }
 .page { display: flex; flex-direction: column; gap: var(--gap-section); }
 .page > h1 { margin: 0; }
 
+/* A vertical stack of blocks spaced by the density gap (--gap): form sections and rows inside a card.
+ * `.below-heading` and `.spaced` add the space a stack needs under a card heading or around it. */
+.stack { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+.stack > h2, .stack > h3 { margin: 0; }
+.stack.below-heading { margin-block-start: var(--space-3); }
+.stack.spaced { margin-block: var(--space-3); }
+
 .card {
   background: var(--card-bg);
   border-radius: var(--radius);
   /* Soft tint, no outline and no shadow (D6). Compact density tightens the padding. */
   padding: var(--card-pad);
 }
-@media (max-width: 600px) {
-  .card { padding: var(--space-4); }
-}
-/* A left border is the severity marker, not a full red card, since the danger classification here is "this
- * section has a destructive action in it," not "this section is itself an error." */
-.card.danger-border { border-left: 3px solid var(--danger); }
 /* Roomier padding for wide settings-page cards: the base .card padding (tuned for compact tiles/rows) reads
  * cramped once a card is a full-width settings section with several field rows. */
 .card.roomy { padding: clamp(var(--space-5), 1.4vw, var(--space-8)); }
@@ -576,9 +590,8 @@ tbody tr:hover { background: var(--surface-2); }
 .chips button { border-radius: 999px; padding: 0.25rem 0.8rem; font-size: var(--text-sm); }
 .chips button.active { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
 
-.head-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
-/* Grid variant for a head row that also carries a CardHelp: CardHelp's help-note sets grid-column: 1 / -1
- * on itself so it lands on its own full-width row under the heading, which the flex variant above can't
+/* Grid head row for a heading that carries a CardHelp (BreakdownTable): CardHelp's help-note sets grid-column: 1 / -1
+ * on itself so it lands on its own full-width row under the heading, which a flex row can't
  * give it. */
 .head-row.with-help {
   display: grid;

@@ -438,10 +438,9 @@
 
 <div class="page">
   {#if view === "list"}
-    <div class="head-row">
-      <h1 tabindex="-1">Clients</h1>
-      <button type="button" class="primary" onclick={openNew}>Add client</button>
-    </div>
+    <PageHeader title="Clients" actionsFill>
+      {#snippet actions()}<button type="button" class="primary" onclick={openNew}>Add client</button>{/snippet}
+    </PageHeader>
 
     {#if unavailable}
       <p class="banner-warn" role="alert">Couldn't load clients. The server couldn't be reached.</p>

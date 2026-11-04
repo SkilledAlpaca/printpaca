@@ -134,8 +134,6 @@
 
 <style>
   .cards { display: grid; gap: var(--gap-section); }
-  .stack { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
-  .stack > :global(h2), .stack > :global(h3) { margin: 0; }
   .density-status { margin: 0; }
   /* The density warning is advisory, so it reads in --warn; .status-line supplies the live-region
    * min-height. Two classes outrank either single-class theme rule regardless of declaration order. */

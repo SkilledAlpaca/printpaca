@@ -5,7 +5,6 @@
   import { testIntegration } from "../../lib/sendApi";
   import { appConfig } from "../../lib/state.svelte";
   import { announce, focusAfterUpdate } from "../../lib/a11y.svelte";
-  import { cardClass } from "../../lib/settings";
   import Card from "../ui/Card.svelte";
   import Field from "../ui/Field.svelte";
   import FormGrid from "../ui/FormGrid.svelte";
@@ -166,7 +165,7 @@
   }
 </script>
 
-<Card id="section-integrationsUrls" class={cardClass(hasError("integrationsUrls"))} heading="Integrations">
+<Card id="section-integrationsUrls" tone={hasError("integrationsUrls") ? "danger" : "default"} heading="Integrations">
   <p class="hint">
     Spoolman, Moonraker, and Fluidd URLs. Saved changes apply right away, with no restart. An environment variable
     on the container always overrides the value here.
@@ -178,7 +177,7 @@
     </p>
   {/if}
 
-  <div class="stack">
+  <div class="stack below-heading">
     {#each ROWS as row (row.kind)}
       <Card tone="inset">
         <div class="subhead">
@@ -266,7 +265,6 @@
 </Card>
 
 <style>
-  .stack { display: flex; flex-direction: column; gap: var(--gap); margin-block-start: var(--space-3); }
   .test-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-2); }
   .used-in { margin: var(--space-2) 0 0; color: var(--muted); font-size: var(--text-sm); }
   .test-ok { color: var(--ok); }

@@ -191,8 +191,6 @@
 </div>
 
 <style>
-  .stack { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
-  .stack > :global(h2), .stack > :global(h3) { margin: 0; }
   details { color: var(--muted); font-size: var(--type-secondary); }
   .hint-text { color: var(--muted); font-size: var(--type-secondary); }
   .split-title { margin: 0; font-size: var(--type-heading); }

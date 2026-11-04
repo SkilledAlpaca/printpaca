@@ -1,6 +1,6 @@
 <script lang="ts">
   import { presetDisplayName } from "../../lib/format";
-  import { cardClass, nextKey, type ServerConfig } from "../../lib/settings";
+  import { nextKey, type ServerConfig } from "../../lib/settings";
   import { focusAfterUpdate } from "../../lib/a11y.svelte";
   import { keySelector } from "../../lib/a11yFocus";
   import Card from "../ui/Card.svelte";
@@ -58,9 +58,9 @@
   }
 </script>
 
-<Card id="section-presets" class={cardClass(hasError("presets"))} heading="Presets">
+<Card id="section-presets" tone={hasError("presets") ? "danger" : "default"} heading="Presets">
   <p class="hint">Named bundles of failure rate, prep time, labor rate, and overhead that new quotes start from. Editing a rate on the New quote page changes that quote only. Built-in presets can't be removed.</p>
-  <div class="stack">
+  <div class="stack below-heading">
     {#each Object.entries(form.presets) as [key, preset] (key)}
       <Card tone="inset">
         <Fieldset legend={presetDisplayName(key)}>
@@ -115,7 +115,6 @@
 </Card>
 
 <style>
-  .stack { display: flex; flex-direction: column; gap: var(--gap); margin-block-start: var(--space-3); }
   .preset-actions { display: flex; align-items: center; gap: var(--space-2); }
   .add-row { margin-block-start: var(--space-3); }
 </style>

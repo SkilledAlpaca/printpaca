@@ -37,6 +37,21 @@
 
   let listEl: HTMLElement | undefined = $state();
 
+  // Keep the selected tab fully inside the scrolling strip (on click, arrow keys, Home and End, and when parts are
+  // added or removed). Scrolls the strip itself, never the page.
+  $effect(() => {
+    const el = listEl;
+    if (!el) return;
+    const sel = selected;
+    void tabs.length;
+    const tab = el.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(sel)}"]`);
+    if (!tab) return;
+    const left = tab.offsetLeft;
+    const right = left + tab.offsetWidth;
+    if (left < el.scrollLeft) el.scrollLeft = left;
+    else if (right > el.scrollLeft + el.clientWidth) el.scrollLeft = right - el.clientWidth;
+  });
+
   function onkeydown(e: KeyboardEvent) {
     const current = tabs.findIndex((t) => t.id === selected);
     const target = tabTarget(e.key, current < 0 ? 0 : current, tabs.length);
@@ -83,7 +98,12 @@
   .tabs { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
   .tabs-row { display: flex; align-items: flex-end; gap: var(--space-2); min-width: 0; }
   /* Scrolls sideways when many tabs don't fit, instead of wrapping onto a second row of tabs. */
-  .tablist { display: flex; gap: var(--space-1); min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+  .tablist { position: relative; display: flex; gap: var(--space-1); min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+  /* Touch screens scroll by swipe, so the strip's scrollbar is hidden there; desktop keeps the thin one. */
+  @media (pointer: coarse) {
+    .tablist { scrollbar-width: none; }
+    .tablist::-webkit-scrollbar { display: none; }
+  }
   .tabs-after { flex: none; }
   .tab {
     flex: none;

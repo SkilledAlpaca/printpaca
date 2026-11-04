@@ -446,8 +446,6 @@
 <style>
   .inventory { display: flex; flex-direction: column; gap: var(--gap); }
   .inventory h2 { margin: 0; }
-  .stack { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
-  .stack > :global(h2), .stack > :global(h3) { margin: 0; }
   .toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--gap); }
   .toolbar :global(.ui-field) { flex: 1 1 var(--field-m); }
   .summary { margin: 0; }

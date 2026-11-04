@@ -46,7 +46,7 @@
     align-items: flex-start;
     gap: var(--space-1);
     min-width: 0;
-    padding: var(--card-pad);
+    padding: var(--tile-pad);
     background: var(--card-bg);
     border: 0;
     border-radius: var(--radius);

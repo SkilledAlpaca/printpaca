@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cardClass, cloneConfig, configsEqual, errorSection, loadSettings, nextKey, saveSettings, type ServerConfig } from "./settings";
+import { cloneConfig, configsEqual, errorSection, loadSettings, nextKey, saveSettings, type ServerConfig } from "./settings";
 import { DEFAULT_SHOP_CONFIG } from "./shop";
 
 function baseConfig(): ServerConfig {
@@ -188,12 +188,5 @@ describe("saveSettings", () => {
     );
     const result = await saveSettings(baseConfig());
     expect(result).toEqual({ ok: false, errors: ["Couldn't reach the server."] });
-  });
-});
-
-describe("cardClass", () => {
-  it("adds the danger marker only for an invalid card", () => {
-    expect(cardClass(false)).toBe("card");
-    expect(cardClass(true)).toBe("card danger-border");
   });
 });

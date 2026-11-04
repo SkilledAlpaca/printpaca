@@ -1251,7 +1251,7 @@
       position: fixed;
       inset-block: 0;
       left: 0;
-      width: min(280px, 85vw);
+      width: var(--drawer-w);
       z-index: 200;
       padding: var(--space-4) var(--space-3);
       gap: var(--space-2);
@@ -1404,7 +1404,7 @@
       display: flex;
       flex-direction: column;
       grid-area: side;
-      width: 220px;
+      width: var(--sidebar-w);
       padding: var(--space-4) var(--space-3);
       gap: var(--space-2);
       background: var(--surface);
@@ -1415,7 +1415,7 @@
       height: 100%;
       overflow: hidden;
     }
-    .sidebar.collapsed { width: 64px; padding: var(--space-4) var(--space-2); }
+    .sidebar.collapsed { width: var(--sidebar-w-collapsed); padding: var(--space-4) var(--space-2); }
     .sidebar.collapsed .brand { justify-content: center; }
     /* .side-nav's base rule (shared with the drawer) already has overflow-y: auto, so the nav list scrolls
      * internally when it outgrows the viewport, keeping the footer below it reachable; nothing is added

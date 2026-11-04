@@ -747,9 +747,7 @@
 
 <div class="page">
   {#if view === "list"}
-    <div class="head-row">
-      <h1 tabindex="-1" data-focus-key="requests-heading">Requests</h1>
-    </div>
+    <h1 tabindex="-1" data-focus-key="requests-heading">Requests</h1>
 
     {#if confirmingDeleteAllNew}
       <div class="banner-warn confirm-delete-all" role="group" aria-label="Confirm deleting all new requests">

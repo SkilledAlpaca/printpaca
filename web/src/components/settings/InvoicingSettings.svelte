@@ -5,7 +5,6 @@
   import LabeledNumber from "../LabeledNumber.svelte";
   import LabeledText from "../LabeledText.svelte";
   import { focusAfterRowRemoval } from "../../lib/a11yFocus";
-  import { cardClass } from "../../lib/settings";
   import Card from "../ui/Card.svelte";
   import Field from "../ui/Field.svelte";
   import FormGrid from "../ui/FormGrid.svelte";
@@ -33,7 +32,7 @@
   }
 </script>
 
-<Card id="section-invoicing" class={cardClass(hasError("invoicing"))} heading="Invoicing">
+<Card id="section-invoicing" tone={hasError("invoicing") ? "danger" : "default"} heading="Invoicing">
   <p class="hint">Invoice numbering, default sales tax, and payment terms new invoices start with.</p>
   <FormGrid align="controls">
     <LabeledText

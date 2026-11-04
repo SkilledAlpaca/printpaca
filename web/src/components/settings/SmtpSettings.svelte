@@ -3,7 +3,6 @@
   import { settingsWarnings } from "../../lib/settingsRules";
   import { warnFor } from "../../lib/format";
   import { testSmtp } from "../../lib/sendApi";
-  import { cardClass } from "../../lib/settings";
   import Card from "../ui/Card.svelte";
   import Field from "../ui/Field.svelte";
   import FormGrid from "../ui/FormGrid.svelte";
@@ -51,7 +50,7 @@
   }
 </script>
 
-<Card id="section-smtp" class={cardClass(hasError("smtp"))} heading="Email">
+<Card id="section-smtp" tone={hasError("smtp") ? "danger" : "default"} heading="Email">
   <p class="hint">Notifies you of each new estimate request and sends quotes and invoices to clients from the
     Quotes and Invoices pages. Leave host empty to disable both. The password is read from the SMTP_PASSWORD
     environment variable and never stored in config.yaml.</p>

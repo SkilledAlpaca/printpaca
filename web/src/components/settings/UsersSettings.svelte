@@ -6,7 +6,6 @@
   import { demoLocal } from "../../lib/demoLocal.svelte";
   import { announce, focusAfterUpdate } from "../../lib/a11y.svelte";
   import { confirmFocus, focusOnMount, keySelector, neighborId } from "../../lib/a11yFocus";
-  import { cardClass } from "../../lib/settings";
   import Card from "../ui/Card.svelte";
   import Field from "../ui/Field.svelte";
   import Fieldset from "../ui/Fieldset.svelte";
@@ -227,7 +226,7 @@
   }
 </script>
 
-<Card id="section-users" class={cardClass(hasError("users"))} heading="Users">
+<Card id="section-users" tone={hasError("users") ? "danger" : "default"} heading="Users">
   <p class="hint">
     Multi-user mode lets employees sign in with their own username and password, each limited to the tabs you grant
     them. Enabling it requires ADMIN_PASSWORD to be set on the server.

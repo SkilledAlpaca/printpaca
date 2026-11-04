@@ -28,7 +28,7 @@
   }
 </script>
 
-<Card id="section-printers" class={`card${hasError("printers") ? " danger-border" : ""}`}>
+<Card id="section-printers" tone={hasError("printers") ? "danger" : "default"}>
 <div class="stack">
 <h2>Printer list</h2>
   <p class="hint">This list replaces the built-in one entirely. At least one printer is required.</p>
@@ -107,8 +107,6 @@
 </Card>
 
 <style>
-  .stack { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
-  .stack > :global(h2), .stack > :global(h3) { margin: 0; }
   .rows { display: flex; flex-direction: column; gap: var(--gap); }
   .add-line { display: flex; }
 </style>

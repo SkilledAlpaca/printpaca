@@ -580,3 +580,62 @@ func TestDashboardNeedsAttentionCapsAndSentQuotes(t *testing.T) {
 		t.Errorf("sent quotes listed %d of %d, want 1 of 1 (draft and invoiced quotes excluded)", sent, resp.AttentionCounts.SentQuotes)
 	}
 }
+
+// Pins quotesAvgMarginPctMonth: it averages quotes whose invoice was created this month (joined through
+// invoices.created_at), ignores last month's invoices, and is nil when nothing qualifies. The all-time field keeps both.
+func TestDashboardQuoteMarginThisMonth(t *testing.T) {
+	dir := t.TempDir()
+	mux := newTestMux(t, dir)
+	db := openTestDB(t, dir)
+
+	get := func() dashboardResponse {
+		rec := serveReq(mux, httptest.NewRequest("GET", "/api/dashboard", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /api/dashboard: %d %s", rec.Code, rec.Body.String())
+		}
+		var got dashboardResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if got := get(); got.QuotesAvgMarginPctMonth != nil {
+		t.Fatalf("no data: quotesAvgMarginPctMonth = %v, want nil", *got.QuotesAvgMarginPctMonth)
+	}
+
+	now := time.Now().UTC()
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	thisMonth := monthStart.Add(time.Second).Format(time.RFC3339) // first second of the month: the boundary case
+	lastMonth := monthStart.Add(-time.Second).Format(time.RFC3339)
+	seedInv := func(id string, seq int, createdAt string) {
+		if _, err := db.Exec(`INSERT INTO invoices (id, number, number_year, number_seq, client_name, total_cents, created_at, updated_at)
+			VALUES (?, ?, 2025, ?, 'A', 1000, ?, ?)`, id, "INV-"+id, seq, createdAt, createdAt); err != nil {
+			t.Fatalf("seed invoice %s: %v", id, err)
+		}
+	}
+	seedInv("m1", 1, thisMonth)
+	seedInv("m2", 2, thisMonth)
+	seedInv("old", 3, lastMonth)
+	m1, m2, old := "m1", "m2", "old"
+	a, b, c := 20.0, 30.0, 90.0
+	// Quote saved dates are irrelevant: the invoice's creation date decides the month.
+	seedDashboardQuote(t, db, "qa", lastMonth, &m1, &a)
+	seedDashboardQuote(t, db, "qb", thisMonth, &m2, &b)
+	seedDashboardQuote(t, db, "qc", thisMonth, &old, &c)
+
+	got := get()
+	if got.QuotesAvgMarginPctMonth == nil || *got.QuotesAvgMarginPctMonth != 25 {
+		t.Errorf("this month: quotesAvgMarginPctMonth = %v, want 25 (mean of 20 and 30)", got.QuotesAvgMarginPctMonth)
+	}
+	if got.QuotesAvgMarginPct == nil || *got.QuotesAvgMarginPct != 140.0/3 {
+		t.Errorf("all-time: quotesAvgMarginPct = %v, want %v", got.QuotesAvgMarginPct, 140.0/3)
+	}
+
+	// Only last month's invoice left: nothing this month.
+	if _, err := db.Exec(`DELETE FROM quotes WHERE id IN ('qa', 'qb')`); err != nil {
+		t.Fatal(err)
+	}
+	if got := get(); got.QuotesAvgMarginPctMonth != nil {
+		t.Errorf("last month only: quotesAvgMarginPctMonth = %v, want nil", *got.QuotesAvgMarginPctMonth)
+	}
+}

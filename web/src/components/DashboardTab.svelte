@@ -284,8 +284,9 @@
         <StatTile label="Outstanding" value={money(dashboard.outstandingCents, cfg)} period="Unpaid invoices" href="#/invoices" />
         <StatTile
           label="Average margin"
-          value={dashboard.quotesAvgMarginPct !== null ? `${dashboard.quotesAvgMarginPct.toFixed(0)}%` : "-"}
-          period="Invoiced quotes"
+          value={dashboard.quotesAvgMarginPctMonth !== null ? `${dashboard.quotesAvgMarginPctMonth.toFixed(0)}%` : "-"}
+          period="This month"
+          caption="Quotes invoiced"
           href="#/quotes"
         />
         <StatTile
@@ -355,6 +356,9 @@
           <p class="empty-state">No revenue yet. Convert a quote to an invoice and record a payment to see revenue here.</p>
         {/if}
         <p class="year-total">Revenue this year: <a href="#/invoices">{money(dashboard.revenueYearCents, cfg)}</a></p>
+        {#if dashboard.quotesAvgMarginPct !== null}
+          <p class="year-total">Average margin, all invoiced quotes: {dashboard.quotesAvgMarginPct.toFixed(0)}%</p>
+        {/if}
       </Card>
 
       <Card>

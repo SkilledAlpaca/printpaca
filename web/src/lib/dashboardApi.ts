@@ -21,6 +21,8 @@ export interface Dashboard {
   quotesInvoicedSharePct: number | null;
   /** Mean achieved margin percent over every invoiced quote, any month; null when there are none. */
   quotesAvgMarginPct: number | null;
+  /** Mean achieved margin percent over quotes whose invoice was created this month; null when there are none. */
+  quotesAvgMarginPctMonth: number | null;
   /** The "Needs attention" rows (server/dashboard.go): up to 3 per kind, money items first, requests only for callers who may
    * open Requests and invoices only for those who may open Invoices. */
   needsAttention: AttentionItem[];

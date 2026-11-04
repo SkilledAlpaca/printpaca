@@ -170,6 +170,8 @@ test.describe("dashboard", () => {
 
     const outstanding = page.getByRole("link", { name: /Outstanding/ });
     await expect(outstanding).toHaveAttribute("href", "#/invoices");
+    await expect(page.getByRole("link", { name: /^Average margin/ })).toContainText("This month");
+    await expect(page.getByRole("link", { name: /^Average margin/ })).not.toContainText("Invoiced quotes");
     await page.getByRole("link", { name: /Quotes saved/ }).click();
     await expect(page).toHaveURL(/#\/quotes$/);
   });

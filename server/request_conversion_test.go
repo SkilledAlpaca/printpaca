@@ -149,6 +149,13 @@ func TestRequestPrintTimeFlow(t *testing.T) {
 		t.Errorf("convert without time: want 409 naming the print time, got %d %s", rec.Code, rec.Body.String())
 	}
 
+	if rec := setRequestStatus(t, adminMux, id, "finalized"); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "Enter the print time before finalizing") {
+		t.Errorf("finalize without time: want 409 naming the print time, got %d %s", rec.Code, rec.Body.String())
+	}
+	if got := loadRequestJSON(t, adminMux, id); got.Status == "finalized" {
+		t.Error("refused finalize still changed the status")
+	}
+
 	post := func(body string) *httptest.ResponseRecorder {
 		return serveReq(adminMux, httptest.NewRequest("POST", "/api/requests/"+id+"/print-time", strings.NewReader(body)))
 	}
@@ -168,6 +175,9 @@ func TestRequestPrintTimeFlow(t *testing.T) {
 	}
 	if rec := post(`{"timeSeconds":5400}`); rec.Code != http.StatusConflict {
 		t.Errorf("second print-time: want 409, got %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := setRequestStatus(t, adminMux, id, "finalized"); rec.Code != http.StatusOK {
+		t.Errorf("finalize after time: want 200, got %d %s", rec.Code, rec.Body.String())
 	}
 	if rec := postInvoice(t, adminMux, convertBody(id, "")); rec.Code != http.StatusCreated {
 		t.Errorf("convert after time: want 201, got %d %s", rec.Code, rec.Body.String())

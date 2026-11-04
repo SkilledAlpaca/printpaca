@@ -23,6 +23,7 @@
   import { densityOrFallback } from "../lib/filamentDefaults";
   import { createInvoice } from "../lib/invoicesApi";
   import { invoiceInputFromRequest } from "../lib/convertRequest";
+  import { finalizeBlockedReason, splitBulkFinalize } from "../lib/requestFinalize";
   import { INITIAL_PAGE_LIMIT, refetchLimit } from "../lib/pagination";
   import { startOnePartQuote, engineOptions, applyMaterial, pendingOpen, consumePendingOpen, quoteClient, quoteMeta } from "../lib/state.svelte";
   import { syncDetail } from "../lib/hashRoute";
@@ -247,7 +248,8 @@
   async function finalizeSelected() {
     if (bulkFinalizing || selectedIds.length === 0) return;
     bulkFinalizing = true;
-    const ids = [...selectedIds];
+    // Rows still waiting for a print time can't be finalized (the server refuses them): skip and say so.
+    const { ready: ids, skipped } = splitBulkFinalize([...selectedIds], requests);
     let done = 0;
     let firstError = "";
     for (const id of ids) {
@@ -258,9 +260,10 @@
         firstError ||= err instanceof Error ? err.message : "Couldn't finalize a request.";
       }
     }
-    bulkFailed = firstError !== "";
+    bulkFailed = firstError !== "" || skipped.length > 0;
     bulkStatus =
       `Finalized ${done} ${done === 1 ? "request" : "requests"}.` +
+      (skipped.length > 0 ? ` Skipped ${skipped.length} that still ${skipped.length === 1 ? "needs" : "need"} a print time.` : "") +
       (firstError ? ` ${ids.length - done} couldn't be finalized: ${firstError}` : "");
     confirmingBulkFinalize = false;
     selectedIds = [];
@@ -549,13 +552,14 @@
   // Finalizing can't be undone (no way back to "viewed") and records a sale for shop item orders, so it asks first (3.3.4).
   let confirmingFinalize = $state(false);
   function askFinalize() {
+    if (detail && finalizeBlockedReason(detail)) return;
     confirmingFinalize = true;
   }
   function cancelFinalize() {
     confirmingFinalize = false;
   }
   async function finalize() {
-    if (!detail || finalizing) return;
+    if (!detail || finalizing || finalizeBlockedReason(detail)) return;
     confirmingFinalize = false;
     finalizing = true;
     actionError = null;
@@ -1018,7 +1022,14 @@
               <button type="button" class="primary" onclick={finalize} use:confirmFocus={{ restore: keySelector("finalize-request"), cancel: cancelFinalize }}>Yes, finalize this request</button>
               <button type="button" onclick={cancelFinalize}>Cancel</button>
             {:else}
-              <button type="button" class="primary" data-focus-key="finalize-request" aria-disabled={finalizing} onclick={askFinalize}>Finalize</button>
+              <button
+                type="button"
+                class="primary"
+                data-focus-key="finalize-request"
+                aria-disabled={finalizing || detail.needsPrintTime}
+                aria-describedby={detail.needsPrintTime ? "finalize-needs-time" : undefined}
+                onclick={askFinalize}
+              >Finalize</button>
             {/if}
           {/if}
           <a class="reply-link" href={replyMailto(detail)} aria-label={`Reply by email to ${detail.name}, reference ${requestReference(detail)}`}>Reply by email</a>
@@ -1051,6 +1062,7 @@
           {/if}
         </div>
         {#if detail.needsPrintTime}
+          <p id="finalize-needs-time" class="hint">{finalizeBlockedReason(detail)}.</p>
           <p id="convert-needs-time" class="hint">Enter the print time above before converting this request to an invoice.</p>
         {/if}
       </div>

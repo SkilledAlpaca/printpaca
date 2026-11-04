@@ -316,6 +316,12 @@ func (qr *quoteRequests) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Finalizing prices nothing: a request still waiting for its print time would finalize at 0.
+	if req.NeedsPrintTime {
+		writeAPIError(w, http.StatusConflict, "Enter the print time before finalizing")
+		return
+	}
+
 	// finalized_at starts the retention grace clock; it is set only on the viewed->finalized transition.
 	by := identityFor(r).username
 	now := time.Now().UTC().Format(time.RFC3339)

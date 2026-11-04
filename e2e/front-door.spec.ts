@@ -21,6 +21,8 @@ test("/ renders the shop with the business name and a Staff sign-in footer link"
   await expect(page.getByRole("link", { name: "Order or get an estimate" })).toHaveCount(0);
   const footer = page.locator("footer.shop-footer");
   await expect(footer.getByRole("link", { name: "Staff sign-in" })).toHaveAttribute("href", "/admin/");
+  await expect(footer).toContainText("Powered by printpaca");
+  await expect(footer.getByRole("link", { name: "printpaca", exact: true })).toHaveAttribute("href", "https://printpaca.com");
   // One page, so no Home or Shop links.
   await expect(footer.getByRole("link", { name: "Home" })).toHaveCount(0);
   await expect(footer.getByRole("link", { name: "Shop" })).toHaveCount(0);

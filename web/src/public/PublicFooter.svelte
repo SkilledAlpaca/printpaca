@@ -6,6 +6,7 @@
   // place with the same content, so help and navigation are consistent (WCAG 3.2.3, 3.2.6). The shop is a
   // single page, so there is no Home or Shop link; "Staff sign-in" shows only when the server offers one.
   // footerLinks are the owner's shop.footerLinks (https only, validated server-side); they render as text.
+  // "Powered by printpaca" shows on every view, including the Closed page.
   // showContact is false on the Closed page, which already lists the contact details above.
   let {
     branding,
@@ -41,6 +42,7 @@
     </p>
   {/if}
   {#if showContact && branding.address}<p class="shop-address">{branding.address}</p>{/if}
+  <p class="powered-by">Powered by <a href="https://printpaca.com" target="_blank" rel="noopener">printpaca</a></p>
 </footer>
 
 <style>

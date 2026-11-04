@@ -55,7 +55,7 @@
 
 <style>
   .ui-field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
-  .ui-field-head { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+  .ui-field-head { display: flex; align-items: flex-start; gap: var(--space-1); min-width: 0; }
   label { font-size: var(--type-secondary); font-weight: 600; color: var(--text); }
   .ui-field-control { display: contents; }
   .hint-text { color: var(--muted); font-size: var(--type-secondary); }

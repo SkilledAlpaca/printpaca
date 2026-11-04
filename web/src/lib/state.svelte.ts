@@ -767,3 +767,8 @@ export function syncQuoteUrl(): void {
   const want = quoteSession.loadedId ? `#/quote/${encodeURIComponent(quoteSession.loadedId)}` : "#/quote";
   if (location.hash !== want) history.replaceState(null, "", want);
 }
+
+/** The editor part ids, in order, that the latest server price answer was computed for. The answer lags the
+ * editor by a debounce and a round trip, so its part indexes can point at different parts by the time the user
+ * acts on them; the ids say which part each entry really described. */
+export const orderStamp = $state<{ partIds: string[] }>({ partIds: [] });

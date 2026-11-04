@@ -1,11 +1,12 @@
 <script lang="ts">
   import { tick } from "svelte";
   import type { EffectiveConfig, OrderBreakdown } from "../lib/engine/index";
-  import { quote, partLabel } from "../lib/state.svelte";
+  import { quote } from "../lib/state.svelte";
   import { money } from "../lib/format";
   import { quoteSummaryStats } from "../lib/quoteSummary";
-  import { quoteBlockers, needSentence } from "../lib/quoteBlockers";
+  import { needSentence } from "../lib/quoteBlockers";
   import { goToBlocker } from "../lib/goToBlocker";
+  import { currentBlockers } from "../lib/currentBlockers";
     import SlicerHelp from "./SlicerHelp.svelte";
 
   let {
@@ -45,7 +46,7 @@
   // Why the cost shows "-": the first blank field, named here so the reason sits next to the number instead of
   // in a message further down. Print time wins because it is what a model file never supplies.
   const missing = $derived(
-    quoteBlockers(order, quote.parts.map((p, i) => partLabel(p, i))).filter((b) => b.missing),
+    currentBlockers(order).filter((b) => b.missing),
   );
   const need = $derived(missing.find((b) => b.field === "timeHours" || b.field === "timeMinutes") ?? missing[0]);
   const needsTime = $derived(need !== undefined && (need.field === "timeHours" || need.field === "timeMinutes"));
@@ -74,7 +75,7 @@
       href="#main"
       onclick={(e) => {
         e.preventDefault();
-        void goToBlocker(need);
+        if (need) void goToBlocker(need);
       }}>{needText}</a>
   {/if}
 {/snippet}
@@ -95,7 +96,7 @@
           aria-label={`Show ${need.label}`}
           onclick={(e) => {
             e.preventDefault();
-            void goToBlocker(need);
+            if (need) void goToBlocker(need);
           }}>Show</a>
       </span>
     {/if}

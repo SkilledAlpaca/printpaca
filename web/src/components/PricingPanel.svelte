@@ -1,8 +1,9 @@
 <script lang="ts">
   import type { EffectiveConfig, OrderBreakdown } from "../lib/engine/index";
-  import { quote, partLabel, type PartForm } from "../lib/state.svelte";
-  import { quoteBlockers, type QuoteBlocker } from "../lib/quoteBlockers";
+  import { quote, type PartForm } from "../lib/state.svelte";
+  import { type QuoteBlocker } from "../lib/quoteBlockers";
   import { goToBlocker } from "../lib/goToBlocker";
+  import { currentBlockers } from "../lib/currentBlockers";
   import { money, warnFor, friendlyMessage, feeScheduleDisplayName } from "../lib/format";
   import { otherPricingWarnings, partPricingWarning } from "../lib/orderView";
   import LabeledNumber from "./LabeledNumber.svelte";
@@ -44,7 +45,7 @@
   // totals with 2+, so they are never read here.
   // What blocks pricing, by name. Each entry links to its input; "add" is for blank fields, "fix" for values
   // the server rejected. Empty only when nothing specific is known, which is when the generic line shows.
-  const blockers = $derived(quoteBlockers(order, quote.parts.map((x, i) => partLabel(x, i))));
+  const blockers = $derived(currentBlockers(order));
   const missingBlockers = $derived(blockers.filter((b) => b.missing));
   const invalidBlockers = $derived(blockers.filter((b) => !b.missing));
 

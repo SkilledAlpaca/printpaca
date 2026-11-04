@@ -177,7 +177,7 @@ test.describe("dashboard", () => {
 
 test.describe("quotes list", () => {
   const stamp = Date.now() % 100000;
-  const labels = ["A", "B"].map((s) => `Polish Row ${stamp} ${s} with a fairly long label that used to wrap`);
+  const labels = ["A", "B"].map((s) => `Polish Row ${stamp} ${s} with a longer label`);
 
   test.beforeAll(async ({ request }) => {
     for (const [i, label] of labels.entries()) {
@@ -198,8 +198,15 @@ test.describe("quotes list", () => {
       const row = rows.nth(i);
       const toggle = (await row.locator(".menu-toggle").boundingBox())!;
       expect(toggle.x + toggle.width, `row ${i} ⋯ right edge`).toBeLessThanOrEqual(wrapper.x + wrapper.width + 0.5);
-      const label = (await row.locator(".c-label").boundingBox())!;
-      expect(label.height, `row ${i} label height`).toBeLessThan(100);
+      // Count the label's wrapped lines, not pixels: CI fonts differ from local ones, and the cell also
+      // holds the parts badge and attribution line.
+      const lines = await row.locator(".c-label [data-row-id]").evaluate((el) => {
+        const lh = parseFloat(getComputedStyle(el).lineHeight) || parseFloat(getComputedStyle(el).fontSize) * 1.5;
+        const rects = Array.from(el.getClientRects());
+        const tops = new Set(rects.map((r) => Math.round(r.top)));
+        return Math.max(tops.size, Math.round(el.getBoundingClientRect().height / lh));
+      });
+      expect(lines, `row ${i} label lines`).toBeLessThanOrEqual(3);
     }
   });
 

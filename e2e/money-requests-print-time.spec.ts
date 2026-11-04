@@ -2,18 +2,32 @@ import { test, expect } from "@playwright/test";
 import type { APIRequestContext } from "@playwright/test";
 import { navButton } from "./helpers";
 
-// D36: a request that needs a print time shows one compact notice. This file sorts next to money-requests.spec.ts
-// because a no-time estimate needs a material the shop still offers, which later specs change.
+// D36: a request that needs a print time shows one compact notice.
+
+// A public estimate needs a public material, so PLA is opted in with a full-document PUT /api/settings (as
+// money-requests.spec.ts does) and the original config is put back afterward.
+let originalConfig: (Record<string, unknown> & { materials: Array<{ name: string; public?: boolean }> }) | null = null;
+
+test.beforeAll(async ({ request }) => {
+  const getRes = await request.get("/admin/api/settings");
+  expect(getRes.ok()).toBeTruthy();
+  originalConfig = (await getRes.json()).config;
+  const updated = structuredClone(originalConfig!);
+  updated.materials = updated.materials.map((m) => (m.name === "PLA" ? { ...m, public: true } : m));
+  const putRes = await request.put("/admin/api/settings", { data: { config: updated } });
+  expect(putRes.ok(), await putRes.text()).toBeTruthy();
+});
+
+test.afterAll(async ({ request }) => {
+  if (originalConfig) await request.put("/admin/api/settings", { data: { config: originalConfig } });
+});
 
 let xff = 0;
 async function seedNoTimeRequest(request: APIRequestContext, name: string): Promise<string> {
   xff += 1;
-  // Other specs change which materials the shop offers, so ask for one it offers now.
-  const cfg = (await (await request.get("/api/public/config")).json()) as { materials?: { name: string }[] };
-  const material = cfg.materials?.[0]?.name ?? "PLA";
   const res = await request.post("/api/public/quote-request", {
     headers: { "X-Forwarded-For": `198.51.100.${40 + xff}` },
-    multipart: { name, email: `${name.toLowerCase().replace(/[^a-z]+/g, ".")}@example.com`, note: "", material, quantity: "1", weightG: "12" },
+    multipart: { name, email: `${name.toLowerCase().replace(/[^a-z]+/g, ".")}@example.com`, note: "", material: "PLA", quantity: "1", weightG: "12" },
   });
   expect(res.status(), await res.text()).toBe(201);
   return ((await res.json()) as { id: string }).id;
@@ -69,8 +83,7 @@ test.describe("request that needs a print time (D36)", () => {
     const phoneId = await seedNoTimeRequest(request, phoneName);
     try {
       await page.setViewportSize({ width: 390, height: 844 });
-      await page.goto("/admin/");
-      await navButton(page, "Requests").click();
+      await page.goto("/admin/#/requests");
       await page.getByRole("button", { name: new RegExp(phoneName) }).first().click();
       const notice = page.getByRole("group", { name: "This estimate needs a print time" });
       await expect(notice).toBeVisible();

@@ -1140,7 +1140,7 @@
       {#if routeNote === ESTIMATES_OFF_NOTE}<ContactDetails branding={cfg.branding} />{/if}
     </div>
 
-    {#if hasGallery && shop.customEstimates && cfg.materials.length > 0 && !orderItem}
+    {#if hasGallery && shop.customEstimates && cfg.materials.length > 0}
       <div class="view-toggle" role="group" aria-label="View">
         <button
           type="button"

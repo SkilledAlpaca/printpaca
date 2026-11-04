@@ -441,8 +441,7 @@ test.describe("P7: a phone's first screen shows an item", () => {
       await expect(page.locator(".intro")).toHaveCount(0);
       await expect(page.locator(".shop-hero")).toHaveCount(0);
       await expect(page.locator(".shop-heading")).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Custom estimate", exact: true })).toHaveCount(0);
-      // The announcement stays; the options start on the first screen.
+      // The announcement and the Gallery / Custom estimate switch stay; the options start on the first screen.
       await expect(page.locator(".shop-announcement")).toBeVisible();
       expect((await page.getByLabel("Size (required)").boundingBox())!.y).toBeLessThan(844);
     } finally {

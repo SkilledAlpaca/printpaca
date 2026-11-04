@@ -226,7 +226,7 @@ test.describe("public pages", () => {
     await page.getByLabel("Name").fill("Focus Visitor");
     await page.getByLabel("Email").fill("focus@example.com");
     await page.getByRole("button", { name: "Place order" }).click();
-    const heading = page.getByRole("heading", { name: "Order received" });
+    const heading = page.getByRole("region", { name: "Order received" });
     await expect(heading).toBeFocused();
     const ref = (await page.locator(".confirmation .ref").textContent())?.replace("Reference: ", "").trim() ?? "";
     if (ref) created.requests.push(await requestIdByReference(request, ref));
@@ -246,7 +246,7 @@ test.describe("public pages", () => {
     await page.getByLabel("Email").fill("focus@example.com");
     await expect(page.locator(".estimate .price")).toBeVisible();
     await page.getByRole("button", { name: "Request an estimate" }).click();
-    await expect(page.getByRole("heading", { name: "Request received" })).toBeFocused();
+    await expect(page.getByRole("region", { name: "Request received" })).toBeFocused();
     const ref = (await page.locator(".confirmation .ref").textContent())?.replace("Reference: ", "").trim() ?? "";
     if (ref) created.requests.push(await requestIdByReference(request, ref));
     await scanAll(page, "shop estimate confirmation");

@@ -4,6 +4,8 @@
    * item may since be deleted). */
   export interface ItemOrderConfirmation {
     id: string;
+    /** The ordered item's id, so the confirmation can lead back to its card; absent in a confirmation saved by an older build. */
+    itemId?: string;
     /** The short reference the customer quotes ("HL-1001"); absent in a confirmation saved by an older build. */
     reference?: string;
     priceCents: number;
@@ -18,7 +20,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { announce } from "../lib/a11y.svelte";
-  import { clearVisitor, visitor } from "./visitor.svelte";
+  import { visitor } from "./visitor.svelte";
   import { formatMoney, type CurrencyConfig } from "../lib/engine/index";
   import { itemTotalCents } from "../lib/itemMath";
   import {
@@ -30,7 +32,9 @@
     type Selected,
   } from "../lib/itemOptions";
   import { NAME_MAX_BYTES, NOTE_MAX_BYTES, ITEM_ORDER_EMAIL_MAX_BYTES, utf8ByteLength, isPlausibleEmail, EMAIL_FORMAT_ERROR } from "../lib/publicFormLimits";
-  import { DEFAULT_MAX_ORDER_QTY, isValidQuantity, normalizedQuantityText, overCapMessage } from "./publicPricing";
+  import { DEFAULT_MAX_ORDER_QTY, fromUnitCents, isValidQuantity, normalizedQuantityText, overCapMessage, unitBreakdown } from "./publicPricing";
+  import type { OrderDraft } from "./orderDraft";
+  import VisitorReset from "./VisitorReset.svelte";
   import FormErrorSummary from "./FormErrorSummary.svelte";
   import Card from "../components/ui/Card.svelte";
   import Field from "../components/ui/Field.svelte";
@@ -45,6 +49,7 @@
     onback,
     onordered,
     onpaused,
+    draft,
     shippingNote = "",
     turnaroundNote = "",
   }: {
@@ -60,7 +65,9 @@
     onordered: (confirmation: ItemOrderConfirmation) => void;
     /** Fired when the server refuses the order because the shop closed after this page loaded (503 with
      * paused: true); the parent then shows the Closed page. */
-    onpaused?: (message: string) => void;
+    onpaused?: (message: string, draft: OrderDraft) => void;
+    /** What the visitor had typed when an earlier submit was refused because the shop closed; restores the form. */
+    draft?: OrderDraft;
     /** shop.shippingNote; the fixed wording shows when blank. */
     shippingNote?: string;
     /** shop.turnaroundNote: shown with the total when the owner wrote one. */
@@ -70,7 +77,8 @@
   // groupId -> optionId. Starts empty: a required group shows its "Choose ..." placeholder and an optional one
   // shows "None" (an empty choice adds no price). item is a remount-on-change prop (PublicQuotePage.svelte
   // wraps this component in {#key orderItem.id}), so nothing here needs to reset when it changes.
-  let selected = $state<Selected>({});
+  // svelte-ignore state_referenced_locally -- the draft only seeds the form once, on mount
+  let selected = $state<Selected>({ ...(draft?.selected ?? {}) });
   function choose(groupId: string, optionId: string) {
     selected[groupId] = optionId;
   }
@@ -79,12 +87,14 @@
   const heroImage = $derived(displayImage ?? (item.imageUrl ? { url: item.imageUrl, alt: item.name } : null));
   let lightbox: HTMLDialogElement | undefined = $state();
   // number | null like PublicQuotePage's quantity: a cleared number input binds null, not 0 or NaN.
-  let quantity = $state<number | null>(1);
+  // svelte-ignore state_referenced_locally -- see above
+  let quantity = $state<number | null>(draft ? draft.quantity : 1);
   // Name and email are shared with the custom-estimate form (visitor.svelte.ts), so a visitor who already
   // typed them isn't asked again (WCAG 3.3.7).
   const name = $derived(visitor.name);
   const email = $derived(visitor.email);
-  let note = $state("");
+  // svelte-ignore state_referenced_locally -- see above
+  let note = $state(draft?.note ?? "");
   // Focus target on open (WCAG 2.4.3): the card that opened this panel unmounts, so focus would otherwise drop
   // to <body>.
   let headingEl: HTMLElement | undefined = $state();
@@ -98,6 +108,8 @@
   const formSnapshot = $derived(
     JSON.stringify([selected, quantity, visitor.name, visitor.email, note]),
   );
+  // True once the visitor has chosen an option, changed the quantity or written a note.
+  const dirty = $derived(Object.values(selected).some((v) => v !== "") || quantity !== 1 || note !== "");
   const visibleServerErrors = $derived(serverErrorsFor === formSnapshot ? serverErrors : []);
   const visibleRateLimited = $derived(rateLimited && serverErrorsFor === formSnapshot);
 
@@ -126,6 +138,13 @@
   const totalCents = $derived(
     isValidQuantity(quantity, maxQuantity) ? itemTotalCents(item.priceCents, selectedDeltaCents, quantity) : null,
   );
+  // "$22.00 + Large $4.00" under the total, and the lowest price still open while a required choice that changes
+  // the price is unanswered, so the panel never shows a plain base price that the next choice would raise.
+  const breakdown = $derived(unitBreakdown(item.priceCents, item.optionGroups, selected, (c) => formatMoney(c, currency)));
+  const fromCents = $derived.by(() => {
+    const unit = fromUnitCents(item.priceCents, item.optionGroups, selected);
+    return unit === null || !isValidQuantity(quantity, maxQuantity) ? null : unit * quantity;
+  });
   const stockLine = $derived.by(() => {
     if (item.stock.mode !== "in_stock") return "Made to order.";
     const qty = item.stock.qty ?? 0;
@@ -207,6 +226,7 @@
       const sentEmail = email.trim();
       onordered({
         id: result.id,
+        itemId: item.id,
         reference: result.reference,
         priceCents: result.priceCents,
         itemName: item.name,
@@ -222,7 +242,15 @@
       return;
     }
     if (result.paused) {
-      onpaused?.(result.paused);
+      onpaused?.(result.paused, {
+        kind: "order",
+        itemId: item.id,
+        selected: { ...selected },
+        quantity,
+        note,
+        name: visitor.name,
+        email: visitor.email,
+      });
       return;
     }
     if (result.status === 503) {
@@ -238,6 +266,9 @@
   // themselves) and while the photo is enlarged (the dialog closes itself).
   function onKeydown(e: KeyboardEvent) {
     if (e.key !== "Escape" || e.defaultPrevented || lightbox?.open) return;
+    // A form with choices, a quantity or a note in it is never discarded by a stray Escape (WCAG 3.2.2); Back
+    // still leaves it. Name and email survive in the visitor store, so they don't count.
+    if (dirty) return;
     const t = e.target as HTMLElement | null;
     if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
     onback();
@@ -268,7 +299,7 @@
         <p class="stock-line">{stockLine}</p>
         <!-- After the heading in the DOM, so the first Tab from the heading reaches it. -->
         <button type="button" class="quiet back" onclick={onback}>&larr; Back to gallery</button>
-        <small class="esc-hint">Press Esc to go back.</small>
+        {#if !dirty}<small class="esc-hint">Press Esc to go back.</small>{/if}
       </div>
     </div>
   </Card>
@@ -356,6 +387,7 @@
         {/if}
       </div>
 
+      <VisitorReset nameId="item-name" />
       <Field id="item-name" label="Name" error={nameError}>
         {#snippet children(f)}
           <input
@@ -385,9 +417,6 @@
           />
         {/snippet}
       </Field>
-      {#if visitor.name !== "" || visitor.email !== ""}
-        <button type="button" class="quiet inline-link not-you" onclick={clearVisitor}>Not you? Clear name and email</button>
-      {/if}
       <Field id="item-note" label="Note (optional)" error={noteError}>
         {#snippet children(f)}
           <textarea
@@ -411,11 +440,16 @@
         <div aria-live="polite" aria-atomic="true">
           {#if totalCents !== null}
             <p class="price">
-              {formatMoney(totalCents, currency)}
+              {#if fromCents !== null}<span class="from">from&nbsp;</span>{formatMoney(fromCents, currency)}{:else}{formatMoney(totalCents, currency)}{/if}
               {#if quantity !== null && quantity > 1}
                 <span class="per-unit"> &middot; {formatMoney(unitPriceCents, currency)} each</span>
               {/if}
             </p>
+            {#if fromCents !== null}
+              <p class="muted breakdown">Choose {missingGroups.map((g) => g.label).join(" and ")} to see the exact total.</p>
+            {:else if breakdown}
+              <p class="muted breakdown">{breakdown}{quantity !== null && quantity > 1 ? ` each, \u00d7 ${quantity}` : ""}</p>
+            {/if}
           {:else}
             <p class="muted">Enter a whole number from 1 to {maxQuantity.toLocaleString("en-US")} to see a total.</p>
           {/if}
@@ -462,10 +496,10 @@
   .i-desc { margin: 0; color: var(--muted); font-size: var(--text-sm); }
   .stock-line { margin: 0; font-size: var(--text-sm); color: var(--muted); }
   .back { margin-top: var(--space-1); }
-  .esc-hint { color: var(--muted); font-size: var(--text-sm); }
-  /* No keyboard on a touch screen, so the hint is noise there. */
-  @media (hover: none), (pointer: coarse) {
-    .esc-hint { display: none; }
+  /* Only where there is a keyboard to press it on: a mouse or trackpad, not a touch screen. */
+  .esc-hint { display: none; color: var(--muted); font-size: var(--text-sm); }
+  @media (hover: hover) and (pointer: fine) {
+    .esc-hint { display: inline; }
   }
 
   /* A real photo size, not a thumbnail: 12rem beside the text on a wide screen, full width on a phone. */
@@ -511,6 +545,8 @@
 
   /* The form card stacks its fields, then the submission block, on the density gap. */
   .fields { display: flex; flex-direction: column; gap: var(--gap); margin-bottom: var(--gap); }
+  /* Focused fields scroll clear of the viewport edge, so the ring isn't clipped at the bottom. */
+  .fields :global(:is(input, select, textarea, button)), .submit-block button { scroll-margin: var(--space-4); }
 
   .submit-block { display: flex; flex-direction: column; gap: var(--space-2); text-align: center; }
   .submit-block h2 { margin: 0; }
@@ -526,11 +562,8 @@
    * dominant. */
   .per-unit { font-weight: 400; font-size: var(--text-base); color: var(--muted); }
 
+  .from { font-size: var(--text-base); font-weight: 400; color: var(--muted); }
   .qty-error { margin: var(--space-1) 0 0; }
-  .not-you { align-self: flex-start; }
-  @media (max-width: 600px) {
-    .not-you { min-height: 44px; }
-  }
   .error-list { list-style: none; margin: 0; padding: 0; text-align: left; }
   .error-list li { margin: var(--space-1) 0; }
   /* In flight: aria-disabled keeps focus on the button, so the busy look is visual only. */

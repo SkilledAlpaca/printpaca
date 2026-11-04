@@ -20,6 +20,12 @@
   /** The intro shown when the shop wrote none. "Estimate", not "instant estimate": an unsliced file gets no
    * number until the shop has its print time. */
   export const DEFAULT_INTRO_TEXT = "Order a ready-made 3D print, or upload your own 3D model for a price estimate.";
+  /** The built-in intro when custom estimates aren't offered: it can't promise an upload the shop doesn't take. */
+  export const DEFAULT_INTRO_NO_ESTIMATES = "Order a ready-made 3D print.";
+  /** The owner's own intro text always wins; the built-in default depends on whether estimates are offered. */
+  export function introTextFor(owned: string | undefined, estimatesOffered: boolean): string {
+    return owned ? owned : estimatesOffered ? DEFAULT_INTRO_TEXT : DEFAULT_INTRO_NO_ESTIMATES;
+  }
 
   export function describeGcode(result: GcodeResult, fname: string): string {
     if (result.status === "not-found") {
@@ -41,7 +47,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from "svelte";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
-  import { clearVisitor, visitor } from "./visitor.svelte";
+  import { visitor } from "./visitor.svelte";
   import {
     estimateWeightFromVolume,
     formatMoney,
@@ -97,6 +103,9 @@
     overCapMessage,
     perUnitCents,
   } from "./publicPricing";
+  import { clearDraft, loadDraft, refusedNotice, saveDraft, type Draft } from "./orderDraft";
+  import { createTapGuard, focusConfirmation } from "./confirmationFocus";
+  import VisitorReset from "./VisitorReset.svelte";
   import FormErrorSummary from "./FormErrorSummary.svelte";
   import RateLimitNotice from "./RateLimitNotice.svelte";
   import { parseRoute, routeHash, type Route } from "./route";
@@ -184,6 +193,21 @@
     if (!cfg) return;
     cfg = { ...cfg, shop: { ...shopOf(cfg), acceptingOrders: false, pausedMessage: message } };
   }
+  // A submit the server refused because the shop closed mid-form: the Closed page says the order wasn't placed,
+  // and the typed details wait in sessionStorage for when the shop reopens (orderDraft.ts).
+  let refusedNoticeText = $state("");
+  function submitRefused(message: string, draft: Draft) {
+    saveDraft(draft);
+    refusedNoticeText = refusedNotice(draft.kind);
+    markPaused(message);
+    void focusAfterUpdate("#closed-notice");
+  }
+  // Details saved by a refused submit come back after the shop reopens and the page reloads.
+  const restoredDraft = loadDraft();
+  if (restoredDraft) {
+    visitor.name = restoredDraft.name;
+    visitor.email = restoredDraft.email;
+  }
   // The owner's accent color, public-only: set on <html> while this page is mounted.
   $effect(() => applyShopAccent(shop.accent));
   const hasGallery = $derived(shop.gallery && items !== null && items.length > 0);
@@ -258,14 +282,30 @@
   });
 
   /** Dismisses a gallery item-order confirmation and returns to the item grid. */
-  function dismissItemOrderConfirmation() {
+  function dismissItemOrderConfirmation(focusItemId?: string) {
     itemOrderConfirmation = null;
     clearConfirmation(ITEM_ORDER_CONFIRMATION_KEY);
     // Replace, so Back doesn't return to a confirmation that no longer exists.
     navigate({ name: "gallery" }, { replace: true });
-    // The Back button that held focus is about to unmount (WCAG 2.4.3).
-    void focusAfterUpdate("#gallery-heading");
+    // The Back button that held focus is about to unmount (WCAG 2.4.3). "Back to <item>" lands on that item's
+    // card; the gallery heading takes over when the card isn't shown.
+    void focusAfterUpdate(() => {
+      const card = focusItemId ? document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(focusItemId)}"]`) : null;
+      return card ?? document.getElementById("gallery-heading");
+    });
   }
+
+  /** Copies the order or request reference so the customer keeps it past the page. */
+  async function copyReference(reference: string) {
+    try {
+      await navigator.clipboard.writeText(reference);
+      announce("Reference copied.");
+    } catch {
+      announce("Couldn't copy the reference. Select it and copy it by hand.");
+    }
+  }
+  // Taps in the first moments after a confirmation appears are ignored (see confirmationFocus.ts).
+  const confirmationTap = createTapGuard();
 
   // Focus management for the gallery <-> item panel swap (WCAG 2.4.3): opening a card focuses the panel's
   // heading (ItemOrderPanel does that itself on mount); going back refocuses the card that was opened, or the
@@ -321,11 +361,11 @@
 
   // Form state
 
-  let materialName = $state("");
+  let materialName = $state(restoredDraft?.kind === "estimate" ? restoredDraft.materialName : "");
   // Falls back to PLA's density while no material is chosen, so an early file drop still shows an estimate.
   const density = $derived(densityOrFallback(cfg?.materials.find((m) => m.name === materialName)?.density));
-  let quantity = $state<number | null>(1);
-  let note = $state("");
+  let quantity = $state<number | null>(restoredDraft?.kind === "estimate" ? restoredDraft.quantity : 1);
+  let note = $state(restoredDraft?.kind === "estimate" ? restoredDraft.note : "");
   // Name and email live in the shared visitor store (see visitor.svelte.ts) so they carry over to an item order.
   const name = $derived(visitor.name);
   const email = $derived(visitor.email);
@@ -929,12 +969,14 @@
       // reload empty them.
       resetEstimateForm();
       navigate({ name: "estimate-received" });
-      await focusAfterUpdate(() => quoteConfirmationHeading);
+      clearDraft();
+      confirmationTap.arm();
+      await focusConfirmation(() => quoteConfirmationHeading);
       return;
     }
     serverErrorsFor = formSnapshot;
     if (result.paused) {
-      markPaused(result.paused);
+      submitRefused(result.paused, { kind: "estimate", materialName, quantity, note, name: visitor.name, email: visitor.email });
       return;
     }
     if (result.status === 429) {
@@ -970,6 +1012,13 @@
     clearFile();
   }
 
+  /** The "Need something custom?" card: the card unmounts with the gallery, so focus moves to the estimate heading
+   * instead of dropping to <body> (WCAG 2.4.3). */
+  function openEstimateFromCard() {
+    navigate({ name: "estimate" });
+    void focusAfterUpdate(() => estimateFormHeading);
+  }
+
   /** Dismisses the custom-estimate confirmation and shows an empty form for a new request; `submitted` survives
    * reloads via sessionStorage, so this is how it ends. */
   function dismissQuoteConfirmation() {
@@ -995,7 +1044,7 @@
   );
 
   const introText = $derived(
-    cfg?.introText ? cfg.introText : DEFAULT_INTRO_TEXT,
+    introTextFor(cfg?.introText, shop.customEstimates && (cfg?.materials.length ?? 0) > 0),
   );
 </script>
 
@@ -1061,6 +1110,7 @@
       logoUrl={cfg.branding.logoUrl}
       message={shop.pausedMessage}
       branding={cfg.branding}
+      notice={refusedNoticeText}
     />
     <PublicFooter branding={cfg.branding} staffUrl={cfg.staffUrl} footerLinks={shop.footerLinks} showContact={false} />
   {:else if cfg}
@@ -1076,10 +1126,14 @@
       </p>
     {/if}
     {#if shop.announcement}<p class="shop-announcement" role="note">{shop.announcement}</p>{/if}
-    {#if shop.heroImage}<ShopHero hero={shop.heroImage} />{/if}
-    {#if shop.heading}<h2 class="shop-heading">{shop.heading}</h2>{/if}
-    <!-- The shop's own intro when it wrote one; otherwise a default that says what this page is. -->
-    <p class="intro">{introText}</p>
+    <!-- An item page drops the hero, heading and intro: the visitor chose an item, and the options belong on the
+         first screen, not below the shop's pitch. The announcement stays. -->
+    {#if !orderItem}
+      {#if shop.heroImage}<ShopHero hero={shop.heroImage} />{/if}
+      {#if shop.heading}<h2 class="shop-heading">{shop.heading}</h2>{/if}
+      <!-- The shop's own intro when it wrote one; otherwise a default that says what this page is. -->
+      <p class="intro">{introText}</p>
+    {/if}
     <!-- Persistent status region (text swapped in) for "That item is no longer available." and similar. -->
     <div class="route-note" role="status">
       {#if routeNote}<p>{routeNote}</p>{/if}
@@ -1112,19 +1166,31 @@
     {:else if view === "gallery"}
       {#if route.name === "order-received" && itemOrderConfirmation}
         <div class="panel">
-          <button type="button" class="quiet back" onclick={dismissItemOrderConfirmation}>&larr; Back to gallery</button>
           {#if paused}{@render pausedNote()}{/if}
-          <Card>
+          <Card class="confirmation-card">
             <div class="confirmation">
-              <h2 class="section-label" tabindex="-1" bind:this={itemConfirmationHeading}>Order received</h2>
-              <p class="price">{formatMoney(itemOrderConfirmation.priceCents, cfg.currency)}</p>
-              <p class="ref">Reference: <strong>{itemOrderConfirmation.reference || itemOrderConfirmation.id}</strong></p>
+              <!-- The focused region holds the heading, the amount and the reference, so they are what a screen
+                   reader and a magnifier land on. -->
+              <div class="conf-region" role="region" aria-labelledby="item-conf-heading" tabindex="-1" bind:this={itemConfirmationHeading}>
+                <h2 class="section-label" id="item-conf-heading">Order received</h2>
+                <p class="price">{formatMoney(itemOrderConfirmation.priceCents, cfg.currency)}</p>
+                <p class="ref">Reference: <strong>{itemOrderConfirmation.reference || itemOrderConfirmation.id}</strong></p>
+                <button type="button" class="quiet copy-ref" onclick={() => void copyReference(itemOrderConfirmation?.reference || itemOrderConfirmation?.id || "")}>Copy reference</button>
+              </div>
+              <!-- Quiet links, not a primary button: nothing here is where Place order was, and a tap in the
+                   first moments is ignored. -->
+              <div class="conf-nav">
+                <button type="button" class="quiet back" onclick={confirmationTap.guarded(() => dismissItemOrderConfirmation())}>&larr; Back to gallery</button>
+                {#if itemOrderConfirmation.itemId}
+                  {@const backId = itemOrderConfirmation.itemId}
+                  <button type="button" class="quiet back" onclick={confirmationTap.guarded(() => dismissItemOrderConfirmation(backId))}>Back to {itemOrderConfirmation.itemName}</button>
+                {/if}
+              </div>
               <p class="ref-hint">Save this reference. Quote it if you contact us about your order.</p>
               <p class="order-summary">{orderSummaryLine}</p>
               <p>We'll follow up at {itemOrderConfirmation.email}.</p>
               <p class="next-steps">{WHAT_HAPPENS_NEXT}</p>
               {#if shop.turnaroundNote}<p class="next-steps turnaround-note">{shop.turnaroundNote}</p>{/if}
-              <button type="button" class="primary" onclick={dismissItemOrderConfirmation}>Order another item</button>
             </div>
           </Card>
         </div>
@@ -1139,12 +1205,15 @@
               shippingNote={shop.shippingNote}
               turnaroundNote={shop.turnaroundNote}
               onback={closeItem}
-              onpaused={markPaused}
+              onpaused={submitRefused}
+              draft={restoredDraft?.kind === "order" && restoredDraft.itemId === orderItem.id ? restoredDraft : undefined}
               onordered={(confirmation) => {
                 itemOrderConfirmation = confirmation;
                 saveConfirmation(ITEM_ORDER_CONFIRMATION_KEY, confirmation);
+                clearDraft();
+                confirmationTap.arm();
                 navigate({ name: "order-received" });
-                void focusAfterUpdate(() => itemConfirmationHeading);
+                void focusConfirmation(() => itemConfirmationHeading);
               }}
             />
           </div>
@@ -1158,24 +1227,27 @@
           onselect={openItem}
           showStock={shop.showStock}
           showFromPrice={shop.showFromPrice}
-          oncustomestimate={cfg.materials.length > 0 && shop.customEstimates ? () => navigate({ name: "estimate" }) : undefined}
+          oncustomestimate={cfg.materials.length > 0 && shop.customEstimates ? openEstimateFromCard : undefined}
         />
       {/if}
     {:else if cfg.materials.length === 0}
       <p class="muted center">No materials are currently offered.</p>
     {:else if route.name === "estimate-received" && submitted}
       {#if paused}{@render pausedNote()}{/if}
-      <Card>
+      <Card class="confirmation-card">
         <div class="confirmation">
-          <h2 class="section-label" tabindex="-1" bind:this={quoteConfirmationHeading}>Request received</h2>
-          {#if submitted.needsPrintTime}
-            <p class="price">Price to be confirmed</p>
-            <p class="meta">We'll confirm the price after we prepare your file for printing.</p>
-          {:else}
-            <p class="meta">Estimated price</p>
-            <p class="price">{formatMoney(submitted.priceCents, cfg.currency)}</p>
-          {/if}
-          <p class="ref">Reference: <strong>{submitted.reference || submitted.id}</strong></p>
+          <div class="conf-region" role="region" aria-labelledby="quote-conf-heading" tabindex="-1" bind:this={quoteConfirmationHeading}>
+            <h2 class="section-label" id="quote-conf-heading">Request received</h2>
+            {#if submitted.needsPrintTime}
+              <p class="price">Price to be confirmed</p>
+              <p class="meta">We'll confirm the price after we prepare your file for printing.</p>
+            {:else}
+              <p class="meta">Estimated price</p>
+              <p class="price">{formatMoney(submitted.priceCents, cfg.currency)}</p>
+            {/if}
+            <p class="ref">Reference: <strong>{submitted.reference || submitted.id}</strong></p>
+            <button type="button" class="quiet copy-ref" onclick={() => void copyReference(submitted?.reference || submitted?.id || "")}>Copy reference</button>
+          </div>
           <p class="ref-hint">Save this reference. Quote it if you contact us about your request.</p>
           <p class="order-summary">{submitted.quantity} &times; {submitted.material}</p>
           {#if submitted.fileName}<p class="meta">File: {submitted.fileName}</p>{/if}
@@ -1188,7 +1260,7 @@
           </p>
           {#if shop.turnaroundNote}<p class="next-steps turnaround-note">{shop.turnaroundNote}</p>{/if}
           {#if fileStoredCaveat}<p class="advisory-text">{fileStoredCaveat}</p>{/if}
-          <button type="button" class="quiet" onclick={dismissQuoteConfirmation}>Request another estimate</button>
+          <button type="button" class="quiet" onclick={confirmationTap.guarded(dismissQuoteConfirmation)}>Request another estimate</button>
         </div>
       </Card>
     {:else}
@@ -1205,50 +1277,6 @@
       >
         <div class="fields">
           <h2 class="view-heading" tabindex="-1" bind:this={estimateFormHeading}>Custom estimate</h2>
-          <Field
-            id="quote-material"
-            label="Material"
-            hint={materialName ? materialDescription(materialName) : undefined}
-            error={marked("material") ? issueMessage("material") : undefined}
-          >
-            {#snippet children(f)}
-              <select
-                id={f.id}
-                bind:value={materialName}
-                required
-                aria-invalid={f.invalid}
-                aria-describedby={f.describedby}
-              >
-                <option value="" disabled>Choose a material</option>
-                {#each materials as m (m.name)}<option value={m.name}>{m.name}</option>{/each}
-              </select>
-            {/snippet}
-          </Field>
-
-          <Field id="quote-qty" label="Quantity" size="s" describedby="quote-qty-notice">
-            {#snippet children(f)}
-              <input
-                id={f.id}
-                type="number"
-                min="1"
-                max={maxQty}
-                step="1"
-                bind:value={quantity}
-                onchange={(e) => {
-                  // "1e3" stays on screen as typed; show the number it prices.
-                  const plain = normalizedQuantityText(e.currentTarget.value);
-                  if (plain !== null) e.currentTarget.value = plain;
-                }}
-                required
-                aria-invalid={quantityMessage !== "" ? "true" : undefined}
-                aria-describedby={f.describedby}
-              />
-            {/snippet}
-          </Field>
-          <!-- Outside the field so the message isn't part of its name, and always mounted so the live region
-               announces its text changes (WCAG 1.3.1, 4.1.3). The only place the quantity message appears. -->
-          <p class="clamp-notice" id="quote-qty-notice" role="status">{quantityMessage}</p>
-
           <div
             class="drop"
             class:dragging
@@ -1313,6 +1341,51 @@
           {#if modelBoundsWarning}
             <p class="warn-text" role="status">{modelBoundsWarning}</p>
           {/if}
+
+          <Field
+            id="quote-material"
+            label="Material"
+            hint={materialName ? materialDescription(materialName) : undefined}
+            error={marked("material") ? issueMessage("material") : undefined}
+          >
+            {#snippet children(f)}
+              <select
+                id={f.id}
+                bind:value={materialName}
+                required
+                aria-invalid={f.invalid}
+                aria-describedby={f.describedby}
+              >
+                <option value="" disabled>Choose a material</option>
+                {#each materials as m (m.name)}<option value={m.name}>{m.name}</option>{/each}
+              </select>
+            {/snippet}
+          </Field>
+
+          <Field id="quote-qty" label="Quantity" size="s" describedby="quote-qty-notice">
+            {#snippet children(f)}
+              <input
+                id={f.id}
+                type="number"
+                min="1"
+                max={maxQty}
+                step="1"
+                bind:value={quantity}
+                onchange={(e) => {
+                  // "1e3" stays on screen as typed; show the number it prices.
+                  const plain = normalizedQuantityText(e.currentTarget.value);
+                  if (plain !== null) e.currentTarget.value = plain;
+                }}
+                required
+                aria-invalid={quantityMessage !== "" ? "true" : undefined}
+                aria-describedby={f.describedby}
+              />
+            {/snippet}
+          </Field>
+          <!-- Outside the field so the message isn't part of its name, and always mounted so the live region
+               announces its text changes (WCAG 1.3.1, 4.1.3). The only place the quantity message appears. -->
+          <p class="clamp-notice" id="quote-qty-notice" role="status">{quantityMessage}</p>
+
 
           {#if hasExactParse}
             {#if weightG !== null && timeSeconds !== null}
@@ -1395,7 +1468,13 @@
             <button type="button" class="quiet remove-file" onclick={clearFile}>Remove file and enter values manually</button>
           {:else}
             <div class="manual-entry">
-              <Field id="quote-weight" label="Model weight (g)" size="s" error={marked("weight") ? issueMessage("weight") : undefined}>
+              <Field
+                id="quote-weight"
+                label="Model weight (g)"
+                size="s"
+                hint="Optional if you upload a 3D file above."
+                error={marked("weight") ? issueMessage("weight") : undefined}
+              >
                 {#snippet children(f)}
                   <input
                     id={f.id}
@@ -1409,10 +1488,14 @@
                   />
                 {/snippet}
               </Field>
-              {@render timeFields("")}
+              {@render timeFields("quote-time-hint")}
+              <small class="field-hint" id="quote-time-hint">
+                Optional if you upload a 3D file above: we'll confirm the print time and price by email.
+              </small>
             </div>
           {/if}
 
+          <VisitorReset nameId="quote-name" />
           <Field id="quote-name" label="Name" error={nameError}>
             {#snippet children(f)}
               <input
@@ -1442,9 +1525,6 @@
               />
             {/snippet}
           </Field>
-          {#if visitor.name !== "" || visitor.email !== ""}
-            <button type="button" class="quiet inline-link not-you" onclick={clearVisitor}>Not you? Clear name and email</button>
-          {/if}
           <Field id="quote-note" label="Note (optional)" error={noteError}>
             {#snippet children(f)}
               <textarea
@@ -1589,6 +1669,8 @@
 
   /* The form card stacks its fields, then the submission block, on the density gap. */
   .fields { display: flex; flex-direction: column; gap: var(--gap); margin-bottom: var(--gap); }
+  /* Focused fields and buttons scroll clear of the viewport edge, so the ring isn't clipped at the bottom. */
+  .fields :global(:is(input, select, textarea, button, summary, canvas)), .drop { scroll-margin: var(--space-4); }
   .confirmation { display: flex; flex-direction: column; gap: var(--space-3); text-align: center; }
   .submit-block { display: flex; flex-direction: column; gap: var(--space-2); text-align: center; }
   .submit-block h2 { margin: 0; }
@@ -1659,10 +1741,14 @@
     margin: var(--space-1) 0;
   }
   .estimate .meta { color: var(--muted); font-size: var(--type-secondary); margin: 0; }
+  .conf-region { display: flex; flex-direction: column; gap: var(--space-3); scroll-margin-top: var(--space-3); }
+  /* A script focus target that moves the reading position, not a control: no ring (as for tabindex="-1" headings). */
+  .conf-region:focus-visible { outline: none; }
+  .conf-region > * { margin: 0; }
+  .conf-nav { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
   .confirmation .ref { margin: 0; font-variant-numeric: tabular-nums; }
   .confirmation .ref strong { display: block; font-size: var(--type-title); letter-spacing: 0.04em; }
   .confirmation .ref-hint { color: var(--muted); font-size: var(--type-secondary); margin: 0; }
-  .not-you { align-self: flex-start; }
   .confirmation .order-summary { font-weight: 600; margin: 0; }
   .paused-note {
     padding: var(--space-3) var(--space-4);
@@ -1714,8 +1800,15 @@
   .how-estimated p { margin: var(--space-1) 0; color: var(--muted); }
   .how-estimated :global(.ui-field) { margin-top: var(--space-2); }
   @media (max-width: 600px) {
+    /* The shop header takes less of a phone's first screen, so at least one item shows without scrolling. */
+    .page { padding: var(--space-3); }
+    .brand .logo { height: 2rem; }
+    .brand h1 { font-size: var(--type-title); }
+    .shop-heading { font-size: var(--type-heading); }
+    .intro { font-size: var(--type-secondary); }
+    .shop-announcement { padding: var(--space-2) var(--space-3); font-size: var(--type-secondary); }
     /* 44 px tap targets on phones (the app-wide quiet button is 32 px). */
-    .back, .remove-file, .inline-link, .confirmation .quiet, .not-you { min-height: 44px; }
+    .back, .remove-file, .inline-link, .confirmation .quiet { min-height: 44px; }
     .how-estimated summary { min-height: 44px; display: flex; align-items: center; }
   }
 </style>

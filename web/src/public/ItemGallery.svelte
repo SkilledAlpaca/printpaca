@@ -57,6 +57,7 @@
       {:else}
         <div class="thumb thumb-empty" aria-hidden="true"></div>
       {/if}
+      {#if item.featured}<span class="pill featured-badge">Featured</span>{/if}
       <p class="i-name">{item.name}</p>
       {#if item.description}<p class="i-desc">{item.description}</p>{/if}
       <p class="i-price">
@@ -96,6 +97,8 @@
     min-height: 0;
     /* Soft tint, no outline (D6): the global button border doesn't apply to a card. */
     border: 0;
+    /* A focused card scrolls clear of the viewport edge, so its ring isn't clipped. */
+    scroll-margin: var(--space-4);
   }
 
   /* The cards have no outline (D6), so the ring sits clear of the tint to stay obvious. */
@@ -132,6 +135,7 @@
   .from { font-weight: 400; color: var(--muted); }
 
   .stock-badge { align-self: flex-start; color: var(--muted); }
+  .featured-badge { align-self: flex-start; color: var(--accent-text); border-color: var(--accent-text); font-weight: 600; }
   /* Sold out: muted card with a full-contrast "Out of stock" badge instead of opacity (opacity would drop text
    * below 4.5:1). */
   .sold-out { cursor: default; background: var(--surface-2); }

@@ -49,7 +49,7 @@ export const GUIDE_TOPICS: GuideTopic[] = [
   {
     id: "requests-finalize-vs-convert",
     title: "Requests: Finalize or Convert",
-    body: "A request is something a customer sent through the shop: a custom estimate or a shop item order. Finalize means you have dealt with it. It takes the request off your to-do list, records the sale of a shop item, and takes the units out of that item's stock. Finalize does not email the customer, so reply to them yourself. Convert to invoice makes an invoice from the request and creates the client if that email is not on file. Converting also marks the request Invoiced and links it to the invoice, so you do not bill the same request twice. Use Finalize for an order you fulfilled without invoicing, or convert first to bill the customer.",
+    body: "A request is something a customer sent through the shop: a custom estimate or a shop item order. Finalize means you have dealt with it. It takes the request off your to-do list, records the sale of a shop item, and takes the units out of that item's stock. Finalize does not email the customer, so reply to them yourself. Convert to invoice makes an invoice from the request and creates the client if that email is not on file. Converting also finalizes the request, marks it Invoiced, and links the request and the invoice both ways, so you do not bill the same request twice. A shop item sale and its stock are counted when you send the invoice, not when you convert, so a draft invoice you never send does not count as a sale. An estimate that has no print time yet cannot be converted until you enter the time from your slicer. Use Finalize for an order you fulfilled without invoicing, or Convert to bill the customer.",
   },
   {
     id: "shop-items-and-options",

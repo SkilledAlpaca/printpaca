@@ -244,7 +244,7 @@
     {#if dashboard}
     <div class="tiles" role="group" aria-label="Filter the to-do list">
       {#each tiles as t (t.kind)}
-        <StatTile label={t.label} value={t.value} pressed={selectedKind === t.kind} onclick={() => selectKind(t.kind)} />
+        <StatTile label={t.label} value={t.value} caption={t.caption} pressed={selectedKind === t.kind} onclick={() => selectKind(t.kind)} />
       {/each}
     </div>
 

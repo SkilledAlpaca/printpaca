@@ -196,3 +196,22 @@ test.describe("A7: the accent error is plain text and names only the failing pai
   });
 });
 
+test.describe("A8 and A9: the Dashboard tiles say what they count and look pressable", () => {
+  test("the New requests tile explains its count, and toggle tiles carry a Show cue", async ({ page }) => {
+    await page.goto("/admin/#/dashboard");
+    const tile = page.getByRole("button", { name: /^New requests/ });
+    await expect(tile).toBeVisible();
+    await expect(tile).toContainText("Not counting those that need a print time");
+    await expect(tile.locator(".cue")).toHaveText("Show");
+    await expect(tile).toHaveCSS("border-top-style", "solid");
+    await expect(tile).toHaveCSS("cursor", "pointer");
+    await tile.click();
+    await expect(tile).toHaveAttribute("aria-pressed", "true");
+    await expect(tile.locator(".cue")).toHaveText("Showing");
+    // The cue is decoration: it stays out of the accessible name.
+    await expect(page.getByRole("button", { name: /^New requests \d+ Not counting those that need a print time$/ })).toBeVisible();
+    // Month tiles that open a page say so.
+    await expect(page.getByRole("link", { name: /^Revenue/ }).locator(".cue")).toHaveText("Open");
+  });
+});
+

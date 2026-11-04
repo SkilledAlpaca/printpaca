@@ -154,16 +154,18 @@ export interface AttentionTile {
   label: string;
   tab: string;
   value: number;
+  /** Says what the count covers when it differs from the Requests badge (A8). */
+  caption?: string;
 }
 
 /** The five action tiles in D25's order, each with its count. A tile whose tab `canOpen` rejects (disabled in
  * Settings, or not granted to this user) is left out, so nobody sees a permanent "0" for a page they can't use. */
 export function attentionTiles(c: AttentionCounts, canOpen: (tab: string) => boolean): AttentionTile[] {
   const all: AttentionTile[] = [
-    { kind: "new-request", label: "New requests", tab: "requests", value: c.newRequests },
+    { kind: "new-request", label: "New requests", tab: "requests", value: c.newRequests, caption: "Not counting those that need a print time" },
     { kind: "overdue-invoice", label: "Overdue invoices", tab: "invoices", value: c.overdueInvoices },
     { kind: "draft-invoice", label: "Draft invoices", tab: "invoices", value: c.draftInvoices },
-    { kind: "print-time-request", label: "Needs print time", tab: "requests", value: c.printTimeRequests },
+    { kind: "print-time-request", label: "Needs print time", tab: "requests", value: c.printTimeRequests, caption: "New requests with no print time" },
     { kind: "sent-quote", label: "Quotes awaiting reply", tab: "quotes", value: c.sentQuotes },
   ];
   return all.filter((t) => canOpen(t.tab));

@@ -746,7 +746,7 @@
          visible text plus the unread count below (WCAG 1.3.1, 2.5.3). -->
     <span class="label" class:visually-hidden={collapsed}>{TABS[id].label}</span>
     {#if id === "requests" && unreadRequests.count > 0}
-      <span class="unread-pill">{unreadRequests.count}<span class="visually-hidden"> unread requests</span></span>
+      <span class="unread-pill" title="All new requests, including those that need a print time">{unreadRequests.count}<span class="visually-hidden"> unread requests</span></span>
     {/if}
   </button>
 {/snippet}

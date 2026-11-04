@@ -22,6 +22,8 @@
     pressed?: boolean;
     onclick?: () => void;
   } = $props();
+
+  const cue = $derived(href ? "Open" : pressed !== undefined ? (pressed ? "Showing" : "Show") : "");
 </script>
 
 {#snippet body()}
@@ -29,6 +31,9 @@
   <span class="value">{value}</span>
   {#if period}<span class="meta">{period}</span>{/if}
   {#if caption}<span class="meta">{caption}</span>{/if}
+  <!-- A visible cue that the tile is pressable (A9). Hidden from assistive technology: aria-pressed already says
+       the state, and the cue would only lengthen the tile's name. -->
+  {#if cue}<span class="cue" aria-hidden="true">{cue}</span>{/if}
 {/snippet}
 
 {#if href}
@@ -74,7 +79,15 @@
     font-size: var(--type-caption);
     font-variant-numeric: tabular-nums;
   }
-  .interactive { cursor: pointer; }
+  .interactive { cursor: pointer; border: 1px solid var(--border); }
+  .interactive:focus-visible { outline-offset: 2px; }
+  .cue {
+    margin-top: auto;
+    color: var(--accent-text, var(--accent));
+    font-size: var(--type-caption);
+    font-weight: 600;
+  }
+  .interactive:hover .cue { text-decoration: underline; }
   .interactive:hover { background: var(--surface-2); }
   .interactive:hover .label { color: var(--text); }
   /* The pressed state is a tint plus an accent bar under the tile, so it never relies on color alone: aria-pressed

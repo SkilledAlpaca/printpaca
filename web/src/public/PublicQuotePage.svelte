@@ -1006,6 +1006,13 @@
     clearFile();
   }
 
+  /** The "Need something custom?" card: the card unmounts with the gallery, so focus moves to the estimate heading
+   * instead of dropping to <body> (WCAG 2.4.3). */
+  function openEstimateFromCard() {
+    navigate({ name: "estimate" });
+    void focusAfterUpdate(() => estimateFormHeading);
+  }
+
   /** Dismisses the custom-estimate confirmation and shows an empty form for a new request; `submitted` survives
    * reloads via sessionStorage, so this is how it ends. */
   function dismissQuoteConfirmation() {
@@ -1214,24 +1221,27 @@
           onselect={openItem}
           showStock={shop.showStock}
           showFromPrice={shop.showFromPrice}
-          oncustomestimate={cfg.materials.length > 0 && shop.customEstimates ? () => navigate({ name: "estimate" }) : undefined}
+          oncustomestimate={cfg.materials.length > 0 && shop.customEstimates ? openEstimateFromCard : undefined}
         />
       {/if}
     {:else if cfg.materials.length === 0}
       <p class="muted center">No materials are currently offered.</p>
     {:else if route.name === "estimate-received" && submitted}
       {#if paused}{@render pausedNote()}{/if}
-      <Card>
+      <Card class="confirmation-card">
         <div class="confirmation">
-          <h2 class="section-label" tabindex="-1" bind:this={quoteConfirmationHeading}>Request received</h2>
-          {#if submitted.needsPrintTime}
-            <p class="price">Price to be confirmed</p>
-            <p class="meta">We'll confirm the price after we prepare your file for printing.</p>
-          {:else}
-            <p class="meta">Estimated price</p>
-            <p class="price">{formatMoney(submitted.priceCents, cfg.currency)}</p>
-          {/if}
-          <p class="ref">Reference: <strong>{submitted.reference || submitted.id}</strong></p>
+          <div class="conf-region" role="region" aria-labelledby="quote-conf-heading" tabindex="-1" bind:this={quoteConfirmationHeading}>
+            <h2 class="section-label" id="quote-conf-heading">Request received</h2>
+            {#if submitted.needsPrintTime}
+              <p class="price">Price to be confirmed</p>
+              <p class="meta">We'll confirm the price after we prepare your file for printing.</p>
+            {:else}
+              <p class="meta">Estimated price</p>
+              <p class="price">{formatMoney(submitted.priceCents, cfg.currency)}</p>
+            {/if}
+            <p class="ref">Reference: <strong>{submitted.reference || submitted.id}</strong></p>
+            <button type="button" class="quiet copy-ref" onclick={() => void copyReference(submitted?.reference || submitted?.id || "")}>Copy reference</button>
+          </div>
           <p class="ref-hint">Save this reference. Quote it if you contact us about your request.</p>
           <p class="order-summary">{submitted.quantity} &times; {submitted.material}</p>
           {#if submitted.fileName}<p class="meta">File: {submitted.fileName}</p>{/if}
@@ -1653,6 +1663,8 @@
 
   /* The form card stacks its fields, then the submission block, on the density gap. */
   .fields { display: flex; flex-direction: column; gap: var(--gap); margin-bottom: var(--gap); }
+  /* Focused fields and buttons scroll clear of the viewport edge, so the ring isn't clipped at the bottom. */
+  .fields :global(:is(input, select, textarea, button, summary, canvas)), .drop { scroll-margin: var(--space-4); }
   .confirmation { display: flex; flex-direction: column; gap: var(--space-3); text-align: center; }
   .submit-block { display: flex; flex-direction: column; gap: var(--space-2); text-align: center; }
   .submit-block h2 { margin: 0; }
@@ -1723,6 +1735,11 @@
     margin: var(--space-1) 0;
   }
   .estimate .meta { color: var(--muted); font-size: var(--type-secondary); margin: 0; }
+  .conf-region { display: flex; flex-direction: column; gap: var(--space-3); scroll-margin-top: var(--space-3); }
+  /* A script focus target that moves the reading position, not a control: no ring (as for tabindex="-1" headings). */
+  .conf-region:focus-visible { outline: none; }
+  .conf-region > * { margin: 0; }
+  .conf-nav { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
   .confirmation .ref { margin: 0; font-variant-numeric: tabular-nums; }
   .confirmation .ref strong { display: block; font-size: var(--type-title); letter-spacing: 0.04em; }
   .confirmation .ref-hint { color: var(--muted); font-size: var(--type-secondary); margin: 0; }

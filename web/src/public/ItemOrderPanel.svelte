@@ -545,6 +545,8 @@
 
   /* The form card stacks its fields, then the submission block, on the density gap. */
   .fields { display: flex; flex-direction: column; gap: var(--gap); margin-bottom: var(--gap); }
+  /* Focused fields scroll clear of the viewport edge, so the ring isn't clipped at the bottom. */
+  .fields :global(:is(input, select, textarea, button)), .submit-block button { scroll-margin: var(--space-4); }
 
   .submit-block { display: flex; flex-direction: column; gap: var(--space-2); text-align: center; }
   .submit-block h2 { margin: 0; }

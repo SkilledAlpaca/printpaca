@@ -465,3 +465,41 @@ test.describe("P8: the estimate form tells a buyer without a slicer what is opti
   });
 });
 
+test.describe("P9: small polish", () => {
+  test("featured gallery cards say Featured", async ({ page }) => {
+    await page.setExtraHTTPHeaders(xff());
+    await page.goto("/");
+    await expect(page.locator(`[data-item-id]:has-text("${TRAY}") .featured-badge`)).toHaveText("Featured");
+    await expect(page.locator(`[data-item-id]:has-text("${WIDGET}") .featured-badge`)).toHaveCount(0);
+  });
+
+  test("the estimate heading takes focus when opened from the custom card", async ({ page }) => {
+    await page.setExtraHTTPHeaders(xff());
+    await page.goto("/");
+    await page.getByRole("button", { name: /Need something custom/ }).click();
+    await expect(page.getByRole("heading", { name: "Custom estimate", level: 2 })).toBeFocused();
+  });
+
+  test("Solidity has a label and the file input a short name", async ({ page }) => {
+    await page.setExtraHTTPHeaders(xff());
+    await page.goto("/#/estimate");
+    await page.getByLabel("Material").selectOption("PLA");
+    await expect(page.locator("#public-gcode-file")).toHaveAccessibleName("Upload your 3D file (STL, 3MF, or G-code)");
+    await page.setInputFiles("#public-gcode-file", { name: "cube.stl", mimeType: "model/stl", buffer: Buffer.from(cubeStl(20), "utf-8") });
+    await page.getByText("How we estimated this").click();
+    await expect(page.getByLabel("Solidity (%)")).toBeVisible();
+  });
+
+  test("focused cards and fields keep a scroll margin from the viewport edge", async ({ page }) => {
+    await page.setExtraHTTPHeaders(xff());
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await page.goto("/");
+    const margin = async (sel: string) => page.locator(sel).first().evaluate((el) => parseFloat(getComputedStyle(el).scrollMarginBottom));
+    expect(await margin("[data-item-id]")).toBeGreaterThanOrEqual(8);
+    await page.getByRole("button", { name: new RegExp(WIDGET) }).click();
+    expect(await margin("#item-note")).toBeGreaterThanOrEqual(8);
+    await page.goto("/#/estimate");
+    expect(await margin("#quote-note")).toBeGreaterThanOrEqual(8);
+  });
+});
+

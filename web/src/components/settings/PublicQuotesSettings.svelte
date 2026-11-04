@@ -1,14 +1,13 @@
 <script lang="ts">
+  import { characterCountText } from "../../lib/countText";
   import type { ServerConfig } from "../../lib/settings";
   import { settingsWarnings, PUBLIC_INTRO_TEXT_MAX_BYTES } from "../../lib/settingsRules";
   import { presetDisplayName, warnFor } from "../../lib/format";
-  import { utf8ByteLength } from "../../lib/publicFormLimits";
   import LabeledText from "../LabeledText.svelte";
 
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 
   const warnings = $derived(settingsWarnings(form));
-  const introTextBytes = $derived(utf8ByteLength(form.publicQuotes.introText));
 </script>
 
 <div id="section-public-quotes" class="card roomy" class:danger-border={hasError("publicQuotes") || hasError("site")}>
@@ -43,7 +42,7 @@
       aria-invalid={warnFor(warnings, "publicQuotes.introText") !== ""}
       aria-describedby={warnFor(warnings, "publicQuotes.introText") !== "" ? "public-intro-count public-intro-warn" : "public-intro-count"}
     ></textarea>
-    <small id="public-intro-count" class="field-hint">{introTextBytes} / {PUBLIC_INTRO_TEXT_MAX_BYTES} bytes</small>
+    <small id="public-intro-count" class="field-hint">{characterCountText(form.publicQuotes.introText, PUBLIC_INTRO_TEXT_MAX_BYTES)}</small>
     {#if warnFor(warnings, "publicQuotes.introText") !== ""}
       <small id="public-intro-warn" class="warn-text">{warnFor(warnings, "publicQuotes.introText")}</small>
     {/if}

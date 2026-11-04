@@ -14,6 +14,7 @@
   // ConfigStore, not unsaved edits), one-shot fire-and-report like the invoice and quote send actions.
   // ok/error shows verbatim in the status line for either outcome (unconfigured HTTP failure or inner send
   // failure).
+  const noHost = $derived(form.smtp.host.trim() === "");
   let testing = $state(false);
   let testStatus = $state("");
   let testFailed = $state(false);
@@ -87,10 +88,18 @@
     />
   </div>
   <div class="test-row">
-    <button type="button" onclick={sendTestEmail} disabled={form.smtp.host === ""} aria-disabled={testing} aria-busy={testing}>
+    <!-- aria-disabled, not disabled: the button stays focusable so its reason is reachable, and the two states
+         can't disagree. -->
+    <button
+      type="button"
+      onclick={() => { if (!noHost) void sendTestEmail(); }}
+      aria-disabled={noHost || testing}
+      aria-busy={testing}
+      aria-describedby="smtp-test-hint"
+    >
       {testing ? "Sending…" : "Send test email"}
     </button>
-    <span class="hint">Tests the saved settings, not unsaved changes above.</span>
+    <span class="hint" id="smtp-test-hint">{noHost ? "Set an SMTP host first." : "Tests the saved settings, not unsaved changes above."}</span>
   </div>
   <p class="status-line" role={testFailed ? "alert" : "status"} aria-live={testFailed ? "assertive" : "polite"}>
     {testStatus}

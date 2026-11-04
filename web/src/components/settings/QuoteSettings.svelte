@@ -1,16 +1,14 @@
 <script lang="ts">
+  import { characterCountText } from "../../lib/countText";
   import type { ServerConfig } from "../../lib/settings";
   import { settingsWarnings, QUOTE_PAYMENT_INSTRUCTIONS_MAX_BYTES, QUOTE_TERMS_TEXT_MAX_BYTES } from "../../lib/settingsRules";
   import { warnFor } from "../../lib/format";
-  import { utf8ByteLength } from "../../lib/publicFormLimits";
   import { describeLogoDataUrl, logoToDataUrl, LOGO_ACCEPT } from "../../lib/logoUpload";
   import { announce } from "../../lib/a11y.svelte";
 
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 
   const warnings = $derived(settingsWarnings(form));
-  const paymentInstructionsBytes = $derived(utf8ByteLength(form.quote.paymentInstructions));
-  const termsTextBytes = $derived(utf8ByteLength(form.quote.termsText));
 
   // Live, non-blocking feedback (never gates saving): checks whether the entered logo URL loads as an image,
   // tracking the form's unsaved edits (App.svelte's preload tracks only the saved logoUrl). Debounced per
@@ -75,16 +73,12 @@
       {#if uploadedLogo}
         <span id="quote-logo-label">Logo</span>
         <div class="logo-row" role="group" aria-labelledby="quote-logo-label">
-          <img class="logo-preview" src={form.quote.logoUrl} alt="Your logo" />
           <span>{uploadedLogo}</span>
           <button type="button" onclick={removeLogo}>Remove logo</button>
         </div>
       {:else}
         <label for="quote-logo-url">Logo URL</label>
         <input id="quote-logo-url" bind:value={form.quote.logoUrl} aria-describedby={logoLoadFailed ? "quote-logo-hint" : undefined} />
-        {#if form.quote.logoUrl.trim() !== "" && !logoLoadFailed}
-          <img class="logo-preview logo-col" src={form.quote.logoUrl} alt="Logo preview" />
-        {/if}
       {/if}
       {#if logoLoadFailed}
         <p id="quote-logo-hint" class="advisory-text logo-hint">
@@ -95,7 +89,12 @@
     </div>
     <div class="field">
       <label for="quote-logo-file">Upload logo</label>
-      <input id="quote-logo-file" type="file" accept={LOGO_ACCEPT} aria-describedby="quote-logo-file-help" onchange={onLogoFile} />
+      <div class="upload-row">
+        <input id="quote-logo-file" type="file" accept={LOGO_ACCEPT} aria-describedby="quote-logo-file-help" onchange={onLogoFile} />
+        {#if form.quote.logoUrl.trim() !== "" && !logoLoadFailed}
+          <img class="logo-preview" src={form.quote.logoUrl} alt={uploadedLogo ? "Your logo" : "Logo preview"} />
+        {/if}
+      </div>
       <small id="quote-logo-file-help" class="field-hint">PNG, JPG, WebP, or SVG, up to 64 KB. Larger pictures are shrunk to fit. An uploaded logo shows in the app and on printouts; emails show your business name instead. Use a public https:// URL to show a logo in emails.</small>
       {#if logoUploadError}<p class="warn-text" role="alert">{logoUploadError}</p>{/if}
     </div>
@@ -137,7 +136,7 @@
       aria-invalid={warnFor(warnings, "quote.paymentInstructions") !== ""}
       aria-describedby={warnFor(warnings, "quote.paymentInstructions") !== "" ? "quote-payment-count quote-payment-warn" : "quote-payment-count"}
     ></textarea>
-    <small id="quote-payment-count" class="field-hint">{paymentInstructionsBytes} / {QUOTE_PAYMENT_INSTRUCTIONS_MAX_BYTES} bytes</small>
+    <small id="quote-payment-count" class="field-hint">{characterCountText(form.quote.paymentInstructions, QUOTE_PAYMENT_INSTRUCTIONS_MAX_BYTES)}</small>
     {#if warnFor(warnings, "quote.paymentInstructions") !== ""}
       <small id="quote-payment-warn" class="warn-text">{warnFor(warnings, "quote.paymentInstructions")}</small>
     {/if}
@@ -153,7 +152,7 @@
       aria-invalid={warnFor(warnings, "quote.termsText") !== ""}
       aria-describedby={warnFor(warnings, "quote.termsText") !== "" ? "quote-terms-count quote-terms-warn" : "quote-terms-count"}
     ></textarea>
-    <small id="quote-terms-count" class="field-hint">{termsTextBytes} / {QUOTE_TERMS_TEXT_MAX_BYTES} bytes</small>
+    <small id="quote-terms-count" class="field-hint">{characterCountText(form.quote.termsText, QUOTE_TERMS_TEXT_MAX_BYTES)}</small>
     {#if warnFor(warnings, "quote.termsText") !== ""}
       <small id="quote-terms-warn" class="warn-text">{warnFor(warnings, "quote.termsText")}</small>
     {/if}
@@ -165,7 +164,7 @@
    * input. .advisory-text supplies the --warn color and size; this adds only the grid placement. */
   .logo-hint { grid-column: 2; margin: 0; }
   .logo-preview { max-height: 48px; max-width: 160px; width: auto; object-fit: contain; background: var(--surface-2); border-radius: var(--radius); }
-  .logo-col { grid-column: 2; }
+  .upload-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
   .logo-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
   @media (max-width: 600px) {
     .logo-hint { grid-column: auto; }

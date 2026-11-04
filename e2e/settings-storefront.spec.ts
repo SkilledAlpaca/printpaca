@@ -344,3 +344,31 @@ test("the Browser tab title saves and reaches the public config and the served H
     await putConfig(request, config);
   }
 });
+
+// View shop: the live shop opens in a new tab from the card heading. The address is the server's saved
+// site.shopOnMainPort answer ("/" on the main port), not the unsaved form.
+test("View shop opens the live shop in a new tab and says it shows saved settings", async ({ page, context }) => {
+  await gotoSettings(page);
+  const card = storefront(page);
+  const link = card.getByRole("link", { name: "View shop" });
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute("href", "/");
+  await expect(link).toHaveAttribute("target", "_blank");
+  await expect(link).toHaveAttribute("rel", /noopener/);
+  await expect(card.getByText("Shows saved settings. Save first to see your changes.")).toBeVisible();
+  const [shop] = await Promise.all([context.waitForEvent("page"), link.click()]);
+  await shop.waitForLoadState();
+  expect(new URL(shop.url()).pathname).toBe("/");
+  await expect(shop.locator("#shop-config")).toHaveCount(1);
+  await shop.close();
+});
+
+test("View shop has no link when the shop is off the main address, and says why", async ({ page, request }) => {
+  const config = await getConfig(request);
+  config.site.shopOnMainPort = false;
+  await putConfig(request, config);
+  await gotoSettings(page);
+  const card = storefront(page);
+  await expect(card.getByText("The shop isn't served on this address", { exact: false })).toBeVisible();
+  await expect(card.getByRole("link", { name: "View shop" })).toHaveCount(0);
+});

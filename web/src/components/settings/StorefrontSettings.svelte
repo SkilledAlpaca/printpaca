@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
+  import { DEFAULT_FETCH_TIMEOUT_MS } from "../../lib/fetchTimeouts";
   import { characterCountText } from "../../lib/countText";
   import { cardClass, type ServerConfig } from "../../lib/settings";
   import { settingsWarnings, PUBLIC_INTRO_TEXT_MAX_BYTES } from "../../lib/settingsRules";
@@ -37,6 +39,24 @@
   } = $props();
 
   const warnings = $derived(settingsWarnings(form));
+
+  // ---- View shop. The live shop's address as the server serves it now (saved settings, not the draft): GET
+  // api/demo's shopUrl is "/" while site.shopOnMainPort is on, and its publicUrl is the demo's customer site. A
+  // separate PUBLIC_PORT address isn't known to the admin app, so then there is no link, only a note.
+  let shopUrl = $state("");
+  let shopUrlKnown = $state(false);
+  onMount(async () => {
+    try {
+      const res = await fetch("api/demo", { signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS) });
+      if (!res.ok) return;
+      const body = (await res.json()) as { shopUrl?: string; publicUrl?: string };
+      shopUrl = body.shopUrl || body.publicUrl || "";
+    } catch {
+      // Offline or slow: the note below stands in for the link.
+    } finally {
+      shopUrlKnown = true;
+    }
+  });
   const MAX_FOOTER_LINKS = 6;
 
   // ---- Pause the shop. The stored flag is "accepting orders"; the control says what the owner is doing.
@@ -176,7 +196,18 @@
   </div>
 {/snippet}
 
-<Card id="section-storefront" class={cardClass(invalid)} heading="Storefront">
+<Card id="section-storefront" class={cardClass(invalid)}>
+  <div class="card-head">
+    <h2>Storefront</h2>
+    {#if shopUrl}
+      <div class="view-shop">
+        <a class="view-shop-link" href={shopUrl} target="_blank" rel="noopener noreferrer" aria-describedby="view-shop-hint">View shop<span class="visually-hidden"> (opens in a new tab)</span></a>
+        <small class="hint" id="view-shop-hint">Shows saved settings. Save first to see your changes.</small>
+      </div>
+    {:else if shopUrlKnown}
+      <small class="hint view-shop">The shop isn't served on this address, so there is no link here. Open it from its public address. It shows saved settings.</small>
+    {/if}
+  </div>
   <p class="hint">What customers see on your shop. Changes apply as soon as you save, with no restart. The hero image is the one exception: it is saved the moment you upload or remove it.</p>
 
   <div class="sections">
@@ -480,6 +511,14 @@
 </Card>
 
 <style>
+  .card-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-2) var(--space-4); margin-bottom: var(--space-3); }
+  .card-head h2 { margin: 0; }
+  .view-shop { display: flex; flex-direction: column; align-items: flex-end; max-width: var(--field-l); text-align: right; }
+  .view-shop .hint { margin: 0; }
+  .view-shop-link { font-weight: 600; }
+  @media (max-width: 600px) {
+    .view-shop { align-items: flex-start; text-align: left; }
+  }
   .sections { display: flex; flex-direction: column; gap: var(--gap-section); }
   .row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
   .count { color: var(--muted); font-size: var(--type-secondary); }

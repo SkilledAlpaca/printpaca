@@ -2,7 +2,17 @@
   "blocking": [
     "web/src/components/ui/**",
     "web/src/public/ItemOrderPanel.svelte",
-    "web/src/components/RequestsTab.svelte"
+    "web/src/components/RequestsTab.svelte",
+    "web/src/public/PublicQuotePage.svelte",
+    "web/src/public/ItemGallery.svelte",
+    "web/src/public/PublicFooter.svelte",
+    "web/src/public/ClosedPage.svelte",
+    "web/src/public/ContactDetails.svelte",
+    "web/src/public/CategoryChips.svelte",
+    "web/src/public/ShopHero.svelte",
+    "web/src/public/FormErrorSummary.svelte",
+    "web/src/public/RateLimitNotice.svelte",
+    "web/src/public/PublicApp.svelte"
   ],
   "scan": [".svelte", ".css"],
   "exceptions": [

@@ -44,6 +44,9 @@
     maxOrderQty = DEFAULT_MAX_ORDER_QTY,
     onback,
     onordered,
+    onpaused,
+    shippingNote = "",
+    turnaroundNote = "",
   }: {
     item: PublicItem;
     currency: CurrencyConfig;
@@ -55,6 +58,13 @@
     /** Fired instead of showing a confirmation locally: the parent owns display and persistence so it
      * survives a reload, even though this component is torn down right after. */
     onordered: (confirmation: ItemOrderConfirmation) => void;
+    /** Fired when the server refuses the order because the shop closed after this page loaded (503 with
+     * paused: true); the parent then shows the Closed page. */
+    onpaused?: (message: string) => void;
+    /** shop.shippingNote; the fixed wording shows when blank. */
+    shippingNote?: string;
+    /** shop.turnaroundNote: shown with the total when the owner wrote one. */
+    turnaroundNote?: string;
   } = $props();
 
   // groupId -> optionId. Starts empty: a required group shows its "Choose ..." placeholder and an optional one
@@ -209,6 +219,10 @@
     serverErrorsFor = formSnapshot;
     if (result.status === 429) {
       rateLimited = true;
+      return;
+    }
+    if (result.paused) {
+      onpaused?.(result.paused);
       return;
     }
     if (result.status === 503) {
@@ -406,7 +420,8 @@
             <p class="muted">Enter a whole number from 1 to {maxQuantity.toLocaleString("en-US")} to see a total.</p>
           {/if}
         </div>
-        <p class="muted shipping-note">Shipping, if any, is confirmed by email.</p>
+        <p class="muted shipping-note">{shippingNote || "Shipping, if any, is confirmed by email."}</p>
+        {#if turnaroundNote}<p class="muted turnaround-note">{turnaroundNote}</p>{/if}
 
         <!-- Persistent alert container with a plain list inside (WCAG 1.3.1, 4.1.3). -->
         <div role="alert">

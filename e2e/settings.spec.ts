@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { gotoSettings, rowAction } from "./helpers";
+import { gotoSettings, removeRow } from "./helpers";
 
 // All specs share one server, and a settings save hot-applies to every later spec via /api/config.
 // These tests restore the default symbol before the suite moves on, and the second depends on the
@@ -76,7 +76,7 @@ test("a checked lostOnFailure hardware entry persists across reload and via GET 
   expect(entry?.lostOnFailure).toBe(true);
 
   // Cleanup: remove the hardware catalog entry.
-  await rowAction(page, /Hardware \d+: e2e persist magnet$/, "Remove hardware e2e persist magnet");
+  await removeRow(page, /Hardware \d+: e2e persist magnet$/);
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Settings saved.")).toBeVisible();
 });

@@ -322,3 +322,33 @@ test.describe("phone layout", () => {
     }
   });
 });
+
+test.describe("direct Remove", () => {
+  test("a row whose only action is Remove shows a Remove button named after the row, and focus follows the removal", async ({ page }) => {
+    await page.goto("/admin/#/printers");
+    const add = page.getByRole("button", { name: "Add printer" });
+    const rows = page.getByRole("group", { name: /^Printer \d+: / });
+    await expect(rows.first()).toBeVisible();
+    const n = await rows.count();
+
+    // No ⋯ menu: the printer rows have nothing but Remove.
+    await expect(page.getByRole("button", { name: /^More actions for Printer/ })).toHaveCount(0);
+
+    await add.click();
+    await add.click();
+    await expect(rows).toHaveCount(n + 2);
+    const first = page.getByRole("button", { name: `Remove Printer ${n + 1}: New printer` });
+    await expect(first).toBeVisible();
+    await expect(first).toHaveText("Remove");
+
+    // Removing a middle row moves focus to the Remove button of the row that took its place.
+    await first.click();
+    await expect(rows).toHaveCount(n + 1);
+    await expect(page.locator(`[data-focus-key="row-menu-printer-${n}"]`)).toBeFocused();
+
+    // Removing the last row moves focus to the previous row's button.
+    await page.locator(`[data-focus-key="row-menu-printer-${n}"]`).click();
+    await expect(rows).toHaveCount(n);
+    await expect(page.locator(`[data-focus-key="row-menu-printer-${n - 1}"]`)).toBeFocused();
+  });
+});

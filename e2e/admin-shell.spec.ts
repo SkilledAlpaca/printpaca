@@ -217,7 +217,7 @@ test.describe("electricity schedule", () => {
     expect(wins).toEqual(expect.arrayContaining(["22:00-24:00", "00:00-06:00"]));
   });
 
-  test("at 390 px a schedule window's fields and its ⋯ button stack inside the card", async ({ page }) => {
+  test("at 390 px a schedule window's fields and its Remove button stack inside the card", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/admin/#/electricity");
     const rate = page.getByLabel("Season 1 Weekday window 1 rate");
@@ -225,7 +225,7 @@ test.describe("electricity schedule", () => {
     const box = await rate.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.x + box!.width).toBeLessThanOrEqual(390);
-    const remove = page.getByRole("button", { name: /^More actions for Season 1 Weekday window 1/ });
+    const remove = page.getByRole("button", { name: /^Remove Season 1 Weekday window 1/ });
     const rb = await remove.boundingBox();
     expect(rb!.x + rb!.width).toBeLessThanOrEqual(390);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

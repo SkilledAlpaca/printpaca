@@ -220,3 +220,8 @@ export async function rowAction(page: Page, row: string | RegExp, action: string
   await trigger.click();
   await page.getByRole("button", { name: action, exact: typeof action === "string" }).click();
 }
+
+/** Presses the direct Remove button of a row whose only action is Remove (ui/RowEditor): "Remove <row>". */
+export async function removeRow(page: Page, row: string | RegExp): Promise<void> {
+  await page.getByRole("button", { name: typeof row === "string" ? `Remove ${row}` : new RegExp(`^Remove ${row.source}`) }).click();
+}

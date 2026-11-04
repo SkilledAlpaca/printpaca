@@ -19,7 +19,7 @@
   // A layout component for one editable row of a list (an option group, a choice, a category). It takes the row's
   // fields and its actions and does not own the data: the caller reorders and removes. The fields wrap on a wide
   // screen and stack on a phone. The row's actions live behind a ⋯ button named after the row ("More actions for
-  // Color"): Enter, Space or a click opens a labelled group of buttons and focuses the first; ArrowUp, ArrowDown,
+  // Color"): Enter, Space or a click opens a labelled group of buttons and focuses the first (a row whose only action is Remove shows a plain Remove button instead); ArrowUp, ArrowDown,
   // Home and End move between them; Escape closes it with focus back on the ⋯ button; Tab closes it and moves on;
   // a click elsewhere or a scroll closes it.
   //
@@ -172,13 +172,27 @@
 
   const canUp = $derived(!position || position.index > 0);
   const canDown = $derived(!position || position.index < position.count - 1);
-  const hasMenu = $derived(!!onmoveup || !!onmovedown || actions.length > 0 || !!onremove);
+  // A row whose only action is Remove gets a plain Remove button instead of a one-item menu. It carries the same
+  // data-focus-key as the ⋯ button, so focusAfterRowRemoved finds either form.
+  const directRemove = $derived(!!onremove && !onmoveup && !onmovedown && actions.length === 0);
+  const hasMenu = $derived(!directRemove && (!!onmoveup || !!onmovedown || actions.length > 0 || !!onremove));
 </script>
 
 <div class="row-editor" class:inset={tone === "inset"} role="group" aria-label={label}>
   <div class="row-main">
     <div class="row-fields">{@render fields()}</div>
-    {#if hasMenu}
+    {#if directRemove}
+      <div class="row-menu">
+        <button
+          type="button"
+          class="quiet remove-direct"
+          aria-label={`Remove ${label}`}
+          aria-disabled={removeDisabled ? "true" : undefined}
+          data-focus-key={focusKey}
+          onclick={() => { if (!removeDisabled) onremove?.(); }}
+        >Remove</button>
+      </div>
+    {:else if hasMenu}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="row-menu" onkeydown={onrootkeydown} onfocusout={onfocusout}>
         <button
@@ -240,7 +254,7 @@
   /* button.quiet sets the small tap size; a row's controls follow the density (40 px comfortable, 32 px compact) and
    * 44 px on a phone in either (D26). */
   .menu-toggle { min-width: var(--tap-sm); font-weight: 700; letter-spacing: 1px; }
-  .menu-toggle, .menu-item { min-height: var(--control-h); }
+  .menu-toggle, .menu-item, .remove-direct { min-height: var(--control-h); }
   .menu-panel {
     position: fixed;
     z-index: 5;
@@ -259,7 +273,7 @@
   .menu-item[aria-disabled="true"] { opacity: 0.5; cursor: default; }
 
   @media (max-width: 600px) {
-    .menu-toggle, .menu-item { min-height: 44px; }
+    .menu-toggle, .menu-item, .remove-direct { min-height: 44px; }
     .row-main { flex-direction: column; align-items: stretch; }
     .row-menu { align-self: flex-end; }
   }

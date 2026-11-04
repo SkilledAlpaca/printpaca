@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { fillCanonicalQuote, gotoSettings, historyRow, navButton, openBreakdown, readMoney, rowAction } from "./helpers";
+import { fillCanonicalQuote, gotoSettings, historyRow, navButton, openBreakdown, readMoney, removeRow } from "./helpers";
 
 // Shares the suite's one server. The catalog entry added here is inert for other specs, and the final
 // step removes it so later specs see the hardware-free config.
@@ -63,7 +63,7 @@ test("configure a hardware entry, attach it on a quote, and shift the breakdown/
 
   // 6. Cleanup: remove the catalog entry.
   await gotoSettings(page);
-  await rowAction(page, /Hardware \d+: e2e magnet$/, "Remove hardware e2e magnet");
+  await removeRow(page, /Hardware \d+: e2e magnet$/);
   await saveSettingsChanges(page);
 });
 
@@ -100,6 +100,6 @@ test("a checked lostOnFailure hardware entry also grows the Failure buffer row",
 
   // Cleanup: remove the catalog entry.
   await gotoSettings(page);
-  await rowAction(page, /Hardware \d+: e2e lost magnet$/, "Remove hardware e2e lost magnet");
+  await removeRow(page, /Hardware \d+: e2e lost magnet$/);
   await saveSettingsChanges(page);
 });

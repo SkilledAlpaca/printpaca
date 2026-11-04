@@ -184,7 +184,9 @@ test("ordering flow: required group blocks, optional starts on None, prices sum,
   await page.getByLabel("Name", { exact: true }).fill(CUSTOMER_NAME);
   await page.getByLabel("Email").fill(CUSTOMER_EMAIL);
   await page.getByRole("button", { name: "Place order" }).click();
-  await expect(page.getByRole("alert").filter({ hasText: "Choose Color." })).toBeVisible();
+  const colorError = page.locator("small.warn-text", { hasText: "Choose Color." });
+  await expect(colorError).toBeVisible();
+  await expect(page.getByRole("alert").locator(".error-summary")).toContainText("1 field needs attention");
   await expect(color).toHaveAttribute("aria-invalid", "true");
   await expect(color).toBeFocused();
   // The error sits under the select and is linked to it; the group is marked required.
@@ -194,7 +196,8 @@ test("ordering flow: required group blocks, optional starts on None, prices sum,
   // Choosing Red swaps in its photo; the alt names the option.
   await color.selectOption({ label: "Red (+$5.00)" });
   // The errors clear as soon as the problem is fixed, not on the next submit.
-  await expect(page.getByRole("alert").filter({ hasText: "Choose Color." })).toHaveCount(0);
+  await expect(colorError).toHaveCount(0);
+  await expect(page.locator(".error-summary")).toHaveCount(0);
   await expect(color).not.toHaveAttribute("aria-invalid", "true");
   const photo = page.locator("img[data-option-photo]");
   await expect(photo).toHaveAttribute("alt", "Color: Red");
@@ -310,8 +313,8 @@ test("an in_stock item with allowBackorder and zero qty shows 'Available to orde
   await card.click();
   await expect(page.getByRole("heading", { name: BACKORDER_ITEM_NAME })).toBeVisible();
 
-  // Quantity's max reflects the lifted cap (10000), not the item's stockQty of 0.
-  await expect(page.getByLabel("Quantity")).toHaveAttribute("max", "10000");
+  // Quantity's max reflects the lifted cap (shop.maxOrderQty, 100 by default), not the item's stockQty of 0.
+  await expect(page.getByLabel("Quantity")).toHaveAttribute("max", "100");
 
   await page.getByLabel("Quantity").fill(String(BACKORDER_QUANTITY));
   await page.getByLabel("Name").fill(CUSTOMER_NAME);

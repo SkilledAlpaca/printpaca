@@ -7,27 +7,28 @@ export function perUnitCents(totalCents: number, quantity: number): number | nul
   return Math.round(totalCents / quantity);
 }
 
-export interface QuantityClampResult {
-  value: number;
-  /** Set only when `raw` was clamped down to `max`, so callers can show it as a one-shot notice. */
-  message: string | null;
-}
-
-/** The per-order item quantity ceiling; mirrors maxItemOrderQty in server/items.go. */
-export const MAX_ITEM_ORDER_QTY = 10000;
+/** Fallback for a server that predates shop.maxOrderQty; mirrors defaultShopMaxOrderQty in server/config.go. */
+export const DEFAULT_MAX_ORDER_QTY = 100;
 
 /** Why a quantity is capped: a fixed per-order policy limit, or the stock on hand. */
 export type QuantityLimit = "policy" | "stock";
 
-/** Clamps a quantity input to `max` (real stock or policy limit) in the form state itself, since the `max`
- * attribute's native affordances are easy to miss. `min` defaults to 1. The message names the limit
- * ("Max 100 per order.", "Only 3 in stock."). */
-export function clampQuantity(raw: number, max: number, min = 1, limit: QuantityLimit = "policy"): QuantityClampResult {
-  if (raw > max) {
-    return { value: max, message: limit === "stock" ? `Only ${max} in stock.` : `Max ${max} per order.` };
-  }
-  if (raw < min) return { value: min, message: null };
-  return { value: raw, message: null };
+/** The message for a quantity above its cap, or "" when it is within it. Names the limit ("Max 1,000 per
+ * order.", "Only 3 in stock.") with a thousands separator. The page shows it instead of a total; it never
+ * rewrites what the visitor typed. */
+export function overCapMessage(quantity: number | null, max: number, limit: QuantityLimit = "policy"): string {
+  if (quantity === null || !Number.isFinite(quantity) || quantity <= max) return "";
+  const n = max.toLocaleString("en-US");
+  return limit === "stock" ? `Only ${n} in stock.` : `Max ${n} per order.`;
+}
+
+/** The canonical text for a quantity typed in scientific notation ("1e3" -> "1000"), or null when the text
+ * is already plain or isn't a whole number. A number input keeps "1e3" on screen while pricing 1000. */
+export function normalizedQuantityText(raw: string): string | null {
+  const t = raw.trim();
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)e[+-]?\d+$/i.test(t)) return null;
+  const n = Number(t);
+  return Number.isSafeInteger(n) ? String(n) : null;
 }
 
 /** Whether `quantity` is a whole number from 1 to `max`. A total is shown only for a valid quantity, so a
@@ -36,11 +37,7 @@ export function isValidQuantity(quantity: number | null, max: number): quantity 
   return quantity !== null && Number.isInteger(quantity) && quantity >= 1 && quantity <= max;
 }
 
-/** The 429 copy: no jargon, and the shop's own contact details when it has published them. */
-export function rateLimitMessage(branding: { email: string; phone: string }): string {
-  const contact = [branding.email ? `email ${branding.email}` : "", branding.phone ? `call ${branding.phone}` : ""].filter(
-    (s) => s !== "",
-  );
-  const tail = contact.length > 0 ? ` or ${contact.join(" or ")}` : "";
-  return `We've had a lot of requests from your connection. Try again later${tail}.`;
+/** A phone number as a tel: target: digits and a leading plus only. */
+export function telHref(phone: string): string {
+  return `tel:${phone.replace(/[^\d+]/g, "")}`;
 }

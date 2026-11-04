@@ -30,13 +30,16 @@
     type Selected,
   } from "../lib/itemOptions";
   import { NAME_MAX_BYTES, NOTE_MAX_BYTES, ITEM_ORDER_EMAIL_MAX_BYTES, utf8ByteLength, isPlausibleEmail, EMAIL_FORMAT_ERROR } from "../lib/publicFormLimits";
-  import { clampQuantity, isValidQuantity, MAX_ITEM_ORDER_QTY, rateLimitMessage } from "./publicPricing";
+  import { DEFAULT_MAX_ORDER_QTY, isValidQuantity, normalizedQuantityText, overCapMessage } from "./publicPricing";
+  import FormErrorSummary from "./FormErrorSummary.svelte";
+  import RateLimitNotice from "./RateLimitNotice.svelte";
   import { submitItemOrder, type PublicConfig, type PublicItem } from "./api";
 
   let {
     item,
     currency,
     branding,
+    maxOrderQty = DEFAULT_MAX_ORDER_QTY,
     onback,
     onordered,
   }: {
@@ -44,6 +47,8 @@
     currency: CurrencyConfig;
     /** Contact details for the rate-limit message. */
     branding: PublicConfig["branding"];
+    /** shop.maxOrderQty: the per-order cap the server enforces. */
+    maxOrderQty?: number;
     onback: () => void;
     /** Fired instead of showing a confirmation locally: the parent owns display and persistence so it
      * survives a reload, even though this component is torn down right after. */
@@ -72,10 +77,6 @@
   // to <body>.
   let headingEl: HTMLElement | undefined = $state();
   onMount(() => headingEl?.focus());
-  // Set only when a typed quantity exceeded maxQuantity and was clamped; cleared via oninput (see
-  // PublicQuotePage's quantityClampNotice).
-  let quantityClampNotice = $state("");
-
   let submitting = $state(false);
   // Errors from the server. They describe the form as it was sent, so they disappear as soon as the visitor
   // changes anything (serverErrorsFor must match the current form).
@@ -88,24 +89,16 @@
   const visibleServerErrors = $derived(serverErrorsFor === formSnapshot ? serverErrors : []);
   const visibleRateLimited = $derived(rateLimited && serverErrorsFor === formSnapshot);
 
-  // in_stock is capped at what's left and at MAX_ITEM_ORDER_QTY; allowBackorder lifts the cap to the global maximum regardless
-  // of remaining stock, matching handlePublicItemOrder (server/public.go).
+  // in_stock is capped at what's left and at the shop's per-order cap; allowBackorder lifts the cap to the
+  // per-order cap regardless of remaining stock, matching handlePublicItemOrder (server/public.go).
   const maxQuantity = $derived(
-    item.stock.mode === "in_stock" && !item.stock.allowBackorder ? Math.min(MAX_ITEM_ORDER_QTY, item.stock.qty ?? 0) : MAX_ITEM_ORDER_QTY,
+    item.stock.mode === "in_stock" && !item.stock.allowBackorder ? Math.min(maxOrderQty, item.stock.qty ?? 0) : maxOrderQty,
   );
 
-  // The cap comes from the stock on hand when that is below the per-order maximum (MAX_ITEM_ORDER_QTY).
-  const stockLimited = $derived(item.stock.mode === "in_stock" && !item.stock.allowBackorder && (item.stock.qty ?? 0) < MAX_ITEM_ORDER_QTY);
-  let lastClampedTo = -1;
-  $effect(() => {
-    if (quantity === null) return;
-    const clamped = clampQuantity(quantity, maxQuantity, 1, stockLimited ? "stock" : "policy");
-    if (clamped.message) {
-      lastClampedTo = clamped.value;
-      quantity = clamped.value;
-      quantityClampNotice = clamped.message;
-    }
-  });
+  // The cap comes from the stock on hand when that is below the per-order cap.
+  const stockLimited = $derived(item.stock.mode === "in_stock" && !item.stock.allowBackorder && (item.stock.qty ?? 0) < maxOrderQty);
+  // A quantity above the cap is left as typed: the message replaces the total, and Place order is blocked.
+  const quantityNotice = $derived(overCapMessage(quantity, maxQuantity, stockLimited ? "stock" : "policy"));
 
   // A backorder in_stock item's "Made to order" label appears on the gallery card only; show it here too for
   // visitors arriving by direct link, so exceeding remaining stock isn't read as an error.
@@ -141,7 +134,7 @@
     if (utf8ByteLength(note) > NOTE_MAX_BYTES) out.note = `Note must be ${NOTE_MAX_BYTES} characters or fewer.`;
     for (const g of missingGroups) out.other.push(`Choose ${g.label}.`);
     if (!isValidQuantity(quantity, maxQuantity)) {
-      out.other.push(`Quantity must be a whole number from 1 to ${maxQuantity}.`);
+      out.other.push(`Quantity must be a whole number from 1 to ${maxQuantity.toLocaleString("en-US")}.`);
     }
     return out;
   });
@@ -153,9 +146,19 @@
   const nameError = $derived(showErrors ? fieldErrors.name : undefined);
   const emailError = $derived(showErrors ? fieldErrors.email : undefined);
   const noteError = $derived(showErrors ? fieldErrors.note : undefined);
-  // Shown live once the visitor has tried to submit, so each message goes away as its problem is fixed.
-  const summaryErrors = $derived(showErrors ? fieldErrors.other : []);
-  const quantityInvalid = $derived(showErrors && !isValidQuantity(quantity, maxQuantity));
+  // Each error shows once, under its field. The line above the button counts them and links to the first.
+  const quantityError = $derived(quantityNotice !== "" ? quantityNotice : showErrors && !isValidQuantity(quantity, maxQuantity) ? (fieldErrors.other.at(-1) ?? "") : "");
+  const summaryProblems = $derived.by(() => {
+    if (!showErrors) return [];
+    const out: { id: string; label: string }[] = [];
+    for (const g of item.optionGroups) if (g.required && missingGroups.some((m) => m.id === g.id)) out.push({ id: `item-group-${g.id}`, label: g.label });
+    if (!isValidQuantity(quantity, maxQuantity)) out.push({ id: "item-qty", label: "Quantity" });
+    if (fieldErrors.name) out.push({ id: "item-name", label: "Name" });
+    if (fieldErrors.email) out.push({ id: "item-email", label: "Email" });
+    if (fieldErrors.note) out.push({ id: "item-note", label: "Note" });
+    return out;
+  });
+  const quantityInvalid = $derived(!isValidQuantity(quantity, maxQuantity) && (showErrors || quantityNotice !== ""));
   const missingIds = $derived(new Set(missingGroups.map((g) => g.id)));
 
   async function submit() {
@@ -187,9 +190,9 @@
     announce("");
 
     if (result.ok && result.id !== undefined && result.priceCents !== undefined) {
-      // The order is placed: a shared device shouldn't keep the visitor's name and email around.
+      // Name and email stay in the in-memory store so "Order another item" doesn't ask again; "Not you? Clear"
+      // empties them, and a reload does too.
       const sentEmail = email.trim();
-      clearVisitor();
       onordered({
         id: result.id,
         reference: result.reference,
@@ -300,28 +303,29 @@
       </div>
     {/each}
 
-    <label class="field">
-      <span>Quantity</span>
+    <div class="field">
+      <label for="item-qty">Quantity</label>
       <input
+        id="item-qty"
         type="number"
         min="1"
         max={maxQuantity}
         step="1"
         bind:value={quantity}
-        oninput={(e) => {
-          // The clamp effect runs between the bind and this handler and has already rewritten the box to the
-          // clamped value, so keep the notice while the box still shows exactly that; any other edit clears it.
-          if (Number(e.currentTarget.value) !== lastClampedTo) quantityClampNotice = "";
+        onchange={(e) => {
+          // "1e3" stays on screen as typed; show the number it prices.
+          const plain = normalizedQuantityText(e.currentTarget.value);
+          if (plain !== null) e.currentTarget.value = plain;
         }}
         required
         aria-invalid={quantityInvalid ? "true" : undefined}
         aria-describedby="item-qty-notice"
       />
-    </label>
-    <!-- Outside the <label> so the notices aren't part of the field's name, and always mounted so the live
-         region announces text changes (WCAG 1.3.1, 4.1.3). -->
+    </div>
+    <!-- Outside the field so the notices aren't part of its name, and always mounted so the live region
+         announces text changes (WCAG 1.3.1, 4.1.3). The quantity message shows here and nowhere else. -->
     <div id="item-qty-notice" role="status">
-      {#if quantityClampNotice}<p class="clamp-notice">{quantityClampNotice}</p>{/if}
+      {#if quantityError}<p class="warn-text qty-error">{quantityError}</p>{/if}
       {#if showMadeToOrderNotice}
         <p class="advisory-text">Made to order. Larger quantities may take longer.</p>
       {/if}
@@ -356,6 +360,9 @@
       />
       {#if emailError}<small class="warn-text" id="item-email-err">{emailError}</small>{/if}
     </div>
+    {#if visitor.name !== "" || visitor.email !== ""}
+      <button type="button" class="quiet inline-link not-you" onclick={clearVisitor}>Not you? Clear name and email</button>
+    {/if}
     <div class="field">
       <label for="item-note">Note (optional)</label>
       <textarea
@@ -381,7 +388,7 @@
             {/if}
           </p>
         {:else}
-          <p class="muted">Enter a whole number from 1 to {maxQuantity} to see a total.</p>
+          <p class="muted">Enter a whole number from 1 to {maxQuantity.toLocaleString("en-US")} to see a total.</p>
         {/if}
       </div>
       <p class="muted shipping-note">Shipping, if any, is confirmed by email.</p>
@@ -390,11 +397,12 @@
     <!-- Persistent alert container with a plain list inside (WCAG 1.3.1, 4.1.3). -->
     <div role="alert">
       {#if visibleRateLimited}
-        <p class="warn-text">{rateLimitMessage(branding)}</p>
+        <RateLimitNotice {branding} />
       {/if}
-      {#if summaryErrors.length > 0 || visibleServerErrors.length > 0}
+      <FormErrorSummary problems={summaryProblems} />
+      {#if visibleServerErrors.length > 0}
         <ul class="error-list">
-          {#each new Set([...summaryErrors, ...visibleServerErrors]) as e (e)}<li class="warn-text">{e}</li>{/each}
+          {#each new Set(visibleServerErrors) as e (e)}<li class="warn-text">{e}</li>{/each}
         </ul>
       {/if}
     </div>
@@ -425,7 +433,7 @@
   .back { margin-top: var(--space-1); }
   .esc-hint { color: var(--muted); font-size: var(--text-sm); }
   /* No keyboard on a touch screen, so the hint is noise there. */
-  @media (hover: none) {
+  @media (hover: none), (pointer: coarse) {
     .esc-hint { display: none; }
   }
 
@@ -489,7 +497,11 @@
    * dominant. */
   .per-unit { font-weight: 400; font-size: var(--text-base); color: var(--muted); }
 
-  .clamp-notice { color: var(--warn); font-size: var(--text-sm); margin: 0.3rem 0 0; }
+  .qty-error { font-size: var(--text-sm); margin: 0.3rem 0 0; }
+  .not-you { align-self: flex-start; }
+  @media (max-width: 600px) {
+    .not-you { min-height: 44px; }
+  }
   .error-list { list-style: none; margin: 0; padding: 0; }
   .error-list li { margin: 0.2rem 0; }
   /* In flight: aria-disabled keeps focus on the button, so the busy look is visual only. */

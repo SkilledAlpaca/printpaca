@@ -190,8 +190,10 @@ test("estimate errors name the blocker and clear as soon as it is fixed", async 
   await expect(page.locator(".estimate")).toContainText("Choose a material.");
 
   await page.getByRole("button", { name: "Request an estimate" }).click();
-  const alert = page.getByRole("alert").filter({ hasText: "Choose a material." });
-  await expect(alert).toBeVisible();
+  // The message sits under the field, once; the line above the button links to it.
+  const alert = page.locator("#quote-material-err");
+  await expect(alert).toHaveText("Choose a material.");
+  await expect(page.getByText("Choose a material.")).toHaveCount(1);
   await expect(page.getByLabel("Material")).toBeFocused();
   await expect(page.getByLabel("Material")).toHaveAttribute("aria-invalid", "true");
 
@@ -201,13 +203,14 @@ test("estimate errors name the blocker and clear as soon as it is fixed", async 
 
   // A bad value is named, not hidden behind a generic prompt.
   await page.getByLabel("Model weight (g)").fill("200000");
-  await expect(page.locator(".estimate")).toContainText("Weight must be from 0 to 100,000 g.");
+  await expect(page.locator("#quote-weight-err")).toHaveText("Weight must be from 0 to 100,000 g.");
   await page.getByLabel("Model weight (g)").fill("20");
   await page.getByLabel(/^Print time \(h/).fill("1");
   await page.getByLabel(/Print time \(minutes\)/).fill("90");
   await page.getByRole("button", { name: "Request an estimate" }).click();
   await expect(page.getByLabel(/Print time \(minutes\)/)).toBeFocused();
-  await expect(page.getByRole("alert").filter({ hasText: "Minutes must be from 0 to 59." })).toBeVisible();
+  await expect(page.locator("#quote-time-err")).toHaveText("Minutes must be from 0 to 59.");
+  await expect(page.getByText("Minutes must be from 0 to 59.")).toHaveCount(1);
 });
 
 test("items have their own URL: Back, reload and a shared link work", async ({ page }) => {
@@ -274,10 +277,14 @@ test("quantity: no total for an invalid value, and the clamp names the limit", a
   await page.getByLabel("Quantity").fill("2.5");
   await expect(total).toHaveCount(0);
 
-  // Stock caps at 5 here, so the message says stock, not a per-order maximum.
+  // Stock caps at 5 here, so the message says stock, not a per-order maximum. The value stays as typed and
+  // no total shows while it is over the cap.
   await page.getByLabel("Quantity").fill("50");
   await expect(page.getByText("Only 5 in stock.")).toBeVisible();
-  await expect(page.getByLabel("Quantity")).toHaveValue("5");
+  await expect(page.getByLabel("Quantity")).toHaveValue("50");
+  await expect(total).toHaveCount(0);
+  await page.getByLabel("Quantity").fill("5");
+  await expect(total).toContainText("$35.00");
 });
 
 test("an order shows a short reference and what happens next, and another can be placed", async ({ page, request }) => {
@@ -301,4 +308,192 @@ test("an order shows a short reference and what happens next, and another can be
 
   await page.getByRole("button", { name: "Order another item" }).click();
   await expect(page.getByRole("button", { name: new RegExp(ITEM) })).toBeVisible();
+});
+
+// Round 3 polish batch: public items 1-8.
+
+async function setMaxOrderQty(request: import("@playwright/test").APIRequestContext, qty: number): Promise<void> {
+  // Start from the live config: it already has PLA public, which originalConfig (the pre-test state) does not.
+  const cfg = (await (await request.get("/admin/api/settings")).json()).config as { shop?: { maxOrderQty: number } };
+  cfg.shop = { maxOrderQty: qty };
+  const res = await request.put("/admin/api/settings", { data: { config: cfg } });
+  expect(res.ok()).toBe(true);
+}
+
+test("the price heading says Price until a price can be computed, and a slicer file is explained", async ({ page }) => {
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.71" });
+  await page.goto("/order#/estimate");
+  await expect(page.locator(".intro")).not.toContainText(/instant/i);
+  await expect(page.getByText(/the\s+program that prepares a model for printing/)).toBeVisible();
+  await page.getByLabel("Material").selectOption("PLA");
+  await dropStl(page, "cube.stl", 20);
+  await expect(page.getByText("We'll confirm the price after we prepare your file for printing.")).toBeVisible();
+  await expect(page.locator("#estimate-label")).toHaveText("Price");
+  await page.getByLabel(/^Print time \(h/).fill("1");
+  await expect(page.locator(".estimate .price")).toContainText("$");
+  await expect(page.locator("#estimate-label")).toHaveText("Estimated price");
+});
+
+test("a blocked submit opens the hidden Solidity field, focuses it, and shows its error once", async ({ page }) => {
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.72" });
+  await page.goto("/order#/estimate");
+  await page.getByLabel("Material").selectOption("PLA");
+  await dropStl(page, "cube.stl", 20);
+  await page.getByLabel(/^Print time \(h/).fill("1");
+  await page.getByText("How we estimated this").click();
+  await page.getByLabel("Solidity (%)").fill("150");
+  // No price while Solidity is invalid.
+  await expect(page.locator(".estimate .price")).toHaveCount(0);
+  // Collapse the section, then submit: it reopens with focus on the field.
+  await page.getByText("How we estimated this").click();
+  await expect(page.getByLabel("Solidity (%)")).toBeHidden();
+  await page.getByLabel("Name").fill(`${PREFIX} Solidity`);
+  await page.getByLabel("Email").fill("usability@example.com");
+  await page.getByRole("button", { name: "Request an estimate" }).click();
+  await expect(page.getByLabel("Solidity (%)")).toBeFocused();
+  await expect(page.locator("#quote-solidity-err")).toHaveText("Solidity must be from 5 to 100%.");
+  await expect(page.getByText("Solidity must be from 5 to 100%.")).toHaveCount(1);
+  await expect(page.locator(".error-summary")).toContainText("1 field needs attention");
+  await expect(page.locator(".error-summary a")).toHaveText("Solidity");
+  // No price for an invalid print time either.
+  await page.getByLabel("Solidity (%)").fill("20");
+  await page.getByLabel(/Print time \(minutes\)/).fill("90");
+  await expect(page.locator(".estimate .price")).toHaveCount(0);
+  await expect(page.locator(".error-summary")).toContainText("Print time");
+  await page.locator(".error-summary a").click();
+  await expect(page.getByLabel(/Print time \(minutes\)/)).toBeFocused();
+  expect(page.url()).toMatch(/#\/estimate$/);
+});
+
+test("quantity: no total above the cap, scientific notation is normalised, and the cap uses a separator", async ({ page, request }) => {
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.73" });
+  try {
+    await setMaxOrderQty(request, 1500);
+    await page.goto("/order#/estimate");
+    await page.getByLabel("Material").selectOption("PLA");
+    await page.getByLabel("Model weight (g)").fill("20");
+    await page.getByLabel(/^Print time \(h/).fill("1");
+    await expect(page.locator(".estimate .price")).toContainText("$");
+
+    await page.getByLabel("Quantity").fill("1501");
+    await expect(page.locator("#quote-qty-notice")).toHaveText("Max 1,500 per order.");
+    await expect(page.locator(".estimate .price")).toHaveCount(0);
+    await expect(page.getByLabel("Quantity")).toHaveValue("1501");
+
+    await page.getByLabel("Quantity").fill("1e3");
+    await page.getByLabel("Name").focus();
+    await expect(page.getByLabel("Quantity")).toHaveValue("1000");
+    await expect(page.locator("#quote-qty-notice")).toHaveText("");
+    await expect(page.locator(".estimate .price")).toContainText("$");
+
+    // The setting is the cap: lowering it makes the same quantity too large.
+    await setMaxOrderQty(request, 100);
+    await page.reload();
+    await page.getByLabel("Quantity").fill("101");
+    await expect(page.locator("#quote-qty-notice")).toHaveText("Max 100 per order.");
+  } finally {
+    await setMaxOrderQty(request, 100);
+  }
+});
+
+test("name and email carry over to another order, can be cleared, and are gone after a reload", async ({ page }) => {
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.74" });
+  await page.goto("/order");
+  await page.getByRole("button", { name: new RegExp(ITEM) }).click();
+  await page.getByLabel("Color").selectOption({ label: "Sage" });
+  await page.getByLabel("Name").fill(`${PREFIX} Repeat`);
+  await page.getByLabel("Email").fill("repeat@example.com");
+  await page.getByRole("button", { name: "Place order" }).click();
+  await expect(page.getByRole("heading", { name: "Order received" })).toBeVisible();
+  createdRefs.push(((await page.locator(".confirmation .ref").textContent()) ?? "").replace("Reference: ", "").trim());
+  // The reference is prominent and comes with a save hint.
+  await expect(page.locator(".confirmation .ref strong")).toBeVisible();
+  await expect(page.locator(".confirmation .ref-hint")).toContainText("Save this reference");
+
+  await page.getByRole("button", { name: "Order another item" }).click();
+  await page.getByRole("button", { name: new RegExp(ITEM) }).click();
+  await expect(page.getByLabel("Name")).toHaveValue(`${PREFIX} Repeat`);
+  await expect(page.getByLabel("Email")).toHaveValue("repeat@example.com");
+
+  await page.getByRole("button", { name: "Not you? Clear name and email" }).click();
+  await expect(page.getByLabel("Name")).toHaveValue("");
+  await expect(page.getByLabel("Email")).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Not you? Clear name and email" })).toHaveCount(0);
+
+  await page.getByLabel("Name").fill("Someone");
+  await page.reload();
+  await expect(page.getByLabel("Name")).toHaveValue("");
+});
+
+test("an estimate's name and email carry over to Request another estimate", async ({ page }) => {
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.75" });
+  await page.goto("/order#/estimate");
+  await page.getByLabel("Material").selectOption("PLA");
+  await page.getByLabel("Model weight (g)").fill("20");
+  await page.getByLabel(/^Print time \(h/).fill("1");
+  await page.getByLabel("Name").fill(`${PREFIX} Again`);
+  await page.getByLabel("Email").fill("again@example.com");
+  await page.getByRole("button", { name: "Request an estimate" }).click();
+  await expect(page.getByRole("heading", { name: "Request received" })).toBeVisible();
+  createdRefs.push(((await page.locator(".confirmation .ref").textContent()) ?? "").replace("Reference: ", "").trim());
+  await page.getByRole("button", { name: "Request another estimate" }).click();
+  await expect(page.getByLabel("Name")).toHaveValue(`${PREFIX} Again`);
+  await expect(page.getByLabel("Email")).toHaveValue("again@example.com");
+});
+
+test.describe("phone", () => {
+  test("tap targets are 44 px, the Esc hint is hidden, and rate-limit contacts are links", async ({ browser }) => {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      isMobile: true,
+      extraHTTPHeaders: { "X-Forwarded-For": "203.0.113.76" },
+    });
+    const page = await context.newPage();
+    try {
+      // Give the shop contact details so the footer and the rate-limit message have something to link.
+      await page.route("**/api/public/config", async (route) => {
+        const res = await route.fetch();
+        const body = await res.json();
+        body.branding.email = "shop@example.com";
+        body.branding.phone = "555-010-0142";
+        await route.fulfill({ response: res, json: body });
+      });
+      await page.route("**/api/public/quote-request", (route) =>
+        route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ errors: ["slow down"] }) }),
+      );
+      await page.goto("/order#/estimate");
+      await page.getByLabel("Material").selectOption("PLA");
+      await dropStl(page, "cube.stl", 20);
+
+      for (const name of ["Rotate left", "Rotate right", "Reset view"]) {
+        const box = await page.getByRole("button", { name }).boundingBox();
+        expect(box?.height ?? 0, name).toBeGreaterThanOrEqual(44);
+      }
+      const links = page.locator(".shop-footer a");
+      expect(await links.count()).toBeGreaterThan(1);
+      for (let i = 0; i < (await links.count()); i++) {
+        const box = await links.nth(i).boundingBox();
+        expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+      }
+
+      await page.getByLabel("Name").fill(`${PREFIX} Limited`);
+      await page.getByLabel("Email").fill("limited@example.com");
+      await page.getByRole("button", { name: "Request an estimate" }).click();
+      const notice = page.locator(".rate-limited");
+      await expect(notice.getByRole("link", { name: "shop@example.com" })).toHaveAttribute("href", "mailto:shop@example.com");
+      const phone = notice.getByRole("link", { name: "555-010-0142" });
+      await expect(phone).toHaveAttribute("href", "tel:5550100142");
+      const lineHeight = await phone.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight) || 20);
+      expect((await phone.boundingBox())?.height ?? 0).toBeLessThan(lineHeight * 1.6);
+
+      // The Esc hint is for keyboards.
+      await page.route("**/api/public/quote-request", (route) => route.continue());
+      await page.goto("/order");
+      await page.getByRole("button", { name: new RegExp(ITEM) }).click();
+      await expect(page.getByText("Press Esc to go back.")).toBeHidden();
+    } finally {
+      await context.close();
+    }
+  });
 });

@@ -32,6 +32,7 @@ function baseConfig(): ServerConfig {
     integrationsUrls: { spoolmanUrl: "", moonrakerUrl: "", fluiddUrl: "" },
     ui: { disabledTabs: [] },
     site: { shopOnMainPort: true, staffLink: true, adminUrl: "" },
+    shop: { maxOrderQty: 100 },
     users: { multiUser: false, accessAdminEmail: "" },
   };
 }
@@ -78,6 +79,7 @@ describe("errorSection", () => {
     ["quote.validDays: must be >= 0", "quote"],
     ["invoicing.dueDays: 400 out of range [0,365]", "invoicing"],
     ["publicQuotes.printer: \"x\" not in printers", "publicQuotes"],
+    ["shop.maxOrderQty: must be a whole number from 1 to 10000", "shop"],
     ["smtp.port: 70000 out of range [1,65535]", "smtp"],
     ["ui.disabledTabs[0]: \"nope\" is not a valid tab id", "ui"],
     ["users.multiUser: requires ADMIN_PASSWORD to be set -- enable authentication before turning on multi-user mode", "users"],

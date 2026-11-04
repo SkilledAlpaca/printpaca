@@ -307,3 +307,11 @@
 #   shopOnMainPort: true
 #   staffLink: true
 #   adminUrl: ""     # for example, https://admin.example.com/admin/
+
+# ---------------------------------------------------------------------------
+# shop: limits for the customer-facing shop. maxOrderQty is the largest
+# quantity one estimate request or gallery order may carry (1 to 10000). The
+# page and the server both enforce it. A change applies without a restart.
+# ---------------------------------------------------------------------------
+# shop:
+#   maxOrderQty: 100

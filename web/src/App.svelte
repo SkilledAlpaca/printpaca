@@ -50,7 +50,7 @@
   import { pageSave, runPageSave } from "./lib/pageShortcuts.svelte";
   import { unsavedForm } from "./lib/unsavedForm.svelte";
   import { unreadRequests, refreshUnread } from "./lib/requestsBadge.svelte";
-  import { fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab } from "./lib/navFilter";
+  import { brandTab, fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab } from "./lib/navFilter";
   import { loadPublicConfig } from "./public/api";
   import { splitHash, quoteRouteBase, quoteIdFromHash } from "./lib/hashRoute";
   import { focusAfterUpdate } from "./lib/a11y.svelte";
@@ -546,7 +546,7 @@
   // drawer, the same markup. "guide" is absent on purpose: it is reached from the sidebar footer link (in the
   // drawer too), so it stays reachable at every width; #/guide remains a valid Tab and deep link.
   const NAV_SECTIONS: { label: string | null; items: Tab[] }[] = [
-    { label: "Sell", items: ["quote", "quotes", "requests", "invoices", "items", "clients", "dashboard"] },
+    { label: "Sell", items: ["quote", "dashboard", "quotes", "requests", "invoices", "items", "clients"] },
     { label: "Costs", items: ["filament", "electricity", "printers"] },
     { label: null, items: ["settings"] },
   ];
@@ -694,8 +694,9 @@
   let failedLogoUrl = $state("");
   const brandLogoSrc = $derived(brandSource?.logoUrl && brandSource.logoUrl !== failedLogoUrl ? brandSource.logoUrl : logoUrl);
 
-  // The brand link goes to the first tab in the nav (New quote for most people), like the Home link on a site.
-  const homeTab = $derived(firstNavTab(navSections) ?? "quote");
+  // The brand link goes to the Dashboard (D22) for anyone whose nav has it, else to the first tab in their nav
+  // (New quote for most people), like the Home link on a site.
+  const homeTab = $derived(brandTab(navSections, "dashboard") ?? "quote");
   // Moves focus to the view's h1 (tabindex -1 so it can take script focus), the same landing spot a screen
   // reader user gets from the skip link's neighbours. activate() has already closed the drawer and queued its
   // own focus on <main>; this runs after the new tab has rendered and refines it.

@@ -373,7 +373,7 @@ func TestPublicIndexHandlerFailsClosed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			handler := publicIndexHandler(tc.fsys)
+			handler := publicIndexHandler(tc.fsys, stubShopConfig)
 
 			rec := serveReq(handler, httptest.NewRequest("GET", "/", nil))
 			if rec.Code != http.StatusServiceUnavailable {
@@ -401,7 +401,7 @@ func TestPublicIndexHandlerServesPublicHTML(t *testing.T) {
 		"assets/app.js":        {Data: []byte("console.log('public')")},
 		"public-manifest.json": {Data: []byte(`["public.html", "assets/app.js"]`)},
 	}
-	handler := publicIndexHandler(sub)
+	handler := publicIndexHandler(sub, stubShopConfig)
 
 	rec := serveReq(handler, httptest.NewRequest("GET", "/", nil))
 	if rec.Code != http.StatusOK {
@@ -442,7 +442,7 @@ func TestPublicIndexHandlerEnforcesManifestAllowlist(t *testing.T) {
 		"assets/main-xyz789.js":  {Data: []byte("the whole admin SPA bundle")},
 		"assets/main-xyz789.css": {Data: []byte("the whole admin SPA stylesheet")},
 	}
-	handler := publicIndexHandler(sub)
+	handler := publicIndexHandler(sub, stubShopConfig)
 
 	// Every manifested file resolves 200 -- public.html itself served at
 	// "/", everything else at its own manifest path.
@@ -484,7 +484,7 @@ func TestPublicIndexHandlerServesGzipVariant(t *testing.T) {
 		},
 		"public-manifest.json": {Data: []byte(`["public.html", "assets/public-abc123.js"]`)},
 	}
-	handler := publicIndexHandler(sub)
+	handler := publicIndexHandler(sub, stubShopConfig)
 
 	req := httptest.NewRequest(http.MethodGet, "/assets/public-abc123.js", nil)
 	req.Header.Set("Accept-Encoding", "gzip")
@@ -526,7 +526,7 @@ func TestPublicIndexHandlerNotFoundHasNoImmutableCacheControl(t *testing.T) {
 		"assets/public-abc123.js": {Data: []byte("console.log('public')")},
 		"public-manifest.json":    {Data: []byte(`["public.html", "assets/public-abc123.js"]`)},
 	}
-	handler := publicIndexHandler(sub)
+	handler := publicIndexHandler(sub, stubShopConfig)
 
 	// A well-formed but non-allowlisted /assets/<name> path.
 	rec := serveReq(handler, httptest.NewRequest("GET", "/assets/not-on-manifest.js", nil))

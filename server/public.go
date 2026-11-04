@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"io/fs"
 	"log"
@@ -274,7 +275,10 @@ type publicShop struct {
 	PausedMessage string `json:"pausedMessage"`
 	// DefaultView is the view the shop opens on: "estimate" only when estimates are on and either the owner
 	// chose it or the gallery is off; otherwise "gallery".
-	DefaultView  string           `json:"defaultView"`
+	DefaultView string `json:"defaultView"`
+	// PageTitle is the resolved shop title (Config.shopTitle): shop.pageTitle, else the business name, else
+	// "Shop". The page composes its tab title from it, and the server puts it in the <title> of the shop HTML.
+	PageTitle    string           `json:"pageTitle"`
 	Heading      string           `json:"heading"`
 	Announcement string           `json:"announcement"`
 	HeroImage    *publicHeroImage `json:"heroImage"`
@@ -322,6 +326,7 @@ func publicShopFromConfig(cfg *Config) publicShop {
 		AcceptingOrders: s.AcceptingOrders,
 		PausedMessage:   paused,
 		DefaultView:     view,
+		PageTitle:       cfg.shopTitle(),
 		Heading:         s.Heading,
 		Announcement:    s.Announcement,
 		ShowStock:       s.ShowStock,
@@ -398,56 +403,98 @@ func publicPortStaffURL(cfg *Config) string {
 	return cfg.Site.AdminURL
 }
 
+// buildPublicConfig assembles the public config for one Config snapshot. GET /api/public/config serves it and
+// the shop HTML embeds it (renderShopHTML), so the two can never disagree about what is public.
+func buildPublicConfig(cfg *Config, demoMode bool, staffURL staffURLFunc) publicConfigResponse {
+	materials := []publicMaterial{}
+	for _, m := range cfg.Materials {
+		if !m.Public {
+			continue
+		}
+		materials = append(materials, publicMaterial{
+			Name:    m.Name,
+			Density: m.Density,
+		})
+	}
+
+	var printer Printer
+	for _, p := range cfg.Printers {
+		if p.ID == cfg.PublicQuotes.Printer {
+			printer = p
+			break
+		}
+	}
+
+	resp := publicConfigResponse{
+		StaffUrl:           staffURL(cfg),
+		IntroText:          cfg.PublicQuotes.IntroText,
+		Currency:           cfg.Currency,
+		Materials:          materials,
+		FilamentDiameterMm: printer.FilamentDiameterMm,
+		MaxUploadBytes:     publicMaxUploadBytes,
+		DemoMode:           demoMode,
+		MaxOrderQty:        cfg.maxOrderQty(),
+		Shop:               publicShopFromConfig(cfg),
+	}
+	resp.Branding.BusinessName = cfg.Quote.BusinessName
+	resp.Branding.LogoURL = cfg.Quote.LogoURL
+	// shop.showContact off means the details are not served at all, not merely hidden in the footer.
+	if cfg.Shop.ShowContact {
+		resp.Branding.Email = cfg.Quote.Email
+		resp.Branding.Phone = cfg.Quote.Phone
+		resp.Branding.Address = cfg.Quote.Address
+	}
+	return resp
+}
+
 // handlePublicConfig serves the Config subset the public page needs; prices: POST /api/public/quote/preview.
 func handlePublicConfig(store *ConfigStore, demoMode bool, staffURL staffURLFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 
-		cfg := store.Get() // one snapshot for this request
-		materials := []publicMaterial{}
-		for _, m := range cfg.Materials {
-			if !m.Public {
-				continue
-			}
-			materials = append(materials, publicMaterial{
-				Name:    m.Name,
-				Density: m.Density,
-			})
-		}
-
-		var printer Printer
-		for _, p := range cfg.Printers {
-			if p.ID == cfg.PublicQuotes.Printer {
-				printer = p
-				break
-			}
-		}
-
-		resp := publicConfigResponse{
-			StaffUrl:           staffURL(cfg),
-			IntroText:          cfg.PublicQuotes.IntroText,
-			Currency:           cfg.Currency,
-			Materials:          materials,
-			FilamentDiameterMm: printer.FilamentDiameterMm,
-			MaxUploadBytes:     publicMaxUploadBytes,
-			DemoMode:           demoMode,
-			MaxOrderQty:        cfg.maxOrderQty(),
-			Shop:               publicShopFromConfig(cfg),
-		}
-		resp.Branding.BusinessName = cfg.Quote.BusinessName
-		resp.Branding.LogoURL = cfg.Quote.LogoURL
-		// shop.showContact off means the details are not served at all, not merely hidden in the footer.
-		if cfg.Shop.ShowContact {
-			resp.Branding.Email = cfg.Quote.Email
-			resp.Branding.Phone = cfg.Quote.Phone
-			resp.Branding.Address = cfg.Quote.Address
-		}
-
+		resp := buildPublicConfig(store.Get(), demoMode, staffURL) // one snapshot for this request
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			log.Printf("public config encode: %v", err)
 		}
 	}
+}
+
+// publicConfigFunc returns the public config for the current settings snapshot.
+type publicConfigFunc func() publicConfigResponse
+
+// renderShopHTML fills the shop's head from the live settings (D30), so a hard refresh paints the owner's
+// own title, description and config, never built-in defaults: <title> is the shop title, the description meta
+// is the intro (when there is one), and the config is embedded as a JSON data block the page reads
+// synchronously. The block is type="application/json", which the browser never executes, so the CSP needs no
+// unsafe-inline. json.Marshal escapes <, > and & (and U+2028/2029), so no value can close the script element
+// or open a comment. It returns false when the template has no <title>..</title> to fill.
+func renderShopHTML(tmpl string, cfg publicConfigResponse) ([]byte, bool) {
+	start := strings.Index(tmpl, "<title>")
+	if start < 0 {
+		return nil, false
+	}
+	end := strings.Index(tmpl[start:], "</title>")
+	if end < 0 {
+		return nil, false
+	}
+	end += start + len("</title>")
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, false
+	}
+	var b strings.Builder
+	b.Grow(len(tmpl) + len(data) + 256)
+	b.WriteString(tmpl[:start])
+	b.WriteString("<title>" + html.EscapeString(cfg.Shop.PageTitle) + "</title>")
+	if intro := strings.TrimSpace(cfg.IntroText); intro != "" {
+		b.WriteString(`<meta name="description" content="` + html.EscapeString(intro) + `">`)
+	}
+	b.WriteString(`<script type="application/json" id="shop-config">`)
+	b.Write(data)
+	b.WriteString(`</script>`)
+	b.WriteString(tmpl[end:])
+	return []byte(b.String()), true
 }
 
 // handlePublicCustomCss serves the top-level customCss config key verbatim as a stylesheet, registered
@@ -1704,10 +1751,17 @@ func loadPublicManifest(sub fs.FS) map[string]struct{} {
 // (index.html, assets/main-*.js/css) still 404s here.
 // .gz siblings are negotiated via serveGzipVariant. The allowlist checks the requested plain path
 // (".../app.js"), so no manifest change is needed.
-func publicIndexHandler(sub fs.FS) http.Handler {
+func publicIndexHandler(sub fs.FS, config publicConfigFunc) http.Handler {
 	assets := http.FileServerFS(sub)
 	_, statErr := fs.Stat(sub, "public.html")
 	hasPublicHTML := statErr == nil
+	// The shop HTML is read once; each request fills its head from the live settings (renderShopHTML).
+	var shopTemplate string
+	if hasPublicHTML {
+		if data, err := fs.ReadFile(sub, "public.html"); err == nil {
+			shopTemplate = string(data)
+		}
+	}
 	allowed := loadPublicManifest(sub)
 
 	// buildBroken is the fail-closed check: public.html with no (or an empty) manifest guarantees every
@@ -1749,12 +1803,16 @@ func publicIndexHandler(sub fs.FS) http.Handler {
 			serveUnavailable(w)
 			return
 		}
-		r2 := r.Clone(r.Context())
-		r2.URL.Path = "/public.html"
-		if serveGzipVariant(w, r2, sub) {
-			return
+		page, ok := renderShopHTML(shopTemplate, config())
+		if !ok {
+			log.Printf("public listener: public.html has no <title> to fill; serving it unrendered")
+			page = []byte(shopTemplate)
 		}
-		assets.ServeHTTP(w, r2)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		if r.Method != http.MethodHead {
+			w.Write(page)
+		}
 	})
 }
 
@@ -1821,7 +1879,9 @@ func buildPublicMuxShared(store *ConfigStore, db *sql.DB, configDir string, shar
 	if err != nil {
 		panic(err) // embedded FS shape is a build-time invariant
 	}
-	mux.Handle("GET /", publicIndexHandler(sub))
+	mux.Handle("GET /", publicIndexHandler(sub, func() publicConfigResponse {
+		return buildPublicConfig(store.Get(), demoMode, staffURL)
+	}))
 
 	return mux
 }

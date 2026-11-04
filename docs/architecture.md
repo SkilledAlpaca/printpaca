@@ -76,7 +76,7 @@ The shop uses hash routes (`#/item/<id>`, `#/estimate`, and two confirmation rou
 
 Both listeners mount the same public routes over one shared set of rate limiters, one upload semaphore, and one notification queue (`publicShared`), so a visitor gets one budget whichever port they use. `site.shopOnMainPort` turns the public routes off on `PORT`.
 
-The embedded SPA is one Vite build with two entries and a relative base: `index.html` is served at `/admin/` and `public.html` at `/` and `/order`. The admin SPA calls its API with relative URLs (`api/...`), so it works under any prefix. `server/static.go` serves the admin entry; `server/public.go` serves the public entry from an allowlist (`public-manifest.json`). For the admin app's security model, see [Authentication](configuration.md#authentication), and for the routing table, see [Routing and hostnames](configuration.md#routing-and-hostnames).
+The embedded SPA is one Vite build with two entries and a relative base: `index.html` is served at `/admin/` and `public.html` at `/` and `/order`. The server renders `public.html` per request: it fills `<title>` and the description meta from the shop settings and embeds the public config as a JSON block (`#shop-config`), so a hard refresh paints the owner's shop with no flash of defaults. The admin SPA calls its API with relative URLs (`api/...`), so it works under any prefix. `server/static.go` serves the admin entry; `server/public.go` serves the public entry from an allowlist (`public-manifest.json`). For the admin app's security model, see [Authentication](configuration.md#authentication), and for the routing table, see [Routing and hostnames](configuration.md#routing-and-hostnames).
 
 ## Security posture
 

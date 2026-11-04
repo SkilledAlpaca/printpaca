@@ -306,14 +306,38 @@ for (const scheme of ["light", "dark"] as const) {
   });
 }
 
-// D30: shop.pageTitle is added on the server by the shop-head lane. Enable this once both lanes are merged.
-test.fixme("the Browser tab title saves and reaches the public page title", async ({ page, request }) => {
+// D30: the Browser tab title reaches /api/public/config and the server-rendered <title> of the shop's HTML.
+test("the Browser tab title saves and reaches the public config and the served HTML", async ({ page, request }) => {
+  const title = "Zephyr Tab Title";
+  const businessName = "Zephyr Prints";
+  const seeded = await getConfig(request);
+  seeded.quote.businessName = businessName;
+  await putConfig(request, seeded);
+  try {
   await gotoSettings(page);
   const card = storefront(page);
-  await card.getByLabel("Browser tab title").fill("Alpaca Prints");
+  await card.getByLabel("Browser tab title").fill(title);
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Settings saved.")).toBeVisible();
-  await expect.poll(async () => (await getConfig(request)).shop.pageTitle).toBe("Alpaca Prints");
+  await expect.poll(async () => (await getConfig(request)).shop.pageTitle).toBe(title);
+  expect((await publicConfig(request)).shop.pageTitle).toBe(title);
+  const html = await (await request.get("/")).text();
+  expect(html).toContain(`<title>${title}</title>`);
   await page.goto("/");
-  await expect(page).toHaveTitle(/Alpaca Prints/);
+  await expect(page).toHaveTitle(new RegExp(`${title}$`)); // an inner page puts its own name first
+
+  // Emptying the field falls back to the business name, in the public config and in the HTML.
+  await gotoSettings(page);
+  await storefront(page).getByLabel("Browser tab title").fill("");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Settings saved.")).toBeVisible();
+  await expect.poll(async () => (await getConfig(request)).shop.pageTitle).toBe("");
+  expect((await publicConfig(request)).shop.pageTitle).toBe(businessName);
+  const fallbackHtml = await (await request.get("/")).text();
+  expect(fallbackHtml).toContain(`<title>${businessName}</title>`);
+  } finally {
+    const config = await getConfig(request);
+    config.quote.businessName = original.quote.businessName;
+    await putConfig(request, config);
+  }
 });

@@ -10,7 +10,7 @@ const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 test("the form has three numbered sections and the summary holds the save fields", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.goto("/admin/");
-  for (const legend of ["1. Model and print time", "2. Material and printer", "3. Price"]) {
+  for (const legend of ["Step 1: Model and print time", "Step 2: Material and printer", "Step 3: Price"]) {
     await expect(page.getByRole("group", { name: legend })).toBeVisible();
   }
   const summary = page.getByRole("group", { name: "Quote summary" });
@@ -25,7 +25,7 @@ test("two columns from 1100px: the summary sits right of the form and stays reac
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.goto("/admin/");
   await fillCanonicalQuote(page);
-  const form = await page.getByRole("group", { name: "1. Model and print time" }).boundingBox();
+  const form = await page.getByRole("group", { name: "Step 1: Model and print time" }).boundingBox();
   const summary = page.getByRole("group", { name: "Quote summary" });
   const box = await summary.boundingBox();
   expect(box!.x).toBeGreaterThan(form!.x + form!.width - 1);
@@ -35,7 +35,10 @@ test("two columns from 1100px: the summary sits right of the form and stays reac
   const save = summary.getByRole("button", { name: "Save quote" });
   await expect(save).toBeInViewport();
   const after = await summary.boundingBox();
+  // At the end of the page the summary's top (the price) is still on screen, and so is its bottom.
+  expect(after!.y).toBeGreaterThanOrEqual(0);
   expect(after!.y + after!.height).toBeLessThanOrEqual(768);
+  await expect(summary.getByText("Client price", { exact: true })).toBeInViewport();
 });
 
 test("below 1100px one column, with a compact summary pinned to the bottom that expands to the full one", async ({ page }) => {
@@ -157,4 +160,70 @@ test("a missing-field link inside More pricing options opens it and focuses the 
   await link.click();
   await expect(more).toHaveAttribute("open", "");
   await expect(page.getByLabel(/^Tax \(included in price\)/)).toBeFocused();
+});
+
+test("the client price is the headline, and the drop zone is compact", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/admin/");
+  await fillCanonicalQuote(page);
+  await page.getByLabel("Set a selling price").check();
+  const summary = page.getByRole("group", { name: "Quote summary" });
+  const headline = summary.locator(".stat-value.headline");
+  await expect(headline).toHaveText("$3.20");
+  const size = (loc: typeof headline) => loc.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  const headlineSize = await size(headline);
+  for (const label of ["Your cost", "Profit", "Margin"]) {
+    const value = summary.locator(".stat", { hasText: label }).locator(".stat-value");
+    expect(await size(value), `${label} is smaller than the price`).toBeLessThan(headlineSize);
+  }
+
+  // About two control heights, never the four-line box of v1.1.
+  const drop = await page.locator(".drop").boundingBox();
+  const control = await page.getByLabel(/Model weight/).boundingBox();
+  expect(drop!.height).toBeLessThanOrEqual(control!.height * 2.5);
+  await expect(page.getByText("Drop a .gcode, .stl, or .3mf file, or choose one")).toBeVisible();
+});
+
+test("controls that share a row share a top edge, and an error under one doesn't move the others", async ({ page }) => {
+  for (const width of [900, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/admin/");
+    const group = page.getByRole("group", { name: /Step 2: Material and printer/ });
+    const tops = async () =>
+      group.locator(".form-grid.aligned > .ui-field").first().evaluate((first) => {
+        const grid = first.parentElement!;
+        return [...grid.children].map((f) => {
+          const label = f.querySelector("label")!.getBoundingClientRect().top;
+          const control = f.querySelector<HTMLElement>("input, select")!.getBoundingClientRect().top;
+          return { label: Math.round(label), control };
+        });
+      });
+    const check = (rows: { label: number; control: number }[]) => {
+      for (const a of rows) for (const b of rows) {
+        if (Math.abs(a.label - b.label) <= 1) expect(Math.abs(a.control - b.control), `controls in the row at ${a.label}px (width ${width})`).toBeLessThanOrEqual(1);
+      }
+    };
+    const rows = await tops();
+    expect(rows.length).toBeGreaterThanOrEqual(5);
+    check(rows);
+
+    // An error under the Waste field leaves its neighbours' controls where they were.
+    await page.getByLabel(/^Waste/).fill("-5");
+    await page.getByLabel(/^Waste/).blur();
+    await expect(group.locator(".error-text")).toBeVisible();
+    check(await tops());
+  }
+});
+
+test("the Breakdown disclosure remembers whether it was open", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto("/admin/");
+  const details = page.locator("details.breakdown-disclosure");
+  await expect(details).not.toHaveAttribute("open", "");
+  await details.locator("> summary").click();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("printpaca-breakdown-open"))).toBe("1");
+  await page.reload();
+  await expect(page.locator("details.breakdown-disclosure")).toHaveAttribute("open", "");
+  await page.locator("details.breakdown-disclosure > summary").click();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("printpaca-breakdown-open"))).toBe("0");
 });

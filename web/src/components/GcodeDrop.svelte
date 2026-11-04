@@ -293,60 +293,62 @@
 <!-- The click handler is a mouse-only convenience (click the whole box). The keyboard- and
      screen-reader-accessible path is the labeled file input inside, so no keyboard handler belongs on
      this wrapper. -->
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<div
-  class="drop"
-  class:dragging
-  role="group"
-  aria-label="Model file drop zone"
-  onclick={(e) => {
-    // Click anywhere in the box to choose a file. Skip clicks on self-handling controls (the <label>, which
-    // would double-fire; the solidity input; buttons and links), so this covers only the dead space around
-    // them.
-    const t = e.target as HTMLElement;
-    if (t.closest("label, input, button, a")) return;
-    document.getElementById(inputId)?.click();
-  }}
-  ondragover={(e) => {
-    e.preventDefault();
-    dragging = true;
-  }}
-  ondragleave={onDragLeave}
-  ondrop={onDrop}
->
-  <label for={inputId}>
-    <strong>Drop a .gcode, .stl, or .3mf file</strong> (or click or press Enter to choose one). Several files at once make one part each. A sliced
-    file fills in weight and time. An unsliced STL or 3MF gets a weight estimate from its
-    geometry. Files are parsed in your browser and never uploaded.
-  </label>
-  <input
-    id={inputId}
-    type="file"
-    multiple
-    accept=".gcode,.gco,.g,.nc,text/*,.stl,.3mf"
-    onchange={onPick}
-    class="visually-hidden"
-  />
-
-  {#if outcome?.kind === "estimate"}
-    <label class="solidity-field" for={solidityInputId}>
-      Infill (solidity)
-      <input
-        id={solidityInputId}
-        type="number"
-        min="5"
-        max="100"
-        step="1"
-        value={solidityInput}
-        oninput={onSolidityInput}
-      />
-      %
+<div class="drop-wrap">
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div
+    class="drop"
+    class:dragging
+    role="group"
+    aria-label="Model file drop zone"
+    onclick={(e) => {
+      // Click anywhere in the box to choose a file. Skip clicks on self-handling controls (the <label>, which
+      // would double-fire; the solidity input; buttons and links), so this covers only the dead space around
+      // them.
+      const t = e.target as HTMLElement;
+      if (t.closest("label, input, button, a")) return;
+      document.getElementById(inputId)?.click();
+    }}
+    ondragover={(e) => {
+      e.preventDefault();
+      dragging = true;
+    }}
+    ondragleave={onDragLeave}
+    ondrop={onDrop}
+  >
+    <label for={inputId}>
+      <strong>Drop a .gcode, .stl, or .3mf file, or choose one</strong>
+      <small class="drop-note">Sliced files fill in weight and time. Files stay in your browser.</small>
     </label>
-  {/if}
+    <input
+      id={inputId}
+      type="file"
+      multiple
+      accept=".gcode,.gco,.g,.nc,text/*,.stl,.3mf"
+      onchange={onPick}
+      class="visually-hidden"
+    />
+
+    {#if outcome?.kind === "estimate"}
+      <label class="solidity-field" for={solidityInputId}>
+        Infill (solidity)
+        <input
+          id={solidityInputId}
+          type="number"
+          min="5"
+          max="100"
+          step="1"
+          value={solidityInput}
+          oninput={onSolidityInput}
+        />
+        %
+      </label>
+    {/if}
+  </div>
 
   <!-- Single always-present live region: screen-reader announcements for freshly inserted live regions
-       are unreliable, so swap text, not elements. -->
+       are unreliable, so swap text, not elements. It sits under the box, so a long parse message doesn't grow
+       the drop target. -->
   <p
     class="status-line {statusKind}"
     role={statusKind === "not-found" || statusKind === "invalid-profile" || statusKind === "read-error" ? "alert" : "status"}
@@ -355,13 +357,18 @@
 </div>
 
 <style>
+  .drop-wrap { display: flex; flex-direction: column; gap: var(--space-1); }
+  /* A compact target: one line and a smaller second line, about two controls tall. */
   .drop {
     border: 2px dashed var(--control-border);
     border-radius: var(--radius);
     background: var(--inset-bg);
-    padding: var(--space-3) var(--space-4);
+    padding: var(--space-2) var(--space-4);
     text-align: center;
-    min-height: 44px;
+    min-height: calc(var(--control-h) * 2);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
   }
   .drop.dragging {
     border-color: var(--accent);
@@ -371,15 +378,14 @@
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
-  .drop label {
-    display: block;
+  .drop label:first-child {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
     cursor: pointer;
-    padding: var(--space-2) 0;
-    /* Capped measure, centered: the zone spans its column, so uncapped this sentence ran ~110 characters and
-     * the zone read as a paragraph with a border, not a target. */
-    max-width: var(--measure-prose);
     margin: 0 auto;
   }
+  .drop-note { color: var(--muted); font-size: var(--type-secondary); }
   .solidity-field {
     cursor: default;
     font-size: var(--text-sm);
@@ -389,11 +395,10 @@
     width: var(--field-xs);
     margin: 0 var(--space-1);
   }
-  /* Two lines tall even when empty, so a parse result replacing "Parsing…" (or clearing) doesn't reflow the
-   * fields below. A longer message at a narrow width may still wrap onto a third line. */
+  /* One line tall when empty; a longer parse message wraps below the box. */
   .status-line {
-    margin: var(--space-2) 0 0;
-    min-height: 3em;
+    margin: 0;
+    min-height: 1.5em;
   }
   .status-line.ok {
     color: var(--ok);

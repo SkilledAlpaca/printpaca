@@ -245,6 +245,25 @@
 
   let costsOpen = $state(readCostsOpen());
 
+  // The summary's Breakdown disclosure remembers its state like the Costs rates: it is the cost view of a
+  // pricing person's quote, so it stays as they left it.
+  const BREAKDOWN_OPEN_KEY = "printpaca-breakdown-open";
+  function readBreakdownOpen(): boolean {
+    try {
+      return localStorage.getItem(BREAKDOWN_OPEN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }
+  function writeBreakdownOpen(v: boolean): void {
+    try {
+      localStorage.setItem(BREAKDOWN_OPEN_KEY, v ? "1" : "0");
+    } catch {
+      /* Safari private mode / quota exceeded: session-only state still works. */
+    }
+  }
+  let breakdownOpen = $state(readBreakdownOpen());
+
   const COSTS_WARN_FIELDS = [
     "flatRate",
     "watts",
@@ -355,7 +374,7 @@
       <PartsList {cfg} {order}>
         <div class="tile" role="group" aria-label={TILE_LABELS.gcode} aria-describedby="help-gcode">
           <Card>
-            <Fieldset legend="1. Model and print time">
+            <Fieldset legend="Model and print time" step={1}>
               <div class="section-intro">
                 <p class="hint">Drop a sliced file, or type the weight and time from your slicer.</p>
                 <CardHelp id="gcode" title={TILE_LABELS.gcode} text={TILE_HELP.gcode} />
@@ -366,7 +385,7 @@
                   <RecentPrints {cfg} {part} />
                 {/if}
               {/key}
-              <FormGrid>
+              <FormGrid align="controls">
                 <LabeledNumber label="Model weight" suffix="g" bind:value={part.weightG} warn={warnFor(w, "weightG")} help="The weight of the model from your slicer, without supports or waste." />
                 <Field id={timeHoursId} label="Print time" error={timeWarn !== "" && timeTouched ? timeWarn : undefined} describedby={noSlicerTime ? "print-time-note" : undefined}>
                   {#snippet children(a)}
@@ -402,25 +421,27 @@
                         <span class="suffix">min</span>
                       </span>
                     </div>
-                    {#if noSlicerTime}
-                      <small id="print-time-note" class="hint-text">This file has no slicer time. Enter the print time from your slicer.</small>
-                      <SlicerHelp />
-                    {/if}
                   {/snippet}
                 </Field>
               </FormGrid>
+              {#if noSlicerTime}
+                <div class="time-note">
+                  <small id="print-time-note" class="hint-text">This file has no slicer time. Enter the print time from your slicer.</small>
+                  <SlicerHelp />
+                </div>
+              {/if}
             </Fieldset>
           </Card>
         </div>
 
         <div class="tile" role="group" aria-label={TILE_LABELS.print} aria-describedby="help-print">
           <Card>
-            <Fieldset legend="2. Material and printer">
+            <Fieldset legend="Material and printer" step={2}>
               <div class="section-intro">
                 <p class="hint">What you print on, and how many.</p>
                 <CardHelp id="print" title={TILE_LABELS.print} text={TILE_HELP.print} />
               </div>
-              <FormGrid>
+              <FormGrid align="controls">
                 <Field id={`${uid}-material`} label="Material" size="m">
                   {#snippet children(a)}
                     <select id={a.id} aria-describedby={a.describedby} value={part.materialId} onchange={(e) => applyMaterial(cfg, part, e.currentTarget.value)}>
@@ -438,10 +459,12 @@
                   {/snippet}
                 </Field>
                 <LabeledNumber label="Quantity" suffix="units" bind:value={part.quantity} min={1} step={1} warn={warnFor(w, "quantity")} help="How many copies you are printing. Costs are shown per unit and as an order total." />
-                {#if cfg.energy.mode === "schedule"}
-                  <PrintStartFields {cfg} {part} warn={warnFor(w, "printStart") || warnFor(w, "schedule")} />
-                {/if}
               </FormGrid>
+              {#if cfg.energy.mode === "schedule"}
+                <FormGrid>
+                  <PrintStartFields {cfg} {part} warn={warnFor(w, "printStart") || warnFor(w, "schedule")} />
+                </FormGrid>
+              {/if}
               {#if cfg.integrations?.spoolman}
                 <SpoolPicker {cfg} {part} />
               {/if}
@@ -562,7 +585,7 @@
           previewError={previewState.status === "error" ? `${previewState.errors[0]} Showing the last known price. It retries on the next change.` : ""}
         />
         <div class="tile" role="group" aria-label={TILE_LABELS.breakdown} aria-describedby="help-breakdown">
-          <details class="breakdown-disclosure">
+          <details class="breakdown-disclosure" bind:open={breakdownOpen} ontoggle={(e) => writeBreakdownOpen(e.currentTarget.open)}>
             <summary>Breakdown</summary>
             <div class="breakdown-body">
               {#if multi}<PartsTable {cfg} {order} />{/if}
@@ -630,6 +653,7 @@
   :global(.card-heading) { margin-block: 0; }
   .costs { margin-block-start: var(--gap); padding-block-start: var(--gap); border-top: 1px solid var(--border); }
   .hint-text { color: var(--muted); font-size: var(--type-secondary); }
+  .time-note { display: flex; flex-direction: column; gap: var(--space-1); }
 
   /* Static replacement for the customer input once a client is linked; matches the input's box so swapping
    * doesn't shift the row's height. */

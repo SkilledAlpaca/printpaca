@@ -75,12 +75,15 @@
   .bar-content { flex: 1 1 auto; min-width: 0; }
   .expand { flex: none; }
 
-  /* Wide: a column that follows the scroll. It never grows past the viewport; its own content scrolls. */
+  /* Wide: a column that follows the scroll. */
   .summary.wide {
     position: sticky;
     top: var(--space-4);
     align-self: start;
-    max-height: calc(100dvh - var(--demo-banner-h, 0px) - var(--space-8));
+    /* Never taller than the room between its sticky offset and the viewport bottom, less the page footer below
+     * the layout: at the end of the page the column stops sticking where its area ends, above the footer, and a
+     * taller one would be pushed up and lose its top (the price). The rest scrolls inside it. */
+    max-height: calc(100dvh - var(--demo-banner-h, 0px) - var(--space-4) - var(--space-4) - var(--space-12) - var(--space-12));
     overflow-y: auto;
     padding: var(--card-pad);
     border-radius: var(--radius);

@@ -82,7 +82,7 @@
 {/snippet}
 
 <div class="card" id="pricing-card">
-  <Fieldset legend="3. Price">
+  <Fieldset legend="Price" step={3}>
     <div class="section-intro">
       <p class="hint">Turn your cost into a price.</p>
       <CardHelp id="pricing" title="Price and profit" text={TILE_HELP.pricing} guideAnchor="margin-vs-markup" {guideEnabled} />
@@ -93,7 +93,7 @@
     </label>
 
     {#if form.sellingEnabled && p}
-      <FormGrid>
+      <FormGrid align="controls">
         <Field id={strategyId} label="Pricing strategy" hint={form.strategy === "margin" ? "Margin: the share of the selling price you keep as profit." : "Markup: the selling price is your cost times a number."} size="m">
           {#snippet children(a)}
             <select id={a.id} bind:value={form.strategy} aria-describedby={a.describedby}>

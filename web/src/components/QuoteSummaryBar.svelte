@@ -87,54 +87,58 @@
 {:else}
   <div class="summary-stats">
     <div class="group">
-      <span class="section-label">Your cost</span>
-      <div class="cost-stats">
-        <div class="stat cost">
-          <span class="stat-label">{order.parts.length > 1 ? `Order of ${order.parts.length} parts` : s.quantity > 1 ? `Batch of ${s.quantity}` : "This print"}</span>
-          <span class="stat-value">{s.costCents !== null ? money(s.costCents, cfg) : "-"}</span>
-        </div>
-        {#if s.quantity > 1}
-          <div class="stat per-unit">
-            <span class="stat-label">Per unit</span>
-            <span class="stat-value">{s.costCents !== null ? money(order.parts[0]?.breakdown.perUnitTotal ?? 0, cfg) : "-"}</span>
+      <span class="section-label">{s.pricingEnabled ? "Client price" : "Your cost"}</span>
+      {#if s.pricingEnabled}
+        <span class="stat-value headline">{s.priceCents !== null ? money(s.priceCents, cfg) : "-"}</span>
+      {:else}
+        <div class="cost-stats"><div class="stat cost"><span class="stat-value headline">{s.costCents !== null ? money(s.costCents, cfg) : "-"}</span></div></div>
+      {/if}
+      <span class="context">{order.parts.length > 1 ? `Order of ${order.parts.length} parts` : s.quantity > 1 ? `Batch of ${s.quantity}` : "This print"}</span>
+    </div>
+    {#if s.pricingEnabled}
+      <div class="stats">
+        <div class="cost-stats">
+          <div class="stat cost">
+            <span class="stat-label">Your cost</span>
+            <span class="stat-value">{s.costCents !== null ? money(s.costCents, cfg) : "-"}</span>
           </div>
-        {/if}
+          {#if s.quantity > 1}
+            <div class="stat per-unit">
+              <span class="stat-label">Per unit</span>
+              <span class="stat-value">{s.costCents !== null ? money(order.parts[0]?.breakdown.perUnitTotal ?? 0, cfg) : "-"}</span>
+            </div>
+          {/if}
+        </div>
+        <div class="stat" class:loss>
+          <span class="stat-label">Profit</span>
+          <span class="stat-value">{s.profitCents !== null ? money(s.profitCents, cfg) : "-"}</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Margin</span>
+          <span class="stat-value">{s.marginPct !== null ? `${s.marginPct.toFixed(1)}%` : "-"}</span>
+        </div>
       </div>
-      <!-- The line is always reserved, so a field filling in doesn't pull the rest of the summary around. -->
-      <div class="cost-need">
-        {#if need}
+    {:else}
+      {#if s.quantity > 1}
+        <div class="stat per-unit">
+          <span class="stat-label">Per unit</span>
+          <span class="stat-value">{s.costCents !== null ? money(order.parts[0]?.breakdown.perUnitTotal ?? 0, cfg) : "-"}</span>
+        </div>
+      {/if}
+      <button type="button" class="set-price" onclick={setPrice}>
+        Set a price
+      </button>
+    {/if}
+    <!-- One reserved line for the missing-field notice and the "Updating price…" status, so neither shifts what is
+         below it. The status region stays in the DOM so screen readers announce its text changes; the error is
+         a separate alert. -->
+    <div class="notice">
+      {#if need}
+        <div class="cost-need">
           {@render needLink()}
           {#if needsTime}<SlicerHelp />{/if}
-        {/if}
-      </div>
-    </div>
-    <div class="group sell">
-      <span class="section-label">Client price</span>
-      {#if s.pricingEnabled}
-        <div class="stats">
-          <div class="stat">
-            <span class="stat-label">Price</span>
-            <span class="stat-value">{s.priceCents !== null ? money(s.priceCents, cfg) : "-"}</span>
-          </div>
-          <div class="stat" class:loss>
-            <span class="stat-label">Profit</span>
-            <span class="stat-value">{s.profitCents !== null ? money(s.profitCents, cfg) : "-"}</span>
-          </div>
-          <div class="stat">
-            <span class="stat-label">Margin</span>
-            <span class="stat-value">{s.marginPct !== null ? `${s.marginPct.toFixed(1)}%` : "-"}</span>
-          </div>
         </div>
-      {:else}
-        <button type="button" class="set-price" onclick={setPrice}>
-          Set a price
-        </button>
       {/if}
-    </div>
-    <!-- Fixed-height status slot (always rendered, text swaps, height doesn't): a status line that came and went
-         shifted everything below on every keystroke. The status region stays in the DOM so screen readers
-         announce its text changes; the error is a separate alert. -->
-    <div class="status-slot">
       <p class="status-text" role="status">{pendingVisible ? "Updating price…" : ""}</p>
       {#if previewStatus === "error" && previewError}
         <p class="status-text status-error" role="alert">{previewError}</p>
@@ -150,23 +154,24 @@
   .compact-need { font-size: var(--type-secondary); }
   .stat-label { font-size: var(--type-secondary); color: var(--muted); }
   .compact-stat.loss strong { color: var(--danger); }
-  /* One line tall at all times (the secondary-text line box), spanning the summary's full width. An error
-   * message may wrap onto more lines on a narrow screen; that is the one case the slot grows. */
-  .status-slot { min-height: calc(var(--type-secondary) * 1.5); margin-block-start: calc(var(--space-2) * -1); }
+  .group { display: flex; flex-direction: column; gap: var(--space-1); }
+  .stat-value.headline { font-size: var(--text-2xl); font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .context { font-size: var(--type-secondary); color: var(--muted); }
+  /* Your cost, profit and margin under the headline: smaller, in tabular figures so they line up. */
+  .stats { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-2) var(--space-6); font-variant-numeric: tabular-nums; }
+  .cost-stats { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-6); }
+  .stats > .cost-stats { display: contents; }
+  .stat { display: flex; flex-direction: column; gap: var(--space-1); }
+  .stat-value { font-size: var(--type-heading); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat.per-unit { color: var(--muted); }
+  .stat.per-unit .stat-value { font-size: var(--type-body); font-weight: 600; }
+  .stat.loss .stat-value { color: var(--danger); }
+  .notice { display: flex; flex-direction: column; gap: var(--space-1); }
+  .cost-need { font-size: var(--type-secondary); }
   .status-text { margin: 0; font-size: var(--type-secondary); line-height: 1.5; color: var(--muted); }
   .status-text.status-error { color: var(--danger); }
-  .group { display: flex; flex-direction: column; gap: var(--space-1); }
-  .cost-need { min-height: calc(var(--type-secondary) * 1.5); font-size: var(--type-secondary); }
-  .stats { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); }
-  .cost-stats { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-6); }
-  .stat { display: flex; flex-direction: column; gap: var(--space-1); }
-  .stat-value { font-size: var(--type-title); font-weight: 700; font-variant-numeric: tabular-nums; }
-  .stat.cost .stat-value { font-size: var(--text-2xl); }
-  .stat.per-unit { color: var(--muted); }
-  .stat.per-unit .stat-value { font-size: var(--type-secondary); font-weight: 600; }
-  .stat.loss .stat-value { color: var(--danger); }
-  .group.sell button { align-self: flex-start; }
   .set-price {
+    align-self: flex-start;
     background: transparent;
     border-color: var(--accent);
     color: var(--accent-text);

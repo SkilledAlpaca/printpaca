@@ -5,7 +5,7 @@
   import {
     listQuotes,
     createQuote,
-    updateQuote,
+    updateQuoteGuarded,
     deleteQuote,
     toSavedQuote,
     orderForQuote,
@@ -312,14 +312,21 @@
     };
   }
 
+  /** The `build` callback for updateQuoteGuarded for a status-only change: reapplied on a fresh row only while
+   * its status is still the one the change was made from; a quote that moved on elsewhere is a conflict. */
+  function statusChange(change: (cur: ServerQuote) => ServerQuote, basis: ServerQuote, extra?: Partial<QuoteInput>) {
+    return (cur: ServerQuote): QuoteInput | null =>
+      cur.status === basis.status ? { ...inputFromRaw(change(cur)), ...extra } : null;
+  }
+
   async function markStatus(q: SavedQuote, status: QuoteStatus) {
     closeMenu();
     const idx = quotes.findIndex((x) => x.id === q.id);
     const raw = idx === -1 ? undefined : quotes[idx];
     if (!raw) return;
-    const withStatus = applyTransition(raw, status, new Date().toISOString());
+    const at = new Date().toISOString();
     try {
-      const updated = await updateQuote(raw.id, inputFromRaw(withStatus));
+      const updated = await updateQuoteGuarded(raw, statusChange((cur) => applyTransition(cur, status, at), raw));
       const next = [...quotes];
       next[idx] = updated;
       quotes = next;
@@ -406,7 +413,8 @@
     const i = quotes.findIndex((x) => x.id === quoteId);
     const rawQ = i === -1 ? undefined : quotes[i];
     if (!rawQ) return;
-    const relinked = await updateQuote(rawQ.id, { ...inputFromRaw(rawQ), clientId: client.id, clientName: client.name });
+    // Only the client changes, so it is safe to reapply on a fresher row.
+    const relinked = await updateQuoteGuarded(rawQ, (cur) => ({ ...inputFromRaw(cur), clientId: client.id, clientName: client.name }));
     const nextQ = [...quotes];
     nextQ[i] = relinked;
     quotes = nextQ;
@@ -477,8 +485,8 @@
         actionStatus = `Emailed "${q.label}" to ${email}. (Status unchanged: already ${raw.status}.)`;
         return;
       }
-      const withStatus = applyTransition(raw, "sent", result.data.sentAt, email);
-      const updated = await updateQuote(raw.id, inputFromRaw(withStatus));
+      const sentAt = result.data.sentAt;
+      const updated = await updateQuoteGuarded(raw, statusChange((cur) => applyTransition(cur, "sent", sentAt, email), raw));
       const next = [...quotes];
       next[idx] = updated;
       quotes = next;
@@ -578,9 +586,12 @@
       if (raw) {
         // Status (accepted, with a log entry unless already accepted) and the invoicedAs link land in the
         // same PUT, so a reader never sees the link without the acceptance.
-        const withStatus = acceptedTransition(raw, new Date().toISOString());
+        const acceptedAt = new Date().toISOString();
         try {
-          const updated = await updateQuote(raw.id, { ...inputFromRaw(withStatus), invoicedAs: invoice.id });
+          const updated = await updateQuoteGuarded(
+            raw,
+            statusChange((cur) => acceptedTransition(cur, acceptedAt), raw, { invoicedAs: invoice.id }),
+          );
           const next = [...quotes];
           next[idx] = updated;
           quotes = next;

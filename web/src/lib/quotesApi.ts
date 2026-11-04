@@ -124,6 +124,27 @@ export async function updateQuote(id: string, input: QuoteInput, expectedSavedAt
   return (await res.json()) as ServerQuote;
 }
 
+/**
+ * PUT a change built from a quote the caller holds, guarded by that row's savedAt (If-Match) so a stale copy
+ * never overwrites a newer one. On a 409 the quote is fetched again and `build` is asked for the input from the
+ * fresh row, which reapplies the caller's change (a status transition, a client link) on top of whatever
+ * changed elsewhere. `build` returns null when the change no longer makes sense on the fresh row (its status
+ * moved on); that, a quote deleted meanwhile, or a second conflict surface as a QuoteConflictError.
+ */
+export async function updateQuoteGuarded(raw: ServerQuote, build: (current: ServerQuote) => QuoteInput | null): Promise<ServerQuote> {
+  const first = build(raw);
+  if (!first) throw new QuoteConflictError();
+  try {
+    return await updateQuote(raw.id, first, raw.savedAt);
+  } catch (err) {
+    if (!(err instanceof QuoteConflictError)) throw err;
+  }
+  const fresh = await getQuote(raw.id);
+  const retry = fresh ? build(fresh) : null;
+  if (!fresh || !retry) throw new QuoteConflictError();
+  return updateQuote(fresh.id, retry, fresh.savedAt);
+}
+
 export async function deleteQuote(id: string): Promise<void> {
   const res = await fetch(`api/quotes/${encodeURIComponent(id)}`, {
     method: "DELETE",

@@ -7,6 +7,7 @@ import {
   toQuoteInput,
   toSavedQuote,
   updateQuote,
+  updateQuoteGuarded,
   type ServerQuote,
 } from "./quotesApi";
 
@@ -301,5 +302,58 @@ describe("toQuoteInput", () => {
       options,
       formState,
     });
+  });
+});
+
+describe("updateQuoteGuarded", () => {
+  const input = (q: ServerQuote, status = q.status) => ({ ...toQuoteInput({}, {} as never, {} as never, {
+    label: q.label, clientName: q.clientName, project: "", reference: "", status, statusLog: q.statusLog,
+  }) });
+
+  it("sends the row's savedAt as If-Match", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(serverQuote()));
+    vi.stubGlobal("fetch", fetchMock);
+    await updateQuoteGuarded(serverQuote(), (cur) => input(cur, "sent"));
+    expect(fetchMock.mock.calls[0]![1].headers["If-Match"]).toBe('"2026-01-01T00:00:00.000Z"');
+  });
+
+  it("on 409 refetches and reapplies the change to the fresh row", async () => {
+    const fresh = serverQuote({ savedAt: "2026-02-02T00:00:00.000Z", invoicedAs: "inv-9" });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({}, 409))
+      .mockResolvedValueOnce(jsonResponse(fresh))
+      .mockResolvedValueOnce(jsonResponse(serverQuote({ status: "sent" })));
+    vi.stubGlobal("fetch", fetchMock);
+    const seen: string[] = [];
+    const out = await updateQuoteGuarded(serverQuote(), (cur) => {
+      seen.push(cur.savedAt);
+      return input(cur, "sent");
+    });
+    expect(out.status).toBe("sent");
+    expect(seen).toEqual(["2026-01-01T00:00:00.000Z", "2026-02-02T00:00:00.000Z"]);
+    expect(fetchMock.mock.calls[2]![1].headers["If-Match"]).toBe('"2026-02-02T00:00:00.000Z"');
+  });
+
+  it("shows the conflict when the fresh row can't take the change", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({}, 409))
+      .mockResolvedValueOnce(jsonResponse(serverQuote({ status: "accepted" })));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      updateQuoteGuarded(serverQuote(), (cur) => (cur.status === "draft" ? input(cur, "sent") : null)),
+    ).rejects.toThrow(/changed in another tab/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces a second conflict instead of looping", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({}, 409))
+      .mockResolvedValueOnce(jsonResponse(serverQuote()))
+      .mockResolvedValueOnce(jsonResponse({}, 409));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(updateQuoteGuarded(serverQuote(), (cur) => input(cur))).rejects.toThrow(/changed in another tab/);
   });
 });

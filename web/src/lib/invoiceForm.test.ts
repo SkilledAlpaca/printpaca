@@ -443,6 +443,8 @@ describe("item links on lines", () => {
     stockMode: "in_stock",
     stockQty: 3,
     allowBackorder: false,
+    categoryId: "",
+    featured: false,
     sortOrder: 0,
     createdAt: "",
     updatedAt: "",

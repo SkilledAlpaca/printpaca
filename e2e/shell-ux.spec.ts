@@ -9,15 +9,15 @@ test("a wheel over the right gutter scrolls main at 1920 px", async ({ page }) =
   const main = page.locator("main#main");
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
 
-  // main spans its grid cell to the window edge; the 1280 px column sits inside it.
+  // main spans its grid cell to the window edge; the 1440 px column sits inside it.
   const box = await main.boundingBox();
   expect(box).not.toBeNull();
   expect(Math.round(box!.x + box!.width)).toBe(1920);
   const inner = await page.locator(".main-inner").boundingBox();
-  expect(inner!.width).toBeLessThanOrEqual(1280);
+  expect(inner!.width).toBeLessThanOrEqual(1440);
 
   expect(await main.evaluate((el) => el.scrollTop)).toBe(0);
-  await page.mouse.move(1900, 500); // inside the right gutter, outside the 1280 px column
+  await page.mouse.move(1900, 500); // inside the right gutter, outside the 1440 px column
   await page.mouse.wheel(0, 600);
   await expect.poll(() => main.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
 });

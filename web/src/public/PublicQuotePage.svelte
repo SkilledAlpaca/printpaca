@@ -87,6 +87,7 @@
   import ItemOrderPanel, { type ItemOrderConfirmation } from "./ItemOrderPanel.svelte";
   import ModelPreview from "./ModelPreview.svelte";
   import { clearConfirmation, loadConfirmation, saveConfirmation } from "./confirmationStorage";
+  import { composeTitle, readEmbeddedConfig, shopTitleOf } from "./shopConfig";
   import { BoundsCollector, boundsWarning, formatBounds, type ModelBounds } from "./modelBounds";
   import { materialDescription } from "./materialInfo";
   import {
@@ -134,18 +135,26 @@
 
   // Config load
 
-  let phase = $state<"loading" | "failed" | "ready">("loading");
-  let cfg = $state.raw<PublicConfig | null>(null);
+  // D30: the server embeds the public config in the HTML, so a hard refresh renders the owner's shop on the
+  // first paint. Without it (an older server, an unparseable block) the page shows a neutral loading state,
+  // never built-in defaults, until the fetch returns. Either way the fetch below refreshes the config.
+  const embeddedConfig = readEmbeddedConfig();
+  let phase = $state<"loading" | "failed" | "ready">(embeddedConfig ? "ready" : "loading");
+  let cfg = $state.raw<PublicConfig | null>(embeddedConfig);
 
   // Public items load alongside config. A failed or empty items fetch is not an error: it just means no
   // gallery. Only a failed config fetch (phase "failed") is a real failure.
   let items = $state.raw<PublicItem[] | null>(null);
+  // False until the items fetch settles (even when it fails). The embedded config doesn't carry items, so
+  // until then the gallery area shows a loading line instead of guessing between the gallery and the form.
+  let catalogLoaded = $state(false);
   // Visible categories that have public items, for the category links. Empty from a server without categories.
   let categories = $state.raw<PublicCategory[]>([]);
   // Restored from sessionStorage on mount: a self-contained summary of the last gallery order, independent of
   // the live `items` (reset on load). Shown on the #/order/received route; dismissed via
   // dismissItemOrderConfirmation.
-  let itemOrderConfirmation = $state<ItemOrderConfirmation | null>(null);
+  // Restored synchronously (not in onMount): the route check below runs as soon as the config is ready.
+  let itemOrderConfirmation = $state<ItemOrderConfirmation | null>(loadConfirmation<ItemOrderConfirmation>(ITEM_ORDER_CONFIRMATION_KEY));
 
   // Routing. The location hash is the source of truth for which view shows (see route.ts), so Back, reload and
   // a shared link all work. Navigation pushes a history entry; a redirect replaces the current one.
@@ -209,23 +218,27 @@
   const ESTIMATES_OFF_NOTE = "Custom estimates aren't offered right now.";
 
   onMount(async () => {
-    itemOrderConfirmation = loadConfirmation<ItemOrderConfirmation>(ITEM_ORDER_CONFIRMATION_KEY);
-    const restoredQuote = loadConfirmation<QuoteConfirmation>(QUOTE_CONFIRMATION_KEY);
-    if (restoredQuote) {
-      submitted = restoredQuote;
-      fileStoredCaveat = restoredQuote.fileStoredCaveat;
-    }
-
     const [cfgResult, catalogResult] = await Promise.all([loadPublicConfig(), loadPublicCatalog()]);
     if (cfgResult) {
       cfg = cfgResult;
       phase = "ready";
-    } else {
+    } else if (!cfg) {
+      // A failed refresh keeps the embedded config; only a page with nothing to show is a failure.
       phase = "failed";
     }
     items = catalogResult?.items ?? null;
     categories = catalogResult?.categories ?? [];
+    catalogLoaded = true;
   });
+  // Routes whose view depends on whether the shop has items. An estimate route, or a saved order confirmation,
+  // doesn't, so those render at once.
+  const catalogPending = $derived(
+    !catalogLoaded &&
+      shop.gallery &&
+      route.name !== "estimate" &&
+      route.name !== "estimate-received" &&
+      !(route.name === "order-received" && itemOrderConfirmation),
+  );
 
   // A route whose data is gone returns to the gallery with a note, replacing the entry so Back doesn't land on
   // the dead route again.
@@ -406,7 +419,8 @@
   let submitting = $state(false);
   // The submit is waiting for the price preview that was still updating when the visitor pressed the button.
   let waitingForPrice = $state(false);
-  let submitted = $state<QuoteConfirmation | null>(null);
+  const restoredQuote = loadConfirmation<QuoteConfirmation>(QUOTE_CONFIRMATION_KEY);
+  let submitted = $state<QuoteConfirmation | null>(restoredQuote);
 
   // A saved confirmation for the route being shown. While the shop is paused it stays visible, with a note
   // above it; any other public route shows the Closed page, and so does a confirmation route with nothing saved.
@@ -421,7 +435,7 @@
   let serverErrorsFor = $state("");
   // Set on a successful submit whose response had fileStored: false (storage-full path): the request went
   // through but the file wasn't stored. null otherwise, including manual entries.
-  let fileStoredCaveat = $state<string | null>(null);
+  let fileStoredCaveat = $state<string | null>(restoredQuote?.fileStoredCaveat ?? null);
 
   // Server-side price preview: the price and shipping come from POST /api/public/quote/preview; the cost
   // model never ships to the visitor's browser. lib/quotePreview.ts owns the debounce (~350ms) and staleness
@@ -932,13 +946,19 @@
 
   // Page title (WCAG 2.4.2): tracks the state the visitor is in, so a title list or history entry says whether
   // this is the form or the confirmation.
+  // D30: the shop title alone on the gallery, "<page> · <shop title>" on every inner page. null (nothing
+  // loaded yet) leaves the title the server rendered.
   const pageTitle = $derived.by(() => {
-    const biz = cfg?.branding.businessName;
-    if (closedPageShown) return biz ? `Closed · ${biz}` : "Closed";
-    if (route.name === "estimate-received" && submitted) return biz ? `Request received · ${biz}` : "Request received";
-    if (route.name === "order-received" && itemOrderConfirmation) return biz ? `Order received · ${biz}` : "Order received";
-    if (orderItem) return biz ? `${orderItem.name} · ${biz}` : orderItem.name;
-    return biz ? `${biz} — get an estimate` : "Get an estimate";
+    if (!cfg) return null;
+    const title = shopTitleOf(cfg);
+    if (closedPageShown) return composeTitle(title, "Closed");
+    if (route.name === "estimate-received" && submitted) return composeTitle(title, "Request received");
+    if (route.name === "order-received" && itemOrderConfirmation) return composeTitle(title, "Order received");
+    if (orderItem) return composeTitle(title, orderItem.name);
+    if (catalogPending) return composeTitle(title, null);
+    if (view === "quote") return composeTitle(title, "Custom estimate");
+    if (activeCategory) return composeTitle(title, activeCategory.name);
+    return composeTitle(title, null);
   });
 
   /** Clears every estimate-form field. Does not touch the confirmation. */
@@ -982,7 +1002,7 @@
 <svelte:window ondragover={preventWindowDrop} ondrop={preventWindowDrop} onhashchange={syncRoute} />
 
 <svelte:head>
-  <title>{pageTitle}</title>
+  {#if pageTitle}<title>{pageTitle}</title>{/if}
 </svelte:head>
 
 {#snippet pausedNote()}
@@ -1087,7 +1107,9 @@
       </div>
     {/if}
 
-    {#if view === "gallery"}
+    {#if catalogPending}
+      <p class="muted center" role="status">Loading…</p>
+    {:else if view === "gallery"}
       {#if route.name === "order-received" && itemOrderConfirmation}
         <div class="panel">
           <button type="button" class="quiet back" onclick={dismissItemOrderConfirmation}>&larr; Back to gallery</button>

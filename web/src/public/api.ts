@@ -46,6 +46,8 @@ export interface PublicShop {
   pausedMessage: string;
   /** The view the shop opens on; "estimate" only when estimates are on. */
   defaultView: "gallery" | "estimate";
+  /** The resolved shop title (shop.pageTitle, else the business name, else "Shop"). */
+  pageTitle?: string;
   heading: string;
   announcement: string;
   heroImage: { url: string; alt: string } | null;

@@ -101,6 +101,8 @@ export interface ShopConfig {
   acceptingOrders: boolean;
   pausedMessage: string;
   defaultView: "gallery" | "estimate";
+  /** Browser tab title, plain text up to 70 characters. Empty falls back to the business name, then "Shop". */
+  pageTitle: string;
   heading: string;
   announcement: string;
   /** Set only by the hero image upload endpoint; a settings save keeps the stored file and takes only alt. */

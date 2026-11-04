@@ -1,6 +1,6 @@
 <script lang="ts">
   import { settingsSectionFromHash } from "../lib/hashRoute";
-  import { timezoneOptions as timezoneOptionList } from "../lib/timezones";
+  import { TIMEZONES, deviceTimezone, filterTimezones } from "../lib/timezones";
   import { nextKey, type ServerConfig } from "../lib/settings";
   import { settingsWarnings } from "../lib/settingsRules";
   import { presetDisplayName, feeScheduleDisplayName, warnFor } from "../lib/format";
@@ -10,6 +10,7 @@
   import StorefrontSettings from "./settings/StorefrontSettings.svelte";
   import FieldRow from "./settings/FieldRow.svelte";
   import Card from "./ui/Card.svelte";
+import Combobox from "./ui/Combobox.svelte";
   import Field from "./ui/Field.svelte";
   import Fieldset from "./ui/Fieldset.svelte";
   import FormGrid from "./ui/FormGrid.svelte";
@@ -68,8 +69,7 @@
     { id: "section-data", label: "Data", keys: [] },
     { id: "section-diagnostics", label: "Diagnostics", keys: [] },
   ];
-  // Suggestions for the time zone field; a typed name outside the list is still accepted if Intl knows it.
-  const timezoneOptions = timezoneOptionList();
+  const deviceZone = deviceTimezone();
   // At 900px and wider the sections are a rail beside the cards, sticky and scrolling on its own, so it never
   // costs the cards any height (a sticky bar across the top took a third of a 1366x768 screen). Below that it is a
   // collapsed "Jump to a section" disclosure above the cards and scrolls away with them.
@@ -297,25 +297,29 @@
                 id="timezone-input"
                 label="Time zone"
                 size="l"
-                hint="Type the name of a city or region, such as America/New_York or Europe/London. UTC means no offset. Times in printpaca are shown in this time zone."
+                hint="Search by city or region, such as Los or America/, and pick from the list. UTC means no offset. Times in printpaca are shown in this time zone."
                 error={warnFor(warnings, "timezone") || undefined}
               >
                 {#snippet children(a)}
-                  <input
+                  <Combobox
                     id={a.id}
-                    list="timezone-options"
+                    label="Zone suggestions"
                     bind:value={form.timezone}
+                    options={TIMEZONES}
+                    filter={filterTimezones}
                     placeholder="UTC"
-                    autocomplete="off"
-                    aria-invalid={a.invalid ?? "false"}
-                    aria-describedby={a.describedby}
+                    describedby={a.describedby}
+                    invalid={a.invalid}
                   />
-                  <datalist id="timezone-options">
-                    {#each timezoneOptions as tz (tz)}<option value={tz}></option>{/each}
-                  </datalist>
                 {/snippet}
               </Field>
             </FormGrid>
+            {#if deviceZone}
+              <div class="tz-device">
+                <button type="button" onclick={() => (form.timezone = deviceZone)}>Use this device's time zone</button>
+                <span class="hint">{deviceZone}</span>
+              </div>
+            {/if}
           </Card>
 
           <Card id="section-fee-schedules" tone={hasError("feeSchedules") ? "danger" : "default"} heading="Fee schedules">
@@ -508,6 +512,8 @@
 </div>
 
 <style>
+  .tz-device { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
+  .tz-device .hint { margin: 0; }
   /* The section nav and the cards. At >=900px the nav is a rail in its own column, a field-s plus 2rem wide, which
    * fits "Business identity" on one line; below that the grid is one column and the nav a disclosure. */
   .settings-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap-section); align-items: start; }

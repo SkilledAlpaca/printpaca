@@ -370,7 +370,7 @@
               <input id={a.id} aria-describedby={a.describedby} bind:value={newUsername} required pattern={USERNAME_PATTERN} placeholder="For example, jordan" />
             {/snippet}
           </Field>
-          <Field id="new-user-password" label="Password" size="m" hint="At least 8 characters.">
+          <Field id="new-user-password" label="Password" size="m" hint="At least 8 characters." hintVisible>
             {#snippet children(a)}
               <input id={a.id} aria-describedby={a.describedby} type="password" bind:value={newPassword} required minlength={8} autocomplete="new-password" />
             {/snippet}

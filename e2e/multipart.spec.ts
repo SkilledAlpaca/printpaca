@@ -185,3 +185,48 @@ test("a three-part order and the Quotes page fit a phone without sideways page s
   const list = await (await request.get("/admin/api/quotes")).json();
   await request.delete(`/admin/api/quotes/${list.quotes.find((q: { label: string }) => q.label === label).id}`);
 });
+
+test("four part tabs scroll inside their strip on a phone: arrow keys reach each one fully visible", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/admin/");
+  await page.getByRole("button", { name: "Add part" }).click();
+  for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "+ Add part" }).click();
+  const tabs = page.getByRole("tab");
+  await expect(tabs).toHaveCount(4);
+  const strip = page.getByRole("tablist");
+  const add = page.getByRole("button", { name: "+ Add part" });
+
+  // The strip scrolls (its content is wider than its box) and the Add part button stays outside it, on screen.
+  expect(await strip.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  await expect(add).toBeInViewport({ ratio: 1 });
+
+  const fullyInStrip = async (i: number) => {
+    await expect
+      .poll(async () => {
+        const s = (await strip.boundingBox())!;
+        const t = (await tabs.nth(i).boundingBox())!;
+        const a = (await add.boundingBox())!;
+        return t.x >= s.x - 1 && t.x + t.width <= s.x + s.width + 1 && t.x + t.width <= a.x + 1;
+      }, { message: `tab ${i} fully inside the strip, left of Add part` })
+      .toBe(true);
+  };
+
+  await tabs.nth(0).focus();
+  await page.keyboard.press("Home");
+  await expect(tabs.nth(0)).toHaveAttribute("aria-selected", "true");
+  await fullyInStrip(0);
+  for (let i = 1; i < 4; i++) {
+    await page.keyboard.press("ArrowRight");
+    await expect(tabs.nth(i)).toHaveAttribute("aria-selected", "true");
+    await expect(tabs.nth(i)).toBeFocused();
+    await fullyInStrip(i);
+  }
+  await page.keyboard.press("Home");
+  await expect(tabs.nth(0)).toBeFocused();
+  await fullyInStrip(0);
+  await page.keyboard.press("End");
+  await expect(tabs.nth(3)).toBeFocused();
+  await fullyInStrip(3);
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

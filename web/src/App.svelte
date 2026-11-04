@@ -16,6 +16,7 @@
     mdiInboxOutline,
     mdiFileDocumentMultipleOutline,
     mdiLogout,
+    mdiFormatLineSpacing,
     mdiOpenInNew,
     mdiStorefrontOutline,
     mdiMenu,
@@ -31,6 +32,7 @@
   import { loadRequests } from "./lib/requestsApi";
   import { listInvoices } from "./lib/invoicesApi";
   import { signOutAction } from "./lib/accessSignIn";
+  import { density, toggleDensity } from "./lib/density.svelte";
   import { applyConfig, appConfig, effectiveConfig, printJob, invoicePrintJob, quoteActions, pendingOpen, quoteSession, startNewQuote, quoteIsDirty } from "./lib/state.svelte";
   import {
     demoLocal,
@@ -904,6 +906,8 @@
       {#if signOut}
         <button type="button" class="guide-footer-link" onclick={signOutNow}>{signOut.label}</button>
       {/if}
+      <!-- Admin-only, per browser (localStorage). The public pages never read it. -->
+      <button type="button" class="guide-footer-link" aria-pressed={density.current === "compact"} onclick={toggleDensity}>Compact density</button>
       <div class="version-line">{versionLabel}</div>
     {:else}
       {#if !disabledTabs.has("guide")}
@@ -916,6 +920,9 @@
           <Icon path={mdiLogout} size={16} />
         </button>
       {/if}
+      <button type="button" class="guide-footer-icon" aria-label="Compact density" aria-pressed={density.current === "compact"} onclick={toggleDensity}>
+        <Icon path={mdiFormatLineSpacing} size={16} />
+      </button>
     {/if}
     {#if isDesktop}
       <!-- Icon-only collapsing is a desktop concept: below 900px the drawer is near full width (see
@@ -1190,7 +1197,7 @@
   }
   .nav-section-label:first-child { padding-top: 0; }
 
-  /* 1280px, not the viewport: past roughly this width a card becomes a band with its contents stranded at
+  /* --content-max (1440px, D10), not the viewport: past roughly this width a card becomes a band with its contents stranded at
    * one end (summary stats, list names, a drop zone's one line). The Guide already capped its measure for
    * this reason; this applies the cap to every tab. Below ~1500px viewports nothing changes. */
   /* Sticky bars can cover a focused field in the scroll container (WCAG 2.4.11). The Settings jump nav (top),
@@ -1202,10 +1209,10 @@
     scroll-padding-top: calc(var(--demo-banner-h, 0px) + var(--sticky-top-h, 0px) + 1rem);
     scroll-padding-bottom: calc(var(--sticky-bottom-h, 0px) + 1rem);
   }
-  /* <main> spans its whole grid cell so a wheel or a scrollbar works anywhere across the width; the 1280px cap,
+  /* <main> spans its whole grid cell so a wheel or a scrollbar works anywhere across the width; the 1440px cap,
    * centring and padding live on this inner wrapper. <main> has no padding of its own, so a sticky bar at
    * top: 0 sits flush with the scrollport edge instead of 1rem below it. */
-  .main-inner { max-width: 1280px; margin: 0 auto; padding: 1rem clamp(1rem, 2vw, 2rem); }
+  .main-inner { max-width: var(--content-max); margin: 0 auto; padding: 1rem clamp(1rem, 2vw, 2rem); }
   /* theme.css's global :focus-visible outline draws outside the element (outline-offset: 2px); #app clips
    * overflow, so on <main> (the skip-link target and scroll container) it gets cut into a stray partial
    * line. Pull the ring inward. */
@@ -1303,7 +1310,8 @@
   /* The same "this is where you are" affordance as the nav buttons (.side-nav button.active), adapted for a
    * text link: bold weight and solid --text color instead of a background fill, which would look out of
    * place on this thin footer link. */
-  .guide-footer-link.active {
+  .guide-footer-link.active,
+  .guide-footer-link[aria-pressed="true"] {
     font-weight: 700;
     color: var(--text);
   }

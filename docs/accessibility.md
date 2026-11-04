@@ -97,9 +97,13 @@ The color tokens in `web/src/theme.css` are chosen to meet the following minimum
 | `--focus-ring` | The keyboard focus outline | 5.39:1 or more | 8.06:1 or more | 3:1 (WCAG 1.4.11) |
 | `--accent-contrast` | Text and focus outline on accent-filled buttons | 4.76:1 or more | 8.06:1 or more | 4.5:1 and 3:1 |
 
-`--border` stays lighter than `--control-border` because it only draws decorative card edges.
+Cards have no outline: a card is a lighter tint of the page background, and `--border` only draws dividers inside tables and lists. `--border` stays lighter than `--control-border` for that reason.
 
 Your own [custom CSS and logo](configuration.md#custom-css) aren't checked. If you override theme tokens, keep these ratios.
+
+## Density
+
+The admin app has two densities. Comfortable is the default, with 40 px controls and 16 px gaps. Compact uses 32 px controls and 8 to 12 px gaps. To switch, turn **Compact density** on or off in the sidebar footer. On a phone, open the menu and use the same control. printpaca keeps the choice in this browser only (in `localStorage`), so it doesn't follow you to another browser or device, and the customer pages always use Comfortable. If the browser blocks storage, the app uses Comfortable.
 
 ## Reduced motion
 
@@ -164,6 +168,12 @@ Keep `disabled` for actions that are truly unavailable, such as a validation fai
 - Make targets at least 24 by 24 CSS px, or space them 24 px apart (WCAG 2.5.8).
 - Don't put information only in a `title` attribute.
 - Give every input an `autocomplete` token when the field has a standard one.
+
+### Spacing and layout
+
+- Use the density-aware tokens in `web/src/theme.css` (`--control-h`, `--gap`, `--gap-section`, `--card-pad`) and the spacing steps (`--space-*`). Comfortable density has 40 px controls and 16 px gaps; Compact has 32 px controls and 8 to 12 px gaps. Controls grow to 44 px on phones in both.
+- Put labels above fields at every width. Use the `Field`, `Fieldset`, and `FormGrid` components in `web/src/components/ui/`, which wire the label, hint, and error to the control with `aria-describedby`.
+- `npm run lint:css` blocks raw spacing and width literals in migrated files. See [Contributing](../CONTRIBUTING.md#house-rules).
 
 ### Color tokens
 

@@ -6,6 +6,6 @@ export default defineConfig({
   // to a nonexistent global.
   plugins: [svelte()],
   test: {
-    include: ["web/src/**/*.test.ts"],
+    include: ["web/src/**/*.test.ts", "scripts/**/*.test.ts"],
   },
 });

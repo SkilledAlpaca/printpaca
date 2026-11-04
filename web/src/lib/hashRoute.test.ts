@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { splitHash, syncDetail, invoiceHash } from "./hashRoute";
+import { splitHash, syncDetail, invoiceHash, routeBase, settingsSectionFromHash } from "./hashRoute";
 
 describe("splitHash", () => {
   it("returns the whole hash as base with no fragment when there's no second #", () => {
@@ -81,5 +81,20 @@ describe("invoice routes", () => {
     expect(open).toHaveBeenCalledWith("9");
     syncDetail("#/invoices", "#/invoices", "9", true, open, close);
     expect(close).toHaveBeenCalled();
+  });
+});
+
+describe("routeBase and settingsSectionFromHash (A16)", () => {
+  it("maps #/new to the New quote route", () => {
+    expect(routeBase("#/new")).toBe("#/quote");
+  });
+  it("maps #/settings/<section> to Settings", () => {
+    expect(routeBase("#/settings/storefront")).toBe("#/settings");
+    expect(settingsSectionFromHash("#/settings/Storefront")).toBe("storefront");
+  });
+  it("leaves other routes alone", () => {
+    expect(routeBase("#/quotes")).toBe("#/quotes");
+    expect(routeBase("#/quote/abc")).toBe("#/quote");
+    expect(settingsSectionFromHash("#/settings")).toBeNull();
   });
 });

@@ -53,7 +53,7 @@
     describeStoredModelHint,
   } from "../lib/gcodeMessage";
   import { describeStorageBanner, type StorageBanner } from "../lib/storageBanner";
-  import { money, formatDate, formatDateTime, materialDisplayName } from "../lib/format";
+  import { money, formatDate, formatDateTime, materialDisplayName, presetDisplayName } from "../lib/format";
   import PageHeader from "./ui/PageHeader.svelte";
   import Card from "./ui/Card.svelte";
   import Field from "./ui/Field.svelte";
@@ -67,6 +67,7 @@
   import SettingsEditor from "./settings/SettingsEditor.svelte";
   import PublicQuotesSettings from "./settings/PublicQuotesSettings.svelte";
   import DataTable, { type DataColumn } from "./ui/DataTable.svelte";
+  import { canConfigureShop, canEditQuotes, hasTabAccess, type ConfigUser } from "../lib/permissions";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
   import { confirmFocus, focusOnMount, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "../lib/a11yFocus";
 
@@ -74,7 +75,19 @@
     cfg,
     onOpenInQuote,
     onOpenInvoice,
-  }: { cfg: EffectiveConfig; onOpenInQuote: () => void; onOpenInvoice: () => void } = $props();
+    user = null,
+  }: { cfg: EffectiveConfig; onOpenInQuote: () => void; onOpenInvoice: () => void; user?: ConfigUser | null } = $props();
+
+  // What the signed-in user may follow from a request (A13). The server refuses the rest with a 403, so the
+  // buttons say so up front instead of failing. Convert creates the client and the invoice, so it needs both.
+  const canQuote = $derived(canEditQuotes(user));
+  const canInvoices = $derived(hasTabAccess("invoices", user));
+  const canConvert = $derived(hasTabAccess("clients", user) && canInvoices);
+  const convertReason = $derived(
+    canConvert ? "" : `Converting a request creates the client and the invoice. It needs access to ${[hasTabAccess("clients", user) ? "" : "Clients", canInvoices ? "" : "Invoices"].filter(Boolean).join(" and ")}. Ask an admin.`,
+  );
+  const quoteReason = $derived(canQuote ? "" : "You don't have access to New quote. Ask an admin.");
+  const canConfigure = $derived(canConfigureShop(user));
 
   // List
 
@@ -591,7 +604,7 @@
   }
 
   function openInQuoteTab() {
-    if (!detail) return;
+    if (!detail || !canQuote) return;
     // A request opens as a new one-part quote, never into a quote being edited: parts, order block, customer
     // and meta all reset. A request still waiting for its print time opens with the time blank.
     const part = startOnePartQuote(cfg);
@@ -642,7 +655,7 @@
   }
 
   async function convertToInvoice() {
-    if (!detail || converting) return;
+    if (!detail || converting || !canConvert) return;
     if (detail.needsPrintTime) {
       convertError = "Enter the print time first. Convert to invoice needs a price.";
       return;
@@ -897,11 +910,18 @@
       {/if}
     </DataTable>
 
-    <SettingsEditor>
-      {#snippet children({ form, hasError })}
-        <PublicQuotesSettings {form} {hasError} />
-      {/snippet}
-    </SettingsEditor>
+    {#if canConfigure}
+      <SettingsEditor>
+        {#snippet children({ form, hasError })}
+          <PublicQuotesSettings {form} {hasError} />
+        {/snippet}
+      </SettingsEditor>
+    {:else}
+      <!-- Only an admin can save these (the server refuses the rest), so everyone else gets the values to read. -->
+      <Card heading="Public estimates">
+        <p class="hint">Visitor estimates are priced with the {cfg.printers.find((p) => p.id === cfg.publicQuotes.printer)?.name ?? cfg.publicQuotes.printer} printer and the {presetDisplayName(cfg.publicQuotes.preset)} preset. Only an admin can change this.</p>
+      </Card>
+    {/if}
   {:else}
     <PageHeader
       record
@@ -925,7 +945,11 @@
         {#if isInvoiced(detail)}
           <p class="invoiced-note">
             Invoiced as {detail.invoiceNumber} (request {requestReference(detail)}).
-            <button type="button" class="quiet linkish" onclick={() => openLinkedInvoice(detail!.invoiceId)}>Open invoice</button>
+            {#if canInvoices}
+              <button type="button" class="quiet linkish" onclick={() => openLinkedInvoice(detail!.invoiceId)}>Open invoice</button>
+            {:else}
+              <span class="hint">You don't have access to Invoices, so it can't be opened here.</span>
+            {/if}
           </p>
         {/if}
 
@@ -1073,7 +1097,12 @@
           {/if}
           <a class="reply-link" href={replyMailto(detail)} aria-label={`Reply by email to ${detail.name}, reference ${requestReference(detail)}`}>Reply by email</a>
           {#if detail.kind !== "item"}
-            <button type="button" onclick={openInQuoteTab}>Open in new quote</button>
+            <button
+              type="button"
+              onclick={openInQuoteTab}
+              aria-disabled={!canQuote}
+              aria-describedby={canQuote ? undefined : "open-quote-reason"}
+            >Open in new quote</button>
           {/if}
           {#if !isInvoiced(detail)}
             <button
@@ -1081,8 +1110,8 @@
               class={detail.status === "viewed" ? "" : "primary"}
               data-focus-key="convert-request"
               onclick={convertToInvoice}
-              aria-disabled={converting || detail.needsPrintTime}
-              aria-describedby={detail.needsPrintTime ? "convert-needs-time" : undefined}
+              aria-disabled={converting || detail.needsPrintTime || !canConvert}
+              aria-describedby={!canConvert ? "convert-no-access" : detail.needsPrintTime ? "convert-needs-time" : undefined}
             >
               {converting ? "Converting…" : "Convert to invoice"}
             </button>
@@ -1099,6 +1128,8 @@
             <button type="button" data-focus-key="delete-request" onclick={askDelete} aria-label="Delete this request">Delete</button>
           {/if}
         </div>
+        {#if !canQuote && detail.kind !== "item"}<p id="open-quote-reason" class="hint">{quoteReason}</p>{/if}
+        {#if !canConvert && !isInvoiced(detail)}<p id="convert-no-access" class="hint">{convertReason}</p>{/if}
         {#if detail.needsPrintTime}
           <p id="finalize-needs-time" class="hint">{finalizeBlockedReason(detail)}.</p>
           <p id="convert-needs-time" class="hint">Enter the print time above before converting this request to an invoice.</p>

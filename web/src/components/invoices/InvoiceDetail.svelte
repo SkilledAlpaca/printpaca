@@ -255,7 +255,11 @@
     {#if detail?.requestId}
       <p class="hint">
         Created from request
-        <button type="button" class="quiet linkish" onclick={() => openRequest(detail!.requestId!)}>{requestReference({ id: detail.requestId, reference: detail.requestReference })}</button>.
+        {#if hasTabAccess("requests", user)}
+          <button type="button" class="quiet linkish" onclick={() => openRequest(detail!.requestId!)}>{requestReference({ id: detail.requestId, reference: detail.requestReference })}</button>.
+        {:else}
+          {requestReference({ id: detail.requestId, reference: detail.requestReference })}.
+        {/if}
       </p>
     {/if}
 

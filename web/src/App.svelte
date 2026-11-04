@@ -52,7 +52,7 @@
   import { unreadRequests, refreshUnread } from "./lib/requestsBadge.svelte";
   import { brandTab, fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab } from "./lib/navFilter";
   import { loadPublicConfig } from "./public/api";
-  import { splitHash, quoteRouteBase, quoteIdFromHash } from "./lib/hashRoute";
+  import { splitHash, routeBase, quoteIdFromHash } from "./lib/hashRoute";
   import { focusAfterUpdate } from "./lib/a11y.svelte";
   import { pageTitle as pageTitleState } from "./lib/pageTitle.svelte";
   import LiveAnnouncer from "./components/LiveAnnouncer.svelte";
@@ -136,7 +136,7 @@
     const { base } = splitHash(hash);
     // A hash naming a disabled tab resolves to null like an unrecognized one; every caller already falls back
     // from null (Quote on initial load, no-op on hashchange).
-    return resolveHashTab(quoteRouteBase(base), HASH_TABS, disabledTabs);
+    return resolveHashTab(routeBase(base), HASH_TABS, disabledTabs);
   }
 
   // Hands a deep-linked invoice/request/client id to the tab about to mount via pendingOpen (state.svelte.ts)
@@ -992,7 +992,7 @@
   {:else if tab === "items"}
     <ItemsTab cfg={config} />
   {:else if tab === "requests"}
-    <RequestsTab cfg={config} onOpenInQuote={() => activate("quote")} onOpenInvoice={() => activate("invoices")} />
+    <RequestsTab cfg={config} user={configUser} onOpenInQuote={() => activate("quote")} onOpenInvoice={() => activate("invoices")} />
   {:else if tab === "dashboard"}
     <DashboardTab cfg={config} />
   {:else}

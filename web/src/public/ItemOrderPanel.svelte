@@ -18,7 +18,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { announce } from "../lib/a11y.svelte";
-  import { clearVisitor, visitor } from "./visitor.svelte";
+  import { visitor } from "./visitor.svelte";
   import { formatMoney, type CurrencyConfig } from "../lib/engine/index";
   import { itemTotalCents } from "../lib/itemMath";
   import {
@@ -31,6 +31,7 @@
   } from "../lib/itemOptions";
   import { NAME_MAX_BYTES, NOTE_MAX_BYTES, ITEM_ORDER_EMAIL_MAX_BYTES, utf8ByteLength, isPlausibleEmail, EMAIL_FORMAT_ERROR } from "../lib/publicFormLimits";
   import { DEFAULT_MAX_ORDER_QTY, isValidQuantity, normalizedQuantityText, overCapMessage } from "./publicPricing";
+  import VisitorReset from "./VisitorReset.svelte";
   import FormErrorSummary from "./FormErrorSummary.svelte";
   import Card from "../components/ui/Card.svelte";
   import Field from "../components/ui/Field.svelte";
@@ -356,6 +357,7 @@
         {/if}
       </div>
 
+      <VisitorReset nameId="item-name" />
       <Field id="item-name" label="Name" error={nameError}>
         {#snippet children(f)}
           <input
@@ -385,9 +387,6 @@
           />
         {/snippet}
       </Field>
-      {#if visitor.name !== "" || visitor.email !== ""}
-        <button type="button" class="quiet inline-link not-you" onclick={clearVisitor}>Not you? Clear name and email</button>
-      {/if}
       <Field id="item-note" label="Note (optional)" error={noteError}>
         {#snippet children(f)}
           <textarea
@@ -527,10 +526,6 @@
   .per-unit { font-weight: 400; font-size: var(--text-base); color: var(--muted); }
 
   .qty-error { margin: var(--space-1) 0 0; }
-  .not-you { align-self: flex-start; }
-  @media (max-width: 600px) {
-    .not-you { min-height: 44px; }
-  }
   .error-list { list-style: none; margin: 0; padding: 0; text-align: left; }
   .error-list li { margin: var(--space-1) 0; }
   /* In flight: aria-disabled keeps focus on the button, so the busy look is visual only. */

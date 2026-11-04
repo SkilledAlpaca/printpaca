@@ -41,7 +41,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from "svelte";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
-  import { clearVisitor, visitor } from "./visitor.svelte";
+  import { visitor } from "./visitor.svelte";
   import {
     estimateWeightFromVolume,
     formatMoney,
@@ -97,6 +97,7 @@
     overCapMessage,
     perUnitCents,
   } from "./publicPricing";
+  import VisitorReset from "./VisitorReset.svelte";
   import FormErrorSummary from "./FormErrorSummary.svelte";
   import RateLimitNotice from "./RateLimitNotice.svelte";
   import { parseRoute, routeHash, type Route } from "./route";
@@ -1413,6 +1414,7 @@
             </div>
           {/if}
 
+          <VisitorReset nameId="quote-name" />
           <Field id="quote-name" label="Name" error={nameError}>
             {#snippet children(f)}
               <input
@@ -1442,9 +1444,6 @@
               />
             {/snippet}
           </Field>
-          {#if visitor.name !== "" || visitor.email !== ""}
-            <button type="button" class="quiet inline-link not-you" onclick={clearVisitor}>Not you? Clear name and email</button>
-          {/if}
           <Field id="quote-note" label="Note (optional)" error={noteError}>
             {#snippet children(f)}
               <textarea
@@ -1662,7 +1661,6 @@
   .confirmation .ref { margin: 0; font-variant-numeric: tabular-nums; }
   .confirmation .ref strong { display: block; font-size: var(--type-title); letter-spacing: 0.04em; }
   .confirmation .ref-hint { color: var(--muted); font-size: var(--type-secondary); margin: 0; }
-  .not-you { align-self: flex-start; }
   .confirmation .order-summary { font-weight: 600; margin: 0; }
   .paused-note {
     padding: var(--space-3) var(--space-4);
@@ -1715,7 +1713,7 @@
   .how-estimated :global(.ui-field) { margin-top: var(--space-2); }
   @media (max-width: 600px) {
     /* 44 px tap targets on phones (the app-wide quiet button is 32 px). */
-    .back, .remove-file, .inline-link, .confirmation .quiet, .not-you { min-height: 44px; }
+    .back, .remove-file, .inline-link, .confirmation .quiet { min-height: 44px; }
     .how-estimated summary { min-height: 44px; display: flex; align-items: center; }
   }
 </style>

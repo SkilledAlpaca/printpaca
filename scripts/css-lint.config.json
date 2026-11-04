@@ -16,6 +16,7 @@
     "web/src/public/ContactDetails.svelte",
     "web/src/public/CategoryChips.svelte",
     "web/src/public/ShopHero.svelte",
+    "web/src/public/RichText.svelte",
     "web/src/public/FormErrorSummary.svelte",
     "web/src/public/RateLimitNotice.svelte",
     "web/src/public/PublicApp.svelte",

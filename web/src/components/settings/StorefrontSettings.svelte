@@ -13,6 +13,7 @@
   import { announce, focusAfterUpdate } from "../../lib/a11y.svelte";
   import { focusAfterRowRemoval, keySelector } from "../../lib/a11yFocus";
   import ClosedPage from "../../public/ClosedPage.svelte";
+  import RichText from "../../public/RichText.svelte";
   import { accentVars, prefersDark } from "../../public/shopAccent";
   import Card from "../ui/Card.svelte";
   import ConfirmInline from "../ui/ConfirmInline.svelte";
@@ -315,7 +316,7 @@
       <Field
         id="storefront-intro"
         label="Intro text"
-        hint="Appears at the top of the shop, as plain text."
+        hint="Appears at the top of the shop. You can use **bold**, *italic*, [link](https://…), and - list."
         error={introWarn !== "" ? introWarn : undefined}
         describedby="storefront-intro-count"
       >
@@ -333,8 +334,12 @@
           <small id="storefront-intro-count" class="count">{characterCountText(form.publicQuotes.introText, PUBLIC_INTRO_TEXT_MAX_BYTES)}</small>
         {/snippet}
       </Field>
+      {@render textPreview("storefront-intro-preview", "Intro text preview", form.publicQuotes.introText, "intro-preview")}
       <FormGrid>
-        <LabeledText label="Announcement" size="l" bind:value={form.shop.announcement} warn={warnFor(warnings, "shop.announcement")} hint="An optional banner at the top of the shop, for notices such as holiday shipping cutoffs." />
+        <LabeledText label="Announcement" size="l" bind:value={form.shop.announcement} warn={warnFor(warnings, "shop.announcement")} hint="An optional banner at the top of the shop, for notices such as holiday shipping cutoffs. You can use **bold**, *italic*, and [link](https://…)." />
+      </FormGrid>
+      {@render textPreview("storefront-announcement-preview", "Announcement preview", form.shop.announcement, "announcement-preview")}
+      <FormGrid>
         <LabeledText label="Shipping note" size="l" bind:value={form.shop.shippingNote} warn={warnFor(warnings, "shop.shippingNote")} hint="Replaces the default shipping line next to the total. Leave empty to keep it." />
         <LabeledText label="Turnaround note" size="l" bind:value={form.shop.turnaroundNote} warn={warnFor(warnings, "shop.turnaroundNote")} hint="Replaces the default turnaround wording. Leave empty to keep it." />
       </FormGrid>
@@ -511,6 +516,15 @@
   </div>
 </Card>
 
+{#snippet textPreview(id: string, caption: string, text: string, testid: string)}
+  {#if text.trim() !== ""}
+    <div class="md-preview" {id} data-testid={testid}>
+      <p class="preview-caption">{caption}, as customers see it</p>
+      <div class="md-preview-body"><RichText {text} /></div>
+    </div>
+  {/if}
+{/snippet}
+
 <style>
   .card-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-2) var(--space-4); margin-bottom: var(--space-3); }
   .card-head h2 { margin: 0; }
@@ -523,6 +537,8 @@
   .sections { display: flex; flex-direction: column; gap: var(--gap-section); }
   .row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
   .count { color: var(--muted); font-size: var(--type-secondary); }
+  .md-preview { display: flex; flex-direction: column; gap: var(--space-1); max-width: var(--measure-record); }
+  .md-preview-body { padding: var(--space-3) var(--space-4); border-radius: var(--radius); background: var(--surface-2); overflow-wrap: anywhere; }
   .preview { display: flex; flex-direction: column; gap: var(--space-2); }
   .preview-caption { margin: 0; color: var(--muted); font-size: var(--type-secondary); }
   /* The shop's reading column, so the preview wraps as customers' pages do. */

@@ -75,6 +75,7 @@
   --gap: var(--space-4);
   --gap-section: var(--space-6);
   --card-pad: var(--space-5);
+  --tile-pad: var(--space-5);
   --cell-pad-y: 0.6rem;
 
   /* Navigation rail widths (App.svelte): the desktop sidebar, its icon-only collapsed form, and the phone drawer. */
@@ -126,8 +127,15 @@
   --gap: var(--space-2);
   --gap-section: var(--space-3);
   --card-pad: var(--space-3);
+  --tile-pad: var(--space-3);
   --cell-pad-y: 0.3rem;
   --tap-sm: 28px;
+}
+/* Phone card padding (both densities): the one token every card and every block that bleeds to a card's edge
+ * (ui/KeyValueTable) reads. --tile-pad is the same padding without the phone step, for StatTile and StickySummary,
+ * whose phone padding stays as it was. Same specificity as the density sets above and later in the file, so it wins. */
+@media (max-width: 600px) {
+  :root, :root[data-density="compact"] { --card-pad: var(--space-4); }
 }
 /* Tri-state theme: no attribute follows the OS preference (media query below); an explicit choice
  * (demo-local only -- see web/src/lib/demoLocal.svelte.ts) sets data-theme on <html> and wins over the OS
@@ -470,9 +478,6 @@ input.warn, textarea.warn { border-color: var(--danger); }
   border-radius: var(--radius);
   /* Soft tint, no outline and no shadow (D6). Compact density tightens the padding. */
   padding: var(--card-pad);
-}
-@media (max-width: 600px) {
-  .card { padding: var(--space-4); }
 }
 /* Roomier padding for wide settings-page cards: the base .card padding (tuned for compact tiles/rows) reads
  * cramped once a card is a full-width settings section with several field rows. */

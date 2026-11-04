@@ -67,3 +67,34 @@ test("the toggle is in the mobile drawer and compact density passes axe in both 
   }
   await page.evaluate(() => localStorage.removeItem("printpaca-density"));
 });
+
+test("--card-pad steps down at 600 px in both densities, and a card's padding is that token", async ({ page }) => {
+  const pad = () =>
+    page.evaluate(() => {
+      const probe = document.querySelector(".card");
+      return probe ? getComputedStyle(probe).paddingLeft : "";
+    });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/admin/");
+  await expect(navButton(page, "New quote")).toBeVisible();
+  const wide = await pad();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(pad).not.toBe(wide);
+  // The card's padding is the token's value at both widths, in comfortable and compact density.
+  for (const compact of [false, true]) {
+    if (compact) await page.evaluate(() => document.documentElement.setAttribute("data-density", "compact"));
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      const [card, tok] = await page.evaluate(() => {
+        const el = document.querySelector(".card") as HTMLElement;
+        const probe = document.createElement("div");
+        probe.style.paddingLeft = "var(--card-pad)";
+        document.body.appendChild(probe);
+        const resolved = getComputedStyle(probe).paddingLeft;
+        probe.remove();
+        return [getComputedStyle(el).paddingLeft, resolved];
+      });
+      expect(card, `card padding vs --card-pad at ${width}px, compact=${compact}`).toBe(tok);
+    }
+  }
+});

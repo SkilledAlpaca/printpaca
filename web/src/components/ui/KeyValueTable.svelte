@@ -26,7 +26,7 @@
 <style>
   /* Spans the full card width (D28): the label column is a fixed field-size token wide and values sit beside
    * it, so every table of facts lines up the same way. The block bleeds out to the card's edge by the card's
-   * own padding (--card-pad, or --space-4 on a phone, as theme.css sets it) so the row dividers run edge to
+   * own padding (--card-pad, which theme.css lowers to --space-4 on a phone) so the row dividers run edge to
    * edge, and the cells put that padding back. Place it directly in a Card. */
   .kv {
     --bleed: var(--card-pad);
@@ -40,7 +40,7 @@
   dt:first-of-type, dt:first-of-type + dd { border-top: 0; }
   dd.strong { font-weight: 700; }
   @media (max-width: 600px) {
-    .kv { --bleed: var(--space-4); grid-template-columns: minmax(0, 1fr); }
+    .kv { grid-template-columns: minmax(0, 1fr); }
     dt { padding-bottom: 0; border-top: 1px solid var(--border); }
     dd { border-top: 0; padding-top: var(--space-1); }
     dt:first-of-type { border-top: 0; }

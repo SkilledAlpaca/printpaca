@@ -85,7 +85,7 @@
      * taller one would be pushed up and lose its top (the price). The rest scrolls inside it. */
     max-height: calc(100dvh - var(--demo-banner-h, 0px) - var(--space-4) - var(--space-4) - var(--space-12) - var(--space-12));
     overflow-y: auto;
-    padding: var(--card-pad);
+    padding: var(--tile-pad);
     border-radius: var(--radius);
   }
 </style>

@@ -1213,6 +1213,6 @@
 
   /* The verification subcard's hint keeps its own margin: the one outlier left local when theme.css's .hint
    * was promoted. */
-  .hint { color: var(--muted); font-size: var(--text-sm); margin: var(--space-1) 0 0; }
+  .hint { color: var(--muted); font-size: var(--text-sm); margin: var(--space-3) 0 0; }
 </style>
 

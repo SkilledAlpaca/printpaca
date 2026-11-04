@@ -305,7 +305,7 @@
 
           <Card id="section-fee-schedules" tone={hasError("feeSchedules") ? "danger" : "default"} heading="Fee schedules">
             <p class="hint">Marketplace fee breakdowns: fixed charges plus percent-of-revenue charges. Built-in schedules can't be removed.</p>
-            <div class="stack">
+            <div class="stack spaced">
               {#each Object.entries(form.feeSchedules) as [key, fs] (key)}
                 <Card tone="inset">
                   <Fieldset legend={feeScheduleDisplayName(key)}>
@@ -549,7 +549,6 @@
     scroll-margin-top: var(--space-1);
   }
 
-  .stack { display: flex; flex-direction: column; gap: var(--gap); margin-block: var(--space-3); }
   .section-label { margin: var(--space-3) 0 var(--space-1); }
   .schedule-actions { display: flex; align-items: center; gap: var(--space-2); }
   .row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }

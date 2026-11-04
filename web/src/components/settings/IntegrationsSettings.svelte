@@ -177,7 +177,7 @@
     </p>
   {/if}
 
-  <div class="stack">
+  <div class="stack below-heading">
     {#each ROWS as row (row.kind)}
       <Card tone="inset">
         <div class="subhead">
@@ -265,7 +265,6 @@
 </Card>
 
 <style>
-  .stack { display: flex; flex-direction: column; gap: var(--gap); margin-block-start: var(--space-3); }
   .test-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-2); }
   .used-in { margin: var(--space-2) 0 0; color: var(--muted); font-size: var(--text-sm); }
   .test-ok { color: var(--ok); }

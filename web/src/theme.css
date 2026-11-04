@@ -453,6 +453,13 @@ input.warn, textarea.warn { border-color: var(--danger); }
 .page { display: flex; flex-direction: column; gap: var(--gap-section); }
 .page > h1 { margin: 0; }
 
+/* A vertical stack of blocks spaced by the density gap (--gap): form sections and rows inside a card.
+ * `.below-heading` and `.spaced` add the space a stack needs under a card heading or around it. */
+.stack { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+.stack > h2, .stack > h3 { margin: 0; }
+.stack.below-heading { margin-block-start: var(--space-3); }
+.stack.spaced { margin-block: var(--space-3); }
+
 .card {
   background: var(--card-bg);
   border-radius: var(--radius);

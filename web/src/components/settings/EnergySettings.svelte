@@ -53,6 +53,4 @@
 </Card>
 
 <style>
-  .stack { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
-  .stack > :global(h2), .stack > :global(h3) { margin: 0; }
 </style>

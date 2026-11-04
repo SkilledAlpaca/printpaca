@@ -2,9 +2,13 @@
   "blocking": [
     "web/src/components/ui/**",
     "web/src/public/ItemOrderPanel.svelte",
-    "web/src/components/RequestsTab.svelte"
+    "web/src/components/RequestsTab.svelte",
+    "web/src/components/DashboardTab.svelte"
   ],
-  "scan": [".svelte", ".css"],
+  "scan": [
+    ".svelte",
+    ".css"
+  ],
   "exceptions": [
     {
       "file": "web/src/components/RequestsTab.svelte",

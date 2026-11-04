@@ -441,10 +441,10 @@ test.describe("requests and the dashboard", () => {
       expect(b.x + b.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 0.5);
     }
 
-    await list.getByRole("button", { name: new RegExp(draft.number) }).click();
+    await list.getByRole("link", { name: new RegExp(draft.number) }).click();
     await expect(page.getByRole("heading", { name: `Invoice ${draft.number}` })).toBeVisible();
     await navButton(page, "Dashboard").click();
-    await list.getByRole("button", { name: new RegExp(name) }).click();
+    await list.getByRole("link", { name: new RegExp(name) }).click();
     await expect(page.getByRole("heading", { name: `Estimate request from ${name}` })).toBeVisible();
   });
 

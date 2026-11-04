@@ -145,3 +145,24 @@ export function attentionGroups(c: AttentionCounts): { kind: AttentionKind; coun
     { kind: "sent-quote", count: c.sentQuotes, noun: "quotes awaiting a reply" },
   ];
 }
+
+/** One Dashboard action tile (D25): the kind it filters the to-do list to, its label, and the tab its records live on. */
+export interface AttentionTile {
+  kind: AttentionKind;
+  label: string;
+  tab: string;
+  value: number;
+}
+
+/** The five action tiles in D25's order, each with its count. A tile whose tab `canOpen` rejects (disabled in
+ * Settings, or not granted to this user) is left out, so nobody sees a permanent "0" for a page they can't use. */
+export function attentionTiles(c: AttentionCounts, canOpen: (tab: string) => boolean): AttentionTile[] {
+  const all: AttentionTile[] = [
+    { kind: "new-request", label: "New requests", tab: "requests", value: c.newRequests },
+    { kind: "overdue-invoice", label: "Overdue invoices", tab: "invoices", value: c.overdueInvoices },
+    { kind: "draft-invoice", label: "Draft invoices", tab: "invoices", value: c.draftInvoices },
+    { kind: "print-time-request", label: "Needs print time", tab: "requests", value: c.printTimeRequests },
+    { kind: "sent-quote", label: "Quotes awaiting reply", tab: "quotes", value: c.sentQuotes },
+  ];
+  return all.filter((t) => canOpen(t.tab));
+}

@@ -170,8 +170,53 @@ test.describe("dashboard", () => {
 
     const outstanding = page.getByRole("link", { name: /Outstanding/ });
     await expect(outstanding).toHaveAttribute("href", "#/invoices");
-    await page.getByRole("link", { name: /Quotes this month/ }).click();
+    await page.getByRole("link", { name: /Quotes saved/ }).click();
     await expect(page).toHaveURL(/#\/quotes$/);
+  });
+
+  test("action tiles are toggles that filter the to-do list, with All as the default", async ({ page, request }) => {
+    for (let i = 1; i <= 2; i++) {
+      await seedInvoice(request, { clientName: `Tile Draft ${i}`, lines: [{ description: "Widget", quantity: 1, unitPriceCents: 500 }] });
+    }
+    await seedRequest(request, `Tile Req ${Date.now() % 100000}`);
+    await page.goto("/admin/#/dashboard");
+    const group = page.getByRole("group", { name: "Filter the to-do list" });
+    const labels = ["New requests", "Overdue invoices", "Draft invoices", "Needs print time", "Quotes awaiting reply"];
+    await expect(group.getByRole("button")).toHaveCount(5);
+    const names = await group.getByRole("button").evaluateAll((els) => els.map((el) => el.querySelector(".label")?.textContent));
+    expect(names).toEqual(labels);
+
+    const section = page.getByRole("region", { name: "Needs attention" });
+    const all = section.getByRole("button", { name: /^All \(\d+\)$/ });
+    await expect(all).toHaveAttribute("aria-pressed", "true");
+
+    const draft = group.getByRole("button", { name: /Draft invoices/ });
+    await expect(draft).toHaveAttribute("aria-pressed", "false");
+    await draft.click();
+    await expect(draft).toHaveAttribute("aria-pressed", "true");
+    await expect(all).toHaveAttribute("aria-pressed", "false");
+    const kinds = await section.locator(".attention-kind").allTextContents();
+    expect(kinds.length).toBeGreaterThan(0);
+    expect(new Set(kinds)).toEqual(new Set(["Draft invoice"]));
+
+    // Pressing the pressed tile again, or All, returns to the full list.
+    await draft.click();
+    await expect(draft).toHaveAttribute("aria-pressed", "false");
+    await expect(all).toHaveAttribute("aria-pressed", "true");
+    await draft.click();
+    await all.click();
+    await expect(all).toHaveAttribute("aria-pressed", "true");
+    await expect(draft).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("each to-do row is a link to its record at the existing hash route", async ({ page, request }) => {
+    const draft = await seedInvoice(request, { clientName: "Row Link Client", lines: [{ description: "Widget", quantity: 1, unitPriceCents: 500 }] });
+    await page.goto("/admin/#/dashboard");
+    const row = page.getByRole("region", { name: "Needs attention" }).getByRole("link", { name: new RegExp(draft.number) });
+    await expect(row).toHaveAttribute("href", `#/invoices/${draft.id}`);
+    await row.click();
+    await expect(page).toHaveURL(new RegExp(`#/invoices/${draft.id}$`));
+    await expect(page.getByRole("heading", { name: `Invoice ${draft.number}` })).toBeVisible();
   });
 });
 

@@ -4,6 +4,11 @@
   import { warnFor, friendlyMessage, moneyAmount, moneyPrecise } from "../lib/format";
   import type { ServerConfig } from "../lib/settings";
   import LabeledNumber from "./LabeledNumber.svelte";
+  import PageHeader from "./ui/PageHeader.svelte";
+  import Card from "./ui/Card.svelte";
+  import Field from "./ui/Field.svelte";
+  import FormGrid from "./ui/FormGrid.svelte";
+  import KeyValueTable from "./ui/KeyValueTable.svelte";
   import SettingsEditor from "./settings/SettingsEditor.svelte";
   import MaterialsSettings from "./settings/MaterialsSettings.svelte";
   import SpoolmanInventory from "./SpoolmanInventory.svelte";
@@ -52,7 +57,7 @@
 </script>
 
 <div class="page">
-  <h1>Filament</h1>
+  <PageHeader title="Filament" />
 
   <SettingsEditor bind:form={settingsForm}>
     {#snippet children({ form, hasError })}
@@ -62,25 +67,32 @@
 
   <SpoolmanInventory {cfg} />
 
-  <div class="stack">
-    <div class="card">
-      <h2>Spool price</h2>
-      <div class="field-rows">
+  <div class="cards">
+    <Card>
+<div class="stack">
+<h2>Spool price</h2>
+      <FormGrid align="controls">
         <LabeledNumber label="Spool price" suffix={cfg.currency.symbol} bind:value={spoolPrice} warn={warnFor(price.warnings, "spoolPrice")} />
         <LabeledNumber label="Spool weight" suffix="kg" step={0.25} bind:value={spoolWeightKg} warn={warnFor(price.warnings, "spoolWeightKg")} />
-      </div>
-      <dl class="out">
-        <div><dt>Per gram</dt><dd>{price.valid ? moneyPrecise(price.perGram, cfg, 3) : "-"}</dd></div>
-        <div><dt>Per kg</dt><dd>{price.valid ? moneyAmount(price.perKg, cfg) : "-"}</dd></div>
-      </dl>
+      </FormGrid>
+      <KeyValueTable
+        label="Spool price results"
+        rows={[
+          { label: "Per gram", value: price.valid ? moneyPrecise(price.perGram, cfg, 3) : "-" },
+          { label: "Per kg", value: price.valid ? moneyAmount(price.perKg, cfg) : "-" },
+        ]}
+      />
       {#if settingsForm && settingsForm.materials.length > 0}
+        <FormGrid align="controls">
+          <Field id="apply-material" label="Apply to" size="m">
+            {#snippet children(f)}
+              <select id={f.id} bind:value={applyMaterialId}>
+                {#each settingsForm!.materials as m (m.id)}<option value={m.id}>{m.name}</option>{/each}
+              </select>
+            {/snippet}
+          </Field>
+        </FormGrid>
         <div class="apply-row">
-          <label class="field">
-            <span>Apply to</span>
-            <select bind:value={applyMaterialId}>
-              {#each settingsForm.materials as m (m.id)}<option value={m.id}>{m.name}</option>{/each}
-            </select>
-          </label>
           <button type="button" disabled={!canApply} onclick={applyToMaterial}>
             Apply {price.valid ? moneyAmount(price.perKg, cfg) : ""} to {targetMaterial?.name || "material"}
           </button>
@@ -88,22 +100,23 @@
         <p class="hint" role="status">{appliedNotice}</p>
       {/if}
     </div>
+</Card>
 
-    <div class="card">
-      <h2>Remaining length</h2>
-      <div class="field-rows">
+    <Card>
+<div class="stack">
+<h2>Remaining length</h2>
+      <FormGrid align="controls">
         <LabeledNumber label="Remaining" suffix="g" bind:value={remainingG} warn={warnFor(length.warnings, "grams")} />
         <LabeledNumber label="Diameter" suffix="mm" step={0.05} bind:value={diameterMm} warn={warnFor(length.warnings, "diameterMm")} />
-        <label class="field">
-          <span>Material (density {density} g/cm³)</span>
-          <select bind:value={materialId}>
-            {#each cfg.materials as m (m.id)}<option value={m.id}>{m.name}</option>{/each}
-          </select>
-        </label>
-      </div>
-      <dl class="out">
-        <div><dt>Length</dt><dd>{length.valid ? length.lengthM.toFixed(1) + " m" : "-"}</dd></div>
-      </dl>
+        <Field id="remaining-material" label={`Material (density ${density} g/cm³)`} size="m">
+          {#snippet children(f)}
+            <select id={f.id} bind:value={materialId}>
+              {#each cfg.materials as m (m.id)}<option value={m.id}>{m.name}</option>{/each}
+            </select>
+          {/snippet}
+        </Field>
+      </FormGrid>
+      <KeyValueTable label="Remaining length results" rows={[{ label: "Length", value: length.valid ? length.lengthM.toFixed(1) + " m" : "-" }]} />
       <p
         class="density-status status-line"
         class:visible={!!densityWarning}
@@ -115,20 +128,18 @@
         <code>length = (grams ÷ density) × 1000 ÷ (π × (⌀/2)²)</code>
       </details>
     </div>
+</Card>
   </div>
 </div>
 
 <style>
-  .stack { display: grid; gap: 1rem; }
-  .out div { display: flex; justify-content: space-between; padding: 0.3rem 0; border-top: 1px solid var(--border); }
-  .out dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .cards { display: grid; gap: var(--gap-section); }
+  .stack { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+  .stack > :global(h2), .stack > :global(h3) { margin: 0; }
   .density-status { margin: 0; }
   /* The density warning is advisory, so it reads in --warn; .status-line supplies the live-region
    * min-height. Two classes outrank either single-class theme rule regardless of declaration order. */
-  .density-status.visible { color: var(--warn); margin: 0.4rem 0 0; }
-  details { color: var(--muted); font-size: var(--text-sm); margin-top: 0.5rem; }
-  /* Mirrors the Remaining length card's "Material (density ...)" field below: the same .field select paired
-   * with a submit button. */
-  .apply-row { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.6rem; }
-  .apply-row .field { flex: 1 1 12rem; }
+  .density-status.visible { color: var(--warn); }
+  details { color: var(--muted); font-size: var(--type-secondary); }
+  .apply-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 </style>

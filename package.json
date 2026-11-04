@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "npm run build -w web",
-    "e2e": "tsc --noEmit -p e2e && playwright test -c e2e"
+    "e2e": "tsc --noEmit -p e2e && playwright test -c e2e",
+    "lint:css": "node --experimental-strip-types scripts/lint-css.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.0",

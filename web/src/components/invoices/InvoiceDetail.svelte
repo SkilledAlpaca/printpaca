@@ -265,7 +265,7 @@
         </label>
         <label class="field">
           <span>Sales tax (%)</span>
-          <input type="number" min="0" max="30" step="0.01" bind:value={form.taxPct} />
+          <input type="number" min="0" max="100" step="0.01" bind:value={form.taxPct} />
         </label>
         <label class="field">
           <span>Invoice discount ({cfg.currency.symbol})</span>

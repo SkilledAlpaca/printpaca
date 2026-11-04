@@ -822,8 +822,8 @@ func handlePublicQuotePreview(store *ConfigStore, rl *rateLimiter, trustProxy bo
 		} else if !materialIsPublic {
 			problems = append(problems, "material: no longer offered; choose another")
 		}
-		if in.Quantity < 1 || in.Quantity > 1000 {
-			problems = append(problems, "quantity: must be an integer 1-1000")
+		if in.Quantity < 1 || in.Quantity > maxPublicQuoteQty {
+			problems = append(problems, fmt.Sprintf("quantity: must be an integer 1-%d", maxPublicQuoteQty))
 		}
 		if in.WeightG < 0 || in.WeightG > 100000 {
 			problems = append(problems, "weightG: must be 0-100000")
@@ -913,6 +913,9 @@ func sanitizeGcodeFilename(name string) string {
 }
 
 const maxTimeSeconds = 30 * 24 * 3600 // 30 days
+
+// maxPublicQuoteQty caps the quantity on a public quote or request. web/src/public/PublicQuotePage.svelte mirrors it.
+const maxPublicQuoteQty = 10000
 
 // readBoundedField reads at most publicMaxFieldBytes from a non-file part, so no text field grows the
 // heap. A value truncated at the cap still fails its length check with the right error.
@@ -1355,8 +1358,8 @@ func handlePublicQuoteRequest(db *sql.DB, store *ConfigStore, configDir string, 
 		}
 
 		quantity, err := strconv.Atoi(strings.TrimSpace(fields["quantity"]))
-		if err != nil || quantity < 1 || quantity > 1000 {
-			problems = append(problems, "quantity: must be an integer 1-1000")
+		if err != nil || quantity < 1 || quantity > maxPublicQuoteQty {
+			problems = append(problems, fmt.Sprintf("quantity: must be an integer 1-%d", maxPublicQuoteQty))
 		}
 
 		// strconv.ParseFloat accepts "NaN"/"Inf"/"-Inf" with a nil err, and every comparison against NaN is

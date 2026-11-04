@@ -30,7 +30,7 @@
     type Selected,
   } from "../lib/itemOptions";
   import { NAME_MAX_BYTES, NOTE_MAX_BYTES, ITEM_ORDER_EMAIL_MAX_BYTES, utf8ByteLength, isPlausibleEmail, EMAIL_FORMAT_ERROR } from "../lib/publicFormLimits";
-  import { clampQuantity, isValidQuantity, rateLimitMessage } from "./publicPricing";
+  import { clampQuantity, isValidQuantity, MAX_ITEM_ORDER_QTY, rateLimitMessage } from "./publicPricing";
   import { submitItemOrder, type PublicConfig, type PublicItem } from "./api";
 
   let {
@@ -88,14 +88,14 @@
   const visibleServerErrors = $derived(serverErrorsFor === formSnapshot ? serverErrors : []);
   const visibleRateLimited = $derived(rateLimited && serverErrorsFor === formSnapshot);
 
-  // in_stock is capped at what's left and at 100; allowBackorder lifts the cap to the global 100 regardless
+  // in_stock is capped at what's left and at MAX_ITEM_ORDER_QTY; allowBackorder lifts the cap to the global maximum regardless
   // of remaining stock, matching handlePublicItemOrder (server/public.go).
   const maxQuantity = $derived(
-    item.stock.mode === "in_stock" && !item.stock.allowBackorder ? Math.min(100, item.stock.qty ?? 0) : 100,
+    item.stock.mode === "in_stock" && !item.stock.allowBackorder ? Math.min(MAX_ITEM_ORDER_QTY, item.stock.qty ?? 0) : MAX_ITEM_ORDER_QTY,
   );
 
-  // The cap comes from the stock on hand when that is below the per-order maximum of 100.
-  const stockLimited = $derived(item.stock.mode === "in_stock" && !item.stock.allowBackorder && (item.stock.qty ?? 0) < 100);
+  // The cap comes from the stock on hand when that is below the per-order maximum (MAX_ITEM_ORDER_QTY).
+  const stockLimited = $derived(item.stock.mode === "in_stock" && !item.stock.allowBackorder && (item.stock.qty ?? 0) < MAX_ITEM_ORDER_QTY);
   let lastClampedTo = -1;
   $effect(() => {
     if (quantity === null) return;

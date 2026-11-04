@@ -17,7 +17,7 @@
       "properties": {
         "strategy": { "enum": ["margin", "markup"] },
         "marginPct": { "type": "number", "minimum": 0, "maximum": 99.9 },
-        "markupMultiplier": { "type": "number", "minimum": 0, "maximum": 1000 },
+        "markupMultiplier": { "type": "number", "minimum": 0, "maximum": 10000 },
         "taxRatePct": { "type": "number", "minimum": 0, "maximum": 100 },
         "defaultShippingCost": { "type": "number", "minimum": 0 },
         "defaultShippingCharge": { "type": "number", "minimum": 0 },
@@ -215,8 +215,8 @@
       "type": "object", "additionalProperties": false,
       "properties": {
         "numberPrefix": { "type": "string", "pattern": "^[A-Za-z0-9]{1,10}$" },
-        "salesTaxPct": { "type": "number", "minimum": 0, "maximum": 30 },
-        "dueDays": { "type": "integer", "minimum": 0, "maximum": 365 },
+        "salesTaxPct": { "type": "number", "minimum": 0, "maximum": 100 },
+        "dueDays": { "type": "integer", "minimum": 0, "maximum": 10000 },
         "paymentMethods": {
           "type": "array",
           "minItems": 1,

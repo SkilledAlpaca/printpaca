@@ -13,6 +13,9 @@ export interface QuantityClampResult {
   message: string | null;
 }
 
+/** The per-order item quantity ceiling; mirrors maxItemOrderQty in server/items.go. */
+export const MAX_ITEM_ORDER_QTY = 10000;
+
 /** Why a quantity is capped: a fixed per-order policy limit, or the stock on hand. */
 export type QuantityLimit = "policy" | "stock";
 

@@ -443,7 +443,7 @@ type CostBreakdown struct {
 }
 
 // maxPrinterWatts caps a printer's plausible power draw; web/src/lib/engine/electricity.ts mirrors it.
-const maxPrinterWatts = 5000
+const maxPrinterWatts = 10000
 
 // Plausibility maxima turn an absurd magnitude into a named validation error, not a silent wrong number
 // (1e200 x 1e200 overflows to +Inf, which roundCents maps to a $0.00 line). They bound inputs, not products;
@@ -463,9 +463,9 @@ const (
 const maxMarginPct = 99.9
 
 // maxMarkupMultiplier is the single ceiling on a markup, shared like maxMarginPct (also
-// config.schema.json and web settingsRules.ts, which hardcodes 1000). Without one, 1e15 at quantity 1000
-// wrapped revenue negative with Valid true. 1000 bounds absurdity; it is inclusive.
-const maxMarkupMultiplier = 1000
+// config.schema.json and web settingsRules.ts, which hardcodes 10000). Without one, 1e15 at quantity 1000
+// wrapped revenue negative with Valid true. 10000 bounds absurdity; it is inclusive. The saturating addCents/mulCents keep markup x quantity x unit cost from wrapping (TestLimitsExtremesDoNotOverflow).
+const maxMarkupMultiplier = 10000
 
 // maxFailureRatePct is the single ceiling on failureRatePct, shared with config.go, config.schema.json, and
 // web settingsRules.ts. The failure buffer is base x p / (1 - p), which grows without bound as p approaches 1;

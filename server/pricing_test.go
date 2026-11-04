@@ -482,6 +482,7 @@ func TestOutOfRangeMagnitudesAreNamedErrors(t *testing.T) {
 			return p
 		}(), "salePriceOverride"},
 		{"markupMultiplier", 1000, markupPricing(1e17), "markupMultiplier"},
+		{"markupMultiplier-just-above-ceiling", 1000, markupPricing(maxMarkupMultiplier + 0.5), "markupMultiplier"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inputs := boundaryBaseInputs()
@@ -523,7 +524,7 @@ func TestOutOfRangeMagnitudesAreNamedErrors(t *testing.T) {
 func TestBoundaryVectors(t *testing.T) {
 	// Inclusive maxima accept the boundary value and reject one past it. Expected amounts are derived from boundaryBaseInputs'
 	// lines: wastePct 100 doubles material (100 g x 2 x $20/kg = 400c); failureRatePct 100 makes the buffer the whole $2.10 consumables;
-	// timeMinutes 59 gives 1.98333 h x 1 kW x $0.10 = 20c (60 belongs in timeHours); maxPrinterWatts 5000 is 1 h x 5 kW x $0.10 = 50c.
+	// timeMinutes 59 gives 1.98333 h x 1 kW x $0.10 = 20c (60 belongs in timeHours); maxPrinterWatts 10000 is 1 h x 10 kW x $0.10 = 100c.
 	inclusive := []struct {
 		name        string
 		mutate      func(*QuoteInputs)
@@ -538,8 +539,8 @@ func TestBoundaryVectors(t *testing.T) {
 		{"failureRatePct-100-rejected", func(q *QuoteInputs) { q.FailureRatePct = F(100) }, "", 0, 0, "failureRatePct"},
 		{"timeMinutes-59-inclusive-max", func(q *QuoteInputs) { q.TimeMinutes = F(59) }, "electricity", 20, 0, ""},
 		{"timeMinutes-60-rejected", func(q *QuoteInputs) { q.TimeMinutes = F(60) }, "", 0, 0, "timeMinutes"},
-		{"watts-5000-inclusive-max", func(q *QuoteInputs) { q.Watts = F(maxPrinterWatts) }, "electricity", 50, 0, ""},
-		{"watts-5001-rejected", func(q *QuoteInputs) { q.Watts = F(maxPrinterWatts + 1) }, "", 0, 0, "watts"},
+		{"watts-10000-inclusive-max", func(q *QuoteInputs) { q.Watts = F(maxPrinterWatts) }, "electricity", 100, 0, ""},
+		{"watts-10001-rejected", func(q *QuoteInputs) { q.Watts = F(maxPrinterWatts + 1) }, "", 0, 0, "watts"},
 	}
 	for _, tc := range inclusive {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1121,4 +1122,85 @@ func TestRecommendedPriceRoundsUpToTarget(t *testing.T) {
 			t.Errorf("markup %v: price %d is below cost x multiplier %.4f", mult, p.RecommendedPrice, 1210*mult)
 		}
 	}
+}
+
+// Raising maxMarkupMultiplier to 10000 must not open an int64 overflow: markup x quantity x unit cost is a product
+// the per-field maxima don't bound, so the saturating helpers (roundCents, ceilCents, addCents, mulCents) carry it.
+// At every extreme the quote either prices without wrapping (revenue and prices >= 0, ordering consistent) or
+// saturates at maxCents; it never goes negative while Valid.
+func TestLimitsExtremesDoNotOverflow(t *testing.T) {
+	assertSane := func(t *testing.T, name string, p *PricingResult) {
+		t.Helper()
+		if p == nil {
+			t.Fatalf("%s: no pricing result", name)
+		}
+		if p.RecommendedPrice < 0 || p.ResolvedPrice < 0 || p.Revenue < 0 || p.Fees < 0 || p.Tax < 0 {
+			t.Errorf("%s: negative amount (recommended %d, resolved %d, revenue %d, fees %d, tax %d); a positive input must never wrap negative", name, p.RecommendedPrice, p.ResolvedPrice, p.Revenue, p.Fees, p.Tax)
+		}
+	}
+
+	t.Run("markup-10000-at-max-quantity-and-unit-cost", func(t *testing.T) {
+		inputs := boundaryBaseInputs()
+		inputs.PricePerKg = F(maxMoneyAmount)
+		inputs.WeightG = F(maxWeightG)
+		inputs.Quantity = F(maxQuantity)
+		inputs.Hardware = []HardwareLine{{Name: "x", UnitCost: F(maxMoneyAmount), QtyPerUnit: F(maxQuantity)}}
+		inputs.Pricing = markupPricing(maxMarkupMultiplier)
+		bd := ComputeQuote(inputs, DefaultEngineOptions)
+		assertSane(t, "extreme", bd.Pricing)
+		if bd.BatchTotal < 0 || bd.PerUnitTotal < 0 {
+			t.Errorf("batchTotal/perUnitTotal = %d/%d, neither may be negative", bd.BatchTotal, bd.PerUnitTotal)
+		}
+	})
+
+	t.Run("markup-10000-at-realistic-large-run-is-exact", func(t *testing.T) {
+		// $12.10 unit cost x 10000 markup = $121,000.00 per unit; x 100000 units = 1.21e12 cents, far inside int64.
+		inputs := boundaryBaseInputs()
+		inputs.Quantity = F(maxQuantity)
+		inputs.Pricing = markupPricing(maxMarkupMultiplier)
+		bd := ComputeQuote(inputs, DefaultEngineOptions)
+		p := bd.Pricing
+		if !p.Valid {
+			t.Fatalf("valid = false; warnings = %+v", p.Warnings)
+		}
+		want := mulCents(p.RecommendedPrice, maxQuantity)
+		if p.Revenue != want || p.Revenue <= 0 {
+			t.Errorf("revenue = %d, want %d (recommended %d x %d)", p.Revenue, want, p.RecommendedPrice, int64(maxQuantity))
+		}
+	})
+
+	t.Run("override-at-max-money-times-max-quantity-saturates", func(t *testing.T) {
+		// 1e9 dollars = 1e11 cents x 100000 = 1e16 cents: inside int64 (9.2e18), still exact.
+		inputs := boundaryBaseInputs()
+		inputs.Quantity = F(maxQuantity)
+		inputs.Pricing = markupPricing(maxMarkupMultiplier)
+		inputs.Pricing.SalePriceOverride = OptF{Value: maxMoneyAmount, Present: true}
+		p := ComputeQuote(inputs, DefaultEngineOptions).Pricing
+		assertSane(t, "override", p)
+		if p.Revenue != 100_000_000_000*maxQuantity {
+			t.Errorf("revenue = %d, want %d", p.Revenue, int64(100_000_000_000)*maxQuantity)
+		}
+	})
+
+	t.Run("saturating-helpers-at-the-limits", func(t *testing.T) {
+		// A maximal line (1e11 cents x 100000 units) summed across a maximal fee/line count stays below
+		// maxCents, and anything beyond clamps instead of wrapping.
+		line := mulCents(100_000_000_000, maxQuantity)
+		sum := int64(0)
+		for range 900 {
+			sum = addCents(sum, line)
+		}
+		if sum != 9_000_000_000_000_000_000 {
+			t.Errorf("900 maximal lines sum to %d, want 9e18", sum)
+		}
+		for range 30 {
+			sum = addCents(sum, line)
+		}
+		if sum != maxCents {
+			t.Errorf("sum past int64 = %d, want saturation at maxCents", sum)
+		}
+		if got := mulCents(int64(maxMarkupMultiplier)*100_000_000_000, maxQuantity*1000); got != maxCents {
+			t.Errorf("mulCents past int64 = %d, want maxCents", got)
+		}
+	})
 }

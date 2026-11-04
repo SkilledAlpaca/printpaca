@@ -453,6 +453,14 @@ func normalizeHardware(c *Config) {
 // 200 is far beyond a real catalog.
 const maxConfigCollectionSize = 200
 
+// maxSalesTaxPct and maxDueDays bound invoicing.salesTaxPct (a percentage, so 100 is the mathematical
+// ceiling) and invoicing.dueDays (10000 days, about 27 years). config.schema.json, web settingsRules.ts and
+// the Settings inputs mirror them; invoices.go derives the per-invoice taxBp ceiling from maxSalesTaxPct.
+const (
+	maxSalesTaxPct = 100
+	maxDueDays     = 10000
+)
+
 // publicIntroTextMaxBytes bounds publicQuotes.introText in bytes (len()), not characters, so the web counter
 // (PublicQuotesSettings.svelte, keep in sync) and the 422 agree for multi-byte scripts and emoji.
 const publicIntroTextMaxBytes = 500
@@ -603,11 +611,11 @@ func validate(c *Config) []string {
 	if !isAlnumPrefix(c.Invoicing.NumberPrefix) {
 		p = append(p, "invoicing.numberPrefix: must be 1-10 letters/digits")
 	}
-	if c.Invoicing.SalesTaxPct < 0 || c.Invoicing.SalesTaxPct > 30 {
-		p = append(p, fmt.Sprintf("invoicing.salesTaxPct: %v out of range [0,30]", c.Invoicing.SalesTaxPct))
+	if c.Invoicing.SalesTaxPct < 0 || c.Invoicing.SalesTaxPct > maxSalesTaxPct {
+		p = append(p, fmt.Sprintf("invoicing.salesTaxPct: %v out of range [0,%d]", c.Invoicing.SalesTaxPct, maxSalesTaxPct))
 	}
-	if c.Invoicing.DueDays < 0 || c.Invoicing.DueDays > 365 {
-		p = append(p, fmt.Sprintf("invoicing.dueDays: %v out of range [0,365]", c.Invoicing.DueDays))
+	if c.Invoicing.DueDays < 0 || c.Invoicing.DueDays > maxDueDays {
+		p = append(p, fmt.Sprintf("invoicing.dueDays: %v out of range [0,%d]", c.Invoicing.DueDays, maxDueDays))
 	}
 	p = append(p, validatePaymentMethods(c.Invoicing.PaymentMethods)...)
 	if c.Invoicing.PayPalMe != "" && !paypalHandleRe.MatchString(c.Invoicing.PayPalMe) {

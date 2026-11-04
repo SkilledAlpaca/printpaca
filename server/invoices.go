@@ -199,8 +199,8 @@ func validateInvoiceInput(in *invoiceInput) []string {
 			problems = append(problems, "dueDate: must be YYYY-MM-DD")
 		}
 	}
-	if in.TaxBp != nil && (*in.TaxBp < 0 || *in.TaxBp > 3000) {
-		problems = append(problems, "taxBp: must be 0-3000")
+	if in.TaxBp != nil && (*in.TaxBp < 0 || *in.TaxBp > maxSalesTaxPct*100) {
+		problems = append(problems, fmt.Sprintf("taxBp: must be 0-%d", maxSalesTaxPct*100))
 	}
 	if in.DiscountCents < 0 || in.DiscountCents > 100_000_000 {
 		problems = append(problems, "discountCents: must be 0-100000000")

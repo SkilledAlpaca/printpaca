@@ -792,7 +792,7 @@ func TestInvoicingConfigDefaultsLoad(t *testing.T) {
 
 func TestInvoicingConfigOutOfRangeSalesTaxPctFailsValidation(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("invoicing:\n  salesTaxPct: 45\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("invoicing:\n  salesTaxPct: 100.5\n"), 0o644); err != nil {
 		t.Fatalf("write config.yaml: %v", err)
 	}
 	_, err := LoadConfig(dir)
@@ -1249,5 +1249,36 @@ func TestInvoiceFromQuoteDefaultsDates(t *testing.T) {
 	manual := mustUnmarshalInvoice(t, rec)
 	if manual.IssueDate != "" || manual.DueDate != "" {
 		t.Errorf("manual invoice dates = %q / %q, want them left blank", manual.IssueDate, manual.DueDate)
+	}
+}
+
+// The widest invoice the validators accept (100 lines, each at the quantity and unit-price maxima, the maximum
+// per-line discount and a 100% tax rate) must total exactly, far inside int64 and below 2^53 so the browser's
+// doubles stay exact too.
+func TestInvoiceTotalsAtValidatorExtremes(t *testing.T) {
+	const (
+		maxQty  = 100000
+		unitMax = 100_000_000
+		lines   = 100
+		taxBp   = maxSalesTaxPct * 100
+	)
+	in := make([]invoiceLineInput, lines)
+	for i := range in {
+		in[i] = invoiceLineInput{Description: "x", Quantity: maxQty, UnitPriceCents: unitMax, DiscountCents: 0}
+	}
+	if p := validateInvoiceInput(&invoiceInput{ClientName: "X", Lines: in, TaxBp: func() *int { v := taxBp; return &v }()}); len(p) != 0 {
+		t.Fatalf("the extreme invoice failed validation: %v", p)
+	}
+	got := computeTotals(in, 0, taxBp)
+	wantSubtotal := lines * maxQty * unitMax // 1e15
+	if got.SubtotalCents != wantSubtotal || got.TaxCents != wantSubtotal || got.TotalCents != 2*wantSubtotal {
+		t.Errorf("subtotal/tax/total = %d/%d/%d, want %d/%d/%d", got.SubtotalCents, got.TaxCents, got.TotalCents, wantSubtotal, wantSubtotal, 2*wantSubtotal)
+	}
+	if got.TotalCents <= 0 || got.TotalCents >= 1<<53 {
+		t.Errorf("total %d is outside (0, 2^53)", got.TotalCents)
+	}
+	over := validateInvoiceInput(&invoiceInput{ClientName: "X", Lines: in[:1], TaxBp: func() *int { v := taxBp + 1; return &v }()})
+	if len(over) == 0 {
+		t.Error("taxBp above the ceiling validated clean")
 	}
 }

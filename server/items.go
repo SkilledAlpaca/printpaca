@@ -30,7 +30,7 @@ const (
 )
 
 // maxItemOrderQty caps the units of one item in a gallery order (handlePublicItemOrder), backorders included.
-const maxItemOrderQty = 100
+const maxItemOrderQty = 10000
 
 // itemConflictMessage is the 409 body for a PUT sent with a stale version.
 const itemConflictMessage = "this item was changed in another tab or by another user; reload to see the latest"

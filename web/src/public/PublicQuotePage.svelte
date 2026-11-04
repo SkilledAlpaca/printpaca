@@ -242,7 +242,7 @@
   // flagged first.
   const MAX_WEIGHT_G = 100000;
   const MAX_TIME_SECONDS = 30 * 24 * 3600;
-  const MAX_QUOTE_QUANTITY = 1000;
+  const MAX_QUOTE_QUANTITY = 10000;
   // The Solidity hint says "most prints are 15 to 25%", so the default sits inside that range. (The admin
   // quote form keeps the engine's own default.)
   const PUBLIC_DEFAULT_SOLIDITY_PCT = 20;
@@ -390,7 +390,7 @@
   const preview = createQuotePreview({ fetcher: fetchQuotePreview, toState: previewToState, onChange: (s) => (previewState = s) });
   onDestroy(() => preview.dispose());
 
-  // Mirrors server/public.go's bounds (MAX_WEIGHT_G/MAX_TIME_SECONDS, quantity 1-1000, a chosen material):
+  // Mirrors server/public.go's bounds (MAX_WEIGHT_G/MAX_TIME_SECONDS, quantity 1-10000, a chosen material):
   // previews only fire once every field the server requires is in place, so a request it would reject spends
   // no round trip. No print time means no preview: the shop confirms that price, nothing is estimated from volume.
   const previewInput = $derived.by(() => {

@@ -204,7 +204,7 @@ export function settingsWarnings(form: ServerConfig): FieldWarning[] {
     // pricing.markupMultiplier: 1000 is the single ceiling shared with server/config.go's validate() and
     // server/pricing.go's maxMarkupMultiplier. Without a maximum, 1e6 priced a $14.51 part at $14.5 M and
     // 1e15 wrapped revenue negative on a "valid" quote.
-    ...field("pricing.markupMultiplier", form.pricing.markupMultiplier, { min: 0, max: 1000 }),
+    ...field("pricing.markupMultiplier", form.pricing.markupMultiplier, { min: 0, max: 10000 }),
     // pricing.taxRatePct: [0,100], mirroring server/config.go's validate() and server/pricing.go's
     // maxPercentAmount. The tax term is price-inclusive, so a negative rate would silently shave every
     // quote's price.
@@ -217,12 +217,12 @@ export function settingsWarnings(form: ServerConfig): FieldWarning[] {
     ),
     ...field("defaults.quantity", form.defaults.quantity, { min: 1, integer: true }),
     ...numberPrefixWarnings(form.invoicing.numberPrefix),
-    // invoicing.salesTaxPct: server/config.go rejects anything outside 0-30.
+    // invoicing.salesTaxPct: server/config.go rejects anything outside 0-100 (maxSalesTaxPct).
     ...field("pricing.defaultShippingCharge", form.pricing.defaultShippingCharge, { min: 0, max: 1e9 }),
     ...timezoneWarnings(form.timezone),
-    ...field("invoicing.salesTaxPct", form.invoicing.salesTaxPct, { min: 0, max: 30 }),
-    // invoicing.dueDays: server/config.go rejects anything outside 0-365.
-    ...field("invoicing.dueDays", form.invoicing.dueDays, { min: 0, max: 365, integer: true }),
+    ...field("invoicing.salesTaxPct", form.invoicing.salesTaxPct, { min: 0, max: 100 }),
+    // invoicing.dueDays: server/config.go rejects anything outside 0-10000 (maxDueDays).
+    ...field("invoicing.dueDays", form.invoicing.dueDays, { min: 0, max: 10000, integer: true }),
     ...paymentMethodsWarnings(form.invoicing.paymentMethods),
     ...paypalMeWarnings(form.invoicing.paypalMe ?? ""),
     ...currencyCodeWarnings(form.currency.code),

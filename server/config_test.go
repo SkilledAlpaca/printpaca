@@ -781,10 +781,10 @@ func pricingWarnsFor(t *testing.T, cfg *Config, field, code string) (bool, *Pric
 // markupMultiplier warning, and the rejection must name the field and bound.
 func TestMarkupMultiplierCeilingIsAlignedAcrossLayers(t *testing.T) {
 	// Above the ceiling is rejected at config load, naming field and bound.
-	if _, err := loadWithPricingYAML(t, "  strategy: markup\n  markupMultiplier: 1000.1\n"); err == nil {
-		t.Fatal("markupMultiplier 1000.1 loaded clean; want a config validation error")
+	if _, err := loadWithPricingYAML(t, "  strategy: markup\n  markupMultiplier: 10000.1\n"); err == nil {
+		t.Fatal("markupMultiplier 10000.1 loaded clean; want a config validation error")
 	} else {
-		for _, want := range []string{"pricing.markupMultiplier", "1000"} {
+		for _, want := range []string{"pricing.markupMultiplier", "10000"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("error %q does not mention %q", err.Error(), want)
 			}
@@ -793,7 +793,7 @@ func TestMarkupMultiplierCeilingIsAlignedAcrossLayers(t *testing.T) {
 
 	// Anything config accepts must actually price. maxMarkupMultiplier is
 	// inclusive on both sides of the alignment, so it is the interesting one.
-	for _, mult := range []string{"0", "2.5", "1000"} {
+	for _, mult := range []string{"0", "2.5", "10000"} {
 		cfg, err := loadWithPricingYAML(t, "  strategy: markup\n  markupMultiplier: "+mult+"\n")
 		if err != nil {
 			t.Fatalf("markupMultiplier %s: config rejected a value it should accept: %v", mult, err)

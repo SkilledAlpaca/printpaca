@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampQuantity, isValidQuantity, perUnitCents, rateLimitMessage } from "./publicPricing";
+import { clampQuantity, isValidQuantity, MAX_ITEM_ORDER_QTY, perUnitCents, rateLimitMessage } from "./publicPricing";
 
 describe("perUnitCents", () => {
   it("divides an integer total evenly", () => {
@@ -57,5 +57,13 @@ describe("rateLimitMessage", () => {
   it("uses whichever contact exists, or none", () => {
     expect(rateLimitMessage({ email: "", phone: "555-0100" })).toContain("or call 555-0100.");
     expect(rateLimitMessage({ email: "", phone: "" })).toBe("We've had a lot of requests from your connection. Try again later.");
+  });
+});
+
+describe("MAX_ITEM_ORDER_QTY", () => {
+  it("is the 10000 per-order ceiling the clamp message names", () => {
+    expect(MAX_ITEM_ORDER_QTY).toBe(10000);
+    expect(clampQuantity(10001, MAX_ITEM_ORDER_QTY)).toEqual({ value: 10000, message: "Max 10000 per order." });
+    expect(isValidQuantity(10000, MAX_ITEM_ORDER_QTY)).toBe(true);
   });
 });

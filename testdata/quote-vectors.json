@@ -7381,7 +7381,93 @@
     }
   },
   {
-    "name": "pricing-markupMultiplier-boundary-10001-invalid",
+    "name": "pricing-markupMultiplier-boundary-10000-valid",
+    "derivation": "maxMarkupMultiplier is INCLUSIVE, the same shape as marginPct's 99.9 ceiling: 10000 prices. On the 1210c cost basis, recommended = resolved = 1210 x 10000 = 121000000; revenue = same at quantity 1; netProfit = 121000000 - 1210 = 12098790.",
+    "inputs": {
+      "weightG": 100,
+      "pricePerKg": 20,
+      "wastePct": 0,
+      "timeHours": 1,
+      "timeMinutes": 0,
+      "watts": 1000,
+      "energy": {
+        "mode": "flat",
+        "flatRate": 0.1
+      },
+      "failureRatePct": 0,
+      "prepMinutes": 60,
+      "laborRate": 10,
+      "machineCost": 0,
+      "machineLifeHours": 0,
+      "monthlyFixed": 0,
+      "monthlyHours": 0,
+      "quantity": 1,
+      "pricing": {
+        "strategy": "markup",
+        "markupMultiplier": 10000,
+        "taxRatePct": 0,
+        "shippingCharge": 0,
+        "shippingCost": 0
+      }
+    },
+    "options": null,
+    "expected": {
+      "costBreakdown": {
+        "perUnit": [
+          {
+            "id": "material",
+            "label": "Material",
+            "amount": 200
+          },
+          {
+            "id": "electricity",
+            "label": "Electricity",
+            "amount": 10
+          },
+          {
+            "id": "depreciation",
+            "label": "Depreciation",
+            "amount": 0
+          },
+          {
+            "id": "failure",
+            "label": "Failure buffer",
+            "amount": 0
+          },
+          {
+            "id": "labor",
+            "label": "Prep labor (batch, amortized)",
+            "amount": 1000
+          },
+          {
+            "id": "overhead",
+            "label": "Overhead",
+            "amount": 0
+          }
+        ],
+        "perUnitTotal": 1210,
+        "quantity": 1,
+        "batchTotal": 1210,
+        "valid": true
+      },
+      "pricingResult": {
+        "strategy": "markup",
+        "recommendedPrice": 12100000,
+        "resolvedPrice": 12100000,
+        "revenue": 12100000,
+        "fees": 0,
+        "feeLines": [],
+        "tax": 0,
+        "shippingCharge": 0,
+        "shippingCost": 0,
+        "netProfit": 12098790,
+        "achievedMarginPct": 99.99,
+        "valid": true
+      }
+    }
+  },
+  {
+    "name": "pricing-markupMultiplier-boundary-above-10000-invalid",
     "derivation": "Just above the inclusive ceiling: pricing is invalid with an above-max markupMultiplier warning, so recommendedPrice stays 0 (the price is never computed for an out-of-range multiplier) and revenue is 0. Cost validity is untouched -- a pricing-only error never blanks the cost totals. netProfit = 0 - batchTotal 1210.",
     "inputs": {
       "weightG": 100,
@@ -7404,7 +7490,7 @@
       "quantity": 1,
       "pricing": {
         "strategy": "markup",
-        "markupMultiplier": 1000.1,
+        "markupMultiplier": 10000.1,
         "taxRatePct": 0,
         "shippingCharge": 0,
         "shippingCost": 0

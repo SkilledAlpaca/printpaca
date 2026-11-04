@@ -29,7 +29,7 @@ export interface EnergyInputs {
 }
 
 /** Mirrors server/pricing.go's maxPrinterWatts so a value accepted here is never rejected by the server. */
-const MAX_PRINTER_WATTS = 5000;
+const MAX_PRINTER_WATTS = 10000;
 
 export function effectiveRate(e: EnergyInputs): number {
   if (e.mode === "flat") return e.flatRate ?? 0;

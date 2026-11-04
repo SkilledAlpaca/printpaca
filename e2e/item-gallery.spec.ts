@@ -310,8 +310,8 @@ test("an in_stock item with allowBackorder and zero qty shows 'Available to orde
   await card.click();
   await expect(page.getByRole("heading", { name: BACKORDER_ITEM_NAME })).toBeVisible();
 
-  // Quantity's max reflects the lifted cap (100), not the item's stockQty of 0.
-  await expect(page.getByLabel("Quantity")).toHaveAttribute("max", "100");
+  // Quantity's max reflects the lifted cap (10000), not the item's stockQty of 0.
+  await expect(page.getByLabel("Quantity")).toHaveAttribute("max", "10000");
 
   await page.getByLabel("Quantity").fill(String(BACKORDER_QUANTITY));
   await page.getByLabel("Name").fill(CUSTOMER_NAME);

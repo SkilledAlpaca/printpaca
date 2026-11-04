@@ -125,17 +125,17 @@ describe("pricing.markupMultiplier", () => {
   it("fails below 0", () => {
     expectInvalid("pricing.markupMultiplier", [-1]);
   });
-  // 1000 is the ceiling shared with server/config.go and server/pricing.go (maxMarkupMultiplier); 1e6 once
+  // 10000 is the ceiling shared with server/config.go and server/pricing.go (maxMarkupMultiplier); 1e6 once
   // priced a $14.51 part at $14.5 M. The bound is inclusive, so the boundary is the interesting case.
-  it("passes at the shared 1000 ceiling", () => {
-    expectValid("pricing.markupMultiplier", [1000]);
+  it("passes at the shared 10000 ceiling", () => {
+    expectValid("pricing.markupMultiplier", [10000]);
   });
-  it("fails just above the shared 1000 ceiling, naming the bound", () => {
+  it("fails just above the shared 10000 ceiling, naming the bound", () => {
     const c = baseConfig();
-    c.pricing.markupMultiplier = 1000.1;
+    c.pricing.markupMultiplier = 10000.1;
     const warnings = warningsFor(c, "pricing.markupMultiplier");
     expect(hasErrors(warnings)).toBe(true);
-    expect(warnings.some((w) => w.code === "above-max" && w.message.includes("1000"))).toBe(true);
+    expect(warnings.some((w) => w.code === "above-max" && w.message.includes("10000"))).toBe(true);
   });
   it("fails at magnitudes that would wrap revenue", () => {
     for (const mult of [1e6, 1e15, 1e17]) {
@@ -201,19 +201,19 @@ describe("invoicing.numberPrefix", () => {
 
 describe("invoicing.salesTaxPct", () => {
   it("passes at the bounds", () => {
-    expectValid("invoicing.salesTaxPct", [0, 30]);
+    expectValid("invoicing.salesTaxPct", [0, 30, 100]);
   });
   it("fails outside the bounds", () => {
-    expectInvalid("invoicing.salesTaxPct", [-1, 30.1]);
+    expectInvalid("invoicing.salesTaxPct", [-1, 100.1]);
   });
 });
 
 describe("invoicing.dueDays", () => {
   it("passes at the bounds", () => {
-    expectValid("invoicing.dueDays", [0, 365]);
+    expectValid("invoicing.dueDays", [0, 365, 10000]);
   });
   it("fails outside the bounds and on a non-integer", () => {
-    expectInvalid("invoicing.dueDays", [-1, 366, 30.5]);
+    expectInvalid("invoicing.dueDays", [-1, 10001, 30.5]);
   });
 });
 

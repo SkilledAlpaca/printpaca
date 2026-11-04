@@ -1,10 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { fillCanonicalQuote, navButton } from "./helpers";
+import { fillCanonicalQuote, navButton, openBreakdown } from "./helpers";
 
 test("app boots and computes the canonical quote", async ({ page }) => {
   await page.goto("/admin/");
   await expect(page.getByRole("heading", { name: "New quote", level: 1 })).toBeVisible();
 
+  await openBreakdown(page);
   // Canonical case: 50 g, 1 h 20 m, defaults -> $2.24 total. The hours lookup is anchored because an
   // unanchored /Print time/ also matches the wrapping role=group.
   await page.getByLabel(/Model weight/).fill("50");
@@ -26,7 +27,7 @@ test("clearing a field shows a scoped warning and blanks the computed total", as
   // A fresh, untouched field never shows its warning even though Model weight starts empty. Wait for
   // the input to be visible first, so the assertion doesn't pass trivially before hydration.
   await expect(page.getByLabel(/Model weight/)).toBeVisible();
-  const weightWarning = page.locator(".field", { has: page.getByLabel(/Model weight/) }).locator(".warn-text");
+  const weightWarning = page.locator(".ui-field", { has: page.getByLabel(/Model weight/) }).locator(".error-text");
   await expect(weightWarning).not.toBeVisible();
 
   await page.getByLabel(/Model weight/).fill("50");
@@ -80,8 +81,8 @@ test("an invalid print-time half warns only that half", async ({ page }) => {
   await hours.fill("-5"); // below the engine's min:0 bound for timeHours
 
   // One shared warning line under the pair, not one per input.
-  const timeField = page.locator(".field", { has: page.locator(".time-pair") });
-  await expect(timeField.locator(".warn-text")).toHaveCount(1);
+  const timeField = page.locator(".ui-field", { has: page.locator(".time-pair") });
+  await expect(timeField.locator(".error-text")).toHaveCount(1);
 
   // Each half flags aria-invalid from its own warning: hours is out of bounds, minutes is valid.
   await expect(hours).toHaveAttribute("aria-invalid", "true");

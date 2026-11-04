@@ -6,14 +6,14 @@
   import { quoteSummaryStats } from "../lib/quoteSummary";
   import { quoteBlockers, needSentence } from "../lib/quoteBlockers";
   import { goToBlocker } from "../lib/goToBlocker";
-  import { stickyInset } from "../lib/stickyInset";
-  import SlicerHelp from "./SlicerHelp.svelte";
+    import SlicerHelp from "./SlicerHelp.svelte";
 
   let {
     cfg,
     order,
     previewStatus = "idle",
     previewError = "",
+    variant = "full",
   }: {
     cfg: EffectiveConfig;
     order: OrderBreakdown;
@@ -21,17 +21,9 @@
     previewStatus?: string;
     /** The full message to show while previewStatus is "error". */
     previewError?: string;
+    /** "full" is the summary column; "compact" is the headline numbers for the pinned bottom bar. */
+    variant?: "full" | "compact";
   } = $props();
-
-  // Whether the bar is pinned (the media query in the style block): it then reserves its height for focus.
-  let sticky = $state(false);
-  $effect(() => {
-    const mq = matchMedia("(min-width: 700px) and (min-height: 600px)");
-    const sync = () => (sticky = mq.matches);
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  });
 
   // "Updating price…" appears only once the preview has been pending for PENDING_DELAY_MS, so a fast round trip
   // (the usual case while stepping a field) never flashes text. The slot below is always rendered, so showing
@@ -71,107 +63,107 @@
   }
 </script>
 
-<div class="card summary" role="group" aria-label="Quote summary" use:stickyInset={{ edge: "top", active: sticky }}>
-  <div class="group">
-    <span class="section-label">Your cost</span>
-    <div class="cost-stats">
-      <div class="stat cost">
-        <span class="stat-label">{order.parts.length > 1 ? `Order of ${order.parts.length} parts` : s.quantity > 1 ? `Batch of ${s.quantity}` : "This print"}</span>
-        <span class="stat-value">{s.costCents !== null ? money(s.costCents, cfg) : "-"}</span>
-      </div>
-      {#if s.quantity > 1}
-        <div class="stat per-unit">
-          <span class="stat-label">Per unit</span>
-          <span class="stat-value">{s.costCents !== null ? money(order.parts[0]?.breakdown.perUnitTotal ?? 0, cfg) : "-"}</span>
-        </div>
-      {/if}
-    </div>
-    <!-- The line is always reserved, so a field filling in doesn't pull the cards below it upward. -->
-    <div class="cost-need">
-      {#if need}
-        <a
-          href="#main"
-          onclick={(e) => {
-            e.preventDefault();
-            void goToBlocker(need);
-          }}>{needText}</a>
-        {#if needsTime}<SlicerHelp />{/if}
-      {/if}
-    </div>
-  </div>
-  <div class="group sell">
-    <span class="section-label">Client price</span>
+{#snippet needLink()}
+  {#if need}
+    <a
+      href="#main"
+      onclick={(e) => {
+        e.preventDefault();
+        void goToBlocker(need);
+      }}>{needText}</a>
+  {/if}
+{/snippet}
+
+{#if variant === "compact"}
+  <div class="compact">
     {#if s.pricingEnabled}
-      <div class="stats">
-        <div class="stat">
-          <span class="stat-label">Price</span>
-          <span class="stat-value">{s.priceCents !== null ? money(s.priceCents, cfg) : "-"}</span>
-        </div>
-        <div class="stat" class:loss>
-          <span class="stat-label">Profit</span>
-          <span class="stat-value">{s.profitCents !== null ? money(s.profitCents, cfg) : "-"}</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Margin</span>
-          <span class="stat-value">{s.marginPct !== null ? `${s.marginPct.toFixed(1)}%` : "-"}</span>
-        </div>
-      </div>
+      <span class="compact-stat"><span class="stat-label">Price</span> <strong>{s.priceCents !== null ? money(s.priceCents, cfg) : "-"}</strong></span>
+      <span class="compact-stat" class:loss><span class="stat-label">Profit</span> <strong>{s.profitCents !== null ? money(s.profitCents, cfg) : "-"}</strong></span>
     {:else}
-      <button type="button" class="set-price" onclick={setPrice}>
-        Set a price
-      </button>
+      <span class="compact-stat"><span class="stat-label">Cost</span> <strong>{s.costCents !== null ? money(s.costCents, cfg) : "-"}</strong></span>
     {/if}
+    {#if need}<span class="compact-need">{@render needLink()}</span>{/if}
   </div>
-  <!-- Fixed-height status slot (always rendered, text swaps, height doesn't): a status line that came and went
-       above the cards shifted everything below on every keystroke. The status region stays in the DOM so
-       screen readers announce its text changes; the error is a separate alert. -->
-  <div class="status-slot">
-    <p class="status-text" role="status">{pendingVisible ? "Updating price…" : ""}</p>
-    {#if previewStatus === "error" && previewError}
-      <p class="status-text status-error" role="alert">{previewError}</p>
-    {/if}
+{:else}
+  <div class="summary-stats">
+    <div class="group">
+      <span class="section-label">Your cost</span>
+      <div class="cost-stats">
+        <div class="stat cost">
+          <span class="stat-label">{order.parts.length > 1 ? `Order of ${order.parts.length} parts` : s.quantity > 1 ? `Batch of ${s.quantity}` : "This print"}</span>
+          <span class="stat-value">{s.costCents !== null ? money(s.costCents, cfg) : "-"}</span>
+        </div>
+        {#if s.quantity > 1}
+          <div class="stat per-unit">
+            <span class="stat-label">Per unit</span>
+            <span class="stat-value">{s.costCents !== null ? money(order.parts[0]?.breakdown.perUnitTotal ?? 0, cfg) : "-"}</span>
+          </div>
+        {/if}
+      </div>
+      <!-- The line is always reserved, so a field filling in doesn't pull the rest of the summary around. -->
+      <div class="cost-need">
+        {#if need}
+          {@render needLink()}
+          {#if needsTime}<SlicerHelp />{/if}
+        {/if}
+      </div>
+    </div>
+    <div class="group sell">
+      <span class="section-label">Client price</span>
+      {#if s.pricingEnabled}
+        <div class="stats">
+          <div class="stat">
+            <span class="stat-label">Price</span>
+            <span class="stat-value">{s.priceCents !== null ? money(s.priceCents, cfg) : "-"}</span>
+          </div>
+          <div class="stat" class:loss>
+            <span class="stat-label">Profit</span>
+            <span class="stat-value">{s.profitCents !== null ? money(s.profitCents, cfg) : "-"}</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Margin</span>
+            <span class="stat-value">{s.marginPct !== null ? `${s.marginPct.toFixed(1)}%` : "-"}</span>
+          </div>
+        </div>
+      {:else}
+        <button type="button" class="set-price" onclick={setPrice}>
+          Set a price
+        </button>
+      {/if}
+    </div>
+    <!-- Fixed-height status slot (always rendered, text swaps, height doesn't): a status line that came and went
+         shifted everything below on every keystroke. The status region stays in the DOM so screen readers
+         announce its text changes; the error is a separate alert. -->
+    <div class="status-slot">
+      <p class="status-text" role="status">{pendingVisible ? "Updating price…" : ""}</p>
+      {#if previewStatus === "error" && previewError}
+        <p class="status-text status-error" role="alert">{previewError}</p>
+      {/if}
+    </div>
   </div>
-</div>
+{/if}
 
 <style>
-  .summary {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: stretch;
-    gap: 1rem 2rem;
-    margin-bottom: 0.75rem;
-    /* Stays in view while the Print and Costs fields scroll under it, so the missing-field message and the
-     * running total are always next to the field being filled in. Sticks to the scrollport's top. */
-    z-index: 3;
-  }
-  /* Only where there is room: on a short or narrow window a tall pinned bar would cover the fields. */
-  @media (min-width: 700px) and (min-height: 600px) {
-    .summary { position: sticky; top: 0; }
-  }
-  /* One line tall at all times (the --text-sm line box), spanning the card's full width. An error message may
-   * wrap onto more lines on a narrow screen; that is the one case the slot grows. */
-  .status-slot { flex: 0 0 100%; min-height: calc(var(--text-sm) * 1.5); margin-top: -0.4rem; }
-  .status-text { margin: 0; font-size: var(--text-sm); line-height: 1.5; color: var(--muted); }
+  .summary-stats { display: flex; flex-direction: column; gap: var(--gap); }
+  .compact { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-4); font-variant-numeric: tabular-nums; }
+  .compact-stat strong { font-size: var(--type-heading); }
+  .compact-need { font-size: var(--type-secondary); }
+  .stat-label { font-size: var(--type-secondary); color: var(--muted); }
+  .compact-stat.loss strong { color: var(--danger); }
+  /* One line tall at all times (the secondary-text line box), spanning the summary's full width. An error
+   * message may wrap onto more lines on a narrow screen; that is the one case the slot grows. */
+  .status-slot { min-height: calc(var(--type-secondary) * 1.5); margin-block-start: calc(var(--space-2) * -1); }
+  .status-text { margin: 0; font-size: var(--type-secondary); line-height: 1.5; color: var(--muted); }
   .status-text.status-error { color: var(--danger); }
-  .group { display: flex; flex-direction: column; gap: 0.3rem; }
-  .cost-need { min-height: calc(var(--text-sm) * 1.5); font-size: var(--text-sm); }
-  .group.sell {
-    border-left: 1px solid var(--border);
-    padding-left: 2rem;
-    flex: 1;
-  }
-  /* The left border is a column divider while the groups share a row; when the bar wraps it is a top rule. */
-  @media (max-width: 640px) {
-    .group.sell { border-left: none; border-top: 1px solid var(--border); padding-left: 0; padding-top: 0.6rem; }
-  }
-  .stats { display: flex; flex-wrap: wrap; gap: 1rem 2rem; }
-  .cost-stats { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 1.5rem; }
-  .stat { display: flex; flex-direction: column; gap: 0.15rem; min-width: 90px; }
-  .stat-label { font-size: var(--text-sm); color: var(--muted); }
-  .stat-value { font-size: var(--text-xl); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .group { display: flex; flex-direction: column; gap: var(--space-1); }
+  .cost-need { min-height: calc(var(--type-secondary) * 1.5); font-size: var(--type-secondary); }
+  .stats { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); }
+  .cost-stats { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-6); }
+  .stat { display: flex; flex-direction: column; gap: var(--space-1); }
+  .stat-value { font-size: var(--type-title); font-weight: 700; font-variant-numeric: tabular-nums; }
   .stat.cost .stat-value { font-size: var(--text-2xl); }
-  .stat.per-unit { min-width: 0; color: var(--muted); }
-  .stat.per-unit .stat-value { font-size: var(--text-sm); font-weight: 600; }
+  .stat.per-unit { color: var(--muted); }
+  .stat.per-unit .stat-value { font-size: var(--type-secondary); font-weight: 600; }
   .stat.loss .stat-value { color: var(--danger); }
   .group.sell button { align-self: flex-start; }
   .set-price {

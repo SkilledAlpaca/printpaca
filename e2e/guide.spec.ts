@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { openBreakdown } from "./helpers";
 
 test("guide is reachable as its own page via the sidebar footer link", async ({ page }) => {
   await page.goto("/admin/");
@@ -18,7 +19,7 @@ test("card help renders in flow on click, never on hover", async ({ page }) => {
   await expect(costsNote).toBeHidden();
 
   // Hovering the card must never reveal its help note.
-  await page.locator(".tile").filter({ has: page.getByRole("button", { name: "About Costs" }) }).hover();
+  await page.locator(".costs").hover();
   await expect(costsNote).toBeHidden();
 
   await page.getByRole("button", { name: "About Costs" }).click();
@@ -72,6 +73,7 @@ test("a cold-load deep link to a guide anchor scrolls to that topic", async ({ p
 test("Explain this page opens every card's help at once", async ({ page }) => {
   await page.goto("/admin/");
 
+  await openBreakdown(page);
   const explainToggle = page.getByRole("button", { name: "Explain this page" });
   await expect(explainToggle).toHaveAttribute("aria-pressed", "false");
 

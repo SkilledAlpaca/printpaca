@@ -156,7 +156,7 @@
 
 <style>
   /* Print colors stay literal (black on white); spacing and type sizes reuse the screen scale. */
-  #print-view { background: white; color: black; padding: 2rem; }
+  #print-view { background: white; color: black; padding: var(--space-8); }
   /* theme.css stripes and highlights table rows with tokens; a dark scheme would put black text on those. */
   #print-view tr, #print-view th, #print-view td { background: transparent; }
   #print-view header { margin-bottom: var(--space-4); }

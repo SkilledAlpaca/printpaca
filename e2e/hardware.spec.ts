@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { fillCanonicalQuote, gotoSettings, historyRow, navButton, readMoney } from "./helpers";
+import { fillCanonicalQuote, gotoSettings, historyRow, navButton, openBreakdown, readMoney } from "./helpers";
 
 // Shares the suite's one server. The catalog entry added here is inert for other specs, and the final
 // step removes it so later specs see the hardware-free config.
@@ -27,6 +27,7 @@ test("configure a hardware entry, attach it on a quote, and shift the breakdown/
 
   // 2. Fill the canonical quote ($2.24).
   await gotoQuoteEditor(page);
+  await openBreakdown(page);
   await fillCanonicalQuote(page);
   await expect(page.locator("tfoot")).toContainText("$2.24");
 
@@ -36,7 +37,7 @@ test("configure a hardware entry, attach it on a quote, and shift the breakdown/
   await page.getByLabel("Hardware 1 quantity per unit").fill("2");
 
   // 4. The breakdown gains a named line and the total shifts by exactly $1.00.
-  const breakdown = page.locator(".card", { has: page.getByRole("heading", { name: "Cost breakdown" }) });
+  const breakdown = page.locator(".breakdown");
   await expect(breakdown).toContainText("e2e magnet");
   await expect(page.locator("tfoot")).toContainText("$3.24");
   await expect(page.locator("tfoot")).not.toContainText("$2.24");
@@ -78,6 +79,7 @@ test("a checked lostOnFailure hardware entry also grows the Failure buffer row",
   await saveSettingsChanges(page);
 
   await gotoQuoteEditor(page);
+  await openBreakdown(page);
   await fillCanonicalQuote(page);
   await expect(page.locator("tfoot")).toContainText("$2.24");
 
@@ -88,7 +90,7 @@ test("a checked lostOnFailure hardware entry also grows the Failure buffer row",
   await page.getByRole("button", { name: "Add hardware" }).click();
   await expect(page.getByLabel("Hardware 1 item")).toHaveValue("e2e lost magnet");
 
-  const breakdown = page.locator(".card", { has: page.getByRole("heading", { name: "Cost breakdown" }) });
+  const breakdown = page.locator(".breakdown");
   await expect(breakdown).toContainText("e2e lost magnet");
   await expect(page.locator("tfoot")).toContainText("$3.29");
   await expect(page.locator("tfoot")).not.toContainText("$3.24"); // would be the unchecked-box shift

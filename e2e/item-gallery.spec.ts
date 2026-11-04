@@ -184,7 +184,7 @@ test("ordering flow: required group blocks, optional starts on None, prices sum,
   await page.getByLabel("Name", { exact: true }).fill(CUSTOMER_NAME);
   await page.getByLabel("Email").fill(CUSTOMER_EMAIL);
   await page.getByRole("button", { name: "Place order" }).click();
-  const colorError = page.locator("small.warn-text", { hasText: "Choose Color." });
+  const colorError = page.getByText("Choose Color.", { exact: true });
   await expect(colorError).toBeVisible();
   await expect(page.getByRole("alert").locator(".error-summary")).toContainText("1 field needs attention");
   await expect(color).toHaveAttribute("aria-invalid", "true");
@@ -213,7 +213,7 @@ test("ordering flow: required group blocks, optional starts on None, prices sum,
 
   // The live total also carries a trailing " · $X.XX each" suffix, so use toContainText to pin only
   // the total.
-  const totalLocator = page.locator(".estimate .price");
+  const totalLocator = page.getByRole("group", { name: "Total" });
   await expect(totalLocator).toContainText(EXPECTED_TOTAL);
 
   // The optional group adds to the sum, and its option has no photo, so Red's photo stays.
@@ -397,6 +397,6 @@ test("admin reorders option groups and options, and the order persists and reach
     .toBe("Engraving,Color");
   await page.goto(`${PUBLIC_URL}order`);
   await page.getByRole("button", { name: new RegExp(ITEM_NAME) }).click();
-  const labels = await page.locator("form .field > label, form .field > span").allTextContents();
-  expect(labels.slice(0, 2)).toEqual(["Engraving (optional)", "Color (required)"]);
+  await expect(page.getByRole("combobox").nth(0)).toHaveAccessibleName("Engraving (optional)");
+  await expect(page.getByRole("combobox").nth(1)).toHaveAccessibleName("Color (required)");
 });

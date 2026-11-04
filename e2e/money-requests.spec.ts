@@ -373,6 +373,48 @@ test.describe("requests and the dashboard", () => {
     await expect(page.locator(".plain-list li", { hasText: name })).toHaveCount(1); // nothing was deleted
   });
 
+  test("request detail: facts are a list, header Back keeps the filter and row focus, a confirm closes on Escape", async ({ page, request }) => {
+    const name = `Detail Buyer ${Date.now() % 100000}`;
+    await seedRequest(request, name);
+    await page.goto("/admin/");
+    await navButton(page, "Requests").click();
+    const filter = page.getByLabel("Filter requests by name, item, or file");
+    await filter.fill(name);
+    const open = page.getByRole("button", { name: new RegExp(name) });
+    await open.click();
+
+    const heading = page.getByRole("heading", { level: 1, name: `Estimate request from ${name}` });
+    await expect(heading).toBeFocused();
+    await expect(page).toHaveTitle(new RegExp(name));
+    // The facts are one description list; the email is a link and the price is the emphasized value.
+    const facts = page.getByRole("list", { name: "Request details" }).or(page.locator("dl[aria-label='Request details']"));
+    await expect(facts.getByText("Material", { exact: true })).toBeVisible();
+    await expect(facts.getByRole("link", { name: /@example\.com$/ })).toBeVisible();
+    // Reading order: Back, then the single h1, then the facts.
+    const order = await page.evaluate(() => {
+      const back = [...document.querySelectorAll("button")].find((b) => /Back to list/.test(b.textContent ?? ""));
+      const h1 = document.querySelector("h1");
+      const dl = document.querySelector("dl[aria-label='Request details']");
+      const before = (a: Node | null | undefined, b: Node | null | undefined) => !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      return { backBeforeTitle: before(back, h1), titleBeforeFacts: before(h1, dl), h1Count: document.querySelectorAll("h1").length };
+    });
+    expect(order).toEqual({ backBeforeTitle: true, titleBeforeFacts: true, h1Count: 1 });
+
+    // Escape closes only a confirmation, and focus returns to the control that opened it.
+    await page.getByRole("button", { name: "Delete this request" }).click();
+    await expect(page.getByRole("button", { name: "Yes, delete this request" })).toBeFocused();
+    await expect(page.getByText("This can't be undone.")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: "Yes, delete this request" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Delete this request" })).toBeFocused();
+    await expect(heading).toBeVisible();
+
+    // The header Back returns to the same filtered list with focus on the row that opened the record.
+    await page.getByRole("button", { name: /Back to list/ }).click();
+    await expect(filter).toHaveValue(name);
+    await expect(page.getByRole("button", { name: new RegExp(name) })).toBeFocused();
+  });
+
   test("the Dashboard lists what needs attention and links to it", async ({ page, request }) => {
     const name = `Attention ${Date.now() % 100000}`;
     await seedRequest(request, name);

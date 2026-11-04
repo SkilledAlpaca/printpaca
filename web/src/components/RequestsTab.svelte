@@ -54,14 +54,19 @@
   } from "../lib/gcodeMessage";
   import { describeStorageBanner, type StorageBanner } from "../lib/storageBanner";
   import { money, formatDate, formatDateTime, materialDisplayName } from "../lib/format";
-  import { mdiArrowLeft } from "@mdi/js";
-  import Icon from "./Icon.svelte";
+  import PageHeader from "./ui/PageHeader.svelte";
+  import Card from "./ui/Card.svelte";
+  import Field from "./ui/Field.svelte";
+  import Fieldset from "./ui/Fieldset.svelte";
+  import FormGrid from "./ui/FormGrid.svelte";
+  import KeyValueTable, { type KeyValueRow } from "./ui/KeyValueTable.svelte";
+  import InlineStatus from "./ui/InlineStatus.svelte";
+  import ConfirmInline from "./ui/ConfirmInline.svelte";
   import StatusBadge from "./StatusBadge.svelte";
   import AttributionLine from "./AttributionLine.svelte";
   import SettingsEditor from "./settings/SettingsEditor.svelte";
   import PublicQuotesSettings from "./settings/PublicQuotesSettings.svelte";
   import LoadMoreRow from "./LoadMoreRow.svelte";
-  import DetailTitle from "./DetailTitle.svelte";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
   import { confirmFocus, focusOnMount, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "../lib/a11yFocus";
 
@@ -575,7 +580,7 @@
       detail = await finalizeRequest(detail.id);
       announce("Request finalized.");
       // The Finalize button is gone now; keep focus in the action row.
-      void refocusIfLost(".status-actions button");
+      void refocusIfLost(".detail-actions button");
       await refresh();
       await refreshUnread();
     } catch (err) {
@@ -700,6 +705,32 @@
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
   }
+
+  // The read-only facts of the open request, in the order the old grid showed them.
+  const detailRows = $derived.by((): KeyValueRow[] => {
+    const d = detail;
+    if (!d) return [];
+    const rows: KeyValueRow[] = [
+      { label: "Reference", value: requestReference(d) },
+      { label: "Name", value: d.name },
+      { label: "Email", value: d.email, href: `mailto:${encodeURIComponent(d.email)}` },
+    ];
+    if (d.kind === "item") {
+      rows.push({ label: "Item", value: d.itemName });
+      if (d.optionName) rows.push({ label: "Option", value: d.optionName });
+      rows.push({ label: "Quantity", value: String(d.quantity) });
+      rows.push({ label: "Total", value: money(d.priceCents, cfg), strong: true });
+    } else {
+      rows.push({ label: "Material", value: materialDisplayName(d.material, cfg.materials) });
+      rows.push({ label: "Quantity", value: String(d.quantity) });
+      rows.push({ label: "Weight", value: `${d.weightG} g` });
+      rows.push({ label: "Print time", value: d.needsPrintTime ? "Not provided" : formatDuration(d.timeSeconds) });
+      rows.push({ label: "Price", value: d.needsPrintTime ? "To be confirmed" : money(d.priceCents, cfg), strong: true });
+      if (d.shippingCents > 0) rows.push({ label: "Shipping", value: money(d.shippingCents, cfg) });
+    }
+    rows.push({ label: "Submitted", value: formatDateTime(d.createdAt) });
+    return rows;
+  });
 </script>
 
 <svelte:window onhashchange={syncDetailFromHash} onkeydown={handleDetailKeydown} onpointerdown={handleWindowPointerDown} />
@@ -864,51 +895,34 @@
       {/snippet}
     </SettingsEditor>
   {:else}
-    <div class="head-row">
-      <button type="button" class="quiet back-link" onclick={() => backToList()}><Icon path={mdiArrowLeft} /> Back to list</button>
-      {#if detail}<StatusBadge status={requestDisplayStatus(detail)} />{/if}
-    </div>
+    <PageHeader
+      record
+      title={detail ? (detail.kind === "item" ? `Order from ${detail.name}` : `Estimate request from ${detail.name}`) : undefined}
+      onback={() => backToList()}
+    >
+      {#snippet status()}{#if detail}<StatusBadge status={requestDisplayStatus(detail)} />{/if}{/snippet}
+      {#snippet subtitle()}{#if detail}<AttributionLine updatedBy={detail.updatedBy} />{/if}{/snippet}
+    </PageHeader>
 
     {#if detailLoading}
-      <p role="status">Loading…</p>
+      <InlineStatus kind="saving">Loading…</InlineStatus>
     {:else if detailError}
-      <p class="banner-warn" role="alert">{detailError}</p>
+      <InlineStatus kind="error">{detailError}</InlineStatus>
     {:else if detail}
-      <div class="card">
-        <DetailTitle>{detail.kind === "item" ? `Order from ${detail.name}` : `Estimate request from ${detail.name}`}</DetailTitle>
-        <AttributionLine updatedBy={detail.updatedBy} />
-
-        <div class="readonly-grid">
-          <div><span class="lbl">Reference</span><span>{requestReference(detail)}</span></div>
-          <div><span class="lbl">Name</span><span>{detail.name}</span></div>
-          <div><span class="lbl">Email</span><span><a href={`mailto:${encodeURIComponent(detail.email)}`}>{detail.email}</a></span></div>
-          {#if detail.kind === "item"}
-            <div><span class="lbl">Item</span><span>{detail.itemName}</span></div>
-            {#if detail.optionName}<div><span class="lbl">Option</span><span>{detail.optionName}</span></div>{/if}
-            <div><span class="lbl">Quantity</span><span>{detail.quantity}</span></div>
-            <div><span class="lbl">Total</span><span>{money(detail.priceCents, cfg)}</span></div>
-          {:else}
-            <div><span class="lbl">Material</span><span>{materialDisplayName(detail.material, cfg.materials)}</span></div>
-            <div><span class="lbl">Quantity</span><span>{detail.quantity}</span></div>
-            <div><span class="lbl">Weight</span><span>{detail.weightG} g</span></div>
-            <div><span class="lbl">Print time</span><span>{detail.needsPrintTime ? "Not provided" : formatDuration(detail.timeSeconds)}</span></div>
-            <div><span class="lbl">Price</span><span>{detail.needsPrintTime ? "To be confirmed" : money(detail.priceCents, cfg)}</span></div>
-            {#if detail.shippingCents > 0}<div><span class="lbl">Shipping</span><span>{money(detail.shippingCents, cfg)}</span></div>{/if}
-          {/if}
-          <div><span class="lbl">Submitted</span><span>{formatDateTime(detail.createdAt)}</span></div>
-        </div>
+      <Card>
+        <KeyValueTable rows={detailRows} label="Request details" />
 
         {#if detail.note}<p class="notes"><span class="lbl">Note</span> {detail.note}</p>{/if}
 
         {#if isInvoiced(detail)}
-          <p class="banner-muted invoiced-note">
+          <p class="invoiced-note">
             Invoiced as {detail.invoiceNumber} (request {requestReference(detail)}).
             <button type="button" class="quiet linkish" onclick={() => openLinkedInvoice(detail!.invoiceId)}>Open invoice</button>
           </p>
         {/if}
 
         {#if detail.needsPrintTime}
-          <div class="subcard time-card" role="group" aria-labelledby="print-time-heading">
+          <Card tone="inset" role="group" aria-labelledby="print-time-heading">
             <h3 id="print-time-heading">This estimate needs a print time</h3>
             <p class="hint">
               The customer's file had no print time, so there's no price yet. Enter the print time from your slicer and
@@ -922,18 +936,26 @@
                 void savePrintTime();
               }}
             >
-              <label class="field">
-                <span>Hours</span>
-                <input type="number" min="0" step="1" bind:value={timeHours} />
-              </label>
-              <label class="field">
-                <span>Minutes</span>
-                <input type="number" min="0" max="59" step="1" bind:value={timeMinutes} />
-              </label>
-              <button type="submit" class="primary" aria-disabled={savingTime} aria-busy={savingTime}>{savingTime ? "Saving…" : "Save print time"}</button>
+              <Fieldset legend="Print time">
+                <FormGrid>
+                  <Field id="print-time-hours" label="Hours" size="xs">
+                    {#snippet children(f)}
+                      <input id={f.id} type="number" min="0" step="1" bind:value={timeHours} aria-describedby={f.describedby} />
+                    {/snippet}
+                  </Field>
+                  <Field id="print-time-minutes" label="Minutes" size="xs">
+                    {#snippet children(f)}
+                      <input id={f.id} type="number" min="0" max="59" step="1" bind:value={timeMinutes} aria-describedby={f.describedby} />
+                    {/snippet}
+                  </Field>
+                </FormGrid>
+              </Fieldset>
+              <div class="time-actions">
+                <button type="submit" class="primary" aria-disabled={savingTime} aria-busy={savingTime}>{savingTime ? "Saving…" : "Save print time"}</button>
+              </div>
             </form>
-            {#if timeError}<p class="banner-warn" role="alert">{timeError}</p>{/if}
-          </div>
+            {#if timeError}<InlineStatus kind="error">{timeError}</InlineStatus>{/if}
+          </Card>
         {/if}
 
         {#if detail.kind === "item"}
@@ -1006,26 +1028,30 @@
               printer, or preset). It isn't necessarily an error.
             </p>
           {:else if verifyOutcome.status === "error"}
-            <p class="banner-warn" role="alert">{verifyOutcome.message}</p>
+            <InlineStatus kind="error">{verifyOutcome.message}</InlineStatus>
             <button type="button" onclick={verifyRequest}>Retry verification</button>
           {/if}
         </div>
         {/if}
         {/if}
 
-        {#if actionError}<p class="banner-warn" role="alert">{actionError}</p>{/if}
-        {#if convertError}<p class="banner-warn" role="alert">{convertError}</p>{/if}
+        {#if actionError}<InlineStatus kind="error">{actionError}</InlineStatus>{/if}
+        {#if convertError}<InlineStatus kind="error">{convertError}</InlineStatus>{/if}
 
         {#if detail.status === "viewed" || !isInvoiced(detail)}
           <p class="hint">
             {#if detail.status === "viewed"}Finalize marks this request as handled in your list. It doesn't email the customer; use Reply by email to tell them. Finalized shop item orders count toward Top items.{" "}{/if}{#if !isInvoiced(detail)}Convert to invoice creates the client if this email isn't on file, then marks the request invoiced.{/if}
           </p>
         {/if}
-        <div class="status-actions">
+        <div class="detail-actions">
           {#if detail.status === "viewed"}
             {#if confirmingFinalize}
-              <button type="button" class="primary" onclick={finalize} use:confirmFocus={{ restore: keySelector("finalize-request"), cancel: cancelFinalize }}>Yes, finalize this request</button>
-              <button type="button" onclick={cancelFinalize}>Cancel</button>
+              <ConfirmInline
+                confirmLabel="Yes, finalize this request"
+                restore={keySelector("finalize-request")}
+                onconfirm={finalize}
+                oncancel={cancelFinalize}
+              >Finalizing can't be undone.</ConfirmInline>
             {:else}
               <button
                 type="button"
@@ -1054,14 +1080,13 @@
             </button>
           {/if}
           {#if confirmingDelete}
-            <button
-              type="button"
-              class="danger"
-              onclick={remove}
-              use:confirmFocus={{ restore: keySelector("delete-request"), cancel: cancelDelete }}
-            >Yes, delete this request</button>
-            <button type="button" onclick={cancelDelete}>Cancel</button>
-            <span class="advisory-text">Also deletes the stored file.</span>
+            <ConfirmInline
+              danger
+              confirmLabel="Yes, delete this request"
+              restore={keySelector("delete-request")}
+              onconfirm={remove}
+              oncancel={cancelDelete}
+            >Also deletes the stored file. This can't be undone.</ConfirmInline>
           {:else}
             <button type="button" data-focus-key="delete-request" onclick={askDelete} aria-label="Delete this request">Delete</button>
           {/if}
@@ -1070,15 +1095,13 @@
           <p id="finalize-needs-time" class="hint">{finalizeBlockedReason(detail)}.</p>
           <p id="convert-needs-time" class="hint">Enter the print time above before converting this request to an invoice.</p>
         {/if}
-      </div>
+      </Card>
     {/if}
   {/if}
 </div>
 
 <style>
-  .back-link { display: inline-flex; align-items: center; gap: 0.35rem; }
-
-  .toolbar { display: flex; gap: 0.5rem; align-items: center; }
+  .toolbar { display: flex; gap: var(--space-2); align-items: center; }
   .search-input { flex: 1; min-width: 0; }
   .more { position: relative; flex-shrink: 0; }
   .menu-toggle { min-width: var(--tap-sm); font-weight: 700; letter-spacing: 1px; }
@@ -1090,13 +1113,13 @@
     right: 0;
     top: calc(100% + 4px);
     min-width: 11rem;
-    padding: 0.3rem;
+    padding: var(--space-1);
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: calc(var(--radius) / 2);
     box-shadow: var(--shadow);
   }
-  .menu-group { display: flex; flex-direction: column; gap: 0.1rem; }
+  .menu-group { display: flex; flex-direction: column; gap: var(--space-1); }
   .menu-item { display: block; width: 100%; text-align: left; white-space: nowrap; }
 
   .confirm-delete-all p { margin: 0 0 var(--space-2); }
@@ -1110,18 +1133,31 @@
   .check-label input { width: 1.25rem; height: 1.25rem; margin: 0; }
   .time-pill { color: var(--warn); }
 
-  .invoiced-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .invoiced-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--gap) 0 0;
+    padding: var(--space-2) var(--space-3);
+    border-radius: calc(var(--radius) / 2);
+    background: var(--inset-bg);
+    color: var(--muted);
+    font-size: var(--text-sm);
+  }
   .invoiced-note .linkish { border: none; background: none; color: var(--accent-text); font-weight: 600; text-decoration: underline; }
-  .time-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
-  .time-form .field { margin: 0; }
-  .time-form input { width: 6rem; }
-  .time-card h3 { margin-top: 0; }
+  .time-form { display: flex; flex-direction: column; gap: var(--gap); margin-top: var(--gap); }
+  .time-actions { display: flex; }
+  h3 { margin-top: 0; }
+
+  /* The record's actions sit under the facts with spacing only (D6: dividers belong to tables and lists). */
+  .detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--gap); }
 
   /* "Reply by email" is a mailto: link, so it is an <a>; styled like the neighboring buttons. */
   .reply-link {
     display: inline-flex;
     align-items: center;
-    min-height: 44px;
+    min-height: var(--control-h);
     padding: 0 var(--space-3);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -1132,7 +1168,7 @@
 
   /* .action-status.collapsed mirrors QuotesTab's rule (component-scoped styles don't cascade): collapse the
    * live region while it is empty. */
-  .action-status.collapsed { min-height: 0; margin-top: calc(var(--space-6) * -1); margin-bottom: calc(var(--space-6) * -1); }
+  .action-status.collapsed { min-height: 0; margin-top: calc(var(--gap-section) * -1); margin-bottom: calc(var(--gap-section) * -1); }
 
   li { border-top: 1px solid var(--border); }
   li:first-child { border-top: none; }
@@ -1145,15 +1181,15 @@
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) 8rem 3rem 5.5rem 6rem;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     background: none;
     border: none;
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
     text-align: left;
     min-height: 32px;
   }
   .row-link:hover { background: var(--surface-2); }
-  .r-who { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+  .r-who { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
   .r-who .pill { flex-shrink: 0; white-space: nowrap; }
   .r-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
   .r-material { color: var(--muted); font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1172,11 +1208,11 @@
   .item-pill { color: var(--muted); }
   .ref-pill { color: var(--muted); font-variant-numeric: tabular-nums; }
 
-  .notes, .gcode-line { font-size: var(--text-sm); margin: 0.3rem 0; }
-  .gcode-line a { margin-left: 0.5rem; }
+  .notes, .gcode-line { font-size: var(--text-sm); margin: var(--space-2) 0; }
+  .gcode-line a { margin-left: var(--space-2); }
 
   /* The verification subcard's hint keeps its own margin: the one outlier left local when theme.css's .hint
    * was promoted. */
-  .hint { color: var(--muted); font-size: var(--text-sm); margin: 0.4rem 0 0; }
+  .hint { color: var(--muted); font-size: var(--text-sm); margin: var(--space-1) 0 0; }
 </style>
 

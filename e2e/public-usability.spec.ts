@@ -268,7 +268,7 @@ test("quantity: no total for an invalid value, and the clamp names the limit", a
   await page.goto("/order");
   await page.getByRole("button", { name: new RegExp(ITEM) }).click();
   await page.getByLabel("Color").selectOption({ label: "Sage" });
-  const total = page.locator(".estimate .price");
+  const total = page.getByRole("group", { name: "Total" }).locator(".price");
   await expect(total).toContainText("$7.00");
 
   await page.getByLabel("Quantity").fill("-3");

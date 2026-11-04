@@ -1,0 +1,9 @@
+{
+  "cookies": [],
+  "origins": [
+    { "origin": "http://127.0.0.1:8099", "localStorage": [{ "name": "printpaca-tab", "value": "quote" }] },
+    { "origin": "http://127.0.0.1:9099", "localStorage": [{ "name": "printpaca-tab", "value": "quote" }] },
+    { "origin": "http://127.0.0.1:9199", "localStorage": [{ "name": "printpaca-tab", "value": "quote" }] },
+    { "origin": "http://127.0.0.1:9299", "localStorage": [{ "name": "printpaca-tab", "value": "quote" }] }
+  ]
+}

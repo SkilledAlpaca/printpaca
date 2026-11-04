@@ -1,6 +1,6 @@
 <script lang="ts">
   import ErrorSummary from "../ErrorSummary.svelte";
-  import type { EffectiveConfig } from "../../lib/engine/index";
+  import { toCents, type EffectiveConfig } from "../../lib/engine/index";
   import { money, formatDate } from "../../lib/format";
   import { bpToPct, type Invoice, type InvoiceStatus } from "../../lib/invoicesApi";
   import type { Client } from "../../lib/clientsApi";
@@ -10,6 +10,8 @@
     matchingClientByName,
     previewTotalsFor,
     hasQuoteProvenance,
+    hasAtMostTwoDecimals,
+    totalsRows,
     linkLineToItem,
     unlinkLine,
     emailDisabledReason,
@@ -49,6 +51,14 @@
     paymentErrors,
     paymentSaving,
     confirmingPaymentDelete,
+    confirmingOverpay,
+    versionConflict,
+    dirty,
+    today,
+    onReloadAfterConflict,
+    onOverwrite,
+    onCancelOverpay,
+    onConfirmOverpay,
     onBackToList,
     onLinkMatchingClient,
     onAddLine,
@@ -95,6 +105,17 @@
     paymentErrors: string[];
     paymentSaving: boolean;
     confirmingPaymentDelete: string | null;
+    confirmingOverpay: boolean;
+    /** The last save was refused because the invoice changed elsewhere (409). */
+    versionConflict: boolean;
+    /** The editor holds unsaved changes. */
+    dirty: boolean;
+    /** Today in the shop's time zone, for the Record payment button's "today". */
+    today: string;
+    onReloadAfterConflict: () => void;
+    onOverwrite: () => void;
+    onCancelOverpay: () => void;
+    onConfirmOverpay: () => void;
     onBackToList: () => void;
     onLinkMatchingClient: (id: string) => void;
     onAddLine: () => void;
@@ -123,6 +144,28 @@
 
   const matchingClient = $derived(matchingClientByName(clients, form));
   const previewTotals = $derived(previewTotalsFor(form));
+  const previewRows = $derived(
+    totalsRows({
+      lineKinds: form.lines.map((l) => l.kind),
+      lineAmountsCents: previewTotals.lineAmounts,
+      subtotalCents: previewTotals.subtotalCents,
+      discountCents: toCents(form.discount),
+      taxCents: previewTotals.taxCents,
+      totalCents: previewTotals.totalCents,
+    }),
+  );
+  const detailRows = $derived(
+    detail
+      ? totalsRows({
+          lineKinds: detail.lines.map((l) => l.kind),
+          lineAmountsCents: detail.lines.map((l) => l.amountCents),
+          subtotalCents: detail.subtotalCents,
+          discountCents: detail.discountCents,
+          taxCents: detail.taxCents,
+          totalCents: detail.totalCents,
+        })
+      : [],
+  );
   const provenance = $derived(hasQuoteProvenance(form));
 
   // Picking an item (or switching its option) rewrites the line's description, price and link; "" unlinks.
@@ -140,6 +183,26 @@
   }
 </script>
 
+{#snippet paymentsPanel(inv: Invoice)}
+  <PaymentsPanel
+    detail={inv}
+    {cfg}
+    {today}
+    {dirty}
+    {confirmingOverpay}
+    {paymentForm}
+    {paymentErrors}
+    {paymentSaving}
+    {confirmingPaymentDelete}
+    {onAddPayment}
+    {onConfirmOverpay}
+    {onCancelOverpay}
+    {onAskDeletePayment}
+    {onCancelDeletePaymentConfirm}
+    {onConfirmDeletePayment}
+  />
+{/snippet}
+
 <div class="head-row">
   <button type="button" class="back-link" onclick={onBackToList}><Icon path={mdiArrowLeft} /> Back to list</button>
   {#if detail}<StatusBadge status={detail.status} dueDate={detail.dueDate} />{/if}
@@ -156,6 +219,16 @@
     {#if provenance}<p class="hint">Created from a saved quote.</p>{/if}
 
     <ErrorSummary errors={formErrors} />
+    {#if versionConflict}
+      <div class="banner-warn conflict" role="alert">
+        <p>This was changed in another tab or by another user.</p>
+        <div class="conflict-actions">
+          <button type="button" onclick={onReloadAfterConflict}>Reload</button>
+          <button type="button" onclick={onOverwrite} aria-disabled={saving}>Overwrite</button>
+        </div>
+        <p class="hint">Reload discards your changes and shows the saved invoice. Overwrite saves your version over it.</p>
+      </div>
+    {/if}
 
     {#if detail === null || detail.status === "draft"}
       <div class="field-rows">
@@ -192,7 +265,7 @@
         </label>
         <label class="field">
           <span>Invoice discount ({cfg.currency.symbol})</span>
-          <input type="number" min="0" step="0.01" bind:value={form.discount} />
+          <input type="number" min="0" step="0.01" bind:value={form.discount} aria-invalid={!hasAtMostTwoDecimals(form.discount ?? 0) || undefined} />
         </label>
       </div>
       <label class="field">
@@ -201,7 +274,7 @@
       </label>
 
       <h3>Lines</h3>
-      <p class="hint">Link a line to a gallery item so a counter sale counts in Top items once the invoice is sent or paid, and sending takes in-stock items off the shelf.</p>
+      <p class="hint">Link a line to a shop item so a counter sale counts in Top items once the invoice is sent or paid, and sending takes in-stock items off the shelf.</p>
       <div class="table-scroll">
         <table>
           <thead>
@@ -215,12 +288,12 @@
                   <input aria-label={`Line ${i + 1} description`} bind:value={line.description} />
                   <div class="item-link">
                     <select
-                      aria-label={`Line ${i + 1} gallery item`}
+                      aria-label={`Line ${i + 1} shop item`}
                       value={line.itemId}
                       onchange={(e) => pickItem(i, line, e.currentTarget.value)}
                     >
-                      <option value="">No gallery item</option>
-                      {#if line.itemId && !linked}<option value={line.itemId}>Gallery item (removed)</option>{/if}
+                      <option value="">No shop item</option>
+                      {#if line.itemId && !linked}<option value={line.itemId}>Shop item (removed)</option>{/if}
                       {#each items as it (it.id)}<option value={it.id}>{it.name}</option>{/each}
                     </select>
                     {#if linked}
@@ -237,7 +310,7 @@
                       {/each}
                     {/if}
                     {#if line.itemId}
-                      <button type="button" class="quiet" aria-label={`Unlink line ${i + 1} from its gallery item`} onclick={() => pickItem(i, line, "")}>Unlink</button>
+                      <button type="button" class="quiet" aria-label={`Unlink line ${i + 1} from its shop item`} onclick={() => pickItem(i, line, "")}>Unlink</button>
                     {/if}
                     <label class="toggle">
                       <input
@@ -250,13 +323,13 @@
                     </label>
                   </div>
                 </td>
-                <td><input type="number" min={line.itemId ? 1 : 0.0001} step={line.itemId ? 1 : "any"} aria-label={`Line ${i + 1} quantity`} bind:value={line.quantity} /></td>
-                <td><input type="number" min="0" step="0.01" aria-label={`Line ${i + 1} unit price`} bind:value={line.unitPrice} /></td>
-                <td><input type="number" min="0" step="0.01" aria-label={`Line ${i + 1} discount`} bind:value={line.discount} /></td>
+                <td><input type="number" min={line.itemId ? 1 : 0.0001} step={line.itemId ? 1 : "any"} aria-label={`Line ${i + 1} quantity`} aria-invalid={!(line.quantity > 0) || undefined} bind:value={line.quantity} /></td>
+                <td><input type="number" min="0" step="0.01" aria-label={`Line ${i + 1} unit price`} aria-invalid={!hasAtMostTwoDecimals(line.unitPrice ?? 0) || undefined} bind:value={line.unitPrice} /></td>
+                <td><input type="number" min="0" step="0.01" aria-label={`Line ${i + 1} discount`} aria-invalid={!hasAtMostTwoDecimals(line.discount ?? 0) || undefined} bind:value={line.discount} /></td>
                 <td class="num">{money(previewTotals.lineAmounts[i] ?? 0, cfg)}</td>
                 <td>
                   {#if confirmingLineRemove === i}
-                    <button type="button" class="danger quiet" aria-label={`Remove?, line ${i + 1}`} onclick={() => onRemoveLine(i)} use:confirmFocus={{ restore: keySelector(`remove-line-${i}`), cancel: onCancelRemoveLine }}>Remove?</button>
+                    <button type="button" class="danger quiet" aria-label={`Yes, remove line ${i + 1}`} onclick={() => onRemoveLine(i)} use:confirmFocus={{ restore: keySelector(`remove-line-${i}`), cancel: onCancelRemoveLine }}>Yes, remove</button>
                     <button type="button" class="quiet" aria-label={`Cancel, keep line ${i + 1}`} onclick={onCancelRemoveLine}>Cancel</button>
                   {:else}
                     <button type="button" class="quiet" aria-label={`Remove line ${i + 1}`} data-focus-key={`remove-line-${i}`} onclick={() => onAskRemoveLine(i)}>Remove</button>
@@ -272,14 +345,18 @@
       <button type="button" data-focus-key="add-line" onclick={onAddLine}>Add line</button>
 
       <div class="totals">
-        <div><span>Subtotal</span><span>{money(previewTotals.subtotalCents, cfg)}</span></div>
-        <div><span>Tax</span><span>{money(previewTotals.taxCents, cfg)}</span></div>
-        <div class="total-line"><span>Total</span><span>{money(previewTotals.totalCents, cfg)}</span></div>
+        {#each previewRows as row (row.key)}
+          <div class:total-line={row.key === "total"}><span>{row.label}</span><span>{money(row.cents, cfg)}</span></div>
+        {/each}
       </div>
 
       <div class="form-actions">
         <button type="button" class="primary" onclick={onSave} aria-disabled={saving} aria-busy={saving}>{saving ? "Saving…" : "Save"}</button>
       </div>
+      {#if detail}
+        <!-- A draft can be paid straight away (a customer paying at the counter): recording a payment sends it. -->
+        {@render paymentsPanel(detail)}
+      {/if}
     {:else if detail}
       <div class="readonly-grid">
         <div><span class="lbl">Client</span><span>{detail.clientName}</span></div>
@@ -299,7 +376,7 @@
           <tbody>
             {#each detail.lines as line (line.id)}
               <tr>
-                <td>{line.description}{#if line.quoteId}<span class="from-quote">From quote</span>{/if}{#if line.itemId}<span class="from-quote">Gallery item</span>{/if}</td>
+                <td>{line.description}{#if line.quoteId}<span class="from-quote">From quote</span>{/if}{#if line.itemId}<span class="from-quote">Shop item</span>{/if}</td>
                 <td class="num">{line.quantity}</td>
                 <td class="num">{money(line.unitPriceCents, cfg)}</td>
                 <td class="num">{line.discountCents > 0 ? `-${money(line.discountCents, cfg)}` : "-"}</td>
@@ -310,9 +387,9 @@
         </table>
       </ScrollRegion>
       <div class="totals">
-        <div><span>Subtotal</span><span>{money(detail.subtotalCents, cfg)}</span></div>
-        <div><span>Tax</span><span>{money(detail.taxCents, cfg)}</span></div>
-        <div class="total-line"><span>Total</span><span>{money(detail.totalCents, cfg)}</span></div>
+        {#each detailRows as row (row.key)}
+          <div class:total-line={row.key === "total"}><span>{row.label}</span><span>{money(row.cents, cfg)}</span></div>
+        {/each}
       </div>
 
       {#if detail.sends.length > 0}
@@ -338,18 +415,7 @@
       {/if}
 
       {#if detail.status === "sent" || detail.status === "paid"}
-        <PaymentsPanel
-          {detail}
-          {cfg}
-          {paymentForm}
-          {paymentErrors}
-          {paymentSaving}
-          {confirmingPaymentDelete}
-          onAddPayment={onAddPayment}
-          onAskDeletePayment={onAskDeletePayment}
-          onCancelDeletePaymentConfirm={onCancelDeletePaymentConfirm}
-          onConfirmDeletePayment={onConfirmDeletePayment}
-        />
+        {@render paymentsPanel(detail)}
       {/if}
     {/if}
 
@@ -361,13 +427,13 @@
       <div class="status-actions">
         {#if detail.status === "draft"}
           {#if confirmingMarkSent}
-            <button type="button" class="danger" onclick={() => onChangeStatus("sent")} use:confirmFocus={{ restore: keySelector("mark-sent"), cancel: onCancelMarkSent }}>Mark {detail.number} as sent?</button>
+            <button type="button" class="primary" onclick={() => onChangeStatus("sent")} use:confirmFocus={{ restore: keySelector("mark-sent"), cancel: onCancelMarkSent }}>Yes, mark as sent</button>
             <button type="button" onclick={onCancelMarkSent}>Cancel</button>
           {:else}
             <button type="button" data-focus-key="mark-sent" onclick={onMarkSentClick}>Mark sent</button>
           {/if}
           {#if confirmingDelete}
-            <button type="button" class="danger" onclick={onConfirmDeleteInvoice} use:confirmFocus={{ restore: keySelector("delete-invoice"), cancel: onCancelDeleteConfirm }}>Delete?</button>
+            <button type="button" class="danger" onclick={onConfirmDeleteInvoice} use:confirmFocus={{ restore: keySelector("delete-invoice"), cancel: onCancelDeleteConfirm }}>Yes, delete invoice</button>
             <button type="button" onclick={onCancelDeleteConfirm}>Cancel</button>
           {:else}
             <button type="button" data-focus-key="delete-invoice" onclick={onAskDelete}>Delete</button>
@@ -375,7 +441,7 @@
         {:else if detail.status === "sent"}
           <button type="button" onclick={() => onChangeStatus("paid")}>Mark paid</button>
           {#if confirmingCancel}
-            <button type="button" class="danger" onclick={() => onChangeStatus("canceled")} use:confirmFocus={{ restore: keySelector("cancel-invoice"), cancel: onCancelCancel }}>Cancel invoice?</button>
+            <button type="button" class="danger" onclick={() => onChangeStatus("canceled")} use:confirmFocus={{ restore: keySelector("cancel-invoice"), cancel: onCancelCancel }}>Yes, cancel invoice</button>
             <button type="button" onclick={onCancelCancel}>Keep invoice</button>
           {:else}
             <button type="button" data-focus-key="cancel-invoice" onclick={onAskCancel}>Cancel invoice</button>
@@ -390,7 +456,7 @@
           <button type="button" onclick={() => onDuplicate(detail)}>Duplicate</button>
         {/if}
         {#if confirmingEmail && emailReason === null}
-          <button type="button" class="danger" onclick={onSendEmail} use:confirmFocus={{ restore: keySelector("email-invoice"), cancel: onCancelSendEmail }}>Send {detail.number} to {detail.clientName || detail.clientEmail}?</button>
+          <button type="button" class="primary" onclick={onSendEmail} use:confirmFocus={{ restore: keySelector("email-invoice"), cancel: onCancelSendEmail }}>Yes, send to {detail.clientName || detail.clientEmail}</button>
           <button type="button" onclick={onCancelSendEmail}>Cancel</button>
         {:else}
           <button
@@ -436,6 +502,9 @@
 
   /* h3 font-size comes from theme.css; only the component's vertical rhythm stays local. */
   h3 { margin: var(--space-3) 0 var(--space-2); }
+
+  .conflict p { margin: 0 0 var(--space-2); }
+  .conflict-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-2); }
 
   .totals { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.2rem; align-items: flex-end; }
   .totals div { display: flex; gap: 1rem; justify-content: space-between; width: 14rem; }

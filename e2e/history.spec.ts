@@ -56,7 +56,7 @@ test("delete requires two-step confirmation and stays removed after reload", asy
   // menu, because arrow-key roving isn't implemented.
   await row.getByRole("button", { name: `More actions for "${label}"` }).click();
   await row.getByRole("button", { name: `Delete "${label}"` }).click();
-  const confirmBtn = row.getByRole("button", { name: `Delete? "${label}"` });
+  const confirmBtn = row.getByRole("button", { name: `Yes, delete "${label}"` });
   await expect(confirmBtn).toBeVisible();
   await expect(confirmBtn).toBeFocused();
   await confirmBtn.click();

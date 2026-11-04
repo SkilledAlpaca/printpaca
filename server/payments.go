@@ -125,9 +125,13 @@ func insertPayment(tx *sql.Tx, invoiceID, paidDate string, amountCents int, meth
 	return err
 }
 
-// handlePaymentPost implements POST /api/invoices/{id}/payments, allowed only on a sent invoice.
-// The insert and the conditional paid-status flip share one transaction.
+// handlePaymentPost implements POST /api/invoices/{id}/payments, allowed on a draft or a sent invoice.
+// Recording a payment on a draft sends it first, exactly as Mark sent would: the issue date defaults to today,
+// the due date from the default terms, a manual delivery event is recorded, and stock is taken. A customer
+// paying at the counter needs no separate Mark sent step. The send, the insert and the conditional paid-status
+// flip share one transaction.
 func (iv *invoices) handlePaymentPost(w http.ResponseWriter, r *http.Request) {
+	cfg := iv.store.Get() // one snapshot for this request
 	id := r.PathValue("id")
 	existing, found, err := iv.load(id)
 	if err != nil {
@@ -139,8 +143,8 @@ func (iv *invoices) handlePaymentPost(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusNotFound, "invoice not found")
 		return
 	}
-	if existing.Status != "sent" {
-		writeAPIError(w, http.StatusConflict, "payments can only be recorded on sent invoices")
+	if existing.Status != "sent" && existing.Status != "draft" {
+		writeAPIError(w, http.StatusConflict, "payments can only be recorded on draft or sent invoices")
 		return
 	}
 
@@ -164,6 +168,37 @@ func (iv *invoices) handlePaymentPost(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
+	if existing.Status == "draft" {
+		issueDate, dueDate, err := fillSentDates(cfg, existing.IssueDate, existing.DueDate)
+		if err != nil {
+			log.Printf("payments: invalid stored issueDate %q: %v", existing.IssueDate, err)
+			http.Error(w, "invoices not writable", http.StatusInternalServerError)
+			return
+		}
+		// Conditional on draft, like handleStatus: a racing send or payment already took the stock.
+		res, err := tx.Exec(`UPDATE invoices SET status = 'sent', issue_date = ?, due_date = ?, updated_at = ?, updated_by = ?, version = version + 1 WHERE id = ? AND status = 'draft'`,
+			issueDate, dueDate, now, by, id)
+		if err != nil {
+			log.Printf("payments mark sent: %v", err)
+			http.Error(w, "invoices not writable", http.StatusInternalServerError)
+			return
+		}
+		if n, _ := res.RowsAffected(); n != 1 {
+			writeAPIError(w, http.StatusConflict, "this invoice changed; reload to see the latest status")
+			return
+		}
+		if err := insertInvoiceSend(tx, id, "manual", "", now); err != nil {
+			log.Printf("payments manual send record: %v", err)
+			http.Error(w, "invoices not writable", http.StatusInternalServerError)
+			return
+		}
+		if err := takeInvoiceStock(tx, id, by, now); err != nil {
+			log.Printf("payments take stock: %v", err)
+			http.Error(w, "invoices not writable", http.StatusInternalServerError)
+			return
+		}
+	}
+
 	if err := insertPayment(tx, id, in.PaidDate, in.AmountCents, in.Method, in.Note, in.Reference, now, by); err != nil {
 		log.Printf("payments insert: %v", err)
 		http.Error(w, "invoices not writable", http.StatusInternalServerError)
@@ -178,9 +213,10 @@ func (iv *invoices) handlePaymentPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invoices not writable", http.StatusInternalServerError)
 		return
 	}
-	// Overpayment is allowed (balance may go negative); the only gate is reaching the total.
+	// Overpayment is allowed (balance may go negative); the only gate is reaching the total. The web app asks
+	// before recording one, and the dashboard counts at most the invoice total as revenue (effectivePaymentsCTE).
 	if newPaid >= existing.TotalCents {
-		if _, err := tx.Exec(`UPDATE invoices SET status = 'paid', updated_at = ?, updated_by = ? WHERE id = ?`, now, by, id); err != nil {
+		if _, err := tx.Exec(`UPDATE invoices SET status = 'paid', updated_at = ?, updated_by = ?, version = version + 1 WHERE id = ?`, now, by, id); err != nil {
 			log.Printf("payments flip paid: %v", err)
 			http.Error(w, "invoices not writable", http.StatusInternalServerError)
 			return
@@ -264,7 +300,7 @@ func (iv *invoices) handlePaymentDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if existing.Status == "paid" && newPaid < existing.TotalCents {
-		if _, err := tx.Exec(`UPDATE invoices SET status = 'sent', updated_at = ?, updated_by = ? WHERE id = ?`, now, by, id); err != nil {
+		if _, err := tx.Exec(`UPDATE invoices SET status = 'sent', updated_at = ?, updated_by = ?, version = version + 1 WHERE id = ?`, now, by, id); err != nil {
 			log.Printf("payments flip sent: %v", err)
 			http.Error(w, "invoices not writable", http.StatusInternalServerError)
 			return

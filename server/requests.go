@@ -26,10 +26,12 @@ type quoteRequests struct {
 	demoMode bool
 	// configDir backs handleStorage's dirSize call (CONFIG_DIR/uploads), which retention.go reclaims from.
 	configDir string
+	// store backs handlePrintTime, which prices a request from the current config.
+	store *ConfigStore
 }
 
-func newQuoteRequests(db *sql.DB, configDir string, demoMode bool) *quoteRequests {
-	return &quoteRequests{db: db, configDir: configDir, demoMode: demoMode}
+func newQuoteRequests(db *sql.DB, store *ConfigStore, configDir string, demoMode bool) *quoteRequests {
+	return &quoteRequests{db: db, store: store, configDir: configDir, demoMode: demoMode}
 }
 
 // QuoteRequest is the JSON shape of every requests endpoint: every quote_requests column (admin-only).
@@ -68,6 +70,17 @@ type QuoteRequest struct {
 	// UpdatedBy follows Quote.CreatedBy, but quote_requests has no created_by (the public listener has no
 	// identity). It moves only on admin writes: handleGet's new->viewed and handleStatus's viewed->finalized.
 	UpdatedBy string `json:"updatedBy"`
+
+	// InvoiceID is the invoice this request was converted to ('' while it has not been). A converted request
+	// is finalized and stays "finalized"; the link is what marks it "Invoiced" in the admin app. InvoiceNumber
+	// and InvoiceStatus are read through that link, and are '' when the invoice was deleted.
+	InvoiceID     string `json:"invoiceId"`
+	InvoiceNumber string `json:"invoiceNumber"`
+	InvoiceStatus string `json:"invoiceStatus"`
+
+	// NeedsPrintTime marks a public estimate submitted without a print time: priceCents and timeSeconds are 0
+	// until the owner enters the time (handlePrintTime).
+	NeedsPrintTime bool `json:"needsPrintTime"`
 }
 
 // quoteRequestStatusTransitions allows only viewed->finalized (the owner must look first). Others are a 409.
@@ -79,7 +92,8 @@ var quoteRequestStatusTransitions = map[string]map[string]bool{
 
 // requestColumns lists the columns every quote_requests SELECT reads, in the order Scan expects.
 // price_cents is the server's own computation (buildPublicQuoteInputs + ComputeQuote), not a browser price.
-const requestColumns = `id, status, name, email, note, material, quantity, weight_g, time_seconds, price_cents, gcode_filename, gcode_path, gcode_bytes, created_at, finalized_at, gcode_pruned_at, kind, item_id, item_name, option_name, updated_by, shipping_cents, tax_inclusive`
+const requestColumns = `id, status, name, email, note, material, quantity, weight_g, time_seconds, price_cents, gcode_filename, gcode_path, gcode_bytes, created_at, finalized_at, gcode_pruned_at, kind, item_id, item_name, option_name, updated_by, shipping_cents, tax_inclusive,
+	invoice_id, COALESCE((SELECT number FROM invoices WHERE id = quote_requests.invoice_id), ''), COALESCE((SELECT status FROM invoices WHERE id = quote_requests.invoice_id), ''), needs_print_time`
 
 // scanRequest reads one row (see requestColumns) into a QuoteRequest.
 func scanRequest(row rowScanner) (QuoteRequest, error) {
@@ -87,7 +101,8 @@ func scanRequest(row rowScanner) (QuoteRequest, error) {
 	err := row.Scan(&req.ID, &req.Status, &req.Name, &req.Email, &req.Note, &req.Material, &req.Quantity,
 		&req.WeightG, &req.TimeSeconds, &req.PriceCents, &req.GcodeFilename, &req.GcodePath, &req.GcodeBytes,
 		&req.CreatedAt, &req.FinalizedAt, &req.GcodePrunedAt,
-		&req.Kind, &req.ItemID, &req.ItemName, &req.OptionName, &req.UpdatedBy, &req.ShippingCents, &req.TaxInclusive)
+		&req.Kind, &req.ItemID, &req.ItemName, &req.OptionName, &req.UpdatedBy, &req.ShippingCents, &req.TaxInclusive,
+		&req.InvoiceID, &req.InvoiceNumber, &req.InvoiceStatus, &req.NeedsPrintTime)
 	if err != nil {
 		return QuoteRequest{}, err
 	}
@@ -460,4 +475,169 @@ func (qr *quoteRequests) handleDeleteNew(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(struct {
 		DeletedCount int64 `json:"deletedCount"`
 	}{DeletedCount: deleted})
+}
+
+// errRequestAlreadyInvoiced is linkRequestToInvoice's loser-of-a-race result: another conversion linked the
+// request between prepareRequestConversion's check and this transaction.
+var errRequestAlreadyInvoiced = errors.New("request already invoiced")
+
+// requestInvoiceLinkLive reports whether the request already points at an invoice that still counts: one that
+// exists and is not canceled. A deleted or canceled invoice frees the request for a new conversion.
+func requestInvoiceLinkLive(invoiceID, invoiceStatus string) bool {
+	return invoiceID != "" && invoiceStatus != "" && invoiceStatus != "canceled"
+}
+
+// prepareRequestConversion runs before the invoice POST's validation for a body that names a requestId. It
+// returns an HTTP status and message when the conversion must be refused (unknown request, already invoiced,
+// no print time yet) and otherwise adjusts in.Lines in place:
+//   - A line's item link is dropped when the item was deleted, and its option when the item's groups no longer
+//     contain that summary, so a request for a changed item still converts.
+//   - Every item link is dropped when the request was already finalized: finalize recorded that sale in
+//     item_sales and took the stock, and a linked line would count it again when the invoice is sent. An
+//     unfinalized request converts with its links, and linkRequestToInvoice finalizes it WITHOUT the sale
+//     record, so sending the invoice is the one place the sale and the stock are counted.
+//
+// A non-nil error means a lookup failed (500).
+func prepareRequestConversion(db *sql.DB, in *invoiceInput) (int, string, error) {
+	req, found, err := loadRequestRow(db, in.RequestID)
+	if err != nil {
+		return 0, "", err
+	}
+	if !found {
+		return http.StatusUnprocessableEntity, "requestId: unknown request", nil
+	}
+	if requestInvoiceLinkLive(req.InvoiceID, req.InvoiceStatus) {
+		return http.StatusConflict, "this request was already converted to invoice " + req.InvoiceNumber + "; open that invoice instead", nil
+	}
+	if req.NeedsPrintTime {
+		return http.StatusConflict, "this request needs a print time before it can be invoiced; enter the print time first", nil
+	}
+	for i := range in.Lines {
+		l := &in.Lines[i]
+		if l.ItemID == "" {
+			continue
+		}
+		if req.Status == "finalized" {
+			l.ItemID, l.OptionName = "", ""
+			continue
+		}
+		var groupsJSON string
+		err := db.QueryRow(`SELECT option_groups_json FROM items WHERE id = ?`, l.ItemID).Scan(&groupsJSON)
+		if errors.Is(err, sql.ErrNoRows) {
+			l.ItemID, l.OptionName = "", ""
+			continue
+		}
+		if err != nil {
+			return 0, "", err
+		}
+		if l.OptionName != "" {
+			var groups []ItemOptionGroup
+			if err := json.Unmarshal([]byte(groupsJSON), &groups); err != nil {
+				return 0, "", err
+			}
+			if _, ok := optionSummaryDelta(groups, l.OptionName); !ok {
+				l.OptionName = ""
+			}
+		}
+	}
+	return 0, "", nil
+}
+
+// loadRequestRow reads one request outside a quoteRequests receiver, for the invoice handlers.
+func loadRequestRow(db *sql.DB, id string) (*QuoteRequest, bool, error) {
+	return (&quoteRequests{db: db}).load(id)
+}
+
+// linkRequestToInvoice runs inside the invoice-insert transaction: it points the request at the new invoice
+// and finalizes it, so Convert to invoice leaves the request "Invoiced" in one step. It writes no item_sales
+// row and takes no stock; see prepareRequestConversion. The WHERE refuses a request another conversion linked
+// in the meantime.
+func linkRequestToInvoice(tx *sql.Tx, requestID, invoiceID, by, now string) error {
+	res, err := tx.Exec(`
+		UPDATE quote_requests
+		SET invoice_id = ?, updated_by = ?,
+		    finalized_at = CASE WHEN status = 'finalized' THEN finalized_at ELSE ? END,
+		    status = 'finalized'
+		WHERE id = ? AND (invoice_id = '' OR NOT EXISTS (SELECT 1 FROM invoices i WHERE i.id = quote_requests.invoice_id AND i.status != 'canceled'))`,
+		invoiceID, by, now, requestID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return errRequestAlreadyInvoiced
+	}
+	return nil
+}
+
+// requestPrintTimeMaxBytes bounds the POST body: one number.
+const requestPrintTimeMaxBytes = 4 * 1024
+
+type requestPrintTimeInput struct {
+	TimeSeconds int `json:"timeSeconds"`
+}
+
+// handlePrintTime implements POST /api/requests/{id}/print-time: the owner supplies the print time a public
+// estimate was submitted without. The server prices the request with the same engine call the public submit
+// uses (buildPublicQuoteInputs + ComputeQuote) against the current config, stores time and price, and clears
+// the needs-print-time mark.
+func (qr *quoteRequests) handlePrintTime(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	in, ok := decodeJSONBody[requestPrintTimeInput](w, r, requestPrintTimeMaxBytes)
+	if !ok {
+		return
+	}
+	if in.TimeSeconds < 60 || in.TimeSeconds > maxTimeSeconds {
+		writeAPIError(w, http.StatusUnprocessableEntity, fmt.Sprintf("timeSeconds: must be 60-%d", maxTimeSeconds))
+		return
+	}
+	req, found, err := qr.load(id)
+	if err != nil {
+		log.Printf("requests load: %v", err)
+		http.Error(w, "requests unavailable", http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		writeAPIError(w, http.StatusNotFound, "request not found")
+		return
+	}
+	if !req.NeedsPrintTime || req.Kind == "item" {
+		writeAPIError(w, http.StatusConflict, "this request doesn't need a print time")
+		return
+	}
+
+	cfg := qr.store.Get()
+	var material *Material
+	for i := range cfg.Materials {
+		if cfg.Materials[i].Name == req.Material {
+			material = &cfg.Materials[i]
+			break
+		}
+	}
+	if material == nil {
+		writeAPIError(w, http.StatusUnprocessableEntity, "material: this material is no longer in your settings; add it back or use Open in new quote")
+		return
+	}
+	qi, opt := buildPublicQuoteInputs(cfg, *material, req.Quantity, req.WeightG, in.TimeSeconds)
+	bd := ComputeQuote(qi, opt)
+	if !bd.Valid || bd.Pricing == nil || !bd.Pricing.Valid {
+		writeAPIError(w, http.StatusUnprocessableEntity, "price: couldn't price this request with the current settings; use Open in new quote")
+		return
+	}
+	priceCents := int(bd.Pricing.Revenue)
+
+	by := identityFor(r).username
+	if _, err := qr.db.Exec(`UPDATE quote_requests SET time_seconds = ?, price_cents = ?, needs_print_time = 0, updated_by = ? WHERE id = ? AND needs_print_time = 1`,
+		in.TimeSeconds, priceCents, by, id); err != nil {
+		log.Printf("requests print time: %v", err)
+		http.Error(w, "requests not writable", http.StatusInternalServerError)
+		return
+	}
+	req, _, err = qr.load(id)
+	if err != nil {
+		log.Printf("requests load: %v", err)
+		http.Error(w, "requests unavailable", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(req)
 }

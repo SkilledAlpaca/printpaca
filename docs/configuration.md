@@ -264,7 +264,7 @@ Uploaded files are deleted automatically after their request is finalized: G-cod
 
 ### Counter sales of gallery items
 
-In the Invoices tab, pick a gallery item (public or not) on a draft line to fill its description and price, and choose an option in each of its groups if the item has them. You can still edit the description and price, for example to give a counter discount; **Unlink** removes the link. Linked quantities must be whole numbers.
+In the Invoices tab, pick a shop item (public or not) on a draft line to fill its description and price, and choose an option in each of its groups if the item has them. You can still edit the description and price, for example to give a counter discount; **Unlink** removes the link. Linked quantities must be whole numbers.
 
 - A linked line counts in the Dashboard's Top items panel while its invoice is sent or paid, dated by the invoice's issue date. Drafts and canceled invoices never count.
 - Sending the invoice (Mark sent or Email) takes the quantity off an in-stock item, down to zero at most. Canceling a sent invoice puts back exactly the units that were taken. Paid and back to sent changes nothing. Ready-to-print and deleted items take no stock.
@@ -276,6 +276,8 @@ On the public page, a customer:
 - Enters a quantity.
 - Either drops a G-code, sliced 3MF, or STL/plain-3MF file to fill in weight and print time automatically (see [Quoting from files](#quoting-from-files) below), or enters weight and print time by hand.
 - Enters their name, email, and an optional note, then submits. The email must look like `name@example.com`: one `@`, text before it, and a domain with a dot that isn't first or last, and no spaces. The page checks this when the visitor submits, and the server checks it again and refuses a malformed address with `422`. It confirms the shape only, not that the address works.
+
+In the Requests tab, filter the list by name, email, item, material, or file name (Ctrl+K focuses the filter) and by status. **Reply by email** opens a message to the customer with the request reference in the subject. **Finalize** marks a request handled and doesn't email the customer. **Convert to invoice** creates the invoice and marks the request **Invoiced** with a link both ways, and the request can't be converted twice. Check the boxes beside viewed requests and choose **Finalize selected** to handle several at once. **Delete all new** is in the **More** menu; its confirm states how many requests it deletes and that their stored files go too. A request submitted without a print time says **Needs print time**: enter the time from your slicer and printpaca prices it from your current settings before you convert it.
 
 The estimate and order buttons say "You won't be charged now" because submitting only sends you a request. You review it in the Requests tab and follow up by email, and nothing is charged.
 

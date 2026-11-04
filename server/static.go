@@ -92,13 +92,14 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, cfgStore *ConfigStore, auth 
 	mux.HandleFunc("GET /api/dashboard", requirePermission(db, "dashboard", dash.handleGet))
 	mux.HandleFunc("GET /api/dashboard/top-items", requirePermission(db, "dashboard", dash.handleTopItems))
 
-	qr := newQuoteRequests(db, configDir, demoMode)
+	qr := newQuoteRequests(db, cfgStore, configDir, demoMode)
 	mux.HandleFunc("GET /api/requests", requirePermission(db, "requests", qr.handleList))
 	// Literal segment; ServeMux resolves it by specificity, independent of order.
 	mux.HandleFunc("GET /api/requests/storage", requirePermission(db, "requests", qr.handleStorage))
 	mux.HandleFunc("GET /api/requests/{id}", requirePermission(db, "requests", qr.handleGet))
 	mux.HandleFunc("GET /api/requests/{id}/gcode", requirePermission(db, "requests", qr.handleGcodeDownload))
 	mux.HandleFunc("POST /api/requests/{id}/status", requirePermission(db, "requests", qr.handleStatus))
+	mux.HandleFunc("POST /api/requests/{id}/print-time", requirePermission(db, "requests", qr.handlePrintTime))
 	// Bulk-delete of new requests (flood recovery). Literal segment like /storage; request ids are 32 hex chars.
 	mux.HandleFunc("DELETE /api/requests/new", requirePermission(db, "requests", qr.handleDeleteNew))
 	mux.HandleFunc("DELETE /api/requests/{id}", requirePermission(db, "requests", qr.handleDelete))

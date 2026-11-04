@@ -14,6 +14,7 @@
     deleteInvoice,
     addPayment,
     deletePayment,
+    VersionConflictError,
     type Invoice,
     type InvoiceStatus,
     type InvoiceSummary,
@@ -30,6 +31,8 @@
     newInvoiceDates,
     buildInput,
     defaultPaymentForm,
+    invoiceFormProblems,
+    paymentFormProblems,
     type InvoiceForm,
     type PaymentForm,
   } from "../lib/invoiceForm";
@@ -112,6 +115,14 @@
   // (delete or cancel invoice, remove line, delete payment). Ignored while a native <select> is focused so
   // the browser can close its own dropdown.
   function handleDetailKeydown(e: KeyboardEvent) {
+    // Ctrl+S / Cmd+S saves an invoice that is still editable (a new draft or a saved one). Like the quote
+    // editor's, it always swallows the browser's own Save-page, and no-ops when there is nothing to save.
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.code === "KeyS" || e.key?.toLowerCase() === "s")) {
+      if (view !== "detail") return;
+      e.preventDefault();
+      if (!detailLoading && (detail === null || detail.status === "draft")) void save();
+      return;
+    }
     if (e.key !== "Escape") return;
     if (view !== "detail") return;
     if (escapeBelongsToField(e.target)) return;
@@ -128,6 +139,8 @@
       confirmingMarkSent = false;
     } else if (confirmingEmail) {
       confirmingEmail = false;
+    } else if (confirmingOverpay) {
+      confirmingOverpay = false;
     } else {
       requestBack();
     }
@@ -204,6 +217,9 @@
   let form = $state<InvoiceForm>(untrack(() => emptyForm(cfg.invoicing.salesTaxPct)));
   let formErrors = $state<string[]>([]);
   let saving = $state(false);
+  // The last save was refused because another tab or user changed the invoice (409): the editor shows Reload
+  // and Overwrite instead of an error line.
+  let versionConflict = $state(false);
 
   let confirmingCancel = $state(false);
   let confirmingDelete = $state(false);
@@ -226,6 +242,16 @@
   );
   let paymentErrors = $state<string[]>([]);
   let paymentSaving = $state(false);
+  // The overpayment confirm is open: the entered amount is above the balance, so Record payment asks first.
+  let confirmingOverpay = $state(false);
+  // Editing the amount, or opening another invoice, withdraws a pending overpayment confirm.
+  $effect(() => {
+    void paymentForm.amount;
+    void detailId;
+    untrack(() => {
+      confirmingOverpay = false;
+    });
+  });
   // Two-click delete: id of the payment asking "Delete?", keyed by id since several rows can ask at once.
   let confirmingPaymentDelete = $state<string | null>(null);
 
@@ -238,6 +264,7 @@
     detail = null;
     detailError = null;
     formErrors = [];
+    versionConflict = false;
     confirmingCancel = false;
     confirmingDelete = false;
     confirmingLineRemove = null;
@@ -279,6 +306,7 @@
     detailLoading = true;
     detailError = null;
     formErrors = [];
+    versionConflict = false;
     confirmingCancel = false;
     confirmingDelete = false;
     confirmingLineRemove = null;
@@ -319,6 +347,14 @@
       (detail ? JSON.stringify(form) !== JSON.stringify(formFromInvoice(detail)) : JSON.stringify(form) !== composerBaseline),
   );
 
+  // A reload or closed tab discards unsaved edits just as in-app navigation would; the browser's own prompt
+  // is the only guard it allows (the in-app guards are canLeave() and App.svelte's unsavedForm check).
+  function handleBeforeUnload(e: BeforeUnloadEvent) {
+    if (!dirty) return;
+    e.preventDefault();
+    e.returnValue = "";
+  }
+
   function requestBack() {
     if (canLeave(dirty)) backToList();
   }
@@ -352,12 +388,25 @@
     void focusAfterRowRemoval("remove-line", i, form.lines.length, "add-line");
   }
 
-  async function save() {
+  // `overwrite` is the Overwrite button after a version conflict: it saves over the version now on the server.
+  async function save(overwrite = false) {
     if (saving) return;
+    const problems = invoiceFormProblems(form);
+    if (problems.length > 0) {
+      formErrors = problems;
+      versionConflict = false;
+      announce(`Couldn't save: ${problems.length} ${problems.length === 1 ? "problem" : "problems"} to fix.`, "assertive");
+      return;
+    }
     saving = true;
     formErrors = [];
+    versionConflict = false;
     try {
-      const input = buildInput(form);
+      let input = buildInput(form);
+      if (detailId !== null) {
+        const version = overwrite ? (await getInvoice(detailId)).version : detail?.version;
+        if (version !== undefined) input = { ...input, version };
+      }
       const result = detailId === null ? await createInvoice(input) : await updateInvoice(detailId, input);
       detail = result;
       detailId = result.id;
@@ -366,9 +415,29 @@
       await refresh();
       announce(`Invoice ${result.number} saved.`);
     } catch (err) {
-      formErrors = [err instanceof Error ? err.message : "Couldn't save invoice."];
+      if (err instanceof VersionConflictError) {
+        versionConflict = true;
+        announce(err.message, "assertive");
+      } else {
+        formErrors = [err instanceof Error ? err.message : "Couldn't save invoice."];
+      }
     } finally {
       saving = false;
+    }
+  }
+
+  // "Reload" after a version conflict: drops the editor's changes for the invoice as it is on the server now.
+  async function reloadAfterConflict() {
+    if (detailId === null) return;
+    versionConflict = false;
+    try {
+      const inv = await getInvoice(detailId);
+      detail = inv;
+      form = formFromInvoice(inv);
+      paymentForm = defaultPaymentForm(inv.balanceCents, cfg.invoicing.paymentMethods[0] ?? "", todayInTimezone(cfg.timezone));
+      announce(`Reloaded invoice ${inv.number}.`);
+    } catch (err) {
+      formErrors = [err instanceof Error ? err.message : "Couldn't reload the invoice."];
     }
   }
 
@@ -506,11 +575,24 @@
     window.print();
   }
 
-  async function addPaymentSubmit() {
+  // `confirmed` is the "Yes, record" button of the overpayment confirm.
+  async function addPaymentSubmit(confirmed = false) {
     if (!detail || paymentSaving) return;
-    paymentSaving = true;
-    paymentErrors = [];
+    paymentErrors = paymentFormProblems(paymentForm);
+    if (paymentErrors.length > 0) return;
+    // Recording a payment on a draft sends it first, and the response replaces the editor's form, so unsaved
+    // edits would be lost: make the user save them before the payment.
+    if (detail.status === "draft" && dirty) {
+      paymentErrors = ["Save your changes to the invoice before recording a payment."];
+      return;
+    }
     const amountCents = toCents(paymentForm.amount);
+    if (amountCents > detail.balanceCents && !confirmed) {
+      confirmingOverpay = true;
+      return;
+    }
+    confirmingOverpay = false;
+    paymentSaving = true;
     try {
       const updated = await addPayment(detail.id, {
         paidDate: paymentForm.paidDate,
@@ -566,7 +648,7 @@
   }
 </script>
 
-<svelte:window onhashchange={syncDetailFromHash} onkeydown={handleDetailKeydown} />
+<svelte:window onhashchange={syncDetailFromHash} onkeydown={handleDetailKeydown} onbeforeunload={handleBeforeUnload} />
 
 <div class="page">
   {#if view === "list"}
@@ -607,13 +689,20 @@
       {paymentErrors}
       {paymentSaving}
       {confirmingPaymentDelete}
+      {confirmingOverpay}
+      {versionConflict}
+      {dirty}
+      today={todayInTimezone(cfg.timezone)}
+      onReloadAfterConflict={reloadAfterConflict}
+      onOverwrite={() => save(true)}
+      onCancelOverpay={() => (confirmingOverpay = false)}
       onBackToList={requestBack}
       onLinkMatchingClient={linkMatchingClient}
       onAddLine={addLine}
       onAskRemoveLine={askRemoveLine}
       onCancelRemoveLine={cancelRemoveLine}
       onRemoveLine={removeLine}
-      onSave={save}
+      onSave={() => save()}
       onDuplicate={openDuplicate}
       onMarkSentClick={markSentClick}
       onCancelMarkSent={cancelMarkSent}
@@ -627,7 +716,8 @@
       onCancelSendEmail={cancelSendEmail}
       onSendEmail={sendInvoiceEmailAction}
       onPrint={printInvoice}
-      onAddPayment={addPaymentSubmit}
+      onAddPayment={() => addPaymentSubmit()}
+      onConfirmOverpay={() => addPaymentSubmit(true)}
       onAskDeletePayment={askDeletePayment}
       onCancelDeletePaymentConfirm={cancelDeletePaymentConfirm}
       onConfirmDeletePayment={confirmDeletePayment}

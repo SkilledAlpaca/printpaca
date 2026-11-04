@@ -30,11 +30,11 @@ test("create a draft invoice, mark it sent, then cancel it", async ({ page }) =>
   await expect(page.getByText("draft", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Mark sent" }).click();
-  await page.getByRole("button", { name: /^Mark INV-.* as sent\?$/ }).click();
+  await page.getByRole("button", { name: "Yes, mark as sent" }).click();
   await expect(page.getByText("sent", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Cancel invoice", exact: true }).click();
-  await page.getByRole("button", { name: "Cancel invoice?", exact: true }).click();
+  await page.getByRole("button", { name: "Yes, cancel invoice", exact: true }).click();
   await expect(page.getByText("canceled", { exact: true })).toBeVisible();
 });
 
@@ -50,24 +50,24 @@ test("canceling an invoice that has payments shows the server's message until th
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
   await page.getByRole("button", { name: "Mark sent" }).click();
-  await page.getByRole("button", { name: /^Mark INV-.* as sent\?$/ }).click();
+  await page.getByRole("button", { name: "Yes, mark as sent" }).click();
   await expect(page.getByText("sent", { exact: true })).toBeVisible();
 
   // A $10.00 deposit leaves the invoice sent with a balance.
   await page.getByLabel("Payment amount").fill("10.00");
-  await page.getByRole("button", { name: "Record payment" }).click();
+  await page.getByRole("button", { name: /^Record \$/ }).click();
   await expect(page.getByText(/Paid \$10\.00 of \$50\.00/)).toBeVisible();
 
   await page.getByRole("button", { name: "Cancel invoice" }).click();
-  await page.getByRole("button", { name: "Cancel invoice?" }).click();
+  await page.getByRole("button", { name: "Yes, cancel invoice" }).click();
   await expect(page.getByRole("alert").filter({ hasText: /remove the payments/i })).toBeVisible();
   await expect(page.getByText("sent", { exact: true })).toBeVisible();
 
   // Removing the payment unblocks the cancel.
   await page.getByRole("button", { name: /^Delete payment of \$10\.00/ }).click();
-  await page.getByRole("button", { name: /^Delete\? payment of \$10\.00/}).click();
+  await page.getByRole("button", { name: /^Yes, delete payment of \$10\.00/ }).click();
   await expect(page.getByText(/No payments recorded yet/)).toBeVisible();
   await page.getByRole("button", { name: "Cancel invoice" }).click();
-  await page.getByRole("button", { name: "Cancel invoice?" }).click();
+  await page.getByRole("button", { name: "Yes, cancel invoice" }).click();
   await expect(page.getByText("canceled", { exact: true })).toBeVisible();
 });

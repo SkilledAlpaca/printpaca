@@ -286,6 +286,15 @@ var migrations = []string{
 	  UPDATE items SET version = OLD.version + 1 WHERE id = NEW.id;
 	END;
 	`,
+
+	// 3 -> 4: invoice concurrency token and the request-to-invoice link (v1.1.0 usability fixes).
+	// invoices.version starts at 1 and every write to the invoices row bumps it; a PUT that carries a stale
+	// version is a 409. quote_requests.invoice_id is the invoice a request was converted to ('' while not
+	// converted); the invoice's number is read through it, so there is no second column to keep in sync.
+	`
+	ALTER TABLE invoices ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE quote_requests ADD COLUMN invoice_id TEXT NOT NULL DEFAULT '';
+	`,
 }
 
 // openDB opens the SQLite database in configDir, creating it on first run, and runs pending migrations.

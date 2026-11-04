@@ -37,6 +37,16 @@ export interface QuoteRequest {
   /** Who last touched this request's status (server/requests.go). No createdBy: the public flow has no
    * staff identity. "" while still "new". */
   updatedBy: string;
+  /** The invoice this request was converted to ("" when not converted). A converted request is finalized; the
+   * link is what the admin app shows as "Invoiced". invoiceNumber and invoiceStatus come through the link and
+   * are "" when the invoice was deleted. A canceled invoice (invoiceStatus "canceled") frees the request to be
+   * converted again. */
+  invoiceId: string;
+  invoiceNumber: string;
+  invoiceStatus: string;
+  /** A public estimate submitted without a print time: timeSeconds and priceCents are 0 until the owner
+   * enters the time (setRequestPrintTime). */
+  needsPrintTime: boolean;
 }
 
 /** A network failure returns null so the inbox can show an offline note. Same optional-pagination overload
@@ -123,4 +133,17 @@ export async function fetchRequestsStorage(): Promise<RequestsStorageUsage | nul
   } catch {
     return null;
   }
+}
+
+/** Supplies the print time a public estimate was submitted without. The server prices the request from the
+ * current settings and clears needsPrintTime; resolves to the updated request. */
+export async function setRequestPrintTime(id: string, timeSeconds: number): Promise<QuoteRequest> {
+  const res = await fetch(`api/requests/${encodeURIComponent(id)}/print-time`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ timeSeconds }),
+    signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw await errorsFrom(res);
+  return (await res.json()) as QuoteRequest;
 }

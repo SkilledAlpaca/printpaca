@@ -239,13 +239,13 @@ test.describe("confirm before irreversible actions (3.3.4)", () => {
       const row = page.locator("table tbody tr", { hasText: label });
       const trigger = row.getByRole("button", { name: "Mark sent", exact: true });
       await trigger.click();
-      const confirm = page.getByRole("button", { name: `Mark "${label}" as sent?` });
+      const confirm = page.getByRole("button", { name: "Yes, mark as sent" });
       await expect(confirm).toBeFocused();
       await page.getByRole("button", { name: "Cancel", exact: true }).click();
       await expect(trigger).toBeFocused();
       await expect(confirm).toHaveCount(0);
       await trigger.click();
-      await page.getByRole("button", { name: `Mark "${label}" as sent?` }).click();
+      await page.getByRole("button", { name: "Yes, mark as sent" }).click();
       await expect(page.getByText(`"${label}" marked sent.`)).toBeVisible();
     } finally {
       await deleteQuotesLabeled(request, label);
@@ -279,7 +279,7 @@ test.describe("confirm before irreversible actions (3.3.4)", () => {
       await page.locator(".plain-list li, table tbody tr", { hasText: inv.number }).first().getByRole("button").first().click();
       const trigger = page.getByRole("button", { name: "Email to client", exact: true });
       await trigger.click();
-      const confirm = page.getByRole("button", { name: new RegExp(`^Send ${inv.number} to `) });
+      const confirm = page.getByRole("button", { name: /^Yes, send to / });
       await expect(confirm).toBeFocused();
       await page.getByRole("button", { name: "Cancel", exact: true }).click();
       await expect(trigger).toBeFocused();

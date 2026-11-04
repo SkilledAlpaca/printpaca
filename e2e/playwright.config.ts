@@ -11,7 +11,11 @@ export default defineConfig({
   retries: 0,
   // Port 8099, not the default 8080, so reuseExistingServer can only reuse an e2e-launched instance,
   // never a developer's real deployment.
-  use: { baseURL: "http://127.0.0.1:8099" },
+  // Every test starts as a returning user whose last tab was New quote (default-tab-state.json). Without it, the
+  // default landing is the Dashboard as soon as an earlier spec has left a quote, request, or invoice in the
+  // shared database, and every spec that opens /admin/ and expects the quote form would depend on run order.
+  // money-requests.spec.ts opts out to test the real landing rule.
+  use: { baseURL: "http://127.0.0.1:8099", storageState: new URL("default-tab-state.json", import.meta.url).pathname },
   // The main port serves the shop (/ and /order) and the admin app (/admin/); the specs reach
   // the admin app under /admin/.
   // Four servers, each with its own throwaway CONFIG_DIR: 8099 (baseURL), 9099 with ADMIN_PASSWORD set

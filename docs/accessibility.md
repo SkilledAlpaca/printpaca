@@ -42,8 +42,9 @@ Every control works from the keyboard, and the focus indicator is visible on eve
 |---|---|
 | Tab and Shift+Tab | Move through controls. A **Skip to content** link is the first stop in the admin app; it moves focus to the main content. |
 | Ctrl+K (⌘K on macOS) | On every page that has a list filter (Quotes, Clients, Invoices, Requests, Shop items, Filament spools, and Recent prints on New quote), focus the filter. It's ignored while focus is in a text field, select, or editable area. |
-| Ctrl+S (⌘S on macOS) | In every editor that has a Save button: New quote, the shop item editor, Settings, the Filament materials, Electricity, and Printers. It works from inside a text field. |
-| Escape | Close the mobile menu, a Quotes row menu, or an open record's detail view (Clients, Invoices, and Requests). When a two-step confirm is armed, Escape cancels the confirm first and leaves the record open. Inside a text field or select, Escape keeps its normal meaning and doesn't close the record. |
+| Ctrl+S (⌘S on macOS) | In every editor that has a Save button: New quote, the shop item editor, Settings, the Filament materials, Electricity, and Printers, invoice drafts, and client details. It works from inside a text field. |
+| Arrow Up, Arrow Down, Home, End | In an open row menu (a Quotes row, or More on Requests), move between its items. Arrow keys wrap at the ends. Tab closes the menu and puts focus on its toggle, so the next Tab continues from there. |
+| Escape | Close the mobile menu, a row menu, or an open record's detail view (Clients, Invoices, and Requests). When a two-step confirm is armed, Escape cancels the confirm first and leaves the record open. Inside a text field or select, Escape keeps its normal meaning and doesn't close the record. |
 
 Ctrl+K and Ctrl+S need a modifier key, so no single-key shortcut can fire by accident (WCAG 2.1.4). The sidebar footer lists only the shortcuts that work on the page you're on, and the Guide lists them all. Before 1.0.4 the filter shortcut was a bare `/`; it no longer does anything.
 
@@ -80,7 +81,7 @@ These behaviors are built in, but see the note about [testing](#how-its-tested):
 - **Cost breakdown.** The legend shows each segment's percentage in text, so color isn't the only cue.
 - **Names.** Visible text is part of every control's accessible name, so speech-input users can say what they see (WCAG 2.5.3). Help text, hints, warnings, and counters are linked to their fields as descriptions and are not part of the name.
 - **Unread requests.** The sidebar item and the mobile menu button both include the unread count in their names.
-- **Confirmations before consequential actions.** printpaca asks before it marks an invoice sent, emails an invoice or a quote, changes a quote's status, or finalizes a request.
+- **Confirmations before consequential actions.** printpaca asks before it marks an invoice sent, emails an invoice or a quote, changes a quote's status, finalizes requests, records a payment above the balance, or deletes all new requests. The confirm button names the action ("Yes, mark as sent", "Yes, delete 8 requests") and only a destructive confirm is red. The delete-all confirm states the count and that the stored files go too, and focus starts on Cancel.
 
 ## Theme and contrast
 

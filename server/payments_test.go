@@ -123,20 +123,12 @@ func TestOverpaymentAllowedAndFlipsToPaid(t *testing.T) {
 	}
 }
 
-func TestPaymentOnNonSentInvoiceIs409(t *testing.T) {
+func TestPaymentOnPaidOrCanceledInvoiceIs409(t *testing.T) {
 	mux := newTestMux(t, t.TempDir())
-
-	// draft
-	rec := postInvoice(t, mux, `{"clientName":"A","lines":[{"description":"X","quantity":1,"unitPriceCents":100}]}`)
-	draft := mustUnmarshalInvoice(t, rec)
-	rec = postPayment(t, mux, draft.ID, `{"paidDate":"2026-01-15","amountCents":100}`)
-	if rec.Code != http.StatusConflict {
-		t.Errorf("draft: want 409, got %d %s", rec.Code, rec.Body.String())
-	}
 
 	// paid (fully paid via one payment, auto-flipped)
 	sent := newSentInvoice(t, mux, 100)
-	rec = postPayment(t, mux, sent.ID, `{"paidDate":"2026-01-15","amountCents":100}`)
+	rec := postPayment(t, mux, sent.ID, `{"paidDate":"2026-01-15","amountCents":100}`)
 	paid := mustUnmarshalInvoice(t, rec)
 	if paid.Status != "paid" {
 		t.Fatalf("setup: want paid, got %q", paid.Status)
@@ -538,5 +530,67 @@ func TestDeletePaymentOnDraftInvoiceIs409(t *testing.T) {
 	draft := mustUnmarshalInvoice(t, rec)
 	if rec := deletePayment(t, mux, draft.ID, "nope"); rec.Code != http.StatusConflict {
 		t.Fatalf("want 409, got %d", rec.Code)
+	}
+}
+
+// Recording a payment on a draft sends it first (decision 9): issue date today, due date from the default
+// terms, a manual delivery event, and the payment itself; a full payment then flips it to paid.
+func TestPaymentOnDraftSendsTheInvoice(t *testing.T) {
+	mux := newTestMux(t, t.TempDir())
+	rec := postInvoice(t, mux, `{"clientName":"A","lines":[{"description":"X","quantity":1,"unitPriceCents":1000}]}`)
+	draft := mustUnmarshalInvoice(t, rec)
+	if draft.IssueDate != "" || draft.Status != "draft" {
+		t.Fatalf("setup: want a blank-dated draft, got %q %q", draft.Status, draft.IssueDate)
+	}
+
+	rec = postPayment(t, mux, draft.ID, `{"paidDate":"2026-01-15","amountCents":400,"method":"cash"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("partial payment on draft: want 201, got %d %s", rec.Code, rec.Body.String())
+	}
+	got := mustUnmarshalInvoice(t, rec)
+	if got.Status != "sent" {
+		t.Errorf("status = %q, want sent", got.Status)
+	}
+	if got.IssueDate == "" || got.DueDate == "" {
+		t.Errorf("dates = %q / %q, want both filled", got.IssueDate, got.DueDate)
+	}
+	if len(got.Sends) != 1 || got.Sends[0].Channel != "manual" {
+		t.Errorf("sends = %+v, want one manual event", got.Sends)
+	}
+	if got.BalanceCents != 600 {
+		t.Errorf("balanceCents = %d, want 600", got.BalanceCents)
+	}
+	if got.Version != draft.Version+1 {
+		t.Errorf("version = %d, want %d (the send bumps it once)", got.Version, draft.Version+1)
+	}
+
+	// A draft paid in full goes straight to paid.
+	rec = postInvoice(t, mux, `{"clientName":"B","issueDate":"2026-02-01","lines":[{"description":"X","quantity":1,"unitPriceCents":735}]}`)
+	d2 := mustUnmarshalInvoice(t, rec)
+	rec = postPayment(t, mux, d2.ID, `{"paidDate":"2026-02-01","amountCents":735}`)
+	paid := mustUnmarshalInvoice(t, rec)
+	if paid.Status != "paid" || paid.IssueDate != "2026-02-01" {
+		t.Errorf("full payment on draft: status %q issueDate %q, want paid / 2026-02-01 kept", paid.Status, paid.IssueDate)
+	}
+}
+
+func TestPaymentOnDraftTakesStock(t *testing.T) {
+	dir := t.TempDir()
+	mux, db := newTestMuxWithDB(t, dir)
+	rec := postItem(t, mux, `{"name":"Benchy","priceCents":1500,"public":true,"stockMode":"in_stock","stockQty":5}`)
+	var item Item
+	if err := json.Unmarshal(rec.Body.Bytes(), &item); err != nil {
+		t.Fatalf("unmarshal item: %v", err)
+	}
+	rec = postInvoice(t, mux, fmt.Sprintf(`{"clientName":"A","lines":[{"description":"Benchy","quantity":2,"unitPriceCents":1500,"itemId":%q}]}`, item.ID))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("invoice: %d %s", rec.Code, rec.Body.String())
+	}
+	draft := mustUnmarshalInvoice(t, rec)
+	if rec = postPayment(t, mux, draft.ID, `{"paidDate":"2026-01-15","amountCents":3000}`); rec.Code != http.StatusCreated {
+		t.Fatalf("payment: %d %s", rec.Code, rec.Body.String())
+	}
+	if _, qty := itemStock(t, db, item.ID); qty != 3 {
+		t.Errorf("stock_qty = %d, want 3 (a payment on a draft takes stock like Mark sent)", qty)
 	}
 }

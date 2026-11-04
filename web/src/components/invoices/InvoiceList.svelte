@@ -3,6 +3,7 @@
   import { type InvoiceSummary } from "../../lib/invoicesApi";
   import { isInvoiceOverdue, todayInTimezone } from "../../lib/invoiceStatus";
   import { money, formatDate } from "../../lib/format";
+  import { overpaidCents } from "../../lib/invoiceForm";
   import { canReadSettings } from "../../lib/permissions";
   import StatusBadge from "../StatusBadge.svelte";
   import SettingsEditor from "../settings/SettingsEditor.svelte";
@@ -117,7 +118,7 @@
 {/if}
 
 <div class="card">
-  <div class="table-scroll">
+  <div class="table-scroll stack">
     <table>
       <thead>
         <tr>
@@ -135,19 +136,22 @@
         {:else}
           {#each filteredInvoices as inv (inv.id)}
             <tr class="clickable-row" onclick={() => onOpenDetail(inv.id)}>
-              <td class="nowrap">
+              <td class="nowrap c-num">
                 <button type="button" class="open-btn" data-row-id={inv.id} onclick={(e) => { e.stopPropagation(); onOpenDetail(inv.id); }}>{inv.number}</button>
               </td>
-              <td>{inv.clientName}</td>
-              <td class="nowrap">{inv.issueDate ? formatDate(inv.issueDate) : "-"}</td>
-              <td class="nowrap">{inv.dueDate ? formatDate(inv.dueDate) : "-"}</td>
-              <td>
+              <td class="c-client">{inv.clientName}</td>
+              <td class="nowrap c-issued" data-label="Issued">{inv.issueDate ? formatDate(inv.issueDate) : "-"}</td>
+              <td class="nowrap c-due" data-label="Due">{inv.dueDate ? formatDate(inv.dueDate) : "-"}</td>
+              <td class="c-status">
                 <StatusBadge status={inv.status} dueDate={inv.dueDate} />
                 {#if inv.status === "sent" && inv.paidCents > 0 && inv.paidCents < inv.totalCents}
                   <span class="pill">Partially paid</span>
                 {/if}
+                {#if overpaidCents(inv) > 0}
+                  <span class="pill">Overpaid {money(overpaidCents(inv), cfg)}</span>
+                {/if}
               </td>
-              <td class="num">{money(inv.totalCents, cfg)}</td>
+              <td class="num c-amount">{money(inv.totalCents, cfg)}</td>
             </tr>
           {:else}
             <tr><td colspan="6" class="empty-state">{invoices.length === 0 ? "No invoices yet. Convert a saved quote from the Quotes page, or press New invoice." : "No invoices match the filter."}</td></tr>
@@ -201,4 +205,38 @@
    * chips (untouched; the rule is scoped) but uneven across All/Draft/Sent/Paid/Overdue/Canceled.
    * min-width in rem so it scales with root font size and doesn't clip "Canceled". */
   .chips button { min-width: 6.5rem; }
+
+  /* Phones: each row becomes a stacked card with the number and amount on top, then client and status, then
+   * the two dates, so nothing is clipped behind a horizontal scroll. The header row stays in the DOM, hidden
+   * with the visually-hidden clip (not display: none), and the table elements keep their table semantics.
+   * 600px matches the rest of the app's narrow breakpoint. */
+  @media (max-width: 600px) {
+    .stack { overflow-x: visible; }
+    .stack table, .stack tbody { display: block; }
+    .stack thead {
+      position: absolute;
+      width: 1px; height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    .stack tr.clickable-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-areas: "num amount" "client status" "issued due";
+      gap: 0.15rem 0.75rem;
+      padding: 0.6rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .stack td { display: block; padding: 0; border: none; min-width: 0; }
+    .c-num { grid-area: num; }
+    .c-amount { grid-area: amount; text-align: right; font-weight: 600; }
+    .c-client { grid-area: client; overflow-wrap: anywhere; }
+    .c-status { grid-area: status; text-align: right; }
+    .c-issued { grid-area: issued; }
+    .c-due { grid-area: due; text-align: right; }
+    .c-issued, .c-due { color: var(--muted); font-size: var(--text-sm); }
+    .c-issued::before, .c-due::before { content: attr(data-label) " "; }
+    .stack td.empty-state { display: block; }
+  }
 </style>

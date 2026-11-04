@@ -69,7 +69,7 @@
     background: color-mix(in srgb, var(--muted) 10%, var(--surface));
     border-color: var(--muted);
   }
-  .badge-finalized, .badge-verified {
+  .badge-finalized, .badge-verified, .badge-invoiced {
     color: var(--ok);
     background: color-mix(in srgb, var(--ok) 18%, var(--surface));
     border-color: var(--ok);

@@ -71,7 +71,7 @@ The public quote preview and the public quote submit each compute the next defau
 
 - margin:  `exTax = unitCost ÷ (1 − margin%)`
 - markup:  `exTax = unitCost × multiplier`
-- price (recommended) = `exTax × (1 + tax% ÷ 100)`, which is `exTax` when the tax rate is 0
+- price (recommended) = `⌈exTax × (1 + tax% ÷ 100)⌉` to the cent, which is `⌈exTax⌉` when the tax rate is 0. **Changed in v1.1 (intentional):** the recommended price rounds **up** to the next cent, not to the nearest, so the realized margin or markup is at least the target (a 30% margin target no longer shows 29.9%). A float that is an exact cent plus rounding noise stays at that cent. The result differs from the old nearest-cent price by at most 1¢ per unit. An override price is never rounded this way.
 - revenue = `price × qty + shippingCharge`
 - fees    = `Σ fixed + Σ pct% × revenue`  (per configured fee schedule; each line rounded). Every percent fee's `base` must be the literal string `"revenue"`; any other value (for example `"profit"` or `"subtotal"`) is rejected outright with an `invalid-enum` warning, not silently computed on revenue anyway.
 - tax     = `price × qty × tax% ÷ (100 + tax%)` (not on shipping)
@@ -183,6 +183,7 @@ Notable design decisions behind printpaca's cost and pricing math, and the reaso
 | Optional tax % line, computed **price-inclusive** (VAT-style) | EU/AU audience; the quoted price is what the customer pays, and the tax inside it was never the seller's money |
 | Hardware is admin-quote-only, never applied to a public quote | A visitor cannot select add-ons or know which ones a part needs; applying the catalog to everyone would charge for parts their model may not use |
 | The failure buffer floors at zero | A failure buffer is a cost reserve, never a credit |
+| **v1.1:** the recommended price rounds up to the cent (`ceilCents`), not to the nearest | The operator picks a margin or markup as a floor. Nearest-cent rounding can land a fraction of a cent under it and display "29.9%" for a 30% target. Rounding up costs the customer under 1¢ per unit and never undershoots. This is an intentional pricing change: the shared golden vectors (`testdata/quote-vectors.json`) moved by at most 1¢ per unit for the three vectors it touched, and the frozen suite in `server/pricing_compat_test.go` (5¢ tolerance) is unaffected |
 | `salePriceOverride` resolves on presence, so an explicit 0 means $0.00 | A deliberate giveaway must be priced as one, not silently replaced by the recommended price |
 | Separate `shippingCharge` (revenue) and `shippingCost` (postage + packaging expense) in net profit | Under-charged shipping is a real loss that a single combined "shipping" field would hide |
 | Multi-part quotes: fees apply once to the order, not per part | A marketplace or payment fee is charged on the sale, not on each file; a fixed listing fee per part would overstate cost, and rounding a percent fee per part would drift a cent from the real charge |

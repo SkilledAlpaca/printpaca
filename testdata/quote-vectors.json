@@ -6728,7 +6728,7 @@
   },
   {
     "name": "hardware-pricing-markup-tax-fees-qty2",
-    "derivation": "Hardware inside a FULL pricing block (markup strategy, quantity 2, non-zero tax/shipping/fees) -- the existing hardware+pricing coverage used a 30% margin at quantity 1 with all three zeroed. batch labor $10.00/2 = $5.00 (500c); failure base $2.10 + $2.00 = $4.10 -> 41c; perUnitTotal 200+10+0+41+500+0+200 = 951; batchTotal 951x2 = 1902. markup x2 -> recommended = resolved = 1902. itemRevenue 1902x2 = 3804, + shipping 500 -> revenue 4304. fees: $0.50 fixed = 50 and 10% of 4304 = roundCents(430.4) = 430 -> 480. tax price-inclusive on item revenue only: 3804 x 20 / 120 = 634. netProfit 4304-1902-200-480-634 = 1088. Unit cost basis 955.5c; markup x 2 grossed up by 20% tax (1911 x 1.2 = 2293).",
+    "derivation": "Hardware inside a FULL pricing block (markup strategy, quantity 2, non-zero tax/shipping/fees) -- the existing hardware+pricing coverage used a 30% margin at quantity 1 with all three zeroed. batch labor $10.00/2 = $5.00 (500c); failure base $2.10 + $2.00 = $4.10 -> 41c; perUnitTotal 200+10+0+41+500+0+200 = 951; batchTotal 951x2 = 1902. markup x2 -> recommended = resolved = 1902. itemRevenue 1902x2 = 3804, + shipping 500 -> revenue 4304. fees: $0.50 fixed = 50 and 10% of 4304 = roundCents(430.4) = 430 -> 480. tax price-inclusive on item revenue only: 3804 x 20 / 120 = 634. netProfit 4304-1902-200-480-634 = 1088. Unit cost basis 955.5c; markup x 2 grossed up by 20% tax (1911 x 1.2 = 2293.2), rounded UP to the cent (v1.1): recommended 2294, so item revenue 2294 x 2 = 4588, revenue 5088, tax roundCents(4588 x 20 / 120) = 765, netProfit 5088-1911-200-fees-765 = 1653 (the figures above this note are the pre-rounding-up derivation).",
     "inputs": {
       "weightG": 100,
       "pricePerKg": 20,
@@ -6826,9 +6826,9 @@
       },
       "pricingResult": {
         "strategy": "markup",
-        "recommendedPrice": 2293,
-        "resolvedPrice": 2293,
-        "revenue": 5086,
+        "recommendedPrice": 2294,
+        "resolvedPrice": 2294,
+        "revenue": 5088,
         "fees": 559,
         "feeLines": [
           {
@@ -6840,18 +6840,18 @@
             "amount": 509
           }
         ],
-        "tax": 764,
+        "tax": 765,
         "shippingCharge": 500,
         "shippingCost": 200,
-        "netProfit": 1652,
-        "achievedMarginPct": 32.48132127408573,
+        "netProfit": 1653,
+        "achievedMarginPct": 32.488207547169814,
         "valid": true
       }
     }
   },
   {
     "name": "hardware-pricing-laborPerUnit-qty2",
-    "derivation": "The laborPerUnit twin of hardware-pricing-markup-tax-fees-qty2: full $10.00 prep per unit (1000c) instead of the amortized $5.00, which is the only line that moves. perUnitTotal 200+10+0+41+1000+0+200 = 1451; batchTotal 1451x2 = 2902. recommended = resolved = 2902; itemRevenue 2902x2 = 5804, + shipping 500 -> revenue 6304. fees 50 + roundCents(630.4)=630 -> 680. tax = roundCents(5804 x 20 / 120) = roundCents(967.3333) = 967. netProfit 6304-2902-200-680-967 = 1555. Unit cost basis 1455.5c; markup x 2 grossed up by the tax rate.",
+    "derivation": "The laborPerUnit twin of hardware-pricing-markup-tax-fees-qty2: full $10.00 prep per unit (1000c) instead of the amortized $5.00, which is the only line that moves. perUnitTotal 200+10+0+41+1000+0+200 = 1451; batchTotal 1451x2 = 2902. recommended = resolved = 2902; itemRevenue 2902x2 = 5804, + shipping 500 -> revenue 6304. fees 50 + roundCents(630.4)=630 -> 680. tax = roundCents(5804 x 20 / 120) = roundCents(967.3333) = 967. netProfit 6304-2902-200-680-967 = 1555. Unit cost basis 1455.5c; markup x 2 grossed up by the tax rate and rounded UP to the cent (v1.1): 2911 x 1.2 = 3493.2 -> recommended 3494 (the figures above this note are the pre-rounding-up derivation).",
     "inputs": {
       "weightG": 100,
       "pricePerKg": 20,
@@ -6951,9 +6951,9 @@
       },
       "pricingResult": {
         "strategy": "markup",
-        "recommendedPrice": 3493,
-        "resolvedPrice": 3493,
-        "revenue": 7486,
+        "recommendedPrice": 3494,
+        "resolvedPrice": 3494,
+        "revenue": 7488,
         "fees": 799,
         "feeLines": [
           {
@@ -6965,11 +6965,11 @@
             "amount": 749
           }
         ],
-        "tax": 1164,
+        "tax": 1165,
         "shippingCharge": 500,
         "shippingCost": 200,
-        "netProfit": 2412,
-        "achievedMarginPct": 32.2201442693027,
+        "netProfit": 2413,
+        "achievedMarginPct": 32.224893162393165,
         "valid": true
       }
     }
@@ -7108,7 +7108,7 @@
   },
   {
     "name": "maxima-resolvedPrice-times-quantity",
-    "derivation": "The OTHER unbounded product: resolvedPrice x quantity, with both at their inclusive maxima and the result still exactly inside int64 (so this pins the value, not the clamp). labor $10.00/1e5 = 0c -> perUnitTotal 200+10 = 210; batchTotal 210 x 1e5 = 21000000. salePriceOverride $1e9 resolves to 1e11 c (recommendedPrice stays 210x2 = 420). itemRevenue = 1e11 x 1e5 = 1e16 = revenue. netProfit = 1e16 - 21000000 = 9999999979000000. Batch labor is $10.00 (1000c) rounded once, not 0c per unit x 1e5, so batchTotal is 21001000.",
+    "derivation": "The OTHER unbounded product: resolvedPrice x quantity, with both at their inclusive maxima and the result still exactly inside int64 (so this pins the value, not the clamp). labor $10.00/1e5 = 0c -> perUnitTotal 200+10 = 210; batchTotal 210 x 1e5 = 21000000. salePriceOverride $1e9 resolves to 1e11 c (recommendedPrice is the unit cost basis 210.01c x 2 = 420.02c rounded UP to 421 as of v1.1; it does not feed the override). itemRevenue = 1e11 x 1e5 = 1e16 = revenue. netProfit = 1e16 - 21000000 = 9999999979000000. Batch labor is $10.00 (1000c) rounded once, not 0c per unit x 1e5, so batchTotal is 21001000.",
     "inputs": {
       "weightG": 100,
       "pricePerKg": 20,
@@ -7179,7 +7179,7 @@
       },
       "pricingResult": {
         "strategy": "markup",
-        "recommendedPrice": 420,
+        "recommendedPrice": 421,
         "resolvedPrice": 100000000000,
         "revenue": 10000000000000000,
         "fees": 0,
@@ -7188,7 +7188,7 @@
         "shippingCharge": 0,
         "shippingCost": 0,
         "netProfit": 9999999978999000,
-        "achievedMarginPct": 99.99999979,
+        "achievedMarginPct": 99.99999978999,
         "valid": true
       }
     }

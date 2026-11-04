@@ -1024,7 +1024,7 @@ func TestRecommendedPriceTaxCarveOut(t *testing.T) {
 		inputs.Pricing = &PricingInputs{Strategy: "margin", MarginPct: OptF{Value: 20, Present: true}, TaxRatePct: F(rate)}
 		p := ComputeQuote(inputs, DefaultEngineOptions).Pricing
 		exTax := 1210 / 0.8
-		if want := roundCents(exTax * (1 + rate/100)); p.RecommendedPrice != want {
+		if want := ceilCents(exTax * (1 + rate/100)); p.RecommendedPrice != want {
 			t.Errorf("rate %v: recommended = %d, want %d", rate, p.RecommendedPrice, want)
 		}
 		wantTax := exTax * rate / 100
@@ -1075,5 +1075,50 @@ func TestBatchLaborRoundsOnceAtBatch(t *testing.T) {
 	}
 	if got := lineAmount(t, bd, "labor"); got != 33 {
 		t.Errorf("per-unit labor = %d, want 33 (round(100 / 3))", got)
+	}
+}
+
+// v1.1 intentional change: the recommended price rounds UP to the cent, so the realized margin or markup is
+// never below the target (a nearest-cent price showed 29.9% for a 30% target).
+func TestCeilCents(t *testing.T) {
+	cases := []struct {
+		in   float64
+		want int64
+	}{
+		{0, 0}, {142.857, 143}, {142.001, 143}, {143, 143}, {200.00000000000003, 200}, {223999.9999999998, 224000},
+		{224000.0000000002, 224000}, {0.2, 1}, {-0.2, 0}, {math.NaN(), 0}, {math.Inf(1), 0},
+	}
+	for _, c := range cases {
+		if got := ceilCents(c.in); got != c.want {
+			t.Errorf("ceilCents(%v) = %d, want %d", c.in, got, c.want)
+		}
+	}
+	if got := ceilCents(1e30); got != maxCents {
+		t.Errorf("ceilCents(1e30) = %d, want saturation at %d", got, maxCents)
+	}
+}
+
+func TestRecommendedPriceRoundsUpToTarget(t *testing.T) {
+	// Unit cost 1210c. 30% margin: 1210 / 0.7 = 1728.57 -> 1729 (nearest would also be 1729); 20%: 1512.5 -> 1513;
+	// 17% margin: 1210 / 0.83 = 1457.83 -> 1458; 21%: 1210 / 0.79 = 1531.65 -> 1532. Realized margin >= target.
+	for _, margin := range []float64{10, 17, 20, 21, 29.9, 30, 33.3, 45} {
+		inputs := boundaryBaseInputs()
+		inputs.Pricing = &PricingInputs{Strategy: "margin", MarginPct: OptF{Value: margin, Present: true}}
+		p := ComputeQuote(inputs, DefaultEngineOptions).Pricing
+		realized := (float64(p.RecommendedPrice) - 1210) / float64(p.RecommendedPrice) * 100
+		if realized < margin-1e-9 {
+			t.Errorf("margin %v: price %d realizes %.4f%%, below the target", margin, p.RecommendedPrice, realized)
+		}
+		if lower := float64(p.RecommendedPrice - 1); (lower-1210)/lower*100 >= margin+1e-9 {
+			t.Errorf("margin %v: price %d is not the lowest cent that meets the target", margin, p.RecommendedPrice)
+		}
+	}
+	for _, mult := range []float64{1.1, 1.37, 2.5} {
+		inputs := boundaryBaseInputs()
+		inputs.Pricing = &PricingInputs{Strategy: "markup", MarkupMultiplier: OptF{Value: mult, Present: true}}
+		p := ComputeQuote(inputs, DefaultEngineOptions).Pricing
+		if float64(p.RecommendedPrice) < 1210*mult-1e-6 {
+			t.Errorf("markup %v: price %d is below cost x multiplier %.4f", mult, p.RecommendedPrice, 1210*mult)
+		}
 	}
 }

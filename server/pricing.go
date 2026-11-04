@@ -87,6 +87,25 @@ func roundCents(v float64) int64 {
 	return int64(sign * mag)
 }
 
+// ceilCents rounds up to the next whole cent. An absolute 1e-9 plus a relative 1e-12 epsilon keeps a float that
+// is an exact cent amount plus IEEE754 noise (200.00000000000003, 223999.9999999998 for 224 / (1 - 0.999)) at
+// that cent. It prices the recommended
+// price: rounding up keeps the realized margin or markup at or above the target. Non-finite is 0, and the
+// result saturates like roundCents.
+func ceilCents(v float64) int64 {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0
+	}
+	c := math.Ceil(v - 1e-9 - math.Abs(v)*1e-12)
+	if c >= maxCentsMagnitude {
+		return maxCents
+	}
+	if c <= -maxCentsMagnitude {
+		return -maxCents
+	}
+	return int64(c)
+}
+
 // maxCents/maxCentsMagnitude bound roundCents' output; maxCentsMagnitude is exactly 2^63, since
 // float64(math.MaxInt64) rounds up to it, which makes the guard exact.
 const (
@@ -841,7 +860,8 @@ func computePricingLines(p PricingInputs, lines []pricingLine, prefixKind string
 			} else {
 				exTax = l.unitCost * p.MarkupMultiplier.Value
 			}
-			recommendedPrice = roundCents(exTax * (1 + float64(p.TaxRatePct)/100))
+			// Round up, not to nearest: a price rounded down realizes less than the target margin (29.9% for 30%).
+			recommendedPrice = ceilCents(exTax * (1 + float64(p.TaxRatePct)/100))
 		}
 
 		resolvedPrice := recommendedPrice

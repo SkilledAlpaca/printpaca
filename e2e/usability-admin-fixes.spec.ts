@@ -349,3 +349,21 @@ test.describe("A11, A12, A14, A15: option rows", () => {
   });
 });
 
+test.describe("A17: the Requests list sits in a bounded scroll region", () => {
+  test("the list is a focusable DataTable region with a max height, above the estimate settings", async ({ page }) => {
+    await page.goto("/admin/#/requests");
+    const region = page.getByRole("region", { name: "Requests" });
+    await expect(region).toBeVisible();
+    await expect(region).toHaveAttribute("tabindex", "0");
+    const style = await region.evaluate((el) => ({ maxHeight: getComputedStyle(el).maxHeight, overflowY: getComputedStyle(el).overflowY }));
+    expect(style.maxHeight).not.toBe("none");
+    expect(["auto", "scroll"]).toContain(style.overflowY);
+    // The estimate settings follow the region rather than sharing its scroll.
+    const settingsAfter = await page.evaluate(() => {
+      const r = document.querySelector('[role="region"][aria-label="Requests"]')!;
+      const c = document.getElementById("section-public-quotes")!;
+      return !!(r.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING) && !r.contains(c);
+    });
+    expect(settingsAfter).toBe(true);
+  });
+});

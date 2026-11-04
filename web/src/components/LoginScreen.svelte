@@ -145,7 +145,7 @@
           aria-invalid={error ? "true" : undefined}
           bind:this={usernameInput}
         />
-        <small class="field-hint" id="username-hint">Leave empty to sign in as the admin.</small>
+        <small class="field-hint" id="username-hint">Enter the username you were given. Only the shop admin can leave this empty.</small>
       </div>
     {/if}
     <label class="field">

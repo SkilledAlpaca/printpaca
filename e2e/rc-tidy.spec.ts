@@ -238,6 +238,7 @@ test.describe("D50 Quotes row actions", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/admin/#/quotes");
     const row = quoteRow(page, labels.draft);
+    await expect(row.locator(".row-actions > button")).toHaveCount(2);
     const before = await row.locator(".row-actions > button").evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return [r.x, r.width]; }));
     await row.getByRole("button", { name: "Mark sent" }).click();
     await page.getByRole("button", { name: /^Yes, mark as sent/ }).first().click().catch(() => {});

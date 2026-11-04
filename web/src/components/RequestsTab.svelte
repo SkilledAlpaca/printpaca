@@ -19,10 +19,10 @@
     fetchRequestsStorage,
     type QuoteRequest,
   } from "../lib/requestsApi";
-  import { listClients, createClient } from "../lib/clientsApi";
+  import { listClients, createClient, deleteClient } from "../lib/clientsApi";
   import { densityOrFallback } from "../lib/filamentDefaults";
   import { createInvoice } from "../lib/invoicesApi";
-  import { invoiceInputFromRequest } from "../lib/convertRequest";
+  import { convertRequestToInvoice } from "../lib/convertRequest";
   import { finalizeBlockedReason, splitBulkFinalize } from "../lib/requestFinalize";
   import { INITIAL_PAGE_LIMIT, refetchLimit } from "../lib/pagination";
   import { startOnePartQuote, engineOptions, applyMaterial, pendingOpen, consumePendingOpen, quoteClient, quoteMeta } from "../lib/state.svelte";
@@ -637,15 +637,9 @@
     convertError = null;
     converting = true;
     try {
-      const existing = await listClients();
-      const match = (existing ?? []).find((c) => c.email.toLowerCase() === detail!.email.toLowerCase());
-      const clientId = match
-        ? match.id
-        : (await createClient({ name: detail.name, email: detail.email, phone: "", billingAddress: "", shippingAddress: "", notes: "" })).id;
-
-      const input = invoiceInputFromRequest(detail, cfg, clientId);
-      // The server links the request to the invoice and finalizes it in this same call (requestId).
-      const invoice = await createInvoice(input);
+      // The server links the request to the invoice and finalizes it in this same call (requestId); a client
+      // created for a conversion that then fails is removed again.
+      const invoice = await convertRequestToInvoice(detail, cfg, { listClients, createClient, deleteClient, createInvoice });
       void refreshUnread();
       pendingOpen.current = { tab: "invoices", id: invoice.id };
       onOpenInvoice();

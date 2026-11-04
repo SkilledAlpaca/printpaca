@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { invoiceTotals } from "./engine/index";
-import { invoiceInputFromRequest, requestInvoiceLines, requestTaxBp } from "./convertRequest";
+import { convertRequestToInvoice, invoiceInputFromRequest, requestInvoiceLines, requestTaxBp } from "./convertRequest";
 import type { QuoteRequest } from "./requestsApi";
 
 function request(overrides: Partial<QuoteRequest> = {}): QuoteRequest {
@@ -104,5 +104,42 @@ describe("request to invoice totals", () => {
   });
   it("names the request so the server links and finalizes it with the invoice", () => {
     expect(invoiceInputFromRequest(request({ id: "r9" }), cfg(0), "c1").requestId).toBe("r9");
+  });
+});
+
+describe("convertRequestToInvoice", () => {
+  const cfg = { invoicing: { salesTaxPct: 0 } };
+  function api(overrides: Record<string, unknown> = {}) {
+    return {
+      listClients: vi.fn(async () => []),
+      createClient: vi.fn(async () => ({ id: "c-new" })),
+      deleteClient: vi.fn(async () => undefined),
+      createInvoice: vi.fn(async () => ({ id: "inv1" })),
+      ...overrides,
+    } as never as Parameters<typeof convertRequestToInvoice>[2] & Record<string, ReturnType<typeof vi.fn>>;
+  }
+
+  it("creates the client then the invoice", async () => {
+    const a = api();
+    await convertRequestToInvoice(request(), cfg, a);
+    expect(a.createClient).toHaveBeenCalledOnce();
+    expect(a.createInvoice).toHaveBeenCalledWith(expect.objectContaining({ clientId: "c-new" }));
+    expect(a.deleteClient).not.toHaveBeenCalled();
+  });
+
+  it("removes the client it created when the invoice POST fails", async () => {
+    const a = api({ createInvoice: vi.fn(async () => { throw new Error("already converted"); }) });
+    await expect(convertRequestToInvoice(request(), cfg, a)).rejects.toThrow("already converted");
+    expect(a.deleteClient).toHaveBeenCalledWith("c-new");
+  });
+
+  it("reuses a matching client and never deletes it on failure", async () => {
+    const a = api({
+      listClients: vi.fn(async () => [{ id: "c-old", email: "SAM@example.com" }]),
+      createInvoice: vi.fn(async () => { throw new Error("409"); }),
+    });
+    await expect(convertRequestToInvoice(request(), cfg, a)).rejects.toThrow("409");
+    expect(a.createClient).not.toHaveBeenCalled();
+    expect(a.deleteClient).not.toHaveBeenCalled();
   });
 });

@@ -576,9 +576,8 @@ tbody tr:hover { background: var(--surface-2); }
 .chips button { border-radius: 999px; padding: 0.25rem 0.8rem; font-size: var(--text-sm); }
 .chips button.active { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
 
-.head-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
-/* Grid variant for a head row that also carries a CardHelp: CardHelp's help-note sets grid-column: 1 / -1
- * on itself so it lands on its own full-width row under the heading, which the flex variant above can't
+/* Grid head row for a heading that carries a CardHelp (BreakdownTable): CardHelp's help-note sets grid-column: 1 / -1
+ * on itself so it lands on its own full-width row under the heading, which a flex row can't
  * give it. */
 .head-row.with-help {
   display: grid;

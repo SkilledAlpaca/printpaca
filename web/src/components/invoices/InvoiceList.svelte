@@ -10,6 +10,7 @@
   import InvoicingSettings from "../settings/InvoicingSettings.svelte";
   import DataTable, { type DataColumn } from "../ui/DataTable.svelte";
   import Field from "../ui/Field.svelte";
+  import PageHeader from "../ui/PageHeader.svelte";
 
   let {
     invoices,
@@ -89,10 +90,9 @@
   const canEditInvoicingSettings = $derived(canReadSettings(cfg.user));
 </script>
 
-<div class="head-row">
-  <h1 tabindex="-1">Invoices</h1>
-  <button type="button" class="primary" onclick={onNew}>New invoice</button>
-</div>
+<PageHeader title="Invoices">
+  {#snippet actions()}<button type="button" class="primary" onclick={onNew}>New invoice</button>{/snippet}
+</PageHeader>
 
 {#if unavailable}
   <p class="banner-warn" role="alert">Couldn't load invoices. The server couldn't be reached.</p>
@@ -167,10 +167,6 @@
 {/if}
 
 <style>
-  /* .page > h1 (theme.css) zeroes the margin only for a direct child of .page; here h1 shares .head-row
-   * with the New invoice button, so the base margin is zeroed locally. */
-  .head-row h1 { margin: 0; }
-
   /* The click-to-open affordance, and the centered empty/loading row that theme's .empty-state does not
    * assume. DataTable owns the scroll region, the sticky header and the phone card conversion. */
   .clickable-row { cursor: pointer; }

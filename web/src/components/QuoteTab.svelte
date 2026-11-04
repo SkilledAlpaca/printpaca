@@ -10,6 +10,7 @@
   import { fieldLabel, warnFor, moneyAmount, moneyPrecise } from "../lib/format";
   import LabeledNumber from "./LabeledNumber.svelte";
   import Card from "./ui/Card.svelte";
+  import PageHeader from "./ui/PageHeader.svelte";
   import Fieldset from "./ui/Fieldset.svelte";
   import Field from "./ui/Field.svelte";
   import FormGrid from "./ui/FormGrid.svelte";
@@ -329,12 +330,13 @@
 
 <div class="page">
   <a class="local-skip" href="#main" onclick={skipToPrintFields}>Skip to model weight and print time</a>
-  <div class="head-row">
-    <h1>{quoteSession.loadedId ? `Edit quote: ${quoteSession.label.trim() || "Untitled"}` : "New quote"}</h1>
-    <button type="button" class="explain-toggle" aria-pressed={allHelpOpen} onclick={toggleAllHelp}>
-      Explain this page
-    </button>
-  </div>
+  <PageHeader title={quoteSession.loadedId ? `Edit quote: ${quoteSession.label.trim() || "Untitled"}` : "New quote"}>
+    {#snippet actions()}
+      <button type="button" class="explain-toggle" aria-pressed={allHelpOpen} onclick={toggleAllHelp}>
+        Explain this page
+      </button>
+    {/snippet}
+  </PageHeader>
 
   {#if quoteSession.conflict}
     <div class="card banner-warn" role="alert">
@@ -602,8 +604,6 @@
 </div>
 
 <style>
-  .head-row h1 { margin: 0; }
-
   .explain-toggle[aria-pressed="true"] {
     background: var(--surface-2);
     border-color: var(--accent);

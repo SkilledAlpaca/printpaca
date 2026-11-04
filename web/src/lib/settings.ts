@@ -14,6 +14,7 @@ export type ServerConfig = Omit<
   | "authEnabled"
   | "moonraker"
   | "fluiddUrl"
+  | "smtpConfigured"
   | "demoMode"
   | "integrationSources"
   | "user"

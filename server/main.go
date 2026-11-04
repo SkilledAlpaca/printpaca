@@ -250,6 +250,9 @@ func handleConfig(store *ConfigStore, extras configExtras, auth *authState) http
 		// web/src reads config.moonraker and config.fluiddUrl as a frozen interface.
 		Moonraker bool   `json:"moonraker"`
 		FluiddURL string `json:"fluiddUrl"`
+		// SmtpConfigured is whether outgoing mail has a host, for every role: employees get no smtp block, but
+		// their Email buttons still need to know whether mail can be sent.
+		SmtpConfigured bool `json:"smtpConfigured"`
 		// DemoMode lets the SPA degrade write UI gracefully instead of discovering demoWriteGuard's 403.
 		DemoMode bool `json:"demoMode"`
 		// IntegrationSources lets the Settings Integrations card label each row and lock env-sourced fields.
@@ -268,26 +271,41 @@ func handleConfig(store *ConfigStore, extras configExtras, auth *authState) http
 			return
 		}
 		user.SignedInVia, user.AccessEmail = auth.signedInVia(r)
-		if !identityFor(r).isAdmin && cfg.Users.AccessAdminEmail != "" {
-			// The Access admin email names an admin credential; employees get a copy without it.
-			redacted := *cfg
-			redacted.Users.AccessAdminEmail = ""
-			cfg = &redacted
+		full := cfg // the derived fields below read the unredacted config
+		fluiddURL := deriveFluiddURL(full)
+		if !identityFor(r).isAdmin {
+			// D31: employees get the pricing data their screens need, never the SMTP block, the integration
+			// URLs, or the admin credential. Their screens use the booleans below and the permission-gated
+			// proxies instead of the raw URLs.
+			cfg = redactConfigForEmployee(cfg)
+			fluiddURL = ""
 		}
 		if err := json.NewEncoder(w).Encode(payload{
 			Config:             cfg,
-			Integrations:       deriveIntegrations(extras.demoMode, cfg),
+			Integrations:       deriveIntegrations(extras.demoMode, full),
 			Version:            version,
 			AuthEnabled:        extras.authEnabled,
-			Moonraker:          deriveMoonraker(extras.demoMode, cfg),
-			FluiddURL:          deriveFluiddURL(cfg),
+			Moonraker:          deriveMoonraker(extras.demoMode, full),
+			FluiddURL:          fluiddURL,
+			SmtpConfigured:     full.Smtp.Host != "",
 			DemoMode:           extras.demoMode,
-			IntegrationSources: deriveIntegrationSources(cfg),
+			IntegrationSources: deriveIntegrationSources(full),
 			User:               user,
 		}); err != nil {
 			log.Printf("encode config: %v", err)
 		}
 	}
+}
+
+// redactConfigForEmployee returns a copy of cfg for a non-admin caller: without the SMTP block, the integration
+// URLs, and the Access admin email (D31). The derived booleans (integrations.spoolman, moonraker) are computed
+// from the full config by the caller and stay available.
+func redactConfigForEmployee(cfg *Config) *Config {
+	redacted := *cfg
+	redacted.Smtp = Smtp{}
+	redacted.IntegrationsUrls = IntegrationsUrls{}
+	redacted.Users.AccessAdminEmail = ""
+	return &redacted
 }
 
 // demoModeWarning is logged whenever DEMO_MODE=1: a bordered block (like adminAuthDisabledWarning) so

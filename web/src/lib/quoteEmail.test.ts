@@ -59,16 +59,16 @@ describe("emailDisabledReason", () => {
   const clients = [makeClient()];
 
   it('"unconfigured" when smtp host is blank, regardless of everything else', () => {
-    expect(emailDisabledReason(makeQuote(), "", true, clients)).toBe("unconfigured");
-    expect(emailDisabledReason(makeQuote({ resolvedPrice: undefined, recommendedPrice: undefined }), "", false, null)).toBe(
+    expect(emailDisabledReason(makeQuote(), false, true, clients)).toBe("unconfigured");
+    expect(emailDisabledReason(makeQuote({ resolvedPrice: undefined, recommendedPrice: undefined }), false, false, null)).toBe(
       "unconfigured",
     );
   });
 
   it('"loading" when smtp is configured but clients haven\'t loaded yet, beating no-price/no-client', () => {
-    expect(emailDisabledReason(makeQuote(), "smtp.example.com", false, clients)).toBe("loading");
+    expect(emailDisabledReason(makeQuote(), true, false, clients)).toBe("loading");
     expect(
-      emailDisabledReason(makeQuote({ resolvedPrice: undefined, recommendedPrice: undefined, clientId: undefined }), "smtp.example.com", false, null),
+      emailDisabledReason(makeQuote({ resolvedPrice: undefined, recommendedPrice: undefined, clientId: undefined }), true, false, null),
     ).toBe("loading");
   });
 
@@ -76,7 +76,7 @@ describe("emailDisabledReason", () => {
     expect(
       emailDisabledReason(
         makeQuote({ resolvedPrice: undefined, recommendedPrice: undefined, clientId: undefined }),
-        "smtp.example.com",
+        true,
         true,
         clients,
       ),
@@ -84,28 +84,28 @@ describe("emailDisabledReason", () => {
   });
 
   it('"no-client" when the quote has a price but isn\'t linked to a client', () => {
-    expect(emailDisabledReason(makeQuote({ clientId: undefined }), "smtp.example.com", true, clients)).toBe("no-client");
+    expect(emailDisabledReason(makeQuote({ clientId: undefined }), true, true, clients)).toBe("no-client");
   });
 
   it('"clients-unavailable" when the client list failed to load, beating no-email', () => {
-    expect(emailDisabledReason(makeQuote(), "smtp.example.com", true, null)).toBe("clients-unavailable");
+    expect(emailDisabledReason(makeQuote(), true, true, null)).toBe("clients-unavailable");
   });
 
   it('"no-email" when the linked client has no email on file', () => {
-    expect(emailDisabledReason(makeQuote(), "smtp.example.com", true, [makeClient({ email: "" })])).toBe("no-email");
+    expect(emailDisabledReason(makeQuote(), true, true, [makeClient({ email: "" })])).toBe("no-email");
   });
 
   it("null (enabled) when everything checks out", () => {
-    expect(emailDisabledReason(makeQuote(), "smtp.example.com", true, clients)).toBeNull();
+    expect(emailDisabledReason(makeQuote(), true, true, clients)).toBeNull();
   });
 
   it("falls back to recommendedPrice when resolvedPrice is absent (still counts as having a price)", () => {
-    expect(emailDisabledReason(makeQuote({ resolvedPrice: undefined, recommendedPrice: 900 }), "smtp.example.com", true, clients)).toBeNull();
+    expect(emailDisabledReason(makeQuote({ resolvedPrice: undefined, recommendedPrice: 900 }), true, true, clients)).toBeNull();
   });
 });
 
 describe("needs-clients-access", () => {
-  const smtp = "smtp.example.com";
+  const smtp = true;
   it("unloaded client list: clients-unavailable with the grant, needs-clients-access without", () => {
     expect(emailDisabledReason(makeQuote({ clientId: undefined }), smtp, true, null)).toBe("clients-unavailable");
     expect(emailDisabledReason(makeQuote({ clientId: undefined }), smtp, true, null, false)).toBe("needs-clients-access");
@@ -123,7 +123,7 @@ describe("needs-clients-access", () => {
   it("loses to earlier reasons (no-price, unconfigured)", () => {
     const noPrice = makeQuote({ clientId: undefined, resolvedPrice: undefined, recommendedPrice: undefined });
     expect(emailDisabledReason(noPrice, smtp, true, [], false)).toBe("no-price");
-    expect(emailDisabledReason(makeQuote({ clientId: undefined }), "", true, [], false)).toBe("unconfigured");
+    expect(emailDisabledReason(makeQuote({ clientId: undefined }), false, true, [], false)).toBe("unconfigured");
   });
   it("needsEmailEntry is true only for the two entry reasons", () => {
     expect(needsEmailEntry("no-client")).toBe(true);

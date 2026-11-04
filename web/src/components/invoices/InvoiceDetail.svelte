@@ -474,7 +474,7 @@
     {/if}
 
     {#if detail}
-      {@const emailReason = emailDisabledReason(cfg.smtp.host, detail)}
+      {@const emailReason = emailDisabledReason(cfg.smtpConfigured, detail)}
       <p class="status-line" role={statusActionFailed ? "alert" : "status"} aria-live={statusActionFailed ? "assertive" : "polite"}>
         {statusActionMessage}
       </p>

@@ -825,7 +825,7 @@ const COLUMNS: DataColumn[] = [
 
   <BackfillStatus backfilling={backfill.backfilling} backfillFailed={backfill.backfillFailed} verb="filter" />
 
-  {#if cfg.smtp.host === ""}
+  {#if !cfg.smtpConfigured}
     <p class="banner-muted">
       Email isn't configured, so quotes can't be emailed from here.
       {#if canConfigure}<a href="#/settings">Set it up in Settings.</a>{:else}Ask an admin to set up email.{/if}
@@ -879,7 +879,7 @@ const COLUMNS: DataColumn[] = [
               {@const stats = quoteRowStats(q)}
               {@const qty = extractQuantity(q.inputs)}
               {@const status = displayStatus(q, cfg.quote.validDays, Date.now())}
-              {@const emailReason = emailDisabledReason(q, cfg.smtp.host, clientsLoaded, clients, canManageClients)}
+              {@const emailReason = emailDisabledReason(q, cfg.smtpConfigured, clientsLoaded, clients, canManageClients)}
               {@const primaryT = primaryTransition(q)}
               <tr class="quote-row">
                 <td class="c-label">

@@ -407,6 +407,13 @@
   // The submit is waiting for the price preview that was still updating when the visitor pressed the button.
   let waitingForPrice = $state(false);
   let submitted = $state<QuoteConfirmation | null>(null);
+
+  // A saved confirmation for the route being shown. While the shop is paused it stays visible, with a note
+  // above it; any other public route shows the Closed page, and so does a confirmation route with nothing saved.
+  const savedConfirmationShown = $derived(
+    (route.name === "order-received" && itemOrderConfirmation !== null) || (route.name === "estimate-received" && submitted !== null),
+  );
+  const closedPageShown = $derived(paused && !savedConfirmationShown);
   let rateLimited = $state(false);
   // Errors from the server describe the form as it was sent, so they go away as soon as the visitor changes
   // anything: they show only while serverErrorsFor still matches the current form.
@@ -927,7 +934,7 @@
   // this is the form or the confirmation.
   const pageTitle = $derived.by(() => {
     const biz = cfg?.branding.businessName;
-    if (paused) return biz ? `Closed · ${biz}` : "Closed";
+    if (closedPageShown) return biz ? `Closed · ${biz}` : "Closed";
     if (route.name === "estimate-received" && submitted) return biz ? `Request received · ${biz}` : "Request received";
     if (route.name === "order-received" && itemOrderConfirmation) return biz ? `Order received · ${biz}` : "Order received";
     if (orderItem) return biz ? `${orderItem.name} · ${biz}` : orderItem.name;
@@ -978,6 +985,14 @@
   <title>{pageTitle}</title>
 </svelte:head>
 
+{#snippet pausedNote()}
+  <!-- D27 exemption: a saved confirmation outlives a pause, with the closure said plainly above it. -->
+  <div class="paused-note" role="status">
+    <p><strong>We're closed right now. We still have your request.</strong></p>
+    {#if shop.pausedMessage}<p>{shop.pausedMessage}</p>{/if}
+  </div>
+{/snippet}
+
 {#snippet timeFields(describedBy: string)}
   {@const described = [describedBy, timeIssueMessage ? "quote-time-err" : ""].filter(Boolean).join(" ") || undefined}
   <Fieldset legend="Print time">
@@ -1018,7 +1033,7 @@
   {:else if phase === "failed"}
     <p class="muted center">Estimates are temporarily unavailable.</p>
     <p class="center"><button type="button" onclick={() => location.reload()}>Try again</button></p>
-  {:else if cfg && paused}
+  {:else if cfg && closedPageShown}
     <!-- D27: while the shop isn't accepting orders, every route (gallery, item, category, estimate, a saved
          confirmation) shows the Closed page. The footer keeps Staff sign-in and the owner's links. -->
     <ClosedPage
@@ -1076,6 +1091,7 @@
       {#if route.name === "order-received" && itemOrderConfirmation}
         <div class="panel">
           <button type="button" class="quiet back" onclick={dismissItemOrderConfirmation}>&larr; Back to gallery</button>
+          {#if paused}{@render pausedNote()}{/if}
           <Card>
             <div class="confirmation">
               <h2 class="section-label" tabindex="-1" bind:this={itemConfirmationHeading}>Order received</h2>
@@ -1126,6 +1142,7 @@
     {:else if cfg.materials.length === 0}
       <p class="muted center">No materials are currently offered.</p>
     {:else if route.name === "estimate-received" && submitted}
+      {#if paused}{@render pausedNote()}{/if}
       <Card>
         <div class="confirmation">
           <h2 class="section-label" tabindex="-1" bind:this={quoteConfirmationHeading}>Request received</h2>
@@ -1625,6 +1642,15 @@
   .confirmation .ref-hint { color: var(--muted); font-size: var(--type-secondary); margin: 0; }
   .not-you { align-self: flex-start; }
   .confirmation .order-summary { font-weight: 600; margin: 0; }
+  .paused-note {
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius);
+    background: var(--card-bg);
+    border-inline-start: 4px solid var(--warn);
+    overflow-wrap: anywhere;
+  }
+  .paused-note p { margin: 0; }
+  .paused-note p + p { margin-top: var(--space-1); }
   .confirmation > * { margin-top: 0; margin-bottom: 0; }
 
   /* Wraps the restored (post-reload) gallery item-order confirmation; same "back" affordance as

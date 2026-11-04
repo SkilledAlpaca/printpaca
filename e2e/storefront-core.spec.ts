@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import type { APIRequestContext, Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { deflateSync, crc32 } from "node:zlib";
-import { navButton } from "./helpers";
+import { navButton, requestIdByReference } from "./helpers";
 
 // v1.2 storefront core: the shop.* server rules (custom estimates, gallery, accepting orders), categories, the
 // featured flag, the hero image and the accent-color check, with the minimal temporary shop markup. The styled
@@ -301,6 +301,44 @@ test("styled storefront: accent vars, stock and from-price switches, turnaround 
     await expect(page.getByText(PAUSED)).toBeVisible();
     await expect(page.getByRole("link", { name: "shop@example.com" })).toBeVisible();
     await expect(page.getByRole("link", { name: "555-0100" })).toBeVisible();
+  } finally {
+    await resetShop(request);
+  }
+});
+
+test("paused: a saved confirmation stays visible with a note, a missing one shows the Closed page", async ({ page, request }) => {
+  try {
+    // Place a gallery order and an estimate through the UI while the shop is open.
+    await page.goto("/");
+    await page.getByRole("button", { name: new RegExp(ITEM_NAME) }).click();
+    await page.getByLabel("Name", { exact: true }).fill("Saved Visitor");
+    await page.getByLabel("Email").fill("saved@example.com");
+    await page.getByRole("button", { name: "Place order" }).click();
+    await expect(page.getByRole("heading", { name: "Order received" })).toBeVisible();
+    const orderRef = ((await page.locator(".confirmation .ref strong").textContent()) ?? "").trim();
+    createdRequests.push(await requestIdByReference(request, orderRef));
+
+    await setShop(request, { acceptingOrders: false, pausedMessage: PAUSED });
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Order received" })).toBeVisible();
+    await expect(page.locator(".confirmation .ref strong")).toHaveText(orderRef);
+    const note = page.getByRole("status").filter({ hasText: "We're closed right now. We still have your request." });
+    await expect(note).toContainText(PAUSED);
+    await expect(page.getByRole("heading", { name: "We're closed right now" })).toHaveCount(0);
+    expect(await axeProblems(page, "paused order confirmation")).toEqual([]);
+
+    // Starting another order leads to the Closed page.
+    await page.getByRole("button", { name: "Order another item" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "We're closed right now" })).toBeVisible();
+
+    // With nothing saved for the route, the Closed page shows.
+    await page.evaluate(() => sessionStorage.clear());
+    await page.goto("/#/order/received");
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1, name: "We're closed right now" })).toBeVisible();
+    await page.goto("/#/estimate/received");
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1, name: "We're closed right now" })).toBeVisible();
   } finally {
     await resetShop(request);
   }

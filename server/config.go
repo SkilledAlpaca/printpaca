@@ -263,7 +263,10 @@ type Shop struct {
 	AcceptingOrders bool   `yaml:"acceptingOrders" json:"acceptingOrders"`
 	PausedMessage   string `yaml:"pausedMessage" json:"pausedMessage"`
 	// DefaultView is "gallery" or "estimate": which one the shop opens on when both are on.
-	DefaultView  string `yaml:"defaultView" json:"defaultView"`
+	DefaultView string `yaml:"defaultView" json:"defaultView"`
+	// PageTitle is the browser tab title (D30), plain text. Empty falls back to the business name, then "Shop"
+	// (shopTitle).
+	PageTitle    string `yaml:"pageTitle" json:"pageTitle"`
 	Heading      string `yaml:"heading" json:"heading"`
 	Announcement string `yaml:"announcement" json:"announcement"`
 	// HeroImage.File is owned by the hero image endpoints (handleHeroImageUpload); a settings save keeps the
@@ -297,6 +300,7 @@ const (
 	defaultShopMaxOrderQty = 100
 	shopMaxOrderQtyCeiling = 10000
 
+	shopPageTitleMaxChars    = 70
 	shopHeadingMaxChars      = 120
 	shopAnnouncementMaxChars = 300
 	shopPausedMaxChars       = 300
@@ -309,6 +313,20 @@ const (
 	// defaultShopPausedMessage is shown when acceptingOrders is off and pausedMessage is blank.
 	defaultShopPausedMessage = "We aren't taking new orders right now."
 )
+
+// defaultShopTitle is the tab title of last resort, when neither shop.pageTitle nor the business name is set.
+const defaultShopTitle = "Shop"
+
+// shopTitle is the shop's tab title (D30): shop.pageTitle, else the business name, else "Shop".
+func (c Config) shopTitle() string {
+	if t := strings.TrimSpace(c.Shop.PageTitle); t != "" {
+		return t
+	}
+	if t := strings.TrimSpace(c.Quote.BusinessName); t != "" {
+		return t
+	}
+	return defaultShopTitle
+}
 
 // maxOrderQty is the per-order quantity cap for the public shop, falling back to the default for a Config
 // that was built without one.
@@ -498,6 +516,7 @@ func normalizeConfig(c *Config) {
 // /api/config never serves "footerLinks":null.
 func normalizeShop(s *Shop) {
 	s.PausedMessage = strings.TrimSpace(s.PausedMessage)
+	s.PageTitle = strings.TrimSpace(s.PageTitle)
 	s.Heading = strings.TrimSpace(s.Heading)
 	s.Announcement = strings.TrimSpace(s.Announcement)
 	s.ShippingNote = strings.TrimSpace(s.ShippingNote)
@@ -794,6 +813,7 @@ func validateShop(s Shop) []string {
 	if s.ItemSort != "manual" && s.ItemSort != "name" && s.ItemSort != "price" {
 		p = append(p, "shop.itemSort: must be manual, name, or price")
 	}
+	add(plainTextProblem("shop.pageTitle", s.PageTitle, shopPageTitleMaxChars))
 	add(plainTextProblem("shop.heading", s.Heading, shopHeadingMaxChars))
 	add(plainTextProblem("shop.announcement", s.Announcement, shopAnnouncementMaxChars))
 	add(plainTextProblem("shop.pausedMessage", s.PausedMessage, shopPausedMaxChars))

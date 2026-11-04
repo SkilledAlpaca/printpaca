@@ -327,6 +327,10 @@
           "type": "string", "enum": ["gallery", "estimate"],
           "description": "Which view the shop opens on when both the gallery and custom estimates are on. Default gallery."
         },
+        "pageTitle": {
+          "type": "string", "maxLength": 70,
+          "description": "Plain-text browser tab title. Empty uses the business name, then Shop."
+        },
         "heading": {
           "type": "string", "maxLength": 120,
           "description": "Plain-text heading above the intro. Empty uses the business name."

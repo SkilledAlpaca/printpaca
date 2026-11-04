@@ -8,6 +8,7 @@ export const DEFAULT_SHOP_CONFIG: ShopConfig = {
   acceptingOrders: true,
   pausedMessage: "",
   defaultView: "gallery",
+  pageTitle: "",
   heading: "",
   announcement: "",
   heroImage: { file: "", alt: "" },

@@ -324,6 +324,8 @@
 #                    pausedMessage replaces the submit buttons, and the server
 #                    rejects new submissions. Existing requests are unaffected.
 #   defaultView      gallery or estimate: what the shop opens on when both are on.
+#   pageTitle        browser tab title (up to 70 characters); empty uses the
+#                    business name, then "Shop".
 #   heading          heading above the intro (up to 120 characters); empty uses
 #                    the business name.
 #   announcement     banner at the top of the shop (up to 300 characters).
@@ -346,6 +348,7 @@
 #   acceptingOrders: true
 #   pausedMessage: ""    # for example, "Closed until January 5"
 #   defaultView: gallery
+#   pageTitle: ""
 #   heading: ""
 #   announcement: ""
 #   accentColor: ""      # for example, "#9c4212"

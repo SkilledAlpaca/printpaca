@@ -99,6 +99,8 @@
   const formSnapshot = $derived(
     JSON.stringify([selected, quantity, visitor.name, visitor.email, note]),
   );
+  // True once the visitor has chosen an option, changed the quantity or written a note.
+  const dirty = $derived(Object.values(selected).some((v) => v !== "") || quantity !== 1 || note !== "");
   const visibleServerErrors = $derived(serverErrorsFor === formSnapshot ? serverErrors : []);
   const visibleRateLimited = $derived(rateLimited && serverErrorsFor === formSnapshot);
 
@@ -239,6 +241,9 @@
   // themselves) and while the photo is enlarged (the dialog closes itself).
   function onKeydown(e: KeyboardEvent) {
     if (e.key !== "Escape" || e.defaultPrevented || lightbox?.open) return;
+    // A form with choices, a quantity or a note in it is never discarded by a stray Escape (WCAG 3.2.2); Back
+    // still leaves it. Name and email survive in the visitor store, so they don't count.
+    if (dirty) return;
     const t = e.target as HTMLElement | null;
     if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
     onback();
@@ -269,7 +274,7 @@
         <p class="stock-line">{stockLine}</p>
         <!-- After the heading in the DOM, so the first Tab from the heading reaches it. -->
         <button type="button" class="quiet back" onclick={onback}>&larr; Back to gallery</button>
-        <small class="esc-hint">Press Esc to go back.</small>
+        {#if !dirty}<small class="esc-hint">Press Esc to go back.</small>{/if}
       </div>
     </div>
   </Card>
@@ -461,10 +466,10 @@
   .i-desc { margin: 0; color: var(--muted); font-size: var(--text-sm); }
   .stock-line { margin: 0; font-size: var(--text-sm); color: var(--muted); }
   .back { margin-top: var(--space-1); }
-  .esc-hint { color: var(--muted); font-size: var(--text-sm); }
-  /* No keyboard on a touch screen, so the hint is noise there. */
-  @media (hover: none), (pointer: coarse) {
-    .esc-hint { display: none; }
+  /* Only where there is a keyboard to press it on: a mouse or trackpad, not a touch screen. */
+  .esc-hint { display: none; color: var(--muted); font-size: var(--text-sm); }
+  @media (hover: hover) and (pointer: fine) {
+    .esc-hint { display: inline; }
   }
 
   /* A real photo size, not a thumbnail: 12rem beside the text on a wide screen, full width on a phone. */

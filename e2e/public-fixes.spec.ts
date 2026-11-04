@@ -160,3 +160,43 @@ test.describe("P1: Not you? never appears while typing", () => {
     await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Pat Typist");
   });
 });
+
+test.describe("P2: Escape never discards a dirty order form", () => {
+  test("a note, a quantity or an option keeps the form open on Escape; a clean form still goes back", async ({ page }) => {
+    await page.setExtraHTTPHeaders(xff());
+    await openItem(page, TRAY);
+    const heading = page.getByRole("heading", { name: TRAY, level: 2 });
+    await expect(heading).toBeVisible();
+    // Clean: Escape from a button goes back to the gallery.
+    await page.getByRole("button", { name: "Place order" }).focus();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("heading", { name: "Items" })).toBeVisible();
+
+    await page.getByRole("button", { name: new RegExp(TRAY) }).click();
+    await page.getByLabel("Size (required)").selectOption({ label: "Large (+$4.00)" });
+    await page.getByLabel("Quantity").fill("3");
+    await page.getByLabel("Note (optional)").fill("keep me");
+    await page.getByRole("button", { name: "Place order" }).focus();
+    await page.keyboard.press("Escape");
+    await expect(heading).toBeVisible();
+    await expect(page.getByLabel("Size (required)")).toHaveValue(/.+/);
+    await expect(page.getByLabel("Quantity")).toHaveValue("3");
+    await expect(page.getByLabel("Note (optional)")).toHaveValue("keep me");
+    // The Back button still leaves on purpose.
+    await page.getByRole("button", { name: /Back to gallery/ }).click();
+    await expect(page.getByRole("heading", { name: "Items" })).toBeVisible();
+  });
+
+  test("a mouse-and-keyboard shop shows the Escape hint; a phone does not", async ({ page, browser }) => {
+    await page.setExtraHTTPHeaders(xff());
+    await openItem(page, WIDGET);
+    await expect(page.getByText("Press Esc to go back.")).toBeVisible();
+    const ctx = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 }, extraHTTPHeaders: xff() });
+    const phone = await ctx.newPage();
+    await phone.goto("http://127.0.0.1:8099/");
+    await phone.getByRole("button", { name: new RegExp(WIDGET) }).click();
+    await expect(phone.getByRole("heading", { name: WIDGET, level: 2 })).toBeVisible();
+    await expect(phone.getByText("Press Esc to go back.")).toBeHidden();
+    await ctx.close();
+  });
+});

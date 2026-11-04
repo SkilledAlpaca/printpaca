@@ -323,8 +323,12 @@ func (d *dashboard) loadAttention(r *http.Request, resp *dashboardResponse, over
 // avgMarginPct is the mean achieved_margin_pct over all invoiced quotes with a margin (nil if none).
 func (d *dashboard) loadQuoteTiles(resp *dashboardResponse, monthStart, monthEnd time.Time) error {
 	// saved_at is an RFC 3339 UTC string, so the bounds are converted to UTC before the string comparison.
-	monthStartStr := monthStart.UTC().Format(time.RFC3339)
-	monthEndStr := monthEnd.UTC().Format(time.RFC3339)
+	// The bounds use the millisecond layout of new saves: as a string "T00:00:00.123Z" sorts before the
+	// whole-second "T00:00:00Z" ('.' < 'Z'), so a whole-second bound put a millisecond timestamp from the first
+	// second of a month in the previous month. Against ".000Z", both a millisecond value and an older
+	// whole-second value compare correctly ('Z' > '.').
+	monthStartStr := monthStart.UTC().Format(quoteVersionLayout)
+	monthEndStr := monthEnd.UTC().Format(quoteVersionLayout)
 
 	var savedThisMonth, invoicedThisMonth int
 	err := d.db.QueryRow(`

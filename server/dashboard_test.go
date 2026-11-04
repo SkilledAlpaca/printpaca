@@ -391,6 +391,34 @@ func TestDashboardQuoteTilesUseLocalMonth(t *testing.T) {
 	}
 }
 
+// saved_at carries milliseconds since the quote editor started versioning saves ("...:00.123Z"); older rows
+// have whole seconds ("...:00Z"). As strings "." sorts before "Z", so a millisecond timestamp in the first
+// second of a month compared as less than the whole-second boundary and fell into the previous month.
+func TestDashboardMonthBoundaryWithMillisecondSavedAt(t *testing.T) {
+	db, cfg, _ := openTestEnv(t, t.TempDir())
+	cfg.Timezone = "UTC"
+	rows := []struct{ id, savedAt string }{
+		{"oct-last", "2026-10-31T23:59:59.999Z"},
+		{"nov-first-ms", "2026-11-01T00:00:00.123Z"},
+		{"nov-first-ms-zero", "2026-11-01T00:00:00.000Z"},
+		{"nov-first-legacy", "2026-11-01T00:00:00Z"},
+		{"nov-mid", "2026-11-15T12:00:00.500Z"},
+		{"nov-last-ms", "2026-11-30T23:59:59.999Z"},
+		{"dec-first-ms", "2026-12-01T00:00:00.001Z"},
+		{"dec-first-ms-zero", "2026-12-01T00:00:00.000Z"},
+		{"dec-first-legacy", "2026-12-01T00:00:00Z"},
+	}
+	for _, r := range rows {
+		if _, err := db.Exec(`INSERT INTO quotes (id, saved_at, inputs, quantity, per_unit_total_cents, batch_total_cents, valid) VALUES (?, ?, '{}', 1, 0, 0, 1)`, r.id, r.savedAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resp := dashboardAt(t, db, cfg, time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC))
+	if want := 5; resp.QuotesSavedThisMonth != want {
+		t.Errorf("quotesSavedThisMonth = %d, want %d (the five November rows, whichever precision saved_at has)", resp.QuotesSavedThisMonth, want)
+	}
+}
+
 // The balancing payment of a manual sent->paid gets today's date in the configured zone, not UTC's.
 func TestMarkPaidBalancingPaymentUsesConfiguredTimezone(t *testing.T) {
 	dir := t.TempDir()

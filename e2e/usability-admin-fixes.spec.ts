@@ -133,3 +133,33 @@ test.describe("A4: a saved quote says so", () => {
   });
 });
 
+test.describe("A5: saving Settings keeps the scroll position", () => {
+  test("the page does not jump when Save changes succeeds", async ({ page, request }) => {
+    const original = (await (await request.get("/admin/api/settings")).json()).config;
+    try {
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await gotoSettings(page);
+      const card = page.locator("#section-storefront");
+      await expect(card).toBeVisible();
+      await card.scrollIntoViewIfNeeded();
+      const heading = card.getByLabel("Shop heading");
+      await heading.scrollIntoViewIfNeeded();
+      await heading.fill(`A5 ${Date.now()}`);
+      const scroll = () => page.evaluate(() => (document.querySelector("main")?.scrollTop ?? 0) + window.scrollY);
+      // Focus the pinned Save button and press Enter, as a keyboard user does: a Playwright click would scroll the
+      // button into view first and move the page itself. The button unmounts on save, so focus has to be restored.
+      await page.getByRole("button", { name: "Save changes" }).focus();
+      const before = await scroll();
+      expect(before, "the test starts scrolled down").toBeGreaterThan(300);
+      await page.keyboard.press("Enter");
+      await expect(page.getByText("Settings saved.")).toBeVisible();
+      await page.waitForTimeout(300);
+      expect(Math.abs((await scroll()) - before)).toBeLessThan(40);
+      await expect(page.locator("[data-settings-status]")).toBeFocused();
+    } finally {
+      const res = await request.put("/admin/api/settings", { data: { config: original } });
+      expect(res.ok(), await res.text()).toBe(true);
+    }
+  });
+});
+

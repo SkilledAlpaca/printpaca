@@ -5,8 +5,8 @@
   // the gap follows the density tokens.
   //
   // `align="controls"` makes the Fields that share a row share their rows too: each Field becomes a subgrid of
-  // four rows (label, hint, control, error), so the controls start at the same height however long a neighbour's
-  // label or hint runs, and an error under one control leaves the others where they are. Use it for a row of
+  // four rows (label, visible hint, control, error), so the controls start at the same height however long a
+  // neighbour's label or visible hint runs (a tooltip hint takes no row), and an error under one control leaves the others where they are. Use it for a row of
   // Fields; its children must be Fields. Below 600px the grid is one column, so the rows are the field's own.
   let { align = "default", children }: { align?: "default" | "controls"; children: Snippet } = $props();
 </script>
@@ -30,7 +30,7 @@
     row-gap: 0;
     margin-block-end: var(--gap);
   }
-  .aligned > :global(.ui-field) > :global(label) { grid-row: 1; margin-block-end: var(--space-1); }
+  .aligned > :global(.ui-field) > :global(.ui-field-head) { grid-row: 1; margin-block-end: var(--space-1); }
   .aligned > :global(.ui-field) > :global(small[id$="-hint"]) { grid-row: 2; margin-block-end: var(--space-1); }
   .aligned > :global(.ui-field) > :global(.ui-field-control) {
     grid-row: 3;

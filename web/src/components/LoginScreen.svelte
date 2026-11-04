@@ -142,6 +142,7 @@
           <Field
             id="login-username"
             label="Username"
+            hintVisible
             hint="Enter the username you were given. Only the shop admin can leave this empty."
             describedby={error ? "login-error" : undefined}
           >

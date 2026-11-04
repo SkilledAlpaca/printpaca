@@ -460,6 +460,9 @@ test.describe("P8: the estimate form tells a buyer without a slicer what is opti
     expect(upload).toBeLessThan(material);
     await expect(page.getByLabel(/Model weight/)).toHaveAccessibleDescription(/Optional if you upload a 3D file above/);
     await expect(page.locator("#quote-time-hint")).toContainText("Optional if you upload a 3D file above");
+    // The shop keeps field hints visible (D32): its hint is text under the label, with no Help button.
+    await expect(page.locator("#quote-weight-hint")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Help:/ })).toHaveCount(0);
     await expect(page.getByLabel(/^Print time \(h/)).toHaveAccessibleDescription(/Optional if you upload/);
   });
 });

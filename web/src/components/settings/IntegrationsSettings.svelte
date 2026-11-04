@@ -189,6 +189,7 @@
             id={`integration-${row.kind}-url`}
             label={`${row.label} URL`}
             size="l"
+            hintVisible
             hint={sourceFor(row.kind) === "env" ? `${row.envVar} is set on the container and overrides this field. Test checks that URL. Remove the variable to manage the URL here.` : undefined}
           >
             {#snippet children(a)}

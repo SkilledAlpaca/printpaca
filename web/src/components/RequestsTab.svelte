@@ -277,15 +277,6 @@
   // Escape closes an open detail view like "Back to list", but cancels an armed two-click delete first.
   // Ignored while focus is in a text field or select, which use Escape themselves (dismissing autocomplete or a dropdown).
   function handleDetailKeydown(e: KeyboardEvent) {
-    // Ctrl+K / Cmd+K focuses the list filter, like the other lists (not while typing in a field).
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.code === "KeyK" || e.key?.toLowerCase() === "k")) {
-      if (view !== "list" || escapeBelongsToField(e.target)) return;
-      const input = document.getElementById("requests-filter");
-      if (!(input instanceof HTMLInputElement)) return;
-      e.preventDefault();
-      input.focus();
-      return;
-    }
     if (moreOpen) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -838,6 +829,7 @@
                      lacked them. -->
                 <span class="r-who">
                   <span class="r-name">{r.name}</span>
+                  {#if r.reference}<span class="pill ref-pill">{r.reference}</span>{/if}
                   {#if r.kind === "item"}<span class="pill item-pill">item order</span>{/if}
                   {#if r.needsPrintTime}<span class="pill time-pill">Needs print time</span>{/if}
                   {#if isInvoiced(r)}<span class="pill item-pill">{r.invoiceNumber}</span>{/if}
@@ -880,6 +872,7 @@
         <AttributionLine updatedBy={detail.updatedBy} />
 
         <div class="readonly-grid">
+          <div><span class="lbl">Reference</span><span>{requestReference(detail)}</span></div>
           <div><span class="lbl">Name</span><span>{detail.name}</span></div>
           <div><span class="lbl">Email</span><span><a href={`mailto:${encodeURIComponent(detail.email)}`}>{detail.email}</a></span></div>
           {#if detail.kind === "item"}
@@ -902,7 +895,7 @@
 
         {#if isInvoiced(detail)}
           <p class="banner-muted invoiced-note">
-            Invoiced as {detail.invoiceNumber}.
+            Invoiced as {detail.invoiceNumber} (request {requestReference(detail)}).
             <button type="button" class="quiet linkish" onclick={() => openLinkedInvoice(detail!.invoiceId)}>Open invoice</button>
           </p>
         {/if}
@@ -1160,6 +1153,7 @@
    * .invoiced-badge notes. */
   .dup-pill { color: var(--muted); }
   .item-pill { color: var(--muted); }
+  .ref-pill { color: var(--muted); font-variant-numeric: tabular-nums; }
 
   .notes, .gcode-line { font-size: var(--text-sm); margin: 0.3rem 0; }
   .gcode-line a { margin-left: 0.5rem; }

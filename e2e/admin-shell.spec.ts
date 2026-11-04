@@ -308,10 +308,11 @@ test("a dirty item form asks before the page unloads", async ({ page }) => {
   expect(prevented).toBe(true);
 });
 
-test("#/quote/<id> resolves to the New quote tab", async ({ page }) => {
+test("#/quote/<id> resolves to the New quote tab, and an unknown id falls back to a blank quote", async ({ page }) => {
   await page.goto("/admin/#/quote/abc123");
   await expect(page.getByRole("heading", { name: "New quote", level: 1 })).toBeVisible();
-  await expect(page).toHaveURL(/#\/quote\/abc123$/);
+  // No saved quote has that id, so the editor stays blank and the address drops the stale id (quote-editor lane).
+  await expect(page).toHaveURL(/#\/quote$/);
 });
 
 test("Integrations Test works for a URL set by an environment variable", async ({ page }) => {

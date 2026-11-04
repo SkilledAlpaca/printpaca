@@ -252,7 +252,11 @@ test.describe("requests and the dashboard", () => {
     await expect(page.getByText(/doesn't email the customer/)).toBeVisible();
     const reply = page.getByRole("link", { name: /^Reply by email/ });
     const href = decodeURIComponent((await reply.getAttribute("href")) ?? "");
-    expect(href).toContain(`Re: your request ${id.slice(0, 8).toUpperCase()}`);
+    // The public form's short reference (not the hex id prefix) rides in the subject.
+    const stored = (await (await request.get(`/admin/api/requests/${id}`)).json()) as { reference: string };
+    expect(stored.reference).toMatch(/^[A-Z0-9]{1,10}-\d{4,}$/);
+    expect(href).toContain(`Re: your request ${stored.reference}`);
+    await expect(page.getByText(stored.reference, { exact: true }).first()).toBeVisible();
 
     await page.getByRole("button", { name: "Convert to invoice" }).click();
     await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
@@ -270,10 +274,53 @@ test.describe("requests and the dashboard", () => {
     await expect(again).toContainText("invoiced");
     await expect(again).toContainText(number);
     await again.getByRole("button", { name: new RegExp(name) }).click();
-    await expect(page.getByText(`Invoiced as ${number}.`)).toBeVisible();
+    await expect(page.getByText(`Invoiced as ${number} (request`)).toBeVisible();
     await expect(page.getByRole("button", { name: "Convert to invoice" })).toHaveCount(0);
     await page.getByRole("button", { name: "Open invoice" }).click();
     await expect(page.getByRole("heading", { name: `Invoice ${number}` })).toBeVisible();
+  });
+
+  test("a public estimate without a print time is flagged, takes a print time, is priced, and converts", async ({ page, request }) => {
+    // The same multipart the shop posts for an unsliced STL: a weight and no timeSeconds.
+    const name = `NoTime Buyer ${Date.now() % 100000}`;
+    const res = await request.post("/api/public/quote-request", {
+      headers: { "X-Forwarded-For": nextXff() },
+      multipart: { name, email: `${name.toLowerCase().replace(/[^a-z]+/g, ".")}@example.com`, note: "", material: "PLA", quantity: "1", weightG: "12" },
+    });
+    expect(res.status(), await res.text()).toBe(201);
+    const { id } = (await res.json()) as { id: string };
+    created.requests.push(id);
+    const before = (await (await request.get(`/admin/api/requests/${id}`)).json()) as { needsPrintTime: boolean; priceCents: number; reference: string };
+    expect(before.needsPrintTime).toBe(true);
+    expect(before.priceCents).toBe(0);
+
+    await page.goto("/admin/");
+    await navButton(page, "Requests").click();
+    const row = page.locator(".plain-list li", { hasText: name });
+    await expect(row).toContainText("Needs print time");
+    await expect(row).toContainText(before.reference);
+    await row.getByRole("button", { name: new RegExp(name) }).click();
+    await expect(page.getByRole("heading", { name: `Estimate request from ${name}` })).toBeVisible();
+
+    // Convert is blocked until the time is set.
+    await expect(page.getByRole("button", { name: "Convert to invoice" })).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByText("Enter the print time above before converting this request to an invoice.")).toBeVisible();
+
+    await page.getByLabel("Hours").fill("1");
+    await page.getByLabel("Minutes").fill("30");
+    await page.getByRole("button", { name: "Save print time" }).click();
+    await expect(page.getByRole("heading", { name: "This estimate needs a print time" })).toHaveCount(0);
+    await expect(page.getByText("Not provided")).toHaveCount(0);
+    const after = (await (await request.get(`/admin/api/requests/${id}`)).json()) as { needsPrintTime: boolean; priceCents: number; timeSeconds: number };
+    expect(after.needsPrintTime).toBe(false);
+    expect(after.timeSeconds).toBe(5400);
+    expect(after.priceCents).toBeGreaterThan(0);
+
+    await page.getByRole("button", { name: "Convert to invoice" }).click();
+    await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
+    const number = ((await page.getByRole("heading", { name: /^Invoice INV-/ }).textContent()) ?? "").replace("Invoice ", "").trim();
+    const list = (await (await request.get("/admin/api/invoices")).json()) as { invoices: { id: string; number: string }[] };
+    created.invoices.push(list.invoices.find((i) => i.number === number)!.id);
   });
 
   test("Finalize selected finalizes the checked viewed requests", async ({ page, request }) => {

@@ -50,6 +50,11 @@
   const need = $derived(missing.find((b) => b.field === "timeHours" || b.field === "timeMinutes") ?? missing[0]);
   const needsTime = $derived(need !== undefined && (need.field === "timeHours" || need.field === "timeMinutes"));
   const needText = $derived(needSentence(missing));
+  // The pinned bar is one short line, not the whole list: the count, or the one thing missing. The full list
+  // stays in the expanded summary.
+  const compactNeed = $derived(
+    missing.length === 1 ? `Needs ${needText.replace(/^Price needs /, "")}.` : `Needs ${missing.length} more values.`,
+  );
 
   // Opens the pricing panel and scrolls to it: the panel can be several tiles down, so a click that only
   // flips the toggle leaves the bar visibly unchanged.
@@ -82,7 +87,18 @@
     {:else}
       <span class="compact-stat"><span class="stat-label">Cost</span> <strong>{s.costCents !== null ? money(s.costCents, cfg) : "-"}</strong></span>
     {/if}
-    {#if need}<span class="compact-need">{@render needLink()}</span>{/if}
+    {#if need}
+      <span class="compact-need">
+        {compactNeed}
+        <a
+          href="#main"
+          aria-label={`Show ${need.label}`}
+          onclick={(e) => {
+            e.preventDefault();
+            void goToBlocker(need);
+          }}>Show</a>
+      </span>
+    {/if}
   </div>
 {:else}
   <div class="summary-stats">
@@ -151,7 +167,16 @@
   .summary-stats { display: flex; flex-direction: column; gap: var(--gap); }
   .compact { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-4); font-variant-numeric: tabular-nums; }
   .compact-stat strong { font-size: var(--type-heading); }
-  .compact-need { font-size: var(--type-secondary); }
+  /* Never more than two lines of text, however much is missing. */
+  .compact-need {
+    font-size: var(--type-secondary);
+    flex: 1 1 100%;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
   .stat-label { font-size: var(--type-secondary); color: var(--muted); }
   .compact-stat.loss strong { color: var(--danger); }
   .group { display: flex; flex-direction: column; gap: var(--space-1); }

@@ -230,3 +230,29 @@ test("four part tabs scroll inside their strip on a phone: arrow keys reach each
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+test("the collapsed summary bar stays short with four unpriced parts, and Show focuses Part 1's print time", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/admin/");
+  await page.getByRole("button", { name: "Add part" }).click();
+  for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "+ Add part" }).click();
+  await expect(page.getByRole("tab")).toHaveCount(4);
+  await page.getByRole("tab").last().click();
+
+  const bar = page.getByRole("group", { name: "Quote summary" }).locator(".bar");
+  await expect(bar).toContainText("Needs 8 more values");
+  const controlH = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.style.height = "var(--control-h)";
+    document.body.appendChild(probe);
+    const h = probe.getBoundingClientRect().height;
+    probe.remove();
+    return h;
+  });
+  const box = (await bar.boundingBox())!;
+  expect(box.height, "collapsed bar height").toBeLessThanOrEqual(3 * controlH);
+
+  await bar.getByRole("link", { name: /^Show/ }).click();
+  await expect(page.getByRole("tab").first()).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByLabel(/^Print time \(h/)).toBeFocused();
+});

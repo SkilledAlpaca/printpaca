@@ -8,7 +8,17 @@
     "web/src/components/QuotesTab.svelte",
     "web/src/components/ClientsTab.svelte",
     "web/src/components/DashboardTab.svelte",
-    "web/src/App.svelte"
+    "web/src/App.svelte",
+    "web/src/public/PublicQuotePage.svelte",
+    "web/src/public/ItemGallery.svelte",
+    "web/src/public/PublicFooter.svelte",
+    "web/src/public/ClosedPage.svelte",
+    "web/src/public/ContactDetails.svelte",
+    "web/src/public/CategoryChips.svelte",
+    "web/src/public/ShopHero.svelte",
+    "web/src/public/FormErrorSummary.svelte",
+    "web/src/public/RateLimitNotice.svelte",
+    "web/src/public/PublicApp.svelte"
   ],
   "scan": [
     ".svelte",
@@ -49,6 +59,20 @@
       "property": "width",
       "value": "64px",
       "reason": "Collapsed (icon-only) rail width; fits one 40px control plus padding."
+    },
+    {
+      "file": "web/src/components/RequestsTab.svelte",
+      "selector": ".menu-panel",
+      "property": "min-width",
+      "value": "11rem",
+      "reason": "Width of the Requests list's more-actions popout; the list view moves to ui/ components in the Money slice."
+    },
+    {
+      "file": "web/src/components/RequestsTab.svelte",
+      "selector": ".check-label input",
+      "property": "width",
+      "value": "1.25rem",
+      "reason": "Size of the row-select checkbox glyph (a control, not layout); revisit with the list-view migration."
     }
   ]
 }

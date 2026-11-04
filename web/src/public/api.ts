@@ -84,7 +84,7 @@ export function shopOf(cfg: PublicConfig | null): PublicShop {
   return cfg?.shop ? { ...DEFAULT_PUBLIC_SHOP, ...cfg.shop } : DEFAULT_PUBLIC_SHOP;
 }
 
-/** The vacation-mode message when a submit was refused because the shop isn't taking orders (the server's 403
+/** The vacation-mode message when a submit was refused because the shop isn't taking orders (the server's 503
  * with `paused: true`), else null. The message is the owner's text, so it is shown as written, not run
  * through the field-error humanizer (which would eat a colon in it). */
 function pausedMessageOf(body: unknown): string | null {

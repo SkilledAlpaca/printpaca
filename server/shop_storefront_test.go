@@ -364,15 +364,16 @@ func TestShopPausedRejectsBothKindsAndKeepsExistingRequests(t *testing.T) {
 
 	check := func(name string, code int, body string) {
 		t.Helper()
-		if code != http.StatusForbidden {
-			t.Errorf("%s while paused = %d %s, want 403", name, code, body)
+		if code != http.StatusServiceUnavailable {
+			t.Errorf("%s while paused = %d %s, want 503", name, code, body)
 		}
 		var resp struct {
+			Error   string   `json:"error"`
 			Errors  []string `json:"errors"`
 			Paused  bool     `json:"paused"`
 			Message string   `json:"pausedMessage"`
 		}
-		if err := json.Unmarshal([]byte(body), &resp); err != nil || !resp.Paused || resp.Message != "Closed until January 5" ||
+		if err := json.Unmarshal([]byte(body), &resp); err != nil || !resp.Paused || resp.Error != "Closed until January 5" || resp.Message != "Closed until January 5" ||
 			len(resp.Errors) != 1 || resp.Errors[0] != "Closed until January 5" {
 			t.Errorf("%s paused body = %s (err %v)", name, body, err)
 		}

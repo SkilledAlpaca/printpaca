@@ -1038,16 +1038,16 @@
   .skip-link {
     position: absolute;
     top: -3rem;
-    left: 0.5rem;
+    left: var(--space-2);
     z-index: 200;
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     background: var(--accent);
     color: var(--accent-contrast);
     border-radius: var(--radius);
     transition: top 0.15s ease;
   }
   .skip-link:focus {
-    top: 0.5rem;
+    top: var(--space-2);
   }
 
   /* Edge-to-edge strip, not an inset card like .banner-muted's other callers: no radius, centered text,
@@ -1058,7 +1058,7 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 0.3rem var(--space-2);
+    gap: var(--space-1) var(--space-2);
     border-radius: 0;
     border-width: 0 0 1px;
     text-align: center;
@@ -1072,7 +1072,7 @@
     display: inline-flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 0.4rem;
+    gap: var(--space-2);
   }
   /* Overrides the app-wide select { min-height: 44px } (a class beats a type selector): the banner is a
    * thin strip, so its controls read as compact inline pickers (like button.quiet's --tap-sm). */
@@ -1082,14 +1082,14 @@
     font-size: var(--text-xs);
   }
 
+  /* The phone top bar and the sidebar share one tint (D6, D11): --surface on the --bg page, no outline. */
   header {
-    display: flex; align-items: center; gap: 0.75rem;
-    padding: 0.6rem 1rem;
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
     background: var(--surface);
-    border-bottom: 1px solid var(--border);
   }
-  .brand { display: flex; align-items: center; gap: 0.5rem; color: inherit; text-decoration: none; min-width: 0; border-radius: var(--radius); }
-  .brand .brand-name { font-size: 1.25rem; font-weight: 700; margin: 0; overflow-wrap: anywhere; }
+  .brand { display: flex; align-items: center; gap: var(--space-2); color: inherit; text-decoration: none; min-width: 0; border-radius: var(--radius); }
+  .brand .brand-name { font-size: var(--type-heading); font-weight: 700; margin: 0; overflow-wrap: anywhere; }
   .brand:hover .brand-name { text-decoration: underline; }
   .logo { height: 40px; width: auto; display: block; }
 
@@ -1101,8 +1101,8 @@
     align-items: center;
     justify-content: center;
     min-width: 44px;
-    gap: 0.35rem;
-    padding: 0 0.6rem;
+    gap: var(--space-1);
+    padding: 0 var(--space-3);
     border: none;
     background: none;
     border-radius: var(--radius);
@@ -1117,10 +1117,10 @@
    * drawer it opens (see the hamburger markup for why it is a dot). */
   .hamburger-badge {
     position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 8px;
-    height: 8px;
+    top: var(--space-2);
+    right: var(--space-2);
+    width: var(--space-2);
+    height: var(--space-2);
     border-radius: 50%;
     background: var(--accent);
   }
@@ -1142,8 +1142,8 @@
   .side-nav {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
-    margin-top: 0.5rem;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
     overflow-y: auto;
     min-height: 0;
     background:
@@ -1152,7 +1152,7 @@
       radial-gradient(farthest-side at 50% 0, rgb(0 0 0 / 28%), transparent) top / 100% 0.6rem no-repeat scroll,
       radial-gradient(farthest-side at 50% 100%, rgb(0 0 0 / 28%), transparent) bottom / 100% 0.6rem no-repeat scroll;
   }
-  .nav-group { display: flex; flex-direction: column; gap: 0.15rem; }
+  .nav-group { display: flex; flex-direction: column; gap: var(--space-1); }
   .side-nav button, .side-nav a.nav-external { width: 100%; }
   /* Fluidd's external link: same box model and spacing as the nav buttons (shares their
    * border-left/padding/gap rules), plus a text-decoration reset since it is an <a>. */
@@ -1165,11 +1165,12 @@
     /* A transparent 3px border-left reserves the active indicator's space on every button, so activating
      * one doesn't shift the icon and label. */
     border: none; border-left: 3px solid transparent;
-    background: none; padding: 0.4rem 0.8rem 0.4rem calc(0.8rem - 3px); border-radius: var(--radius);
+    background: none; padding: var(--space-1) var(--space-3); border-radius: var(--radius);
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--space-2);
   }
+  .side-nav button:hover, .side-nav a.nav-external:hover { background: var(--surface-2); }
   .side-nav button.active {
     background: var(--surface-2);
     font-weight: 600;
@@ -1180,8 +1181,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 1.1rem;
-    padding: 0 0.3rem;
+    min-width: var(--space-5);
+    padding: 0 var(--space-1);
     border-radius: 999px;
     background: var(--accent);
     color: var(--accent-contrast);
@@ -1213,7 +1214,10 @@
   /* <main> spans its whole grid cell so a wheel or a scrollbar works anywhere across the width; the 1440px cap,
    * centring and padding live on this inner wrapper. <main> has no padding of its own, so a sticky bar at
    * top: 0 sits flush with the scrollport edge instead of 1rem below it. */
-  .main-inner { max-width: var(--content-max); margin: 0 auto; padding: 1rem clamp(1rem, 2vw, 2rem); }
+  .main-inner { max-width: var(--content-max); margin: 0 auto; padding: var(--space-4); }
+  @media (min-width: 900px) {
+    .main-inner { padding-inline: var(--space-6); }
+  }
   /* theme.css's global :focus-visible outline draws outside the element (outline-offset: 2px); #app clips
    * overflow, so on <main> (the skip-link target and scroll container) it gets cut into a stray partial
    * line. Pull the ring inward. */
@@ -1223,9 +1227,8 @@
    * pages. The top border/margin separate it. No max-width or horizontal margin of its own: it's already
    * inside <main>'s, and adding them would double the indent versus every card. */
   footer {
-    margin-top: 1.5rem;
-    padding: 1rem 0;
-    border-top: 1px solid var(--border);
+    margin-top: var(--space-6);
+    padding: var(--space-4) 0;
     color: var(--muted);
     font-size: var(--text-xs);
   }
@@ -1243,10 +1246,9 @@
       left: 0;
       width: min(280px, 85vw);
       z-index: 200;
-      padding: 1rem 0.75rem;
-      gap: 0.5rem;
+      padding: var(--space-4) var(--space-3);
+      gap: var(--space-2);
       background: var(--surface);
-      border-right: 1px solid var(--border);
       overflow: hidden;
       transform: translateX(-100%);
       transition: transform 0.2s ease;
@@ -1267,10 +1269,9 @@
   .sidebar-footer {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin-top: auto;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--border);
+    padding-top: var(--space-3);
   }
   /* Named .integration-line, not .status-line: theme.css's .status-line is the shared live-region class
    * (verifying…, saving…), and this static Spoolman dot + text isn't a live region, so reusing the name
@@ -1278,13 +1279,13 @@
   .integration-line {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     color: var(--muted);
     font-size: var(--text-xs);
   }
   .dot {
-    width: 8px;
-    height: 8px;
+    width: var(--space-2);
+    height: var(--space-2);
     border-radius: 50%;
     background: var(--border);
     flex-shrink: 0;
@@ -1297,7 +1298,7 @@
     align-self: flex-start;
     display: inline-flex;
     align-items: center;
-    min-height: 24px;
+    min-height: var(--tap-sm);
     border: none;
     background: none;
     padding: 0;
@@ -1308,6 +1309,10 @@
     cursor: pointer;
   }
   .guide-footer-link:hover { color: var(--text); }
+  /* Phone drawer: footer links are touch targets too (D26). */
+  @media (max-width: 600px) {
+    .guide-footer-link { min-height: 44px; }
+  }
   /* The same "this is where you are" affordance as the nav buttons (.side-nav button.active), adapted for a
    * text link: bold weight and solid --text color instead of a background fill, which would look out of
    * place on this thin footer link. */
@@ -1323,8 +1328,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: var(--tap-sm);
+    height: var(--tap-sm);
     border: none;
     background: none;
     padding: 0;
@@ -1337,20 +1342,20 @@
    * fits without scrolling. The nav still scrolls, with its shadow, below this. */
   @media (min-width: 900px) and (max-height: 900px) {
     .side-nav { gap: 0; }
-    .side-nav button, .side-nav a.nav-external { padding-block: 0.2rem; min-height: 32px; }
-    .nav-section-label { padding-block: 0.4rem 0.15rem; }
-    .sidebar { padding-block: 0.6rem; gap: 0.25rem; }
-    .sidebar-footer { gap: 0.25rem; padding-top: 0.4rem; }
+    .side-nav button, .side-nav a.nav-external { padding-block: 0; min-height: var(--tap-sm); }
+    .nav-section-label { padding-block: var(--space-2) 0; }
+    .sidebar { padding-block: var(--space-3); gap: var(--space-1); }
+    .sidebar-footer { gap: var(--space-1); padding-top: var(--space-2); }
   }
   .shortcuts-line { color: var(--muted); font-size: var(--text-xs); }
   .collapse-toggle {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-2);
     align-self: flex-start;
     border: none;
     background: none;
-    padding: 0.3rem 0.4rem;
+    padding: var(--space-1) var(--space-2);
     border-radius: var(--radius);
     color: var(--muted);
     font-size: var(--text-xs);
@@ -1393,10 +1398,9 @@
       flex-direction: column;
       grid-area: side;
       width: 220px;
-      padding: 1rem 0.75rem;
-      gap: 0.5rem;
+      padding: var(--space-4) var(--space-3);
+      gap: var(--space-2);
       background: var(--surface);
-      border-right: 1px solid var(--border);
       /* 100% of the grid row, NOT 100vh: with the demo banner rendered the "side main" row is viewport
        * height minus the banner, so a 100vh sidebar overflows it. #app's overflow:hidden clips that
        * visually but leaves programmatic scroll range, so scrollIntoView (guide anchor jumps) scrolled #app
@@ -1404,12 +1408,12 @@
       height: 100%;
       overflow: hidden;
     }
-    .sidebar.collapsed { width: 64px; padding: 1rem 0.5rem; }
+    .sidebar.collapsed { width: 64px; padding: var(--space-4) var(--space-2); }
     .sidebar.collapsed .brand { justify-content: center; }
     /* .side-nav's base rule (shared with the drawer) already has overflow-y: auto, so the nav list scrolls
      * internally when it outgrows the viewport, keeping the footer below it reachable; nothing is added
      * here. */
-    .sidebar.collapsed .side-nav button, .sidebar.collapsed .side-nav a.nav-external { justify-content: center; padding: 0.4rem; }
+    .sidebar.collapsed .side-nav button, .sidebar.collapsed .side-nav a.nav-external { justify-content: center; padding: var(--space-1); }
     /* The scrolling region: everything taller than the viewport (the tab's content, then the page footer)
      * scrolls inside <main> instead of the page, which keeps the sidebar pinned. <main> fills its grid
      * cell (the scrollbar sits at the window edge); .main-inner caps and centres the content. min-width: 0

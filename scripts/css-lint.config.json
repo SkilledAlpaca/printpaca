@@ -3,7 +3,8 @@
     "web/src/components/ui/**",
     "web/src/public/ItemOrderPanel.svelte",
     "web/src/components/RequestsTab.svelte",
-    "web/src/components/DashboardTab.svelte"
+    "web/src/components/DashboardTab.svelte",
+    "web/src/App.svelte"
   ],
   "scan": [
     ".svelte",
@@ -37,6 +38,27 @@
       "property": "max-width",
       "value": "min(92vw, 48rem)",
       "reason": "Enlarged-photo dialog width: a viewport-relative image bound; the plan exempts images."
+    },
+    {
+      "file": "web/src/App.svelte",
+      "selector": ".sidebar",
+      "property": "width",
+      "value": "min(280px, 85vw)",
+      "reason": "Phone drawer width: a viewport-relative panel, not content layout; no token covers a navigation rail."
+    },
+    {
+      "file": "web/src/App.svelte",
+      "selector": ".sidebar",
+      "property": "width",
+      "value": "220px",
+      "reason": "Desktop sidebar rail width; no token covers a navigation rail."
+    },
+    {
+      "file": "web/src/App.svelte",
+      "selector": ".sidebar.collapsed",
+      "property": "width",
+      "value": "64px",
+      "reason": "Collapsed (icon-only) rail width; fits one 40px control plus padding."
     }
   ]
 }

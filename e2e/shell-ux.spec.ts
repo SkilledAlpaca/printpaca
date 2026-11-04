@@ -168,3 +168,25 @@ test("the Sell group lists New quote, Dashboard, Quotes, Requests, Invoices, Sho
   );
   expect(names).toEqual(["New quote", "Dashboard", "Quotes", "Requests", "Invoices", "Shop items", "Clients"]);
 });
+
+test("at 1366x768 every nav item can be reached, and the footer controls stay inside the sidebar", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto("/admin/#/dashboard");
+  const nav = page.getByRole("navigation", { name: "Sections" });
+  const labels = ["New quote", "Dashboard", "Quotes", "Requests", "Invoices", "Shop items", "Clients", "Filament", "Electricity", "Printers", "Settings"];
+  for (const name of labels) {
+    const item = nav.getByRole("button", { name, exact: true });
+    await item.scrollIntoViewIfNeeded();
+    const hit = await item.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return el === top || el.contains(top);
+    });
+    expect(hit, `${name} is clickable`).toBe(true);
+  }
+  const aside = (await page.getByRole("complementary").boundingBox())!;
+  for (const name of ["Guide", "Compact density", "Collapse sidebar"]) {
+    const b = (await page.getByRole("complementary").getByRole("button", { name }).boundingBox())!;
+    expect(b.y + b.height, `${name} bottom edge`).toBeLessThanOrEqual(aside.y + aside.height + 0.5);
+  }
+});

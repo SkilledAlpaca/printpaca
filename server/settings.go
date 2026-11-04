@@ -96,9 +96,17 @@ func handleSettingsPut(configDir string, store *ConfigStore, auth *authState) ht
 			writeAPIError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		var body struct {
-			Config *Config `json:"config"`
+		// shop decodes onto the built-in defaults, so a request that sends only some shop keys (a client that
+		// predates the storefront settings sends just maxOrderQty) keeps the default for the rest instead of
+		// reading as "everything off". The "shop" key itself must be present, like "site" below.
+		builtinShop, err := defaultConfig()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
+		body := struct {
+			Config *Config `json:"config"`
+		}{Config: &Config{Shop: builtinShop.Shop}}
 		dec := json.NewDecoder(bytes.NewReader(raw))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&body); err != nil {
@@ -117,6 +125,10 @@ func handleSettingsPut(configDir string, store *ConfigStore, auth *authState) ht
 		_ = json.Unmarshal(raw, &probe)
 		if len(probe.Config["site"]) == 0 || string(probe.Config["site"]) == "null" {
 			writeAPIError(w, http.StatusUnprocessableEntity, "site: required")
+			return
+		}
+		if len(probe.Config["shop"]) == 0 || string(probe.Config["shop"]) == "null" {
+			writeAPIError(w, http.StatusUnprocessableEntity, "shop: required")
 			return
 		}
 		desired := body.Config

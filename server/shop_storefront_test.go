@@ -565,3 +565,40 @@ func TestHeroImageEndpointsAreAdminOnly(t *testing.T) {
 		}
 	}
 }
+
+// A client that predates the storefront settings sends only shop.maxOrderQty: the rest keeps its default
+// instead of reading as "everything off". An absent shop key is still refused, like an absent site key.
+func TestSettingsPutPartialShopKeepsDefaults(t *testing.T) {
+	e := newShopEnv(t)
+	cfg := cloneConfig(t, e.store.Get())
+	raw, err := json.Marshal(struct {
+		Config map[string]any `json:"config"`
+	}{Config: func() map[string]any {
+		var m map[string]any
+		b, _ := json.Marshal(cfg)
+		json.Unmarshal(b, &m)
+		m["shop"] = map[string]any{"maxOrderQty": 7}
+		return m
+	}()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := serveReq(e.admin, httptest.NewRequest("PUT", "/api/settings", bytes.NewReader(raw)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("partial shop PUT = %d %s", rec.Code, rec.Body.String())
+	}
+	got := e.store.Get().Shop
+	if got.MaxOrderQty != 7 || !got.Gallery || !got.CustomEstimates || !got.AcceptingOrders || got.ItemSort != "manual" || got.DefaultView != "gallery" || !got.ShowContact {
+		t.Errorf("shop after a partial PUT = %+v, want maxOrderQty 7 and the defaults elsewhere", got)
+	}
+
+	var m map[string]any
+	b, _ := json.Marshal(cfg)
+	json.Unmarshal(b, &m)
+	delete(m, "shop")
+	raw, _ = json.Marshal(map[string]any{"config": m})
+	rec = serveReq(e.admin, httptest.NewRequest("PUT", "/api/settings", bytes.NewReader(raw)))
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "shop: required") {
+		t.Errorf("PUT without shop = %d %s, want 422 shop: required", rec.Code, rec.Body.String())
+	}
+}

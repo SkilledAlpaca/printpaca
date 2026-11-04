@@ -266,6 +266,19 @@ func renderDocumentEmail(doc mailDocument) string {
 	return buf.String()
 }
 
+// emailLogoURL returns the logo URL when an email can show it, else "" (the template then omits the image and
+// the header shows the business name). Only http(s) URLs qualify: html/template rewrites a data: URL in
+// src to #ZgotmplZ, and mail clients block data: images anyway, so an uploaded logo never reaches an email.
+// It deliberately doesn't cast to template.URL to get past that filter.
+func emailLogoURL(u string) string {
+	u = strings.TrimSpace(u)
+	lower := strings.ToLower(u)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		return u
+	}
+	return ""
+}
+
 // renderInvoiceEmail builds subject/text/html for handleSend. Seller identity and payment terms: cfg.Quote.
 func renderInvoiceEmail(cfg *Config, inv *Invoice) (subject, textBody, htmlBody string) {
 	doc := mailDocument{
@@ -273,7 +286,7 @@ func renderInvoiceEmail(cfg *Config, inv *Invoice) (subject, textBody, htmlBody 
 		PartyLabel:          "Billed to",
 		Number:              inv.Number,
 		BusinessName:        cfg.Quote.BusinessName,
-		LogoURL:             cfg.Quote.LogoURL,
+		LogoURL:             emailLogoURL(cfg.Quote.LogoURL),
 		ClientName:          inv.ClientName,
 		Subtotal:            formatCurrency(cfg, inv.SubtotalCents),
 		Tax:                 formatCurrency(cfg, inv.TaxCents),
@@ -336,7 +349,7 @@ func renderQuoteEmail(cfg *Config, q quoteSendInput, lineAmountCents, totalCents
 		PartyLabel:          "Prepared for",
 		Number:              strings.TrimSpace(q.Reference),
 		BusinessName:        cfg.Quote.BusinessName,
-		LogoURL:             cfg.Quote.LogoURL,
+		LogoURL:             emailLogoURL(cfg.Quote.LogoURL),
 		ClientName:          q.ClientName,
 		Subtotal:            formatCurrency(cfg, totalCents),
 		HasTax:              false,

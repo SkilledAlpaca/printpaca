@@ -96,7 +96,7 @@
     <div class="field">
       <label for="quote-logo-file">Upload logo</label>
       <input id="quote-logo-file" type="file" accept={LOGO_ACCEPT} aria-describedby="quote-logo-file-help" onchange={onLogoFile} />
-      <small id="quote-logo-file-help" class="field-hint">PNG, JPG, WebP, or SVG, up to 64 KB. Larger pictures are shrunk to fit.</small>
+      <small id="quote-logo-file-help" class="field-hint">PNG, JPG, WebP, or SVG, up to 64 KB. Larger pictures are shrunk to fit. An uploaded logo shows in the app and on printouts; emails show your business name instead. Use a public https:// URL to show a logo in emails.</small>
       {#if logoUploadError}<p class="warn-text" role="alert">{logoUploadError}</p>{/if}
     </div>
     <label class="field">

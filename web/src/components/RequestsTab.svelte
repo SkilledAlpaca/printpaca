@@ -954,37 +954,32 @@
         {/if}
 
         {#if detail.needsPrintTime}
-          <Card tone="inset" role="group" aria-labelledby="print-time-heading">
+          <!-- One compact notice (D36): a heading line, one sentence that also says why Finalize and Convert to
+               invoice are off, and the print time form in one row. -->
+          <Card tone="inset" class="time-notice" role="group" aria-labelledby="print-time-heading">
             <h3 id="print-time-heading">This estimate needs a print time</h3>
-            <p class="hint">
-              The customer's file had no print time, so there's no price yet. Enter the print time from your slicer and
-              printpaca prices the request from your current settings. You need it before you can convert the request
-              to an invoice.
+            <p id="print-time-note" class="hint">
+              The customer's file had no print time, so there's no price yet; enter it from your slicer, because Finalize and Convert to invoice need it.
             </p>
             <form
               class="time-form"
+              aria-label="Print time"
               onsubmit={(e) => {
                 e.preventDefault();
                 void savePrintTime();
               }}
             >
-              <Fieldset legend="Print time">
-                <FormGrid>
-                  <Field id="print-time-hours" label="Hours" size="xs">
-                    {#snippet children(f)}
-                      <input id={f.id} type="number" min="0" step="1" bind:value={timeHours} aria-describedby={f.describedby} />
-                    {/snippet}
-                  </Field>
-                  <Field id="print-time-minutes" label="Minutes" size="xs">
-                    {#snippet children(f)}
-                      <input id={f.id} type="number" min="0" max="59" step="1" bind:value={timeMinutes} aria-describedby={f.describedby} />
-                    {/snippet}
-                  </Field>
-                </FormGrid>
-              </Fieldset>
-              <div class="time-actions">
-                <button type="submit" class="primary" aria-disabled={savingTime} aria-busy={savingTime}>{savingTime ? "Saving…" : "Save print time"}</button>
-              </div>
+              <Field id="print-time-hours" label="Hours" size="xs">
+                {#snippet children(f)}
+                  <input id={f.id} type="number" min="0" step="1" bind:value={timeHours} aria-describedby={f.describedby} />
+                {/snippet}
+              </Field>
+              <Field id="print-time-minutes" label="Minutes" size="xs">
+                {#snippet children(f)}
+                  <input id={f.id} type="number" min="0" max="59" step="1" bind:value={timeMinutes} aria-describedby={f.describedby} />
+                {/snippet}
+              </Field>
+              <button type="submit" class="primary" aria-disabled={savingTime} aria-busy={savingTime}>{savingTime ? "Saving…" : "Save print time"}</button>
             </form>
             {#if timeError}<InlineStatus kind="error">{timeError}</InlineStatus>{/if}
           </Card>
@@ -1090,7 +1085,7 @@
                 class="primary"
                 data-focus-key="finalize-request"
                 aria-disabled={finalizing || detail.needsPrintTime}
-                aria-describedby={detail.needsPrintTime ? "finalize-needs-time" : undefined}
+                aria-describedby={detail.needsPrintTime ? "print-time-note" : undefined}
                 onclick={askFinalize}
               >Finalize</button>
             {/if}
@@ -1111,7 +1106,7 @@
               data-focus-key="convert-request"
               onclick={convertToInvoice}
               aria-disabled={converting || detail.needsPrintTime || !canConvert}
-              aria-describedby={!canConvert ? "convert-no-access" : detail.needsPrintTime ? "convert-needs-time" : undefined}
+              aria-describedby={!canConvert ? "convert-no-access" : detail.needsPrintTime ? "print-time-note" : undefined}
             >
               {converting ? "Converting…" : "Convert to invoice"}
             </button>
@@ -1130,10 +1125,6 @@
         </div>
         {#if !canQuote && detail.kind !== "item"}<p id="open-quote-reason" class="hint">{quoteReason}</p>{/if}
         {#if !canConvert && !isInvoiced(detail)}<p id="convert-no-access" class="hint">{convertReason}</p>{/if}
-        {#if detail.needsPrintTime}
-          <p id="finalize-needs-time" class="hint">{finalizeBlockedReason(detail)}.</p>
-          <p id="convert-needs-time" class="hint">Enter the print time above before converting this request to an invoice.</p>
-        {/if}
       </Card>
     {/if}
   {/if}
@@ -1183,8 +1174,10 @@
     font-size: var(--text-sm);
   }
   .invoiced-note .linkish { border: none; background: none; color: var(--accent-text); font-weight: 600; text-decoration: underline; }
-  .time-form { display: flex; flex-direction: column; gap: var(--gap); margin-top: var(--gap); }
-  .time-actions { display: flex; }
+  /* The compact print-time notice (D36): hours, minutes and Save in one row, wrapping on a phone. */
+  .time-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2) var(--gap); }
+  :global(.time-notice > .hint) { margin: 0 0 var(--space-2); }
+  :global(.time-notice > h3) { margin: 0 0 var(--space-1); }
   h3 { margin-top: 0; }
 
   /* The record's actions sit under the facts with spacing only (D6: dividers belong to tables and lists). */

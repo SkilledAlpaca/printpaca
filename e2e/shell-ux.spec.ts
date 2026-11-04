@@ -104,7 +104,7 @@ test("a geometry-only 3MF explains the missing print time and the pricing panel 
 
   // The pricing panel names the blocker, and the link focuses the field.
   await page.getByLabel("Set a selling price").check();
-  const link = page.getByRole("link", { name: "Print time" });
+  const link = page.getByRole("link", { name: "Print time", exact: true });
   await expect(page.getByText(/To price this quote, add:/)).toBeVisible();
   await expect(page.getByText("Pricing is incomplete")).toHaveCount(0);
   await link.click();

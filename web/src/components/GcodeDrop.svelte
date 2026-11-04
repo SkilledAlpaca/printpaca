@@ -45,6 +45,15 @@
   let solidityInput = $state<number | null>(DEFAULT_SOLIDITY_PCT);
   const solidityPct = $derived(clampSolidityPct(solidityInput));
 
+  /** A new model file makes the part's old print time meaningless: it belonged to a different model, or was
+   * typed by hand. A file that carries slicer time overwrites it through applyResolvedPrefill; one that
+   * doesn't must leave the field blank so the price asks for the time instead of reusing a stale one. */
+  function clearStaleTime(target: PartForm, resolved?: GcodeResult) {
+    if (resolved?.timeSeconds !== undefined) return;
+    target.timeHours = null;
+    target.timeMinutes = null;
+  }
+
   /** Monotonic request token per target part: only the latest handleFile() for a part may write it, so a
    * slower earlier parse can't clobber a later one. Per part so a multi-file drop parses concurrently. */
   const seqByPart = new Map<string, number>();
@@ -141,6 +150,7 @@
         if (!current()) return; // a newer drop/pick has since started, discard this result
         const r = resolveGcode(meta, diameter, density);
         if (shown) outcome = { kind: "gcode", result: r };
+        clearStaleTime(target, r);
         applyResolvedPrefill(target, r, "gcode", file.name);
         return;
       }
@@ -169,6 +179,7 @@
       if (tmf.status === "ok" && tmf.kind === "sliced" && tmf.meta) {
         const r = resolveGcode(tmf.meta, diameter, density);
         if (shown) outcome = { kind: "gcode", result: r };
+        clearStaleTime(target, r);
         applyResolvedPrefill(target, r, "gcode", file.name);
       } else if (tmf.status === "ok" && tmf.kind === "geometry" && tmf.volumeCm3 !== undefined) {
         applyEstimate(target, shown, file.name, tmf.volumeCm3, density);
@@ -189,6 +200,7 @@
   /** A mesh-volume estimate landing on `target`: the shown part goes through the solidity-aware banner
    * state; other parts of a multi-file drop use the default solidity. */
   function applyEstimate(target: PartForm, shown: boolean, name: string, volumeCm3: number, density: number) {
+    clearStaleTime(target);
     if (shown) {
       outcome = { kind: "estimate", volumeCm3 };
       applyModelEstimate();
@@ -287,7 +299,7 @@
   class="card drop"
   class:dragging
   role="group"
-  aria-label="G-code drop zone"
+  aria-label="Model file drop zone"
   onclick={(e) => {
     // Click anywhere in the box to choose a file. Skip clicks on self-handling controls (the <label>, which
     // would double-fire; the solidity input; buttons and links), so this covers only the dead space around

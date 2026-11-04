@@ -1,9 +1,12 @@
 <script lang="ts">
   import { tick } from "svelte";
   import type { EffectiveConfig, OrderBreakdown } from "../lib/engine/index";
-  import { quote } from "../lib/state.svelte";
+  import { quote, partLabel } from "../lib/state.svelte";
   import { money } from "../lib/format";
   import { quoteSummaryStats } from "../lib/quoteSummary";
+  import { quoteBlockers } from "../lib/quoteBlockers";
+  import { goToBlocker } from "../lib/goToBlocker";
+  import SlicerHelp from "./SlicerHelp.svelte";
 
   let {
     cfg,
@@ -36,6 +39,21 @@
   const s = $derived(quoteSummaryStats(order, quote.order.sellingEnabled));
   const loss = $derived(s.profitCents !== null && s.profitCents < 0);
 
+  // Why the cost shows "-": the first blank field, named here so the reason sits next to the number instead of
+  // in a message further down. Print time wins because it is what a model file never supplies.
+  const missing = $derived(
+    quoteBlockers(order, quote.parts.map((p, i) => partLabel(p, i))).filter((b) => b.missing),
+  );
+  const need = $derived(missing.find((b) => b.field === "timeHours" || b.field === "timeMinutes") ?? missing[0]);
+  const needsTime = $derived(need !== undefined && (need.field === "timeHours" || need.field === "timeMinutes"));
+  const needText = $derived.by(() => {
+    if (need === undefined) return "";
+    const rest = missing.length > 1 ? ` and ${missing.length - 1} more` : "";
+    // Multi-part labels already carry the part name: "Print time (Part 2)".
+    const what = needsTime ? need.label.replace(/^Print time/, "a print time") : need.label.toLowerCase();
+    return `Price needs ${what}${rest}`;
+  });
+
   // Opens the pricing panel and scrolls to it: the panel can be several tiles down, so a click that only
   // flips the toggle leaves the bar visibly unchanged.
   async function setPrice() {
@@ -61,6 +79,18 @@
           <span class="stat-label">Per unit</span>
           <span class="stat-value">{s.costCents !== null ? money(order.parts[0]?.breakdown.perUnitTotal ?? 0, cfg) : "-"}</span>
         </div>
+      {/if}
+    </div>
+    <!-- The line is always reserved, so a field filling in doesn't pull the cards below it upward. -->
+    <div class="cost-need">
+      {#if need}
+        <a
+          href="#main"
+          onclick={(e) => {
+            e.preventDefault();
+            void goToBlocker(need);
+          }}>{needText}</a>
+        {#if needsTime}<SlicerHelp />{/if}
       {/if}
     </div>
   </div>
@@ -112,6 +142,7 @@
   .status-text { margin: 0; font-size: var(--text-sm); line-height: 1.5; color: var(--muted); }
   .status-text.status-error { color: var(--danger); }
   .group { display: flex; flex-direction: column; gap: 0.3rem; }
+  .cost-need { min-height: calc(var(--text-sm) * 1.5); font-size: var(--text-sm); }
   .group.sell {
     border-left: 1px solid var(--border);
     padding-left: 2rem;

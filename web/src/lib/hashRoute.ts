@@ -26,14 +26,19 @@ export function syncDetail(
   }
 }
 
-/** The saved-quote id in a quote editor route ("#/quote/<id>"), or null for the bare "#/quote" and any other
- * route. The editor URL carries the id so a reload or a new tab reopens that quote. */
-export function quoteIdFromHash(hash: string): string | null {
-  const m = /^#\/quote\/([^/#?]+)/.exec(hash);
-  return m ? decodeURIComponent(m[1]!) : null;
+/** The editor's address for a saved quote is `#/quote/<id>`. Maps it to the tab's own hash (`#/quote`) so the
+ * router finds the tab; any other base passes through. */
+export function quoteRouteBase(base: string): string {
+  return base.startsWith("#/quote/") ? "#/quote" : base;
 }
 
-/** Maps "#/quote/<id>" to "#/quote" so the tab router resolves it; every other hash is returned unchanged. */
-export function routeBase(base: string): string {
-  return /^#\/quote\/[^/#?]+$/.test(base) ? "#/quote" : base;
+/** The saved quote id in a `#/quote/<id>` address, or null for `#/quote` and every other route. */
+export function quoteIdFromHash(hash: string): string | null {
+  const m = /^#\/quote\/([^/#]+)/.exec(hash);
+  if (!m) return null;
+  try {
+    return decodeURIComponent(m[1]!);
+  } catch {
+    return null;
+  }
 }

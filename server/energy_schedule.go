@@ -472,6 +472,16 @@ func scheduleInputWarnings(e EnergyInputs) (*time.Location, []FieldWarning) {
 	return loc, out
 }
 
+// readableStart renders a wall-clock start ("2026-11-04T22:00") the way a person reads it ("Nov 4, 2026 10:00
+// PM"); anything that doesn't parse is shown as given.
+func readableStart(start string) string {
+	t, err := time.Parse("2006-01-02T15:04", start)
+	if err != nil {
+		return start
+	}
+	return t.Format("Jan 2, 2006 3:04 PM")
+}
+
 func electricityBatch(mode string, perUnit, qty, scheduleBatch float64) float64 {
 	if mode == "schedule" {
 		return scheduleBatch
@@ -484,13 +494,17 @@ func electricityFormula(in QuoteInputs, hours, rate float64, periods []EnergyPer
 		return formatf(round2(hours)) + " h × " + formatf(in.Watts) + " W ÷ 1000 × " + formatf(rate) + "/kWh"
 	}
 	if len(periods) == 0 {
+		// Name the missing start rather than blaming the schedule: an empty start is the common cause.
+		if strings.TrimSpace(in.Energy.Start) == "" {
+			return "needs a print start"
+		}
 		return "schedule not usable"
 	}
 	parts := make([]string, len(periods))
 	for i, p := range periods {
 		parts[i] = formatf(round2(p.Hours)) + " h " + p.Name
 	}
-	return formatf(in.Watts) + " W ÷ 1000 × schedule from " + in.Energy.Start + " (" + strings.Join(parts, ", ") + ")"
+	return formatf(in.Watts) + " W ÷ 1000 × schedule from " + readableStart(in.Energy.Start) + " (" + strings.Join(parts, ", ") + ")"
 }
 
 func electricityInputs(in QuoteInputs, hours, rate float64) map[string]any {

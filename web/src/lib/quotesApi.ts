@@ -90,13 +90,36 @@ export async function createQuote(input: QuoteInput): Promise<ServerQuote> {
   return (await res.json()) as ServerQuote;
 }
 
-export async function updateQuote(id: string, input: QuoteInput): Promise<ServerQuote> {
+/** The server refused a save because the quote changed after it was loaded (409). */
+export class QuoteConflictError extends Error {
+  constructor() {
+    super("This was changed in another tab or by another user.");
+    this.name = "QuoteConflictError";
+  }
+}
+
+/** One quote by id, or null when it doesn't exist or can't be read. */
+export async function getQuote(id: string): Promise<ServerQuote | null> {
+  try {
+    const res = await fetch(`api/quotes/${encodeURIComponent(id)}`, { signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS) });
+    return res.ok ? ((await res.json()) as ServerQuote) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** PUT /api/quotes/{id}. With `expectedSavedAt` (the savedAt the caller loaded) a stale save is refused
+ * with a QuoteConflictError instead of overwriting; without it the write always lands. */
+export async function updateQuote(id: string, input: QuoteInput, expectedSavedAt?: string): Promise<ServerQuote> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (expectedSavedAt) headers["If-Match"] = `"${expectedSavedAt}"`;
   const res = await fetch(`api/quotes/${encodeURIComponent(id)}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(input),
     signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS),
   });
+  if (res.status === 409) throw new QuoteConflictError();
   if (!res.ok) throw await errorsFrom(res);
   return (await res.json()) as ServerQuote;
 }

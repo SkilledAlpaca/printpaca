@@ -42,8 +42,18 @@
   // price/density via applyMaterial; just nulling the override would leave a stale spool price in
   // part.pricePerKg.
   function clear() {
+    materialNote = "";
     applyMaterial(cfg, part, part.materialId);
   }
+
+  /** The catalog material a Spoolman material string names ("PETG" matches id or name, ignoring case). */
+  function catalogMaterial(name: string) {
+    const want = name.trim().toLowerCase();
+    return want === "" ? undefined : cfg.materials.find((m) => m.id.toLowerCase() === want || m.name.toLowerCase() === want);
+  }
+
+  // Set when picking a spool changed the Material select, so the change is visible and not a surprise.
+  let materialNote = $state("");
 
   function pick(rawValue: string) {
     if (rawValue === "") {
@@ -60,11 +70,31 @@
     part.spoolOverride = override;
     // A spool with no usable price must not zero-fill part.pricePerKg; keep what the user or material had.
     if (override.pricePerKg !== null) part.pricePerKg = override.pricePerKg;
+    // The spool decides the material: pricing PETG filament as PLA would pick the wrong waste figure and
+    // label. Only the identity and waste follow; price and density stay the spool's own.
+    materialNote = "";
+    const match = catalogMaterial(s.filament.material ?? "");
+    if (match && match.id !== part.materialId) {
+      part.materialId = match.id;
+      part.wastePct = match.wastePct;
+      materialNote = `Material changed to ${match.name} to match this spool.`;
+    }
   }
 
   // No local selection state: the value derives from part.spoolOverride.spoolId, so a material switch (nulls
   // the override) or a restore (sets it directly) keeps the dropdown honest without a reconciling $effect.
   const selectedId = $derived(part.spoolOverride?.spoolId ?? "");
+
+  const selectedSpool = $derived(spools.find((x) => x.id === selectedId));
+  // A spool whose material the catalog doesn't know (or that the user switched away from) keeps the spool's
+  // price and density but is flagged, since the Material select then names something else.
+  const spoolMaterial = $derived(selectedSpool?.filament.material?.trim() ?? "");
+  const materialMismatch = $derived(
+    part.spoolOverride !== null &&
+      spoolMaterial !== "" &&
+      catalogMaterial(spoolMaterial)?.id !== part.materialId,
+  );
+  const currentMaterialName = $derived(cfg.materials.find((m) => m.id === part.materialId)?.name ?? part.materialId);
 
   const needed = $derived((part.weightG ?? 0) * (part.quantity ?? 1));
   const low = $derived(part.spoolOverride !== null && isLowStock(part.spoolOverride.remainingG, needed));
@@ -107,6 +137,16 @@
         {/each}
       </select>
     </label>
+
+    {#if materialNote}
+      <p class="advisory-text hint-text" role="status">{materialNote}</p>
+    {/if}
+
+    {#if materialMismatch}
+      <p class="warn-text hint-text" role="status">
+        This spool is {spoolMaterial}, but Material is {currentMaterialName}. The price and density come from the spool.
+      </p>
+    {/if}
 
     {#if part.spoolOverride && priceMissing}
       <p class="advisory-text hint-text" role="status">

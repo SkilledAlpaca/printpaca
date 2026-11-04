@@ -176,15 +176,24 @@ Each rejected request also appears as a `403` in the access log (`access admin "
 
 ## Quote a walk-in customer
 
-On the New quote page, turn on **Set a selling price**, then type the client's name in **Client (optional)**. The same name appears in the save row's client field, prints on the client quote, and is saved with the quote. When you save, a name that matches no client creates one, so repeat clients are linked automatically.
+On the New quote page, turn on **Set a selling price**, then type the client's name in **Client for this quote**, in the Saved quotes card next to the label. There is only this one client field. The same name prints on the client quote and is saved with the quote. When you save, a name that matches no client creates one, so repeat clients are linked automatically.
 
 To email the quote, open the quote's row menu on the Quotes page and choose **Email quote**. If the quote has no client, or its client has no email on file, printpaca asks for an address, creates the client (or fills in the linked client's email), and sends the quote after you confirm. printpaca also asks you to confirm before it changes a quote's status (Mark sent, Mark accepted, or Mark declined), emails an invoice, or marks an invoice sent. This needs the Clients permission; without it the menu explains that you need Clients access to add an email. Converting the quote to an invoice keeps the client's name.
+
+## Edit a saved quote
+
+Saving a quote keeps the form tied to it. The page title changes to **Edit quote: <label>**, the sidebar highlights **Quotes**, and the address becomes `#/quote/<id>`, so you can bookmark the quote or open it in another tab. **Update quote** and **Save as new** sit at the top of the page. Pressing Ctrl+S (⌘S on macOS) again updates the same quote instead of creating another.
+
+- **New quote always starts blank.** The sidebar **New quote** and the **New quote** button on the Quotes page clear the weight, print time, label, client, and the rest. If the form has unsaved edits, printpaca asks first. To start from an existing quote, use **Duplicate** on the Quotes page.
+- **A reopened quote keeps its saved price.** The quote opens with the electricity rates it was saved with, so the total matches the Quotes list. If the shop's electricity settings have changed since, a note says so. Press **Use current rates** to reprice at today's rates, or change a rate or the print start yourself.
+- **Two tabs, one quote.** If someone saved the quote after you opened it, **Update quote** doesn't overwrite their change. printpaca says "This was changed in another tab or by another user." Choose **Reload** to discard your edits and see their version, or **Overwrite** to save yours over it.
+- **Unsaved edits.** Reloading the page, closing the tab, or leaving the editor with unsaved edits asks you to confirm.
 
 ## Quote a multi-part order
 
 An order can hold 1 to 20 parts, for example a bracket, its lid, and a bag of spacers for one customer. Each part has its own weight, print time, printer, material, quantity, and hardware. Fees, tax, shipping, and the customer are set once for the whole order.
 
-1. On the New quote page, drop several sliced files onto the G-code box at once, or press **Add part**. Dropping several files makes one part per file, named after the file. Dropping a single file fills the part you are editing.
+1. On the New quote page, drop several sliced files onto the Model file box at once, or press **Add part**. Dropping several files makes one part per file, named after the file. Dropping a single file fills the part you are editing.
 2. Select a part in the **Parts** list to edit it. You can rename, duplicate, or remove a part there.
 3. Turn on **Set a selling price**. Margin or markup is applied to each part, and **Sale price override** sets a fixed per-unit price for the selected part only.
 4. Fees and tax are calculated once on the whole order (tax is included in the price, as for a single part), and shipping is charged once. The summary bar and the **Order by part** table show each part and the order total.

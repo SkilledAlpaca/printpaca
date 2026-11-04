@@ -47,7 +47,7 @@
     aria-describedby={orderProblem !== "" && orderTouched ? `${orderId}-help ${orderId}-warn` : `${orderId}-help`}
   />
   <small id="{orderId}-help" class="field-hint">
-    Your {zone} time. Electricity is priced by the hours the print runs, so the start changes the cost.
+    Times are in your shop time zone ({zone}). Electricity is priced by the hours the print runs, so the start changes the cost.
     <button type="button" class="quiet" onclick={useNext}>Use the next {clock}</button>
   </small>
   {#if orderProblem !== "" && orderTouched}<small id="{orderId}-warn" class="warn-text">{orderProblem}</small>{/if}

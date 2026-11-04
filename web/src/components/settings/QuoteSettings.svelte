@@ -69,12 +69,12 @@
   <p class="hint">Shown on printed quotes and invoices, in the admin header, and on the customer shop.</p>
   <div class="sections">
     <FormGrid align="controls">
-      <Field id="quote-business-name" label="Business name" size="m">
+      <Field id="quote-business-name" label="Business name" size="l">
         {#snippet children(a)}
           <input id={a.id} aria-describedby={a.describedby} bind:value={form.quote.businessName} autocomplete="organization" />
         {/snippet}
       </Field>
-      <Field id="quote-email" label="Email" size="m">
+      <Field id="quote-email" label="Email" size="l">
         {#snippet children(a)}
           <input id={a.id} aria-describedby={a.describedby} type="email" bind:value={form.quote.email} autocomplete="email" />
         {/snippet}

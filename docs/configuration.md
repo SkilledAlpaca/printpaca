@@ -241,7 +241,7 @@ The `site` section of `config.yaml`, also under **Storefront** on the Requests t
 
 The `shop` section of `config.yaml` controls what the customer-facing shop offers and how it reads. Every default keeps the shop as it was in v1.1, so an upgrade changes nothing until you opt in. A change applies without a restart.
 
-In this release the settings are plain inputs under **Public estimates** in Settings, and in `config.yaml`. The hero image upload, the footer links editor, the accent color picker, and the **Preview shop** button arrive with the redesigned Storefront card.
+Edit these settings in **Settings › Storefront**, or in `config.yaml`. The card also uploads the hero image, edits the footer links, checks the accent color in light and dark mode, previews the Closed page, and has a **View shop** link that opens the live shop with your saved settings.
 
 ![The Storefront card in Settings: shop toggles, the Closed page preview, wording with live announcement preview, the hero image, accent color swatches for light and dark mode, and footer links](screenshots/storefront.png)
 

@@ -40,6 +40,7 @@ test.describe("quote email double submit", () => {
       const res = await route.fetch();
       const cfg = await res.json();
       cfg.smtp = { ...cfg.smtp, host: "smtp.example.test" };
+      cfg.smtpConfigured = true;
       await route.fulfill({ response: res, json: cfg });
     });
     // The seeded quote has no server-computed price; give it one so "Email quote" is offered.
@@ -271,6 +272,7 @@ test.describe("confirm before irreversible actions (3.3.4)", () => {
       const res = await route.fetch();
       const cfg = await res.json();
       cfg.smtp = { ...cfg.smtp, host: "smtp.example.test" };
+      cfg.smtpConfigured = true;
       await route.fulfill({ response: res, json: cfg });
     });
     await page.route(/\/api\/invoices\/[^/]+\/send$/, async (route) => {

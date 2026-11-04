@@ -356,7 +356,7 @@ const (
 
 // shopRejects reports whether cfg's storefront settings forbid this kind of submission, and writes the
 // response when they do. A feature that is switched off answers 404 with a generic message, revealing
-// nothing about the setting. Vacation mode answers 403 with the owner's message and "paused": true so the
+// nothing about the setting. Vacation mode answers 503 with the owner's message and "paused": true so the
 // page can show it; requests already stored are unaffected. The checks run before rate limiting and body
 // parsing, so a rejected request costs almost nothing.
 func shopRejects(w http.ResponseWriter, cfg *Config, kind shopKind) bool {
@@ -370,12 +370,13 @@ func shopRejects(w http.ResponseWriter, cfg *Config, kind shopKind) bool {
 			msg = defaultShopPausedMessage
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusForbidden)
+		w.WriteHeader(http.StatusServiceUnavailable)
 		json.NewEncoder(w).Encode(struct {
+			Error   string   `json:"error"`
 			Errors  []string `json:"errors"`
 			Paused  bool     `json:"paused"`
 			Message string   `json:"pausedMessage"`
-		}{Errors: []string{msg}, Paused: true, Message: msg})
+		}{Error: msg, Errors: []string{msg}, Paused: true, Message: msg})
 		return true
 	}
 	return false

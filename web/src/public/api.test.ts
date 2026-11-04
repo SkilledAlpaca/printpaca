@@ -198,13 +198,13 @@ describe("storefront settings", () => {
   const paused = { errors: ["Closed: back Jan 5"], paused: true, pausedMessage: "Closed: back Jan 5" };
 
   it("a paused refusal carries the owner's message through unchanged, colon and all", async () => {
-    stubFetch(403, paused);
+    stubFetch(503, paused);
     const order = await submitItemOrder({ itemId: "i", selections: [], quantity: 1, name: "n", email: "e@example.com", note: "" });
-    expect(order).toMatchObject({ ok: false, status: 403, errors: ["Closed: back Jan 5"], paused: "Closed: back Jan 5" });
+    expect(order).toMatchObject({ ok: false, status: 503, errors: ["Closed: back Jan 5"], paused: "Closed: back Jan 5" });
     const req = await submitQuoteRequest(new FormData());
-    expect(req).toMatchObject({ ok: false, status: 403, errors: ["Closed: back Jan 5"], paused: "Closed: back Jan 5" });
+    expect(req).toMatchObject({ ok: false, status: 503, errors: ["Closed: back Jan 5"], paused: "Closed: back Jan 5" });
     const preview = await fetchQuotePreview(PREVIEW_INPUT);
-    expect(preview).toMatchObject({ ok: false, status: 403, errors: ["Closed: back Jan 5"], paused: "Closed: back Jan 5" });
+    expect(preview).toMatchObject({ ok: false, status: 503, errors: ["Closed: back Jan 5"], paused: "Closed: back Jan 5" });
   });
 
   it("other refusals still go through the field-error humanizer", async () => {

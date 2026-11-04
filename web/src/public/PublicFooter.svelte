@@ -76,12 +76,15 @@
     color: var(--muted);
     font-size: var(--type-secondary);
     margin-top: var(--space-12);
-    padding: var(--space-8) var(--space-4) var(--space-4);
+    padding: var(--space-8) 0 var(--space-4);
     overflow-wrap: anywhere;
   }
+  /* D55: the same box as the shop header's column (.page in PublicQuotePage.svelte): the same width token and the
+   * same side padding, so the footer's content lines up with the header's. The tinted band itself spans the page. */
   .inner {
-    max-width: calc(var(--measure-record) * 1.4);
+    max-width: calc(var(--measure-record) + 2 * var(--card-pad));
     margin: 0 auto;
+    padding-inline: var(--space-4);
     display: flex;
     flex-direction: column;
     gap: var(--space-6);
@@ -126,7 +129,7 @@
   }
   /* 44 px tap targets on phones: the links are inline text, about 17 px tall by default. */
   @media (max-width: 600px) {
-    .shop-footer { padding-inline: var(--space-3); }
+    .inner { padding-inline: var(--space-3); }
     .shop-footer a {
       display: inline-flex;
       align-items: center;

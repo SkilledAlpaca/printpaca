@@ -13,6 +13,7 @@
     branding,
     headingLevel = 1,
     notice = "",
+    homeHref = "",
   }: {
     businessName?: string;
     /** Custom logo (quote.logoUrl); the project mark when empty. */
@@ -25,14 +26,23 @@
     /** Shown above the heading when a submit was refused because the shop closed mid-form ("Your order wasn't
      * placed."). The host focuses it by id (closed-notice). */
     notice?: string;
+    /** D45: when set, the logo and name are one link to it (a reload of the Closed page on the shop). The Settings preview leaves it empty. */
+    homeHref?: string;
   } = $props();
 </script>
 
 <section class="closed" aria-labelledby="closed-heading">
   <header class="brand">
-    <!-- Decorative next to the business name, so alt is empty. -->
-    <img class="logo" src={logoUrl || projectLogoUrl} alt="" />
-    <p class="brand-name">{businessName || "printpaca"}</p>
+    {#if homeHref}
+      <a class="brand-link" href={homeHref} aria-label="{businessName || 'printpaca'}, shop home">
+        <img class="logo" src={logoUrl || projectLogoUrl} alt="" />
+        <span class="brand-name">{businessName || "printpaca"}</span>
+      </a>
+    {:else}
+      <!-- Decorative next to the business name, so alt is empty. -->
+      <img class="logo" src={logoUrl || projectLogoUrl} alt="" />
+      <p class="brand-name">{businessName || "printpaca"}</p>
+    {/if}
   </header>
   <Card>
     <div class="closed-body">
@@ -48,6 +58,9 @@
   .closed { display: flex; flex-direction: column; gap: var(--gap); }
   .brand { display: flex; align-items: center; gap: var(--space-3); }
   .logo { height: 2.5rem; width: auto; }
+  .brand-link { display: inline-flex; align-items: center; gap: var(--space-3); color: inherit; text-decoration: none; min-height: 44px; border-radius: var(--radius); }
+  .brand-link:hover .brand-name { text-decoration: underline; text-underline-offset: 0.15em; }
+  .brand-link:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 3px; }
   .brand-name { margin: 0; font-size: var(--type-title); font-weight: 700; overflow-wrap: anywhere; }
   .closed-body { display: flex; flex-direction: column; gap: var(--gap); align-items: flex-start; }
   .closed-heading { margin: 0; }

@@ -326,6 +326,19 @@
       navigate({ name: "gallery" }, { replace: true });
     }
   }
+  // D45: the header logo and name link to the storefront home. Followed from an item or a confirmation it acts
+  // like Back to gallery, with focus on the gallery heading (the estimate form's heading when the gallery is
+  // off). An order form holding choices, a quantity or a note asks first, so a click never discards it silently.
+  let itemDirty = $state(false);
+  function goHome(e: MouseEvent) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    if (route.name === "item" && orderItem && itemDirty && !confirm("Leave this order? What you entered on this form will be lost.")) return;
+    lastSelectedId = null;
+    itemOpenedInApp = false;
+    navigate({ name: "gallery" });
+    void focusAfterUpdate(() => document.getElementById("gallery-heading") ?? estimateFormHeading);
+  }
   // Returning from an item to the gallery by any means (Back to gallery, Escape, the browser's Back button)
   // refocuses the card that was open.
   let previousRouteName: Route["name"] = "gallery";
@@ -1111,14 +1124,18 @@
       message={shop.pausedMessage}
       branding={cfg.branding}
       notice={refusedNoticeText}
+      homeHref={location.pathname + location.search}
     />
-    <PublicFooter branding={cfg.branding} staffUrl={cfg.staffUrl} footerLinks={shop.footerLinks} showContact={false} />
   {:else if cfg}
     <header class="brand">
       <!-- Custom logo (quote.logoUrl) when set, else the project mark. Decorative next to the <h1>
            business name, so alt is empty. -->
-      <img class="logo" src={cfg.branding.logoUrl || projectLogoUrl} alt="" />
-      <h1>{cfg.branding.businessName || "printpaca"}</h1>
+      <h1>
+        <a class="brand-link" href="#/" aria-label="{cfg.branding.businessName || 'printpaca'}, shop home" onclick={goHome}>
+          <img class="logo" src={cfg.branding.logoUrl || projectLogoUrl} alt="" />
+          <span class="brand-name">{cfg.branding.businessName || "printpaca"}</span>
+        </a>
+      </h1>
     </header>
     {#if cfg.demoMode}
       <p class="banner-muted demo-banner">
@@ -1205,6 +1222,7 @@
               shippingNote={shop.shippingNote}
               turnaroundNote={shop.turnaroundNote}
               onback={closeItem}
+              bind:dirty={itemDirty}
               onpaused={submitRefused}
               draft={restoredDraft?.kind === "order" && restoredDraft.itemId === orderItem.id ? restoredDraft : undefined}
               onordered={(confirmation) => {
@@ -1604,9 +1622,11 @@
       </Card>
     {/if}
 
-    <PublicFooter branding={cfg.branding} staffUrl={cfg.staffUrl} footerLinks={shop.footerLinks} />
   {/if}
 </main>
+{#if cfg && phase === "ready"}
+  <PublicFooter branding={cfg.branding} staffUrl={cfg.staffUrl} footerLinks={shop.footerLinks} showContact={!closedPageShown} />
+{/if}
 
 <style>
   .copy-ref { align-self: center; }
@@ -1630,6 +1650,10 @@
   }
   .brand .logo { height: 2.5rem; width: auto; }
   .brand h1 { margin: 0; overflow-wrap: anywhere; }
+  /* D45: logo and name are one link; the look is unchanged apart from a hover underline and a focus ring. */
+  .brand-link { display: inline-flex; align-items: center; gap: var(--space-3); color: inherit; text-decoration: none; min-height: 44px; border-radius: var(--radius); }
+  .brand-link:hover .brand-name { text-decoration: underline; text-underline-offset: 0.15em; }
+  .brand-link:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 3px; }
 
   .intro { color: var(--muted); margin: 0; }
   .shop-heading { margin: 0; overflow-wrap: anywhere; }

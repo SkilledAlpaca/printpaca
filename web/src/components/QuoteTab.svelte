@@ -26,13 +26,9 @@
   import { prefillFor } from "../lib/prefill.svelte";
   import { saveAttempt } from "../lib/saveAttempt.svelte";
   import QuoteSummaryBar from "./QuoteSummaryBar.svelte";
-  import CardHelp from "./CardHelp.svelte";
-  import { helpState, setAllHelp } from "../lib/help.svelte";
-  import { TILE_HELP, TILE_IDS, type TileId } from "../lib/guideContent";
   import { focusAfterRowRemoval } from "../lib/a11yFocus";
   import { findFieldByLabel } from "../lib/fieldErrors";
   import { presetDisplayName } from "../lib/format";
-  import SlicerHelp from "./SlicerHelp.svelte";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 
@@ -93,9 +89,6 @@
   const sellingEnabled = $derived(quote.order.sellingEnabled);
 
   const w = $derived(breakdown.warnings);
-  // Guide is a Tab like any other: when disabled, App.svelte's hashchange fallback rewrites the link off the
-  // guide, so don't render it as if it went somewhere.
-  const guideEnabled = $derived(!cfg.ui.disabledTabs.includes("guide"));
   const touched = () => (part.presetModified = true);
 
   // breakdown.valid doesn't cover pricing validity, but printing needs both or a marginPct of 150 prints a
@@ -144,19 +137,14 @@
   // Accessible group labels for each tile's role="group" div, and the h2 text for the three tiles rendered
   // here (gcode, print, costs); the others' h2 and CardHelp live in their own components, so it is only their
   // aria-label.
-  const TILE_LABELS: Record<TileId, string> = {
+  const TILE_LABELS = {
     gcode: "Model file",
     print: "Print",
     costs: "Costs",
     breakdown: "Cost breakdown",
     pricing: "Price and profit",
     history: "Saved quotes",
-  };
-
-  const allHelpOpen = $derived(TILE_IDS.every((id) => helpState.open[id] === true));
-  function toggleAllHelp() {
-    setAllHelp([...TILE_IDS], !allHelpOpen);
-  }
+  } as const;
 
   // First-run panel: shown once, before the visitor has entered anything or produced a valid quote. Dismissed
   // explicitly ("Got it") or when a quote first computes successfully.
@@ -337,13 +325,7 @@
 
 <div class="page">
   <a class="local-skip" href="#main" onclick={skipToPrintFields}>Skip to model weight and print time</a>
-  <PageHeader title={quoteSession.loadedId ? `Edit quote: ${quoteSession.label.trim() || "Untitled"}` : "New quote"}>
-    {#snippet actions()}
-      <button type="button" class="explain-toggle" aria-pressed={allHelpOpen} onclick={toggleAllHelp}>
-        Explain this page
-      </button>
-    {/snippet}
-  </PageHeader>
+  <PageHeader title={quoteSession.loadedId ? `Edit quote: ${quoteSession.label.trim() || "Untitled"}` : "New quote"} />
 
   {#if quoteSession.conflict}
     <div class="card banner-warn" role="alert">
@@ -371,7 +353,7 @@
       <ol>
         <li>Drop a sliced .gcode file below, or type the model weight and print time.</li>
         <li>Your cost appears in the summary beside the form, and in its Breakdown.</li>
-        <li>Selling it? Press Set a price.</li>
+        <li>Selling it? Press Set a client price.</li>
       </ol>
       <p class="hint">Costs use starter rates. Set your filament price on Filament and your energy rate on Electricity.</p>
       <button type="button" onclick={dismissFirstRun}>Got it</button>
@@ -381,13 +363,10 @@
   <div class="layout">
     <div class="main-col">
       <PartsList {cfg} {order}>
-        <div class="tile" role="group" aria-label={TILE_LABELS.gcode} aria-describedby="help-gcode">
+        <div class="tile" role="group" aria-label={TILE_LABELS.gcode}>
           <Card>
             <Fieldset legend="Model and print time" step={1}>
-              <div class="section-intro">
-                <p class="hint">Drop a sliced file, or type the weight and time from your slicer.</p>
-                <CardHelp id="gcode" title={TILE_LABELS.gcode} text={TILE_HELP.gcode} />
-              </div>
+              <p class="hint">Drop a sliced file, or type the weight and time from your slicer.</p>
               {#key part.id}
                 <GcodeDrop {cfg} {part} />
               {/key}
@@ -431,10 +410,7 @@
                 </Field>
               </FormGrid>
               {#if noSlicerTime}
-                <div class="time-note">
-                  <small id="print-time-note" class="hint-text">This file has no slicer time. Enter the print time from your slicer.</small>
-                  <SlicerHelp />
-                </div>
+                <small id="print-time-note" class="hint-text">This file has no slicer time. Enter the print time from your slicer.</small>
               {/if}
               <!-- After the weight and time (A3): a long picker must not push the two fields the price needs below the fold. -->
               {#key part.id}
@@ -446,13 +422,10 @@
           </Card>
         </div>
 
-        <div class="tile" role="group" aria-label={TILE_LABELS.print} aria-describedby="help-print">
+        <div class="tile" role="group" aria-label={TILE_LABELS.print}>
           <Card>
             <Fieldset legend="Material and printer" step={2}>
-              <div class="section-intro">
-                <p class="hint">What you print on, and how many.</p>
-                <CardHelp id="print" title={TILE_LABELS.print} text={TILE_HELP.print} />
-              </div>
+              <p class="hint">What you print on, and how many.</p>
               <FormGrid align="controls">
                 <Field id={`${uid}-material`} label="Material" size="m">
                   {#snippet children(a)}
@@ -481,11 +454,8 @@
                 <SpoolPicker {cfg} {part} />
               {/if}
 
-              <div class="costs tile" role="group" aria-label={TILE_LABELS.costs} aria-describedby="help-costs">
-                <div class="section-intro">
-                  <h3 class="sub-heading">Costs</h3>
-                  <CardHelp id="costs" title={TILE_LABELS.costs} text={TILE_HELP.costs} guideAnchor="configuring-printpaca" {guideEnabled} />
-                </div>
+              <div class="costs tile" role="group" aria-label={TILE_LABELS.costs}>
+                <h3 class="sub-heading">Costs</h3>
                 <PresetChips {cfg} {part} />
                 <p class="rates-summary">
                   {ratesSummary}
@@ -550,7 +520,7 @@
         </div>
       </PartsList>
 
-      <div class="tile" role="group" aria-label={TILE_LABELS.pricing} aria-describedby="help-pricing">
+      <div class="tile" role="group" aria-label={TILE_LABELS.pricing}>
         <PricingPanel {cfg} {order} {part} {partIndex} />
       </div>
 
@@ -596,7 +566,7 @@
           previewStatus={previewState.status}
           previewError={previewState.status === "error" ? `${previewState.errors[0]} Showing the last known price. It retries on the next change.` : ""}
         />
-        <div class="tile" role="group" aria-label={TILE_LABELS.breakdown} aria-describedby="help-breakdown">
+        <div class="tile" role="group" aria-label={TILE_LABELS.breakdown}>
           <details class="breakdown-disclosure" bind:open={breakdownOpen} ontoggle={(e) => writeBreakdownOpen(e.currentTarget.open)}>
             <summary>Breakdown</summary>
             <div class="breakdown-body">
@@ -614,12 +584,6 @@
 </div>
 
 <style>
-  .explain-toggle[aria-pressed="true"] {
-    background: var(--surface-2);
-    border-color: var(--accent);
-    color: var(--accent-text);
-  }
-
   .local-skip {
     position: absolute;
     left: -9999px;
@@ -655,15 +619,10 @@
 
   .tile { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
   .tile :global(.card) { display: flex; flex-direction: column; gap: var(--gap); }
-  /* The sentence at the left of a section and its "?" help toggle at the right; the help note drops onto its
-   * own row below (CardHelp sets grid-column: 1 / -1 on it). */
-  .section-intro { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: var(--space-2); }
-  .section-intro p { margin: 0; }
   .sub-heading { margin: 0; font-size: var(--type-heading); }
   :global(.card-heading) { margin-block: 0; }
   .costs { margin-block-start: var(--gap); padding-block-start: var(--gap); border-top: 1px solid var(--border); }
   .hint-text { color: var(--muted); font-size: var(--type-secondary); }
-  .time-note { display: flex; flex-direction: column; gap: var(--space-1); }
 
   /* Static replacement for the customer input once a client is linked; matches the input's box so swapping
    * doesn't shift the row's height. */

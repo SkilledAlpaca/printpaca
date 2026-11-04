@@ -29,8 +29,6 @@
   import { formatSavedAt } from "../lib/quoteRow";
   import { listClients, createClient, type Client } from "../lib/clientsApi";
   import type { Snippet } from "svelte";
-  import CardHelp from "./CardHelp.svelte";
-  import { TILE_HELP } from "../lib/guideContent";
   import StickySummary from "./ui/StickySummary.svelte";
   import Field from "./ui/Field.svelte";
 
@@ -499,11 +497,8 @@
   <div class="summary-stack">
     {@render summary()}
 
-    <div class="tile save-tile" role="group" aria-label="Saved quotes" aria-describedby="help-history">
-      <div class="section-intro">
-        <h3 class="sub-heading">Save this quote</h3>
-        <CardHelp id="history" title="Saved quotes" text={TILE_HELP.history} />
-      </div>
+    <div class="tile save-tile" role="group" aria-label="Saved quotes">
+      <h3 class="sub-heading">Save this quote</h3>
 
       {#if quotesUnavailable}
         <p class="banner-warn" role="alert">Couldn't load saved quotes. The server couldn't be reached.</p>
@@ -622,7 +617,6 @@
   .compact-row > :global(*:first-child) { flex: 1 1 auto; min-width: 0; }
   .compact-row button { flex: none; }
   .save-tile { display: flex; flex-direction: column; gap: var(--space-3); padding-block-start: var(--gap); border-top: 1px solid var(--border); }
-  .section-intro { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: var(--space-2); }
   .sub-heading { margin: 0; font-size: var(--type-heading); }
   .save-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
   .save-tile .hint, .save-tile .status-line { margin: 0; }

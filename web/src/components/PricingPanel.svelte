@@ -7,11 +7,9 @@
   import { money, warnFor, friendlyMessage, feeScheduleDisplayName } from "../lib/format";
   import { otherPricingWarnings, partPricingWarning } from "../lib/orderView";
   import LabeledNumber from "./LabeledNumber.svelte";
-  import CardHelp from "./CardHelp.svelte";
   import Fieldset from "./ui/Fieldset.svelte";
   import Field from "./ui/Field.svelte";
   import FormGrid from "./ui/FormGrid.svelte";
-  import { TILE_HELP } from "../lib/guideContent";
 
   // `part` is the part whose sale price override the field edits (the active part); the rest is order-level.
   let { cfg, order, part, partIndex }: { cfg: EffectiveConfig; order: OrderBreakdown; part: PartForm; partIndex: number } = $props();
@@ -24,9 +22,6 @@
   const pw = $derived(p?.warnings ?? []);
   const multi = $derived(order.parts.length > 1);
   const shippingDelta = $derived(p ? p.shippingCharge - p.shippingCost : 0);
-  // Guide is a Tab like any other: when disabled, App.svelte's hashchange fallback rewrites the link off the
-  // guide, so don't render it as if it went somewhere.
-  const guideEnabled = $derived(!cfg.ui.disabledTabs.includes("guide"));
 
   // Warnings whose field has no visible input (e.g. a zero-cost basis flags "perUnitTotal"; a bad
   // fee-schedule entry flags "feeSchedule") would be dropped; surface them here.
@@ -84,10 +79,7 @@
 
 <div class="card" id="pricing-card">
   <Fieldset legend="Price" step={3}>
-    <div class="section-intro">
-      <p class="hint">Turn your cost into a price.</p>
-      <CardHelp id="pricing" title="Price and profit" text={TILE_HELP.pricing} guideAnchor="margin-vs-markup" {guideEnabled} />
-    </div>
+    <p class="hint">Turn your cost into a price.</p>
     <label class="toggle">
       <input type="checkbox" bind:checked={form.sellingEnabled} />
       <span>Set a selling price</span>
@@ -193,8 +185,6 @@
 </div>
 
 <style>
-  .section-intro { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: var(--space-2); }
-  .section-intro p { margin: 0; }
   .toggle { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--control-h); width: fit-content; }
   .pricing-warnings .warn-text, .blockers p { margin: var(--space-1) 0; }
   .pricing-basis { margin: 0; font-size: var(--type-secondary); color: var(--muted); }

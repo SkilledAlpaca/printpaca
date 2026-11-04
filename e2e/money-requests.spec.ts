@@ -304,7 +304,7 @@ test.describe("requests and the dashboard", () => {
 
     // Convert is blocked until the time is set.
     await expect(page.getByRole("button", { name: "Convert to invoice" })).toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByText("Enter the print time above before converting this request to an invoice.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Convert to invoice" })).toHaveAccessibleDescription(/there's no price yet/);
 
     await page.getByLabel("Hours").fill("1");
     await page.getByLabel("Minutes").fill("30");

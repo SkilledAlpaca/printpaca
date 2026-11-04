@@ -109,7 +109,7 @@
   --text-lg: var(--type-heading);
   --text-xl: var(--type-title);
   --text-2xl: 2rem;
-  /* Long-form prose measure (Guide page, CardHelp's help text), in ch rather than rem: ch tracks the font's
+  /* Long-form prose measure (Guide page), in ch rather than rem: ch tracks the font's
    * own average character width, so the reading-width target stays right even if the type scale above
    * changes later. Separate from .measure-cap's 44rem below, which caps tabular/list content instead of
    * prose. */
@@ -205,8 +205,7 @@ h1, h2, h3 { line-height: 1.2; }
 h1 { font-size: var(--text-xl); margin: 0 0 var(--space-4) 0; }
 h2 { font-size: var(--text-lg); margin: 0 0 var(--space-3) 0; }
 h3 { font-size: var(--text-base); margin: 0 0 var(--space-2) 0; }
-/* App-wide anchor color: without this, a bare <a> (CardHelp's "More in the guide" link, RequestsTab's
- * email/download links) renders the UA default link blue, which fails contrast against the dark scheme's
+/* App-wide anchor color: without this, a bare <a> (RequestsTab's email/download links) renders the UA default link blue, which fails contrast against the dark scheme's
  * --bg/--surface. Underline stays the UA default; only color is set here. Components that need a different
  * treatment (e.g. App.svelte's .skip-link) set their own color, which wins on specificity over this element
  * selector. */
@@ -593,18 +592,6 @@ tbody tr:hover { background: var(--surface-2); }
 .chips { display: flex; gap: 0.6rem; flex-wrap: wrap; }
 .chips button { border-radius: 999px; padding: 0.25rem 0.8rem; font-size: var(--text-sm); }
 .chips button.active { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
-
-/* Grid head row for a heading that carries a CardHelp (BreakdownTable): CardHelp's help-note sets grid-column: 1 / -1
- * on itself so it lands on its own full-width row under the heading, which a flex row can't
- * give it. */
-.head-row.with-help {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: start;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-.head-row.with-help h2 { margin: 0; }
 
 /* position: relative so absolutely positioned descendants (a table header's .visually-hidden label) are
  * clipped by the scroller instead of widening the page: without it, the Quotes ledger scrolled the whole

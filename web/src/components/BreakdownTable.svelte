@@ -3,8 +3,6 @@
   import { money, moneyPrecise } from "../lib/format";
   import { computeBreakdownSegments } from "../lib/breakdownBar";
   import { breakdownHint } from "../lib/quoteRow";
-  import { TILE_HELP } from "../lib/guideContent";
-  import CardHelp from "./CardHelp.svelte";
 
   let { breakdown, cfg, partName = "" }: { breakdown: CostBreakdown; cfg: EffectiveConfig; partName?: string } = $props();
 
@@ -41,9 +39,8 @@
 </script>
 
 <div class="breakdown">
-  <div class="head-row with-help">
+  <div class="head-row">
     <h3>Cost breakdown{partName ? `: ${partName}` : ""}{breakdown.quantity > 1 ? " (per unit)" : ""}</h3>
-    <CardHelp id="breakdown" title="Cost breakdown" text={TILE_HELP.breakdown} />
   </div>
   {#if segments.length > 0}
     <div class="bar" aria-hidden="true">

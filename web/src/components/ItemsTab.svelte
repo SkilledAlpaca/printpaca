@@ -756,7 +756,7 @@
           {/snippet}
         </Field>
         <LabeledNumber label="Price" suffix={cfg.currency.symbol} min={0} max={1000000} step={0.01} bind:value={form.price} warn={priceWarn} />
-        <Field id="item-category" label="Category" size="m" hint={categoriesUnavailable ? "Categories couldn't be loaded." : undefined}>
+        <Field id="item-category" label="Category" size="m" hintVisible hint={categoriesUnavailable ? "Categories couldn't be loaded." : undefined}>
           {#snippet children(f)}
             <select id={f.id} bind:value={form.categoryId} aria-describedby={f.describedby}>
               <option value="">None</option>

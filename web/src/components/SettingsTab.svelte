@@ -263,7 +263,7 @@
                 label={`Default shipping charge (${form.currency.symbol})`}
                 help="What you bill the customer for shipping. The public quote page shows it beside the price, and new quotes start with it. Set 0 to hide shipping."
                 step="any"
-                hint={form.pricing.defaultShippingCost > 0 && !(form.pricing.defaultShippingCharge > 0)
+                note={form.pricing.defaultShippingCost > 0 && !(form.pricing.defaultShippingCharge > 0)
                   ? "A shipping cost is set but the charge is 0, so the public quote page shows no shipping. Set the charge to show it."
                   : undefined}
                 warn={warnFor(warnings, "pricing.defaultShippingCharge")}

@@ -535,7 +535,7 @@
           <Card tone="inset">
             <h3>Quotes</h3>
             {#if clientQuotes.length === 0}
-              <p class="empty-state">No saved quotes are linked to this client yet. Pick this client in the Saved quotes panel on the New quote page.</p>
+              <p class="empty-state">No saved quotes are linked to this client yet. Pick this client in the summary on the New quote page.</p>
             {:else}
               <ul class="plain-list">
                 {#each clientQuotes as q (q.id)}

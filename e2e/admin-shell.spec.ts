@@ -285,18 +285,6 @@ test("the Guide covers requests, shop items, Spoolman, users, and shortcuts", as
   await expect(page.getByRole("table")).toContainText("Ctrl+S");
 });
 
-test("Explain this page scrolls the first note into view", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 500 });
-  await page.goto("/admin/#/quote");
-  await page.getByRole("button", { name: "Explain this page" }).click();
-  const note = page.locator(".help-note:not([hidden])").first();
-  await expect(note).toBeVisible();
-  await expect.poll(async () => note.evaluate((el) => {
-    const r = el.getBoundingClientRect();
-    return r.top >= 0 && r.bottom <= window.innerHeight;
-  })).toBe(true);
-});
-
 test("a dirty item form asks before the page unloads", async ({ page }) => {
   await page.goto("/admin/#/items");
   await page.locator("button.row-open", { hasText: "Shell Test Item" }).click();

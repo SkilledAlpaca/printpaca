@@ -22,6 +22,8 @@ import {
 } from "./state.svelte";
 import { demoLocal } from "./demoLocal.svelte";
 import { sceExampleSchedule } from "./scheduleExamples";
+import { parseWallStart } from "./engine/schedule";
+import { useNextPrintStart } from "./printStart";
 
 function config(overrides: Partial<EffectiveConfig> = {}): EffectiveConfig {
   return {
@@ -493,5 +495,63 @@ describe("schedule mode print start", () => {
     const parsed = parseFormState(old, scheduleCfg())!;
     expect(parsed.order.printStart).toMatch(/^\d{4}-\d{2}-\d{2}T22:00$/);
     expect(parsed.parts[0]!.printStart).toBe("");
+  });
+});
+
+describe("the next default print start (Use the next 22:00)", () => {
+  function cfgIn(timezone: string, clock = "22:00"): EffectiveConfig {
+    const sched = sceExampleSchedule();
+    sched.defaultStartTime = clock;
+    return {
+      ...config(),
+      timezone,
+      energy: { mode: "schedule", flatRate: 0.15, tou: { peakRate: 0.3, offPeakRate: 0.1, defaultOffPeakFrac: 0.7 }, schedule: sched },
+    } as EffectiveConfig;
+  }
+
+  it("reads the day in the shop's zone, not the browser's or UTC", () => {
+    // 05:30Z on Nov 5 is 21:30 PST on Nov 4: 22:00 is still ahead that evening.
+    expect(defaultPrintStart(cfgIn("America/Los_Angeles"), new Date("2026-11-05T05:30:00Z"))).toBe("2026-11-04T22:00");
+    // Half an hour later it has passed there, so it is tomorrow evening.
+    expect(defaultPrintStart(cfgIn("America/Los_Angeles"), new Date("2026-11-05T06:30:00Z"))).toBe("2026-11-05T22:00");
+    // East of UTC the shop's day is ahead: 20:30Z is 05:30 the next morning in Tokyo.
+    expect(defaultPrintStart(cfgIn("Asia/Tokyo"), new Date("2026-11-04T20:30:00Z"))).toBe("2026-11-05T22:00");
+  });
+
+  it("rolls over the month and year boundary", () => {
+    expect(defaultPrintStart(cfgIn("UTC"), new Date("2026-12-31T23:30:00Z"))).toBe("2027-01-01T22:00");
+    expect(defaultPrintStart(cfgIn("UTC"), new Date("2026-02-28T22:00:00Z"))).toBe("2026-03-01T22:00");
+    expect(defaultPrintStart(cfgIn("UTC", "00:00"), new Date("2026-06-30T23:59:00Z"))).toBe("2026-07-01T00:00");
+  });
+
+  it("across a spring-forward change keeps the wall clock, and a skipped time resolves to after the gap", () => {
+    // The evening before the change (Mar 7) the next 22:00 is that evening; the evening of the change is still 22:00 wall time.
+    expect(defaultPrintStart(cfgIn("America/Los_Angeles"), new Date("2026-03-08T05:00:00Z"))).toBe("2026-03-07T22:00");
+    expect(defaultPrintStart(cfgIn("America/Los_Angeles"), new Date("2026-03-08T07:00:00Z"))).toBe("2026-03-08T22:00");
+    // 02:30 doesn't exist on Mar 8 in Los Angeles: the wall value is kept and prices from 03:00 PDT (10:00Z).
+    const skipped = defaultPrintStart(cfgIn("America/Los_Angeles", "02:30"), new Date("2026-03-08T09:00:00Z"));
+    expect(skipped).toBe("2026-03-08T02:30");
+    expect(parseWallStart(skipped, "America/Los_Angeles")).toBe(Date.parse("2026-03-08T10:00:00Z"));
+  });
+
+  it("across a fall-back change takes the first pass of a repeated hour, then tomorrow", () => {
+    const cfg = cfgIn("America/Los_Angeles", "01:30");
+    expect(defaultPrintStart(cfg, new Date("2026-11-01T08:15:00Z"))).toBe("2026-11-01T01:30");
+    // 01:45 PDT, past 01:30 on the first pass.
+    expect(defaultPrintStart(cfg, new Date("2026-11-01T08:45:00Z"))).toBe("2026-11-02T01:30");
+    // 01:45 PST, the repeated hour: still past, so tomorrow.
+    expect(defaultPrintStart(cfg, new Date("2026-11-01T09:45:00Z"))).toBe("2026-11-02T01:30");
+  });
+
+  it("the action sets the start, and says so when the field already held it", () => {
+    const cfg = cfgIn("America/Los_Angeles");
+    const now = new Date("2026-11-05T05:30:00Z");
+    const edited = useNextPrintStart(cfg, "2026-07-03T16:00", false, now);
+    expect(edited).toMatchObject({ value: "2026-11-04T22:00", changed: true });
+    expect(edited.message).toBe("Print start set to 2026-11-04 22:00 (America/Los_Angeles).");
+    const same = useNextPrintStart(cfg, "2026-11-04T22:00", false, now);
+    expect(same.changed).toBe(false);
+    expect(same.message).toContain("already the next 22:00");
+    expect(useNextPrintStart(cfg, "", true, now).message).toContain("This part has its own start");
   });
 });

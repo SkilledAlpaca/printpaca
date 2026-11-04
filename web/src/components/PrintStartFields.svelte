@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { EffectiveConfig } from "../lib/engine/index";
-  import { quote, defaultPrintStart, type PartForm } from "../lib/state.svelte";
+  import { quote, type PartForm } from "../lib/state.svelte";
   import Field from "./ui/Field.svelte";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
   import { isValidTimezone, parseWallStart } from "../lib/engine/schedule";
+  import { useNextPrintStart } from "../lib/printStart";
 
   // Schedule energy mode only (QuoteTab renders this behind cfg.energy.mode === "schedule"): the order's
   // print start and an optional start for the active part. Both are wall-clock in the instance time zone and
@@ -24,9 +25,21 @@
     return "";
   });
 
+  // The field is seeded with the next default start, so a click usually changes nothing visible: the message
+  // under the button says what happened. It disappears once the start is edited.
+  let orderInput = $state<HTMLInputElement>();
+  let nextNote = $state<{ text: string; value: string } | null>(null);
+  const shownNote = $derived(nextNote && nextNote.value === quote.order.printStart ? nextNote.text : "");
+
   function useNext() {
-    quote.order.printStart = defaultPrintStart(cfg);
-    announce(`Print start set to ${quote.order.printStart.replace("T", " ")}.`);
+    const r = useNextPrintStart(cfg, quote.order.printStart, part.printStart !== "");
+    quote.order.printStart = r.value;
+    // A datetime-local input that is half typed reports "" while the state may already equal the value, so write
+    // the DOM too; otherwise the click would leave the half-typed text on screen.
+    if (orderInput && orderInput.value !== r.value) orderInput.value = r.value;
+    orderTouched = false;
+    nextNote = { text: r.message, value: r.value };
+    announce(r.message);
   }
 
   function useOrderStart() {
@@ -41,6 +54,7 @@
     <input
       id={a.id}
       type="datetime-local"
+      bind:this={orderInput}
       bind:value={quote.order.printStart}
       class:warn={orderProblem !== "" && orderTouched}
       onblur={() => (orderTouched = true)}
@@ -51,6 +65,7 @@
       Times are in your shop time zone ({zone}). Electricity is priced by the hours the print runs, so the start changes the cost.
       <button type="button" class="quiet" onclick={useNext}>Use the next {clock}</button>
     </small>
+    {#if shownNote !== ""}<small class="hint-text next-note" data-testid="print-start-note">{shownNote}</small>{/if}
     {#if warn !== ""}<small class="warn-text">{warn}</small>{/if}
   {/snippet}
 </Field>
@@ -67,4 +82,5 @@
 
 <style>
   .hint-text { color: var(--muted); font-size: var(--type-secondary); }
+  .next-note { display: block; }
 </style>

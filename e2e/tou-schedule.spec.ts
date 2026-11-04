@@ -107,6 +107,45 @@ test.describe.serial("time-of-use schedule", () => {
     await expect(page.getByText("Enter the print start.")).toBeVisible();
   });
 
+  test("Use the next 22:00 sets the order's print start, says what it did, and re-prices the breakdown", async ({ page }) => {
+    await page.goto("/admin/");
+    await navButton(page, "New quote").click();
+    await openBreakdown(page);
+    await fillCanonicalQuote(page);
+    const order = page.getByLabel("Print start (order)");
+    const use = page.getByRole("button", { name: /^Use the next 22:00/ });
+    const note = page.getByTestId("print-start-note");
+
+    // The field starts at the next 22:00, so the first click changes nothing on screen. It has to say so.
+    const seeded = await order.inputValue();
+    expect(seeded).toMatch(/T22:00$/);
+    await use.click();
+    await expect(order).toHaveValue(seeded);
+    await expect(note).toContainText("already the next 22:00");
+
+    // After an edit it restores the seeded value, the note names the zone, the breakdown re-prices, and editing hides the note.
+    await order.fill("2026-07-03T16:00");
+    await expect(note).toHaveCount(0);
+    const onPeak = await (await electricityRow(page)).innerText();
+    await use.click();
+    await expect(order).toHaveValue(seeded);
+    await expect(note).toContainText(`Print start set to ${seeded.replace("T", " ")} (UTC)`);
+    await expect(async () => expect(await (await electricityRow(page)).innerText()).not.toBe(onPeak)).toPass();
+    await order.fill("2026-07-03T16:00");
+    await expect(note).toHaveCount(0);
+
+    // A half-typed field (the browser reports "") is replaced too.
+    await order.focus();
+    await page.keyboard.press("Backspace");
+    await use.click();
+    await expect(order).toHaveValue(seeded);
+
+    // A part with its own start keeps pricing from it, and the note says so.
+    await page.getByLabel("Print start (this part)").fill("2026-07-03T10:00");
+    await use.click();
+    await expect(note).toContainText("This part has its own start");
+  });
+
   for (const scheme of ["light", "dark"] as const) {
     for (const vp of [
       { name: "desktop", width: 1280, height: 900 },
@@ -166,4 +205,102 @@ test.describe.serial("time-of-use schedule", () => {
     await expect(page.getByText("Settings saved.")).toBeVisible();
     expect((await compute()).amount).toBe(374);
   });
+
+  test("Same schedule all year: asks before overwriting, shares the windows, keeps the rates, and saves the flag", async ({ page, request }) => {
+    await page.goto("/admin/");
+    await navButton(page, "Electricity").click();
+    await page.getByRole("button", { name: "Load SCE TOU-D-4-9PM example" }).click();
+    await page.getByRole("button", { name: "Yes, replace with example" }).click();
+    const sameSwitch = page.getByRole("checkbox", { name: "Same schedule all year" });
+    await expect(sameSwitch).not.toBeChecked();
+    // The example's seasons have different windows (Winter has a second weekday window), so turning it on asks first.
+    await sameSwitch.click();
+    await expect(page.getByText("Use Summer's windows for every season?")).toBeVisible();
+    await expect(sameSwitch).not.toBeChecked();
+    await page.keyboard.press("Escape");
+    await expect(sameSwitch).toBeFocused();
+    await expect(page.getByLabel("Season 2 Weekday window 2 name")).toHaveValue("Mid-peak");
+    await expect(page.getByRole("region", { name: "Windows for every season" })).toHaveCount(0);
+
+    await sameSwitch.click();
+    await page.getByRole("button", { name: "Yes, use Summer's windows" }).click();
+    await expect(sameSwitch).toBeChecked();
+    await expect(sameSwitch).toBeFocused();
+    const shared = page.getByRole("region", { name: "Windows for every season" });
+    await expect(shared.getByLabel("Weekday window 1 name")).toHaveValue("On-peak");
+    // Winter now has Summer's single weekday window, and kept its own rate for window 1 (0.28) and base rate (0.34).
+    await expect(page.getByLabel("Season 2 Weekday window 1 rate")).toHaveValue("0.28");
+    await expect(page.getByLabel("Season 2 Weekday base rate")).toHaveValue("0.34");
+    await expect(page.getByLabel("Season 2 Weekday window 2 rate")).toHaveCount(0);
+    // Per-season window names and times are no longer editable.
+    await expect(page.getByLabel("Season 2 Weekday window 1 name")).toHaveCount(0);
+
+    // Edit a shared time: every season gets it. Window times are real time inputs on a 15-minute step.
+    const start = shared.getByLabel("Weekday window 1 start");
+    await expect(start).toHaveAttribute("type", "time");
+    await expect(start).toHaveAttribute("step", "900");
+    await start.fill("17:00");
+    await shared.getByLabel("Weekday window 1 end").fill("22:00");
+    await page.getByLabel("Season 1 Weekday window 1 rate").fill("0.56");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Settings saved.")).toBeVisible();
+
+    const cfg = (await (await request.get("/admin/api/settings")).json()).config as {
+      energy: { schedule: { sameWindowsAllYear?: boolean; seasons: { weekday: { windows: { name: string; start: string; end: string; rate: number }[] } }[] } };
+    };
+    expect(cfg.energy.schedule.sameWindowsAllYear).toBe(true);
+    expect(cfg.energy.schedule.seasons.map((s) => s.weekday.windows.map((w) => `${w.name} ${w.start}-${w.end} ${w.rate}`))).toEqual([
+      ["On-peak 17:00-22:00 0.56"],
+      ["On-peak 17:00-22:00 0.28"],
+    ]);
+
+    // It survives a reload, and turning it off keeps each season's own copy.
+    await page.reload();
+    await expect(sameSwitch).toBeChecked();
+    await sameSwitch.uncheck();
+    await expect(page.getByLabel("Season 2 Weekday window 1 name")).toHaveValue("On-peak");
+    await expect(page.getByLabel("Season 2 Weekday window 1 rate")).toHaveValue("0.28");
+  });
+
+  test("a stored end of 24:00 shows as 00:00 and stays 24:00 until edited; the server rejects a flagged schedule whose windows differ", async ({ page, request }) => {
+    await page.goto("/admin/");
+    await navButton(page, "Electricity").click();
+    await page.getByRole("button", { name: "Load SCE TOU-D-4-9PM example" }).click();
+    await page.getByRole("button", { name: "Yes, replace with example" }).click();
+    await page.getByLabel("Season 1 Weekday window 1 start").fill("22:00");
+    await page.getByLabel("Season 1 Weekday window 1 end").fill("00:00");
+    await expect(page.getByRole("list", { name: "Schedule problems" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Settings saved.")).toBeVisible();
+    const get = async () => (await (await request.get("/admin/api/settings")).json()).config;
+    const cfg = await get();
+    expect(cfg.energy.schedule.seasons[0].weekday.windows[0]).toMatchObject({ start: "22:00", end: "24:00" });
+    await page.reload();
+    await expect(page.getByLabel("Season 1 Weekday window 1 end")).toHaveValue("00:00");
+
+    const bad = JSON.parse(JSON.stringify(cfg));
+    bad.energy.schedule.sameWindowsAllYear = true;
+    const res = await request.put("/admin/api/settings", { data: { config: bad } });
+    expect(res.status()).toBe(422);
+    expect(await res.text()).toContain("sameWindowsAllYear");
+    bad.energy.schedule.sameWindowsAllYear = false;
+    expect((await request.put("/admin/api/settings", { data: { config: bad } })).ok()).toBeTruthy();
+  });
+
+  for (const scheme of ["light", "dark"] as const) {
+    test(`axe: Same schedule all year has no WCAG 2.2 AA violations (${scheme})`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      test.setTimeout(120_000);
+      await page.goto("/admin/#/electricity");
+      await page.getByRole("button", { name: "Load SCE TOU-D-4-9PM example" }).click();
+      await page.getByRole("button", { name: "Yes, replace with example" }).click();
+      await page.getByRole("checkbox", { name: "Same schedule all year" }).click();
+      await page.getByRole("button", { name: "Yes, use Summer's windows" }).click();
+      await expect(page.getByRole("region", { name: "Windows for every season" })).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      await page.evaluate(() => document.fonts.ready);
+      const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+      expect(results.violations.map((v) => `${v.id} (${v.impact}) e.g. ${v.nodes[0]?.target.join(" ")}`)).toEqual([]);
+    });
+  }
 });

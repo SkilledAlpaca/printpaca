@@ -132,15 +132,15 @@ test("the admin brand shows the business name and logo, links home, and updates 
   // No reload: the brand, the title, and the logo fallback (the URL 404s) all follow the saved settings.
   const brand = sidebar.getByRole("link", { name: "Alpaca Prints home" });
   await expect(brand).toBeVisible();
-  await expect(brand).toHaveAttribute("href", "#/quote");
+  await expect(brand).toHaveAttribute("href", "#/dashboard");
   await expect(page).toHaveTitle("Settings · Alpaca Prints");
   await expect.poll(() => brand.locator("img.logo").getAttribute("src")).not.toContain("no-such-logo");
 
-  // Activating it selects the first nav tab and focuses that view's h1.
+  // Activating it opens the Dashboard (D22) and focuses that view's h1.
   await brand.click();
-  await expect(page).toHaveURL(/#\/quote$/);
-  await expect(page.getByRole("heading", { level: 1, name: "New quote" })).toBeFocused();
-  await expect(page).toHaveTitle("New quote · Alpaca Prints");
+  await expect(page).toHaveURL(/#\/dashboard$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeFocused();
+  await expect(page).toHaveTitle("Dashboard · Alpaca Prints");
 
   // Mobile: the header copy of the link closes nothing when the drawer is shut, and the drawer copy closes it.
   await page.setViewportSize({ width: 390, height: 844 });
@@ -148,7 +148,7 @@ test("the admin brand shows the business name and logo, links home, and updates 
   await page.getByRole("button", { name: /open menu/i }).click();
   await page.getByRole("complementary").getByRole("link", { name: "Alpaca Prints home" }).click();
   await expect(page.getByRole("button", { name: /open menu/i })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 1, name: "New quote" })).toBeFocused();
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeFocused();
 
   // Restore the defaults for the specs that follow.
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -158,4 +158,35 @@ test("the admin brand shows the business name and logo, links home, and updates 
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Settings saved.")).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "printpaca home" })).toBeVisible();
+});
+
+test("the Sell group lists New quote, Dashboard, Quotes, Requests, Invoices, Shop items, Clients in that order", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/admin/");
+  const names = await page.getByRole("navigation", { name: "Sections" }).getByRole("group", { name: "Sell" }).getByRole("button").evaluateAll(
+    (els) => els.map((el) => (el.querySelector(".label")?.textContent ?? "").trim()),
+  );
+  expect(names).toEqual(["New quote", "Dashboard", "Quotes", "Requests", "Invoices", "Shop items", "Clients"]);
+});
+
+test("at 1366x768 every nav item can be reached, and the footer controls stay inside the sidebar", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto("/admin/#/dashboard");
+  const nav = page.getByRole("navigation", { name: "Sections" });
+  const labels = ["New quote", "Dashboard", "Quotes", "Requests", "Invoices", "Shop items", "Clients", "Filament", "Electricity", "Printers", "Settings"];
+  for (const name of labels) {
+    const item = nav.getByRole("button", { name, exact: true });
+    await item.scrollIntoViewIfNeeded();
+    const hit = await item.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return el === top || el.contains(top);
+    });
+    expect(hit, `${name} is clickable`).toBe(true);
+  }
+  const aside = (await page.getByRole("complementary").boundingBox())!;
+  for (const name of ["Guide", "Compact density", "Collapse sidebar"]) {
+    const b = (await page.getByRole("complementary").getByRole("button", { name }).boundingBox())!;
+    expect(b.y + b.height, `${name} bottom edge`).toBeLessThanOrEqual(aside.y + aside.height + 0.5);
+  }
 });

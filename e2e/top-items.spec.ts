@@ -38,7 +38,7 @@ test("a finalized gallery order is listed in Top items and survives deleting the
   await page.getByRole("button", { name: "Yes, finalize this request" }).click();
   await expect(page.getByRole("button", { name: "Finalize", exact: true })).toHaveCount(0);
 
-  const topItemsRow = () => page.locator(".top-items tbody tr", { hasText: ITEM_NAME });
+  const topItemsRow = () => page.getByRole("region", { name: "Top items table" }).locator("tbody tr", { hasText: ITEM_NAME });
   const openDashboard = async () => {
     await navButton(page, "Dashboard").click();
     await expect(page.getByRole("heading", { name: "Top items" })).toBeVisible();
@@ -107,7 +107,7 @@ test("a counter sale on a sent invoice is counted and takes stock; canceling res
     await expect(page.getByText("sent", { exact: true })).toBeVisible();
     expect(await stockQty()).toBe(3);
 
-    const row = () => page.locator(".top-items tbody tr", { hasText: COUNTER_ITEM });
+    const row = () => page.getByRole("region", { name: "Top items table" }).locator("tbody tr", { hasText: COUNTER_ITEM });
     const openDashboard = async () => {
       await navButton(page, "Dashboard").click();
       await expect(page.getByRole("heading", { name: "Top items" })).toBeVisible();

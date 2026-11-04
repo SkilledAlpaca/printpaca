@@ -6,6 +6,7 @@
     fetchTopItems,
     optionsLine,
     attentionGroups,
+    attentionTiles,
     attentionListHash,
     sourceSplit,
     TOP_ITEMS_WINDOWS,
@@ -16,10 +17,14 @@
     type TopItemsWindow,
   } from "../lib/dashboardApi";
   import { money, formatDate } from "../lib/format";
-  import { pendingOpen } from "../lib/state.svelte";
+  import { invoiceHash } from "../lib/hashRoute";
+  import { extractConfigUser, hasTabAccess } from "../lib/permissions";
   import StatusBadge from "./StatusBadge.svelte";
   import { announce } from "../lib/a11y.svelte";
   import ScrollRegion from "./ScrollRegion.svelte";
+  import PageHeader from "./ui/PageHeader.svelte";
+  import Card from "./ui/Card.svelte";
+  import StatTile from "./ui/StatTile.svelte";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 
@@ -89,21 +94,13 @@
     })();
   });
 
-  function openInvoice(id: string) {
-    // Same cross-tab open mechanism as InvoicesTab's "Convert to invoice" (see pendingOpen in
-    // state.svelte.ts); InvoicesTab reads and clears it on mount.
-    pendingOpen.current = { tab: "invoices", id };
-    location.hash = "#/invoices";
-  }
-
-  // "Needs attention" rows link to the thing itself through the same cross-tab open as openInvoice.
-  function openRequest(id: string) {
-    pendingOpen.current = { tab: "requests", id };
-    location.hash = "#/requests";
-  }
-  function openQuote(id: string) {
-    pendingOpen.current = { tab: "quote", id };
-    location.hash = "#/quote";
+  // Every row is a real link to the record, at the same hash the list tabs use for their own rows: the router
+  // hands the id to the tab it mounts (App.svelte's routePendingOpen), so back/forward and "open in a new tab"
+  // work like any other link.
+  function recordHash(item: { kind: AttentionKind; id: string }): string {
+    if (item.kind === "new-request" || item.kind === "print-time-request") return `#/requests#${item.id}`;
+    if (item.kind === "sent-quote") return `#/quote/${encodeURIComponent(item.id)}`;
+    return invoiceHash(item.id);
   }
   const ATTENTION_LABELS: Record<AttentionKind, string> = {
     "new-request": "New request",
@@ -126,16 +123,36 @@
         return `Sent ${formatDate(item.date)}${item.amountCents > 0 ? ` · ${money(item.amountCents, cfg)}` : ""}`;
     }
   }
-  function openAttention(item: AttentionItem) {
-    if (item.kind === "new-request" || item.kind === "print-time-request") openRequest(item.id);
-    else if (item.kind === "sent-quote") openQuote(item.id);
-    else openInvoice(item.id);
+  // The five action tiles, in the order D25 names them. `tab` is the page the tile's records live on: a tile
+  // for a page this user can't open (or that Settings turned off) isn't shown, and the server leaves those
+  // rows out of the response anyway.
+  const configUser = $derived(extractConfigUser(cfg));
+  const tiles = $derived(
+    dashboard
+      ? attentionTiles(dashboard.attentionCounts, (tab) => !cfg.ui.disabledTabs.includes(tab) && hasTabAccess(tab, configUser))
+      : [],
+  );
+  const totalAttention = $derived(tiles.reduce((sum, t) => sum + t.value, 0));
+
+  // null is "All", the default. Clicking the pressed tile goes back to All.
+  let selectedKind = $state<AttentionKind | null>(null);
+  function selectKind(kind: AttentionKind | null) {
+    selectedKind = kind === selectedKind ? null : kind;
+    if (!dashboard) return;
+    const tile = tiles.find((t) => t.kind === selectedKind);
+    announce(
+      tile ? `Showing ${tile.label.toLowerCase()}: ${tile.value}.` : `Showing everything that needs attention: ${totalAttention}.`,
+      "polite",
+    );
   }
-  // Items grouped in display order (the server already sorts them), each with a "View all N" link when the
-  // list is cut short.
+
+  // Rows grouped in display order (the server already sorts them), each group with a "View all N" link when
+  // the list is cut short. A selected tile narrows this to its own kind.
   const attentionGrouped = $derived.by(() => {
     if (!dashboard) return [];
+    const visible = new Set(tiles.map((t) => t.kind));
     return attentionGroups(dashboard.attentionCounts)
+      .filter((g) => visible.has(g.kind) && (selectedKind === null || g.kind === selectedKind))
       .map((g) => ({ ...g, items: dashboard!.needsAttention.filter((i) => i.kind === g.kind) }))
       .filter((g) => g.items.length > 0);
   });
@@ -215,7 +232,7 @@
 </script>
 
 <div class="page">
-  <h1>Dashboard</h1>
+  <PageHeader title="Dashboard" />
 
   {#if loading}
     <p role="status">Loading…</p>
@@ -225,20 +242,31 @@
     {/if}
 
     {#if dashboard}
-    <section class="card attention" aria-labelledby="attention-heading">
-      <h2 id="attention-heading">Needs attention</h2>
-      {#if dashboard.needsAttention.length === 0}
-        <p class="empty-state">Nothing needs your attention. New requests, overdue invoices, and draft invoices show up here.</p>
+    <div class="tiles" role="group" aria-label="Filter the to-do list">
+      {#each tiles as t (t.kind)}
+        <StatTile label={t.label} value={t.value} pressed={selectedKind === t.kind} onclick={() => selectKind(t.kind)} />
+      {/each}
+    </div>
+
+    <Card as="section" aria-labelledby="attention-heading">
+      <div class="todo-head">
+        <h2 id="attention-heading">Needs attention</h2>
+        <div class="chips">
+          <button type="button" class:active={selectedKind === null} aria-pressed={selectedKind === null} onclick={() => selectKind(null)}>All ({totalAttention})</button>
+        </div>
+      </div>
+      {#if attentionGrouped.length === 0}
+        <p class="empty-state">Nothing needs attention.</p>
       {:else}
         <ul class="plain-list">
           {#each attentionGrouped as g (g.kind)}
             {#each g.items as item (`${item.kind}-${item.id}`)}
               <li>
-                <button type="button" class="row-link attention-row" onclick={() => openAttention(item)}>
+                <a class="row-link attention-row" href={recordHash(item)}>
                   <span class="attention-kind" class:overdue={item.kind === "overdue-invoice"}>{ATTENTION_LABELS[item.kind]}</span>
                   <span class="attention-name">{item.name}</span>
                   <span class="attention-detail">{attentionDetail(item)}</span>
-                </button>
+                </a>
               </li>
             {/each}
             {#if g.count > g.items.length}
@@ -247,40 +275,32 @@
           {/each}
         </ul>
       {/if}
+    </Card>
+
+    <section class="month" aria-labelledby="month-heading">
+      <h2 id="month-heading">This month</h2>
+      <div class="tiles">
+        <StatTile label="Revenue" value={money(dashboard.revenueMonthCents, cfg)} period="This month" href="#/invoices" />
+        <StatTile label="Outstanding" value={money(dashboard.outstandingCents, cfg)} period="Unpaid invoices" href="#/invoices" />
+        <StatTile
+          label="Average margin"
+          value={dashboard.quotesAvgMarginPctMonth !== null ? `${dashboard.quotesAvgMarginPctMonth.toFixed(0)}%` : "-"}
+          period="This month"
+          caption="Quotes invoiced"
+          href="#/quotes"
+        />
+        <StatTile
+          label="Quotes saved"
+          value={dashboard.quotesSavedThisMonth}
+          period="This month"
+          caption={dashboard.quotesInvoicedSharePct !== null ? `${dashboard.quotesInvoicedSharePct.toFixed(0)}% invoiced` : undefined}
+          href="#/quotes"
+        />
+      </div>
     </section>
 
-    <div class="tiles">
-      <a class="card tile tile-link" href="#/invoices">
-        <span class="section-label tile-label">Revenue this month</span>
-        <span class="tile-value">{money(dashboard.revenueMonthCents, cfg)}</span>
-      </a>
-      <a class="card tile tile-link" href="#/invoices">
-        <span class="section-label tile-label">Revenue this year</span>
-        <span class="tile-value">{money(dashboard.revenueYearCents, cfg)}</span>
-      </a>
-      <a class="card tile tile-link" href="#/invoices">
-        <span class="section-label tile-label">Outstanding</span>
-        <span class="tile-value">{money(dashboard.outstandingCents, cfg)}</span>
-      </a>
-      <a class="card tile tile-link" href="#/invoices">
-        <span class="section-label tile-label">Overdue invoices</span>
-        <span class="tile-value">{dashboard.overdueCount}</span>
-      </a>
-      <a class="card tile tile-link" href="#/quotes">
-        <span class="section-label tile-label">Quotes this month</span>
-        <span class="tile-value">{dashboard.quotesSavedThisMonth}</span>
-        {#if dashboard.quotesInvoicedSharePct !== null}
-          <span class="tile-caption">{dashboard.quotesInvoicedSharePct.toFixed(0)}% invoiced</span>
-        {/if}
-      </a>
-      <a class="card tile tile-link" href="#/quotes">
-        <span class="section-label tile-label">Average margin (invoiced)</span>
-        <span class="tile-value">{dashboard.quotesAvgMarginPct !== null ? `${dashboard.quotesAvgMarginPct.toFixed(0)}%` : "-"}</span>
-      </a>
-    </div>
-
     <div class="cards">
-      <div class="card chart-card">
+      <Card>
         <h2>Revenue by month</h2>
         {#if hasRevenue}
           <svg
@@ -335,9 +355,13 @@
         {:else}
           <p class="empty-state">No revenue yet. Convert a quote to an invoice and record a payment to see revenue here.</p>
         {/if}
-      </div>
+        <p class="year-total">Revenue this year: <a href="#/invoices">{money(dashboard.revenueYearCents, cfg)}</a></p>
+        {#if dashboard.quotesAvgMarginPct !== null}
+          <p class="year-total">Average margin, all invoiced quotes: {dashboard.quotesAvgMarginPct.toFixed(0)}%</p>
+        {/if}
+      </Card>
 
-      <div class="card">
+      <Card>
         <h2>Recent invoices</h2>
         {#if dashboard.recentInvoices.length === 0}
           <p class="empty-state">No invoices yet. Convert a saved quote on the Quotes page, or create one on the Invoices page.</p>
@@ -345,21 +369,21 @@
           <ul class="plain-list">
             {#each dashboard.recentInvoices as inv (inv.id)}
               <li>
-                <button type="button" class="row-link inv-row" onclick={() => openInvoice(inv.id)}>
+                <a class="row-link inv-row" href={invoiceHash(inv.id)}>
                   <span class="inv-number">{inv.number}</span>
                   <span class="inv-total">{money(inv.totalCents, cfg)}</span>
                   <span class="inv-client">{inv.clientName}</span>
                   <span class="inv-status"><StatusBadge status={inv.status} dueDate={inv.dueDate} /></span>
-                </button>
+                </a>
               </li>
             {/each}
           </ul>
         {/if}
-      </div>
+      </Card>
     </div>
     {/if}
 
-    <div class="card top-items">
+    <Card>
       <div class="top-items-head">
         <h2>Top items</h2>
         <div class="chips" role="group" aria-label="Top items window">
@@ -428,48 +452,36 @@
           </ScrollRegion>
         {/if}
       {/if}
-    </div>
+    </Card>
   {/if}
 </div>
 
 <style>
-  /* Same auto-fit-with-a-floor pattern as theme.css's wide field-rows; the max() floor caps it at 4
-   * columns. Above 900px (the app's one desktop breakpoint) a fixed 3-column layout wraps the six tiles 3+3
-   * instead of a ragged 4+2. */
+  /* Tile rows: as many columns as fit at the small-field width, sharing the row evenly. */
   .tiles {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(max(12rem, calc(25% - 0.6rem)), 1fr));
-    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(var(--field-s), 1fr));
+    gap: var(--gap);
   }
-  @media (min-width: 900px) {
-    .tiles { grid-template-columns: repeat(3, 1fr); }
-  }
-  .tile { display: flex; flex-direction: column; gap: 0.3rem; }
+  .month h2, .todo-head h2 { margin: 0; }
+  .month .tiles { margin-top: var(--space-3); }
+  .todo-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); margin-bottom: var(--space-2); }
+  .attention-more { padding: var(--space-1) var(--space-3) var(--space-2); font-size: var(--text-sm); }
 
-  /* The chart and recent-invoices cards use the same 4-column cap with a taller floor. At >= 900px they sit
-   * side by side, the chart spanning two columns. */
+  /* The chart and recent-invoices cards sit side by side from 900px (the app's one desktop breakpoint), the chart
+   * taking the wider share; below that they stack. */
   .cards {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, max(20rem, calc(25% - 0.6rem))), 1fr));
-    gap: 1rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--gap);
     /* Each card ends where its content ends; stretched, the shorter card (usually the chart, whose SVG
      * can't use extra height) gained empty space below the axis labels. */
     align-items: start;
   }
-  /* A fixed 3:2 split at desktop widths: auto-fit's third column left the invoices card ~380px, so the
-   * client name got ~70px and truncated to a letter or two. 3:2 still favors the chart while leaving the
-   * list room. */
   @media (min-width: 900px) {
     .cards { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
   }
-  /* Font, color and spacing come from the shared .section-label utility; this adds only tile-specific
-   * vertical placement. */
-  .tile-label { line-height: 1.2; }
-  .tile-link { color: inherit; text-decoration: none; }
-  .tile-link:hover { border-color: var(--accent, currentColor); }
-  .attention-more { padding: 0.25rem 0.6rem 0.5rem; font-size: var(--text-sm); }
-  .tile-value { font-size: var(--text-xl); font-weight: 700; font-variant-numeric: tabular-nums; }
-  .tile-caption { color: var(--muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+  .year-total { margin: var(--space-3) 0 0; color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
 
   .revenue-chart { width: 100%; height: auto; display: block; }
   .baseline { stroke: var(--border); stroke-width: 1; }
@@ -499,8 +511,7 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .top-items { margin-top: 1rem; }
-  .top-items-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; }
+  .top-items-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); }
   .top-items-head h2 { margin: 0; }
   .top-items-summary { color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; margin: var(--space-2) 0 0; }
   .muted-note { color: var(--muted); font-size: var(--text-sm); }
@@ -519,23 +530,19 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    gap: 0.15rem 0.75rem;
-    background: none;
-    border: none;
-    padding: 0.5rem 0;
-    text-align: left;
-    min-height: 32px;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2) 0;
+    color: inherit;
+    text-decoration: none;
+    min-height: var(--control-h);
   }
   .row-link:hover { background: var(--surface-2); }
-  .card { min-width: 0; }
   .inv-number { font-weight: 600; white-space: nowrap; }
   .inv-total { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; font-weight: 600; }
   /* Wraps instead of truncating (WCAG 1.4.12 text spacing, 1.4.10 reflow): the name keeps a readable floor. */
   .inv-client { min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: var(--text-sm); }
   .inv-status { text-align: right; }
 
-  .attention { margin-bottom: 1rem; }
-  .attention h2 { margin-top: 0; }
   .attention-row { grid-template-columns: 10rem minmax(0, 1fr); }
   .attention-kind { font-size: var(--text-sm); font-weight: 600; }
   .attention-kind.overdue { color: var(--danger); }

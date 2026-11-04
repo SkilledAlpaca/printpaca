@@ -5,7 +5,6 @@
   import { testIntegration } from "../../lib/sendApi";
   import { appConfig } from "../../lib/state.svelte";
   import { announce, focusAfterUpdate } from "../../lib/a11y.svelte";
-  import { cardClass } from "../../lib/settings";
   import Card from "../ui/Card.svelte";
   import Field from "../ui/Field.svelte";
   import FormGrid from "../ui/FormGrid.svelte";
@@ -166,7 +165,7 @@
   }
 </script>
 
-<Card id="section-integrationsUrls" class={cardClass(hasError("integrationsUrls"))} heading="Integrations">
+<Card id="section-integrationsUrls" tone={hasError("integrationsUrls") ? "danger" : "default"} heading="Integrations">
   <p class="hint">
     Spoolman, Moonraker, and Fluidd URLs. Saved changes apply right away, with no restart. An environment variable
     on the container always overrides the value here.

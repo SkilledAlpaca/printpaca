@@ -3,7 +3,7 @@
   import { MediaQuery } from "svelte/reactivity";
   import { DEFAULT_FETCH_TIMEOUT_MS } from "../../lib/fetchTimeouts";
   import { characterCountText } from "../../lib/countText";
-  import { cardClass, type ServerConfig } from "../../lib/settings";
+  import type { ServerConfig } from "../../lib/settings";
   import { settingsWarnings, PUBLIC_INTRO_TEXT_MAX_BYTES } from "../../lib/settingsRules";
   import { warnFor } from "../../lib/format";
   import { checkAccentColor, isAccentHex, ACCENT_DARK_BACKGROUNDS, ACCENT_LIGHT_BACKGROUNDS, type AccentScheme } from "../../lib/accent";
@@ -196,7 +196,7 @@
   </div>
 {/snippet}
 
-<Card id="section-storefront" class={cardClass(invalid)}>
+<Card id="section-storefront" tone={invalid ? "danger" : "default"}>
   <div class="card-head">
     <h2>Storefront</h2>
     {#if shopUrl}

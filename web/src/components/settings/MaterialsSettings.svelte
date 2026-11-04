@@ -1,6 +1,6 @@
 <script lang="ts">
   import { FALLBACK_DENSITY } from "../../lib/filamentDefaults";
-  import { cardClass, nextKey, type ServerConfig } from "../../lib/settings";
+  import { nextKey, type ServerConfig } from "../../lib/settings";
   import { settingsWarnings } from "../../lib/settingsRules";
   import { warnFor } from "../../lib/format";
   import { rowProblems, warnId } from "../../lib/rowIssues";
@@ -52,7 +52,7 @@
   const num = (v: number | null | undefined, digits: number) => (typeof v === "number" && Number.isFinite(v) ? v.toFixed(digits) : "-");
 </script>
 
-<Card id="section-materials" class={cardClass(hasError("materials"))} heading="Materials">
+<Card id="section-materials" tone={hasError("materials") ? "danger" : "default"} heading="Materials">
   <p class="hint">This list replaces the built-in one entirely. At least one material is required. Materials
     checked "Public" are offered on the public estimate page. Press Edit on a row to change it.</p>
   <label class="toggle">

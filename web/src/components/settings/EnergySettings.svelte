@@ -8,7 +8,7 @@
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 </script>
 
-<Card id="section-energy" class={`card${hasError("energy") ? " danger-border" : ""}`}>
+<Card id="section-energy" tone={hasError("energy") ? "danger" : "default"}>
 <div class="stack">
 <h2>Saved energy settings</h2>
   <p class="hint">Applies to every quote and is saved to the server. Choose one flat rate, a simple peak/off-peak split, or a full time-of-use schedule with seasons and windows.</p>

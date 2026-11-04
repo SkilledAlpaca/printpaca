@@ -3,7 +3,6 @@
   import type { ServerConfig } from "../../lib/settings";
   import { settingsWarnings, CUSTOM_CSS_MAX_BYTES } from "../../lib/settingsRules";
   import { warnFor } from "../../lib/format";
-  import { cardClass } from "../../lib/settings";
   import Card from "../ui/Card.svelte";
   import Field from "../ui/Field.svelte";
 
@@ -12,7 +11,7 @@
   const warnings = $derived(settingsWarnings(form));
 </script>
 
-<Card id="section-custom-css" class={cardClass(hasError("customCss"))} heading="Custom CSS">
+<Card id="section-custom-css" tone={hasError("customCss") ? "danger" : "default"} heading="Custom CSS">
   <p class="hint">
     Loads after the app's own styles on your public estimate page (on screen) and on printed quotes and invoices
     (print only, never the on-screen admin UI). Target <code>#print-view.invoice</code>,

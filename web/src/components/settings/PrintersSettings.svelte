@@ -28,7 +28,7 @@
   }
 </script>
 
-<Card id="section-printers" class={`card${hasError("printers") ? " danger-border" : ""}`}>
+<Card id="section-printers" tone={hasError("printers") ? "danger" : "default"}>
 <div class="stack">
 <h2>Printer list</h2>
   <p class="hint">This list replaces the built-in one entirely. At least one printer is required.</p>

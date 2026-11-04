@@ -30,7 +30,7 @@
   }
 </script>
 
-<Card id="section-hardware" class={`card${hasError("hardware") ? " danger-border" : ""}`}>
+<Card id="section-hardware" tone={hasError("hardware") ? "danger" : "default"}>
 <div class="stack">
 <h2>Hardware</h2>
   <p class="hint">Add-on parts (such as magnets, earring findings, and inserts) you can attach to a quote as an

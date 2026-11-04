@@ -462,9 +462,6 @@ input.warn, textarea.warn { border-color: var(--danger); }
 @media (max-width: 600px) {
   .card { padding: var(--space-4); }
 }
-/* A left border is the severity marker, not a full red card, since the danger classification here is "this
- * section has a destructive action in it," not "this section is itself an error." */
-.card.danger-border { border-left: 3px solid var(--danger); }
 /* Roomier padding for wide settings-page cards: the base .card padding (tuned for compact tiles/rows) reads
  * cramped once a card is a full-width settings section with several field rows. */
 .card.roomy { padding: clamp(var(--space-5), 1.4vw, var(--space-8)); }

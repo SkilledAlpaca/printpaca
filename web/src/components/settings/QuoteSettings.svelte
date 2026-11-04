@@ -5,7 +5,6 @@
   import { warnFor } from "../../lib/format";
   import { describeLogoDataUrl, logoToDataUrl, LOGO_ACCEPT } from "../../lib/logoUpload";
   import { announce } from "../../lib/a11y.svelte";
-  import { cardClass } from "../../lib/settings";
   import Card from "../ui/Card.svelte";
   import Field from "../ui/Field.svelte";
   import Fieldset from "../ui/Fieldset.svelte";
@@ -66,7 +65,7 @@
   });
 </script>
 
-<Card id="section-quote" class={cardClass(hasError("quote"))} heading="Business identity">
+<Card id="section-quote" tone={hasError("quote") ? "danger" : "default"} heading="Business identity">
   <p class="hint">Shown on printed quotes and invoices, in the admin header, and on the customer shop.</p>
   <div class="sections">
     <FormGrid align="controls">

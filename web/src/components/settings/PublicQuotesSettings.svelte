@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { cardClass, type ServerConfig } from "../../lib/settings";
+  import type { ServerConfig } from "../../lib/settings";
   import { presetDisplayName } from "../../lib/format";
   import Card from "../ui/Card.svelte";
   import Field from "../ui/Field.svelte";
@@ -11,7 +11,7 @@
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 </script>
 
-<Card id="section-public-quotes" class={cardClass(hasError("publicQuotes"))} heading="Public estimates">
+<Card id="section-public-quotes" tone={hasError("publicQuotes") ? "danger" : "default"} heading="Public estimates">
   <p class="hint">The printer and preset that price every visitor estimate. The shop's wording, switches, and look are in <a href="#/settings">Settings</a> under Storefront.</p>
   <FormGrid align="controls">
     <Field id="public-estimate-printer" label="Printer" size="m">

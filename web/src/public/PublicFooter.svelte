@@ -5,14 +5,24 @@
   // One footer for every view of the shop (gallery, item views, estimate form, confirmations), in the same
   // place with the same content, so help and navigation are consistent (WCAG 3.2.3, 3.2.6). The shop is a
   // single page, so there is no Home or Shop link; "Staff sign-in" shows only when the server offers one.
-  let { branding, staffUrl = "" }: { branding: PublicConfig["branding"]; staffUrl?: string } = $props();
+  // footerLinks are the owner's shop.footerLinks (https only, validated server-side); they render as text.
+  let {
+    branding,
+    staffUrl = "",
+    footerLinks = [],
+  }: { branding: PublicConfig["branding"]; staffUrl?: string; footerLinks?: { label: string; url: string }[] } = $props();
 
 </script>
 
 <footer class="shop-footer">
-  {#if staffUrl}
+  {#if staffUrl || footerLinks.length > 0}
     <nav aria-label="Footer">
-      <a href={staffUrl}>Staff sign-in</a>
+      {#each footerLinks as link, i (i)}
+        {#if i > 0}&middot;{/if}
+        <a href={link.url} target="_blank" rel="noopener noreferrer">{link.label}</a>
+      {/each}
+      {#if footerLinks.length > 0 && staffUrl}&middot;{/if}
+      {#if staffUrl}<a href={staffUrl}>Staff sign-in</a>{/if}
     </nav>
   {/if}
   {#if branding.email || branding.phone}

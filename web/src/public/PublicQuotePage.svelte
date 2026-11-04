@@ -93,9 +93,11 @@
   import { parseRoute, routeHash, type Route } from "./route";
   import {
     fetchQuotePreview,
+    loadPublicCatalog,
     loadPublicConfig,
-    loadPublicItems,
+    shopOf,
     submitQuoteRequest,
+    type PublicCategory,
     type PublicConfig,
     type PublicItem,
     type QuotePreviewResult,
@@ -130,6 +132,8 @@
   // Public items load alongside config. A failed or empty items fetch is not an error: it just means no
   // gallery. Only a failed config fetch (phase "failed") is a real failure.
   let items = $state.raw<PublicItem[] | null>(null);
+  // Visible categories that have public items, for the category links. Empty from a server without categories.
+  let categories = $state.raw<PublicCategory[]>([]);
   // Restored from sessionStorage on mount: a self-contained summary of the last gallery order, independent of
   // the live `items` (reset on load). Shown on the #/order/received route; dismissed via
   // dismissItemOrderConfirmation.
@@ -152,17 +156,41 @@
     route = next;
   }
 
-  const hasGallery = $derived(items !== null && items.length > 0);
+  // Storefront settings (shop.*). The server enforces customEstimates, gallery and acceptingOrders on every
+  // submission; the page hides what it can't offer.
+  const shop = $derived(shopOf(cfg));
+  const paused = $derived(!shop.acceptingOrders);
+  const hasGallery = $derived(shop.gallery && items !== null && items.length > 0);
   const orderItem = $derived.by(() => {
     const r = route;
-    return r.name === "item" && items ? (items.find((i) => i.id === r.id) ?? null) : null;
+    return r.name === "item" && shop.gallery && items ? (items.find((i) => i.id === r.id) ?? null) : null;
+  });
+  const activeCategory = $derived.by(() => {
+    const r = route;
+    return r.name === "category" ? (categories.find((c) => c.slug === r.slug) ?? null) : null;
+  });
+  const shownItems = $derived.by(() => {
+    const c = activeCategory;
+    return c && items ? items.filter((i) => i.category?.slug === c.slug) : (items ?? []);
   });
   // "gallery" is the item grid, an item panel or the order confirmation; "quote" is the estimate form or its
-  // confirmation. A shop with no items has only the estimate form, whatever the hash says.
+  // confirmation. A shop with no items has only the estimate form, whatever the hash says. With custom
+  // estimates off the form never shows (a saved confirmation excepted); with the gallery off only the form does.
   const view = $derived.by<"gallery" | "quote">(() => {
+    if (route.name === "estimate-received" && submitted) return "quote";
+    if (!shop.customEstimates) return "gallery";
+    if (!shop.gallery) return "quote";
     if (route.name === "estimate" || route.name === "estimate-received") return "quote";
     if (route.name === "order-received" && itemOrderConfirmation) return "gallery";
-    return hasGallery ? "gallery" : "quote";
+    if (!hasGallery) return "quote";
+    // No hash at all opens on shop.defaultView; "#/" is an explicit request for the gallery.
+    if (route.name === "gallery" && location.hash === "" && shop.defaultView === "estimate") return "quote";
+    return "gallery";
+  });
+  // D13: an old #/estimate link opens the gallery with this note when custom estimates are off.
+  const estimatesOffNote = $derived.by(() => {
+    const contact = [cfg?.branding.email, cfg?.branding.phone].filter((v) => v);
+    return `Custom estimates aren't offered right now.${contact.length > 0 ? ` Contact us at ${contact.join(" or ")}.` : ""}`;
   });
 
   onMount(async () => {
@@ -173,14 +201,15 @@
       fileStoredCaveat = restoredQuote.fileStoredCaveat;
     }
 
-    const [cfgResult, itemsResult] = await Promise.all([loadPublicConfig(), loadPublicItems()]);
+    const [cfgResult, catalogResult] = await Promise.all([loadPublicConfig(), loadPublicCatalog()]);
     if (cfgResult) {
       cfg = cfgResult;
       phase = "ready";
     } else {
       phase = "failed";
     }
-    items = itemsResult;
+    items = catalogResult?.items ?? null;
+    categories = catalogResult?.categories ?? [];
   });
 
   // A route whose data is gone returns to the gallery with a note, replacing the entry so Back doesn't land on
@@ -192,6 +221,8 @@
     if (r.name === "order-received" && !itemOrderConfirmation) note = "That order confirmation is no longer available.";
     else if (r.name === "estimate-received" && !submitted) note = "That estimate confirmation is no longer available.";
     else if (r.name === "item" && items !== null && !items.some((i) => i.id === r.id)) note = "That item is no longer available.";
+    else if (r.name === "category" && shop.gallery && items !== null && !categories.some((c) => c.slug === r.slug)) note = "That category is no longer available.";
+    else if (r.name === "estimate" && !shop.customEstimates) note = estimatesOffNote;
     if (note) {
       routeNote = note;
       navigate({ name: "gallery" }, { replace: true, keepNote: true });
@@ -981,12 +1012,17 @@
         Demo mode: this walks through the real customer flow, but your request isn't submitted.
       </p>
     {/if}
+    <!-- Storefront settings, plain text only. TEMPORARY minimal markup: the styled storefront (v1.2 phase 2)
+         replaces the announcement, hero and heading blocks. -->
+    {#if shop.announcement}<p class="banner-muted shop-announcement" role="note">{shop.announcement}</p>{/if}
+    {#if shop.heroImage}<img class="shop-hero" src={shop.heroImage.url} alt={shop.heroImage.alt} />{/if}
+    {#if shop.heading}<h2 class="shop-heading">{shop.heading}</h2>{/if}
     <!-- The shop's own intro when it wrote one; otherwise a default that says what this page is. -->
     <p class="intro">{introText}</p>
     <!-- Persistent status region (text swapped in) for "That item is no longer available." and similar. -->
     <p class="banner-muted route-note" role="status">{routeNote}</p>
 
-    {#if items && items.length > 0 && cfg.materials.length > 0}
+    {#if hasGallery && shop.customEstimates && cfg.materials.length > 0}
       <div class="view-toggle" role="group" aria-label="View">
         <button
           type="button"
@@ -1022,6 +1058,17 @@
             <button type="button" class="primary" onclick={dismissItemOrderConfirmation}>Order another item</button>
           </div>
         </div>
+      {:else if orderItem && paused}
+        <!-- Vacation mode: the item stays visible but the order form is replaced by the owner's message. -->
+        <div class="panel">
+          <button type="button" class="quiet back" onclick={closeItem}>&larr; Back to gallery</button>
+          <div class="card">
+            <h2 class="view-heading" tabindex="-1" id="paused-item-heading">{orderItem.name}</h2>
+            {#if orderItem.description}<p>{orderItem.description}</p>{/if}
+            <p class="price">{formatMoney(orderItem.priceCents, cfg.currency)}</p>
+            <p class="paused-message" role="status">{shop.pausedMessage}</p>
+          </div>
+        </div>
       {:else if orderItem}
         {#key orderItem.id}
           <div class="panel">
@@ -1041,12 +1088,22 @@
           </div>
         {/key}
       {:else}
-        <h2 id="gallery-heading" tabindex="-1" class="view-heading">Items</h2>
+        <h2 id="gallery-heading" tabindex="-1" class="view-heading">{activeCategory ? activeCategory.name : "Items"}</h2>
+        {#if paused}<p class="paused-message" role="status">{shop.pausedMessage}</p>{/if}
+        {#if categories.length > 0}
+          <!-- TEMPORARY plain links; the category chips (D17) come with the styled storefront. -->
+          <nav class="category-links" aria-label="Categories">
+            <a href="#/" aria-current={activeCategory ? undefined : "page"}>All</a>
+            {#each categories as c (c.slug)}
+              <a href={routeHash({ name: "category", slug: c.slug })} aria-current={activeCategory?.slug === c.slug ? "page" : undefined}>{c.name}</a>
+            {/each}
+          </nav>
+        {/if}
         <ItemGallery
-          items={items ?? []}
+          items={shownItems}
           currency={cfg.currency}
           onselect={openItem}
-          oncustomestimate={cfg.materials.length > 0 ? () => navigate({ name: "estimate" }) : undefined}
+          oncustomestimate={cfg.materials.length > 0 && shop.customEstimates ? () => navigate({ name: "estimate" }) : undefined}
         />
       {/if}
     {:else if cfg.materials.length === 0}
@@ -1366,7 +1423,7 @@
               <p class="muted">Choose a material and add a weight and print time to see a price.</p>
             {/if}
           </div>
-          <p class="muted shipping-note">Shipping, if any, is confirmed by email.</p>
+          <p class="muted shipping-note">{shop.shippingNote || "Shipping, if any, is confirmed by email."}</p>
         </div>
 
         <!-- Persistent alert container (text swapped in), with a plain list inside: role="alert" on a <ul>
@@ -1383,14 +1440,19 @@
           {/if}
         </div>
 
-        <p id="estimate-submit-note" class="submit-note">You won't be charged now. We'll review your request and follow up by email.</p>
-        <button type="submit" class="primary" class:busy={submitting} aria-disabled={submitting ? "true" : undefined} aria-describedby="estimate-submit-note">
-          {waitingForPrice ? "Updating price…" : submitting ? "Submitting…" : "Request an estimate"}
-        </button>
+        {#if paused}
+          <!-- Vacation mode replaces the submit button with the owner's message. -->
+          <p class="paused-message" role="status">{shop.pausedMessage}</p>
+        {:else}
+          <p id="estimate-submit-note" class="submit-note">You won't be charged now. We'll review your request and follow up by email.</p>
+          <button type="submit" class="primary" class:busy={submitting} aria-disabled={submitting ? "true" : undefined} aria-describedby="estimate-submit-note">
+            {waitingForPrice ? "Updating price…" : submitting ? "Submitting…" : "Request an estimate"}
+          </button>
+        {/if}
       </form>
     {/if}
 
-    <PublicFooter branding={cfg.branding} staffUrl={cfg.staffUrl} />
+    <PublicFooter branding={cfg.branding} staffUrl={cfg.staffUrl} footerLinks={shop.footerLinks} />
   {/if}
 </main>
 
@@ -1542,6 +1604,13 @@
   /* In flight: aria-disabled keeps focus on the button, so the busy look is visual only. */
   button.busy { opacity: 0.6; cursor: progress; }
   .submit-note { color: var(--muted); font-size: var(--text-sm); margin: 0; }
+  /* TEMPORARY storefront markup (v1.2 core lane); phase 2 restyles these on the new components. */
+  .shop-hero { display: block; max-width: 100%; max-height: 14rem; object-fit: cover; border-radius: var(--radius); margin: 0 auto var(--space-3); }
+  .shop-heading { margin: 0 0 var(--space-2); }
+  .shop-announcement { margin: 0 0 var(--space-3); }
+  .paused-message { margin: var(--space-2) 0; font-weight: 600; overflow-wrap: anywhere; }
+  .category-links { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0 0 var(--space-3); }
+  .category-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--space-3); }
   .per-unit { color: var(--muted); font-weight: 400; }
   .route-note:empty { display: none; }
   .meta { color: var(--muted); font-size: var(--text-sm); margin: 0; }

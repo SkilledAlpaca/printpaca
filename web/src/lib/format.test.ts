@@ -3,6 +3,7 @@ import { moneyAmount, moneyPrecise, friendlyMessage, fieldLabel, formatDate, for
 import type { FieldWarning } from "./engine/index";
 import type { ServerConfig } from "./settings";
 import { settingsWarnings } from "./settingsRules";
+import { DEFAULT_SHOP_CONFIG } from "./shop";
 
 // EffectiveConfig is only read for .currency here; a minimal stand-in keeps the test independent.
 const cfg = { currency: { symbol: "$", decimals: 2, code: "" } } as never;
@@ -132,7 +133,7 @@ function allInvalidConfig(): ServerConfig {
     integrationsUrls: { spoolmanUrl: "", moonrakerUrl: "", fluiddUrl: "" },
     ui: { disabledTabs: [] },
     site: { shopOnMainPort: true, staffLink: true, adminUrl: "" },
-    shop: { maxOrderQty: 100 },
+    shop: structuredClone(DEFAULT_SHOP_CONFIG),
     users: { multiUser: false, accessAdminEmail: "" },
   };
 }

@@ -65,6 +65,68 @@
     <input type="number" min="1" max="10000" step="1" bind:value={form.shop.maxOrderQty} aria-describedby="shop-max-qty-hint" />
     <small class="field-hint" id="shop-max-qty-hint">The most units one estimate request or gallery order may carry, from 1 to 10,000. Customers see a message instead of a total above it.</small>
   </label>
+  <!-- TEMPORARY plain inputs (v1.2 storefront-core lane): they expose the shop.* server rules. The Settings >
+       Storefront card with its preview, the hero image upload, the footer links editor and the accent color
+       picker replace this block in phase 2. -->
+  <h3 class="section-label">What the shop offers</h3>
+  <label class="toggle">
+    <input type="checkbox" bind:checked={form.shop.customEstimates} />
+    <span>Offer custom estimates</span>
+  </label>
+  <label class="toggle">
+    <input type="checkbox" bind:checked={form.shop.gallery} />
+    <span>Offer the item gallery</span>
+  </label>
+  {#if warnFor(warnings, "shop.gallery") !== ""}<small class="warn-text" role="alert">{warnFor(warnings, "shop.gallery")}</small>{/if}
+  <label class="toggle">
+    <input type="checkbox" bind:checked={form.shop.acceptingOrders} />
+    <span>Accepting orders</span>
+  </label>
+  <small class="field-hint">Turn off for vacation mode: the shop stays visible, your message replaces the submit buttons, and new orders and estimates are refused.</small>
+  <LabeledText
+    label="Message while not accepting orders"
+    bind:value={form.shop.pausedMessage}
+    placeholder="Closed until January 5"
+    warn={warnFor(warnings, "shop.pausedMessage")}
+  />
+  <label class="field">
+    <span>Opening view</span>
+    <select bind:value={form.shop.defaultView}>
+      <option value="gallery">Item gallery</option>
+      <option value="estimate">Custom estimate</option>
+    </select>
+  </label>
+  <label class="field">
+    <span>Item order</span>
+    <select bind:value={form.shop.itemSort}>
+      <option value="manual">Your manual order</option>
+      <option value="name">By name</option>
+      <option value="price">By price</option>
+    </select>
+  </label>
+  <LabeledText label="Shop heading" bind:value={form.shop.heading} warn={warnFor(warnings, "shop.heading")} />
+  <LabeledText label="Announcement" bind:value={form.shop.announcement} warn={warnFor(warnings, "shop.announcement")} />
+  <LabeledText
+    label="Accent color"
+    bind:value={form.shop.accentColor}
+    placeholder="#9c4212"
+    warn={warnFor(warnings, "shop.accentColor")}
+    hint="Optional. A six-digit color such as #9c4212 for shop buttons and links. It must be readable on the shop background."
+  />
+  <LabeledText label="Shipping note" bind:value={form.shop.shippingNote} warn={warnFor(warnings, "shop.shippingNote")} />
+  <LabeledText label="Turnaround note" bind:value={form.shop.turnaroundNote} warn={warnFor(warnings, "shop.turnaroundNote")} />
+  <label class="toggle">
+    <input type="checkbox" bind:checked={form.shop.showStock} />
+    <span>Show stock counts</span>
+  </label>
+  <label class="toggle">
+    <input type="checkbox" bind:checked={form.shop.showFromPrice} />
+    <span>Show "from" prices</span>
+  </label>
+  <label class="toggle">
+    <input type="checkbox" bind:checked={form.shop.showContact} />
+    <span>Show my email, phone, and address in the shop</span>
+  </label>
   <LabeledText
     label="Staff sign-in link on the public port"
     bind:value={form.site.adminUrl}

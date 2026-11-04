@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchQuotePreview, submitQuoteRequest } from "./api";
+import { DEFAULT_PUBLIC_SHOP, fetchQuotePreview, loadPublicCatalog, loadPublicItems, shopOf, submitItemOrder, submitQuoteRequest } from "./api";
 
 const PREVIEW_INPUT = { material: "PLA", quantity: 1, weightG: 50, timeSeconds: 3600 };
 
@@ -161,5 +161,56 @@ describe("fetchQuotePreview", () => {
     const result = await fetchQuotePreview(PREVIEW_INPUT);
     expect(result.ok).toBe(false);
     expect(result.status).toBe(0);
+  });
+});
+
+describe("storefront settings", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const stubFetch = (status: number, body: unknown) =>
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: status < 400, status, json: async () => body } as unknown as Response));
+
+  it("shopOf falls back to v1.1 behavior for a server without the shop block, and merges a partial one", () => {
+    expect(shopOf(null)).toEqual(DEFAULT_PUBLIC_SHOP);
+    expect(shopOf({} as never)).toEqual(DEFAULT_PUBLIC_SHOP);
+    expect(shopOf({ shop: { acceptingOrders: false, pausedMessage: "Back soon" } } as never)).toMatchObject({
+      customEstimates: true,
+      gallery: true,
+      acceptingOrders: false,
+      pausedMessage: "Back soon",
+    });
+  });
+
+  it("loadPublicCatalog returns items and categories; loadPublicItems keeps returning items alone", async () => {
+    stubFetch(200, { items: [{ id: "a" }], categories: [{ slug: "toys", name: "Toys" }] });
+    expect(await loadPublicCatalog()).toEqual({ items: [{ id: "a" }], categories: [{ slug: "toys", name: "Toys" }] });
+    expect(await loadPublicItems()).toEqual([{ id: "a" }]);
+    stubFetch(200, { items: [{ id: "a" }] });
+    expect((await loadPublicCatalog())?.categories).toEqual([]);
+    stubFetch(200, {});
+    expect(await loadPublicItems()).toEqual([]);
+    stubFetch(500, {});
+    expect(await loadPublicCatalog()).toBeNull();
+  });
+
+  const paused = { errors: ["Closed: back Jan 5"], paused: true, pausedMessage: "Closed: back Jan 5" };
+
+  it("a paused refusal carries the owner's message through unchanged, colon and all", async () => {
+    stubFetch(403, paused);
+    const order = await submitItemOrder({ itemId: "i", selections: [], quantity: 1, name: "n", email: "e@example.com", note: "" });
+    expect(order).toMatchObject({ ok: false, status: 403, errors: ["Closed: back Jan 5"], paused: "Closed: back Jan 5" });
+    const req = await submitQuoteRequest(new FormData());
+    expect(req).toMatchObject({ ok: false, status: 403, errors: ["Closed: back Jan 5"], paused: "Closed: back Jan 5" });
+    const preview = await fetchQuotePreview(PREVIEW_INPUT);
+    expect(preview).toMatchObject({ ok: false, status: 403, errors: ["Closed: back Jan 5"], paused: "Closed: back Jan 5" });
+  });
+
+  it("other refusals still go through the field-error humanizer", async () => {
+    stubFetch(422, { errors: ["weightG: must be 0-100000"] });
+    const preview = await fetchQuotePreview(PREVIEW_INPUT);
+    expect(preview.paused).toBeUndefined();
+    expect(preview.errors[0]).toContain("Model weight");
   });
 });

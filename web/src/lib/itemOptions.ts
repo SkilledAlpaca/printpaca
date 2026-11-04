@@ -59,22 +59,13 @@ export function optionSummary(groups: ChoiceGroup[], selected: Selected): string
   return parts.join(OPTION_SUMMARY_SEP);
 }
 
-/** Records that `groupId` was just changed: moves it to the front of the recency list. */
-export function touchRecent(recent: string[], groupId: string): string[] {
-  return [groupId, ...recent.filter((g) => g !== groupId)];
-}
-
-/** The photo to show: the most recently changed selection that has one, else null (callers fall back to the
- * item photo). `alt` names the option so the swap is announced to screen reader users browsing the image. */
-export function pickDisplayImage(
-  groups: ChoiceGroup[],
-  selected: Selected,
-  recent: string[],
-): { url: string; alt: string } | null {
-  for (const gid of recent) {
-    const g = groups.find((x) => x.id === gid);
-    const o = g ? chosenOption(g, selected) : undefined;
-    if (g && o?.imageUrl) return { url: o.imageUrl, alt: `${g.label}: ${o.name}` };
+/** The photo to show: the first group, in display order, whose selected option has a photo; else null (callers
+ * fall back to the item photo). A later group's photo (a Mounting choice) never hides an earlier one (the Color
+ * the customer picked first). `alt` names the option so the swap is announced to screen reader users browsing the image. */
+export function pickDisplayImage(groups: ChoiceGroup[], selected: Selected): { url: string; alt: string } | null {
+  for (const g of groups) {
+    const o = chosenOption(g, selected);
+    if (o?.imageUrl) return { url: o.imageUrl, alt: `${g.label}: ${o.name}` };
   }
   return null;
 }

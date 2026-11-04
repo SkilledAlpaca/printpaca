@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import type { APIRequestContext, Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { navButton, seedQuoteBody, ADMIN_URL } from "./helpers";
+import { navButton, requestIdByReference, seedQuoteBody, ADMIN_URL } from "./helpers";
 
 // Regression gate for WCAG 2.2 AA (docs: obsidian-ai/43 - 3D Printing/printpaca/wcag-fix-spec.md). Runs axe on
 // the login screen, the shop (at /), every admin tab, and one open detail view per record type, in light and
@@ -217,7 +217,7 @@ test.describe("public pages", () => {
     await scanAll(page, "shop estimate form (validation)");
   });
 
-  test("a submitted item order moves focus to the confirmation heading", async ({ page }) => {
+  test("a submitted item order moves focus to the confirmation heading", async ({ page, request }) => {
     await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.20" });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/order");
@@ -229,11 +229,11 @@ test.describe("public pages", () => {
     const heading = page.getByRole("heading", { name: "Order received" });
     await expect(heading).toBeFocused();
     const ref = (await page.locator(".confirmation .ref").textContent())?.replace("Reference: ", "").trim() ?? "";
-    if (ref) created.requests.push(ref);
+    if (ref) created.requests.push(await requestIdByReference(request, ref));
     await scanAll(page, "shop order confirmation");
   });
 
-  test("a submitted estimate request moves focus to the confirmation heading", async ({ page }) => {
+  test("a submitted estimate request moves focus to the confirmation heading", async ({ page, request }) => {
     await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.30" });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/order");
@@ -248,7 +248,7 @@ test.describe("public pages", () => {
     await page.getByRole("button", { name: "Request an estimate" }).click();
     await expect(page.getByRole("heading", { name: "Request received" })).toBeFocused();
     const ref = (await page.locator(".confirmation .ref").textContent())?.replace("Reference: ", "").trim() ?? "";
-    if (ref) created.requests.push(ref);
+    if (ref) created.requests.push(await requestIdByReference(request, ref));
     await scanAll(page, "shop estimate confirmation");
   });
 });

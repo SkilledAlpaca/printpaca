@@ -37,4 +37,11 @@
   }
   .shop-footer p, .shop-footer nav { margin: 0.2rem 0; }
   .shop-footer a { color: inherit; }
+  /* 44 px tap targets on phones: the links are inline text, about 17 px tall by default. */
+  @media (max-width: 600px) {
+    .shop-footer a {
+      display: inline-block;
+      padding: 0.7rem 0.5rem;
+    }
+  }
 </style>

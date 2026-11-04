@@ -122,6 +122,7 @@ function allInvalidConfig(): ServerConfig {
       paymentInstructions: "x".repeat(2001),
       termsText: "x".repeat(2001),
       validDays: 30,
+      referencePrefix: "",
     },
     invoicing: { numberPrefix: "", salesTaxPct: -1, dueDays: -1, paymentMethods: [""], paypalMe: "bad/handle" },
     publicQuotes: { printer: "p1", preset: "side-hustle", introText: "x".repeat(501) },

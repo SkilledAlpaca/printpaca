@@ -55,6 +55,7 @@ quote:
   paymentInstructions: ""
   termsText: ""
   validDays: 14
+  referencePrefix: ""
 invoicing:
   numberPrefix: "INV"
   salesTaxPct: 0

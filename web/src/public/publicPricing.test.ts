@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampQuantity, perUnitCents } from "./publicPricing";
+import { clampQuantity, isValidQuantity, perUnitCents, rateLimitMessage } from "./publicPricing";
 
 describe("perUnitCents", () => {
   it("divides an integer total evenly", () => {
@@ -24,7 +24,11 @@ describe("clampQuantity", () => {
   it("clamps a value above max down to max, with a named message", () => {
     const result = clampQuantity(500, 100);
     expect(result.value).toBe(100);
-    expect(result.message).toContain("100");
+    expect(result.message).toBe("Max 100 per order.");
+  });
+
+  it("names the stock when stock is the limit", () => {
+    expect(clampQuantity(9, 3, 1, "stock")).toEqual({ value: 3, message: "Only 3 in stock." });
   });
 
   it("clamps a value below the default min (1) up to 1, with no message", () => {
@@ -33,5 +37,25 @@ describe("clampQuantity", () => {
 
   it("respects a custom min", () => {
     expect(clampQuantity(0, 100, 0)).toEqual({ value: 0, message: null });
+  });
+});
+
+describe("isValidQuantity", () => {
+  it("accepts whole numbers in range and rejects everything else", () => {
+    expect(isValidQuantity(1, 100)).toBe(true);
+    expect(isValidQuantity(100, 100)).toBe(true);
+    for (const bad of [null, 0, -3, 2.5, 101, Number.NaN]) expect(isValidQuantity(bad, 100)).toBe(false);
+  });
+});
+
+describe("rateLimitMessage", () => {
+  it("offers the shop's email and phone", () => {
+    expect(rateLimitMessage({ email: "shop@example.com", phone: "555-0100" })).toBe(
+      "We've had a lot of requests from your connection. Try again later or email shop@example.com or call 555-0100.",
+    );
+  });
+  it("uses whichever contact exists, or none", () => {
+    expect(rateLimitMessage({ email: "", phone: "555-0100" })).toContain("or call 555-0100.");
+    expect(rateLimitMessage({ email: "", phone: "" })).toBe("We've had a lot of requests from your connection. Try again later.");
   });
 });

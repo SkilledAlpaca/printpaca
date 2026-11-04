@@ -141,6 +141,8 @@ export interface EffectiveConfig {
     paymentInstructions: string;
     termsText: string;
     validDays: number;
+    /** Prefix of the customer-facing order reference; "" derives it from the business name. */
+    referencePrefix: string;
   };
   invoicing: InvoicingConfig;
   publicQuotes: PublicQuotesConfig;

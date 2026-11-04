@@ -67,6 +67,13 @@ type QuoteRequest struct {
 	ItemName   string `json:"itemName"`
 	OptionName string `json:"optionName"`
 
+	// NeedsPrintTime is true for a public estimate submitted without a print time: PriceCents is 0 and means
+	// "to be confirmed". The owner enters the time when quoting or converting.
+	NeedsPrintTime bool `json:"needsPrintTime"`
+	// Reference is the short per-shop order reference shown to the visitor ("HL-1001"); "" for rows created
+	// before it existed. The hex ID stays the identifier everywhere else.
+	Reference string `json:"reference"`
+
 	// UpdatedBy follows Quote.CreatedBy, but quote_requests has no created_by (the public listener has no
 	// identity). It moves only on admin writes: handleGet's new->viewed and handleStatus's viewed->finalized.
 	UpdatedBy string `json:"updatedBy"`
@@ -93,7 +100,7 @@ var quoteRequestStatusTransitions = map[string]map[string]bool{
 // requestColumns lists the columns every quote_requests SELECT reads, in the order Scan expects.
 // price_cents is the server's own computation (buildPublicQuoteInputs + ComputeQuote), not a browser price.
 const requestColumns = `id, status, name, email, note, material, quantity, weight_g, time_seconds, price_cents, gcode_filename, gcode_path, gcode_bytes, created_at, finalized_at, gcode_pruned_at, kind, item_id, item_name, option_name, updated_by, shipping_cents, tax_inclusive,
-	invoice_id, COALESCE((SELECT number FROM invoices WHERE id = quote_requests.invoice_id), ''), COALESCE((SELECT status FROM invoices WHERE id = quote_requests.invoice_id), ''), needs_print_time`
+	invoice_id, COALESCE((SELECT number FROM invoices WHERE id = quote_requests.invoice_id), ''), COALESCE((SELECT status FROM invoices WHERE id = quote_requests.invoice_id), ''), needs_print_time, reference`
 
 // scanRequest reads one row (see requestColumns) into a QuoteRequest.
 func scanRequest(row rowScanner) (QuoteRequest, error) {
@@ -102,7 +109,7 @@ func scanRequest(row rowScanner) (QuoteRequest, error) {
 		&req.WeightG, &req.TimeSeconds, &req.PriceCents, &req.GcodeFilename, &req.GcodePath, &req.GcodeBytes,
 		&req.CreatedAt, &req.FinalizedAt, &req.GcodePrunedAt,
 		&req.Kind, &req.ItemID, &req.ItemName, &req.OptionName, &req.UpdatedBy, &req.ShippingCents, &req.TaxInclusive,
-		&req.InvoiceID, &req.InvoiceNumber, &req.InvoiceStatus, &req.NeedsPrintTime)
+		&req.InvoiceID, &req.InvoiceNumber, &req.InvoiceStatus, &req.NeedsPrintTime, &req.Reference)
 	if err != nil {
 		return QuoteRequest{}, err
 	}

@@ -190,7 +190,7 @@ func TestPublicItemsCache(t *testing.T) {
 	}
 }
 
-// Each postPublicItemOrder call gets a distinct source IP: the handler shares its rate limiter with handlePublicQuoteRequest (5 per hour per IP, keyed on r.RemoteAddr with trustProxy false), and more than five cases against one mux would 429.
+// Each postPublicItemOrder call gets a distinct source IP: the handler's rate limiter allows publicRateLimit orders per hour per IP (keyed on r.RemoteAddr with trustProxy false), and more cases than that against one mux would 429.
 var publicItemOrderTestIPCounter atomic.Int32
 
 // postPublicItemOrder POSTs a JSON body (marshaled from body, typically a

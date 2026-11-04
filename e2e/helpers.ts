@@ -1,5 +1,5 @@
 import { expect, request as pwRequest } from "@playwright/test";
-import type { Locator, Page } from "@playwright/test";
+import type { APIRequestContext, Locator, Page } from "@playwright/test";
 
 /** A minimal valid POST /api/quotes body: one part in the {parts} inputs bag and the matching
  * formState, written field for field as the editor's toFormState does (every PartFormState and OrderForm key,
@@ -180,4 +180,16 @@ export async function resetServerState(): Promise<void> {
   } finally {
     await api.dispose();
   }
+}
+
+/** The id the admin API keys on for the request a visitor just submitted. The shop's confirmation shows only the
+ * short reference ("REQ-1001"), so this finds the row by it. Needs an admin-side request context. */
+export async function requestIdByReference(request: APIRequestContext, reference: string): Promise<string> {
+  const res = await request.get("/admin/api/requests");
+  expect(res.ok()).toBeTruthy();
+  const body = (await res.json()) as { requests?: { id: string; reference: string }[] } | { id: string; reference: string }[];
+  const list = Array.isArray(body) ? body : (body.requests ?? []);
+  const row = list.find((r) => r.reference === reference);
+  expect(row, `a request with reference ${reference}`).toBeTruthy();
+  return row!.id;
 }

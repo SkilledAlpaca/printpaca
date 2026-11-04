@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { navButton } from "./helpers";
+import { navButton, requestIdByReference } from "./helpers";
 
 // Drives a visitor's manual-entry submission on the public listener (:8098, absolute URL) through to the
 // admin Requests tab on :8099. beforeAll opts PLA into public via a full-document PUT /api/settings;
@@ -115,7 +115,7 @@ test("a visitor submits a manual quote request and it reaches the owner", async 
   const refText = (await page.locator(".confirmation .ref").textContent())?.trim() ?? "";
   const refMatch = refText.match(/^Reference: (.+)$/);
   expect(refMatch).not.toBeNull();
-  createdRequestId = refMatch![1]!;
+  createdRequestId = await requestIdByReference(request, refMatch![1]!);
 
   // 2. Owner side (:8099): the Requests tab lists the request with the submitted name and price.
   await page.goto("/admin/");
@@ -158,8 +158,9 @@ test("a visitor drops an STL and the admin Requests row exposes the uploaded fil
     buffer: Buffer.from(CUBE_STL, "utf-8"),
   });
 
-  // The STL parses to a weight-only estimate, so a manual print time is still needed.
-  await expect(page.locator(".parsed-meta")).toContainText("Estimated weight");
+  // The STL parses to a weight-only estimate, shown in an editable weight field, with the model's size.
+  await expect(page.getByLabel("Model weight (g)")).not.toHaveValue("");
+  await expect(page.locator(".model-size")).toContainText("10 × 10 × 10 mm");
 
   // A parsed STL also feeds ModelPreview's canvas. role="img" sits on the wrapper div, not the <canvas>
   // (Svelte's a11y check objects), and getByRole matches by computed role.
@@ -171,6 +172,10 @@ test("a visitor drops an STL and the admin Requests row exposes the uploaded fil
   const priceLocator = page.locator(".estimate .price");
   await expect(priceLocator).toBeVisible();
 
+  // The Solidity default matches its hint ("most prints are 15 to 25%").
+  await page.getByText("How we estimated this").click();
+  await expect(page.getByLabel("Solidity (%)")).toHaveValue("20");
+
   await page.getByLabel("Name").fill(STL_VISITOR_NAME);
   await page.getByLabel("Email").fill(STL_VISITOR_EMAIL);
 
@@ -180,7 +185,7 @@ test("a visitor drops an STL and the admin Requests row exposes the uploaded fil
   const refText = (await page.locator(".confirmation .ref").textContent())?.trim() ?? "";
   const refMatch = refText.match(/^Reference: (.+)$/);
   expect(refMatch).not.toBeNull();
-  createdStlRequestId = refMatch![1]!;
+  createdStlRequestId = await requestIdByReference(request, refMatch![1]!);
 
   // Owner side (:8099): the Requests detail view shows the uploaded filename and a working download link.
   await page.goto("/admin/");

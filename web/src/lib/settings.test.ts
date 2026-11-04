@@ -23,7 +23,7 @@ function baseConfig(): ServerConfig {
       "side-hustle": { failureRatePct: 5, prepMinutes: 10, laborRate: 20, monthlyFixed: 50, monthlyHours: 40 },
     },
     defaults: { preset: "side-hustle", printer: "p1", material: "pla", failureRatePct: 5, quantity: 1 },
-    quote: { businessName: "", logoUrl: "", address: "", email: "", phone: "", taxId: "", paymentInstructions: "", termsText: "", validDays: 30 },
+    quote: { businessName: "", logoUrl: "", address: "", email: "", phone: "", taxId: "", paymentInstructions: "", termsText: "", validDays: 30, referencePrefix: "" },
     invoicing: { numberPrefix: "INV", salesTaxPct: 0, dueDays: 30, paymentMethods: ["cash", "bank transfer"], paypalMe: "" },
     publicQuotes: { printer: "p1", preset: "side-hustle", introText: "" },
     customCss: "",

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { ADMIN_URL, navButton } from "./helpers";
+import { ADMIN_URL, navButton, requestIdByReference } from "./helpers";
 
 // The shop is the landing page: "/" and "/order" both render it, next to the admin app (/admin/), all on one
 // hostname: the main port. Runs against the :8099 server (authentication off) and, for the Staff sign-in link,
@@ -41,6 +41,11 @@ test("Staff sign-in reaches the admin login", async ({ page }) => {
   await expect(page).toHaveURL(new RegExp(`^${origin}/admin/(#.*)?$`));
   await expect(page.getByLabel("Password")).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
+  // The sign-in page says who it is for and leads back to the shop.
+  await expect(page.getByText(/^For .+ staff$/)).toBeVisible();
+  await page.getByRole("link", { name: "Back to shop" }).click();
+  await expect(page).toHaveURL(new RegExp(`^${origin}/(#.*)?$`));
+  await expect(page.locator("footer.shop-footer")).toBeVisible();
 });
 
 test("/api/* on the main port is a 404 and /admin redirects", async ({ request }) => {
@@ -116,7 +121,7 @@ test.describe("an item order placed through the shop at / on the main port", () 
     const refText = (await page.locator(".confirmation .ref").textContent())?.trim() ?? "";
     const refMatch = refText.match(/^Reference: (.+)$/);
     expect(refMatch).not.toBeNull();
-    requestId = refMatch![1]!;
+    requestId = await requestIdByReference(request, refMatch![1]!);
 
     await page.setExtraHTTPHeaders({});
     await page.goto("/admin/");

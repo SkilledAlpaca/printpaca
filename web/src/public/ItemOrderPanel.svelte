@@ -4,6 +4,8 @@
    * item may since be deleted). */
   export interface ItemOrderConfirmation {
     id: string;
+    /** The short reference the customer quotes ("HL-1001"); absent in a confirmation saved by an older build. */
+    reference?: string;
     priceCents: number;
     itemName: string;
     /** "Color: Red · Size: Large" (answered groups only); "" when the item has no options chosen. */
@@ -25,21 +27,23 @@
     pickDisplayImage,
     selectedDeltaCents as sumSelectedDelta,
     selectionsPayload,
-    touchRecent,
     type Selected,
   } from "../lib/itemOptions";
   import { NAME_MAX_BYTES, NOTE_MAX_BYTES, ITEM_ORDER_EMAIL_MAX_BYTES, utf8ByteLength, isPlausibleEmail, EMAIL_FORMAT_ERROR } from "../lib/publicFormLimits";
-  import { clampQuantity, perUnitCents } from "./publicPricing";
-  import { submitItemOrder, type PublicItem } from "./api";
+  import { clampQuantity, isValidQuantity, rateLimitMessage } from "./publicPricing";
+  import { submitItemOrder, type PublicConfig, type PublicItem } from "./api";
 
   let {
     item,
     currency,
+    branding,
     onback,
     onordered,
   }: {
     item: PublicItem;
     currency: CurrencyConfig;
+    /** Contact details for the rate-limit message. */
+    branding: PublicConfig["branding"];
     onback: () => void;
     /** Fired instead of showing a confirmation locally: the parent owns display and persistence so it
      * survives a reload, even though this component is torn down right after. */
@@ -50,13 +54,13 @@
   // shows "None" (an empty choice adds no price). item is a remount-on-change prop (PublicQuotePage.svelte
   // wraps this component in {#key orderItem.id}), so nothing here needs to reset when it changes.
   let selected = $state<Selected>({});
-  // Group ids, most recently changed first: the photo shown is the newest selection that has one.
-  let recent = $state<string[]>([]);
   function choose(groupId: string, optionId: string) {
     selected[groupId] = optionId;
-    recent = touchRecent(recent, groupId);
   }
-  const displayImage = $derived(pickDisplayImage(item.optionGroups, selected, recent));
+  // The photo of the first group (in display order) whose choice has one, else the item photo.
+  const displayImage = $derived(pickDisplayImage(item.optionGroups, selected));
+  const heroImage = $derived(displayImage ?? (item.imageUrl ? { url: item.imageUrl, alt: item.name } : null));
+  let lightbox: HTMLDialogElement | undefined = $state();
   // number | null like PublicQuotePage's quantity: a cleared number input binds null, not 0 or NaN.
   let quantity = $state<number | null>(1);
   // Name and email are shared with the custom-estimate form (visitor.svelte.ts), so a visitor who already
@@ -73,8 +77,16 @@
   let quantityClampNotice = $state("");
 
   let submitting = $state(false);
-  let submitErrors = $state<string[]>([]);
+  // Errors from the server. They describe the form as it was sent, so they disappear as soon as the visitor
+  // changes anything (serverErrorsFor must match the current form).
+  let serverErrors = $state<string[]>([]);
+  let serverErrorsFor = $state("");
   let rateLimited = $state(false);
+  const formSnapshot = $derived(
+    JSON.stringify([selected, quantity, visitor.name, visitor.email, note]),
+  );
+  const visibleServerErrors = $derived(serverErrorsFor === formSnapshot ? serverErrors : []);
+  const visibleRateLimited = $derived(rateLimited && serverErrorsFor === formSnapshot);
 
   // in_stock is capped at what's left and at 100; allowBackorder lifts the cap to the global 100 regardless
   // of remaining stock, matching handlePublicItemOrder (server/public.go).
@@ -82,10 +94,14 @@
     item.stock.mode === "in_stock" && !item.stock.allowBackorder ? Math.min(100, item.stock.qty ?? 0) : 100,
   );
 
+  // The cap comes from the stock on hand when that is below the per-order maximum of 100.
+  const stockLimited = $derived(item.stock.mode === "in_stock" && !item.stock.allowBackorder && (item.stock.qty ?? 0) < 100);
+  let lastClampedTo = -1;
   $effect(() => {
     if (quantity === null) return;
-    const clamped = clampQuantity(quantity, maxQuantity);
+    const clamped = clampQuantity(quantity, maxQuantity, 1, stockLimited ? "stock" : "policy");
     if (clamped.message) {
+      lastClampedTo = clamped.value;
       quantity = clamped.value;
       quantityClampNotice = clamped.message;
     }
@@ -100,9 +116,17 @@
   const selectedDeltaCents = $derived(sumSelectedDelta(item.optionGroups, selected));
   const missingGroups = $derived(missingRequired(item.optionGroups, selected));
   const unitPriceCents = $derived(item.priceCents + selectedDeltaCents);
-  // null while the quantity input is cleared: there is nothing honest to compute (the template shows a dash,
-  // not $0.00).
-  const totalCents = $derived(quantity === null ? null : itemTotalCents(item.priceCents, selectedDeltaCents, quantity));
+  // null unless the quantity is a whole number in range: a cleared, negative, fractional or too-large entry has
+  // no honest total, so the template shows a prompt, not a price.
+  const totalCents = $derived(
+    isValidQuantity(quantity, maxQuantity) ? itemTotalCents(item.priceCents, selectedDeltaCents, quantity) : null,
+  );
+  const stockLine = $derived.by(() => {
+    if (item.stock.mode !== "in_stock") return "Made to order.";
+    const qty = item.stock.qty ?? 0;
+    if (qty > 0) return item.stock.allowBackorder ? `${qty} in stock; more made to order.` : `${qty} in stock.`;
+    return item.stock.allowBackorder ? "Made to order." : "Out of stock.";
+  });
 
   // Name, email, and note errors are shown inline on their fields (aria-invalid + aria-describedby, WCAG
   // 3.3.1); the rest go to the summary list. Shown only after the first submit attempt.
@@ -116,7 +140,7 @@
     else if (!isPlausibleEmail(email.trim())) out.email = EMAIL_FORMAT_ERROR;
     if (utf8ByteLength(note) > NOTE_MAX_BYTES) out.note = `Note must be ${NOTE_MAX_BYTES} characters or fewer.`;
     for (const g of missingGroups) out.other.push(`Choose ${g.label}.`);
-    if (quantity === null || !Number.isInteger(quantity) || quantity < 1 || quantity > maxQuantity) {
+    if (!isValidQuantity(quantity, maxQuantity)) {
       out.other.push(`Quantity must be a whole number from 1 to ${maxQuantity}.`);
     }
     return out;
@@ -129,15 +153,18 @@
   const nameError = $derived(showErrors ? fieldErrors.name : undefined);
   const emailError = $derived(showErrors ? fieldErrors.email : undefined);
   const noteError = $derived(showErrors ? fieldErrors.note : undefined);
+  // Shown live once the visitor has tried to submit, so each message goes away as its problem is fixed.
+  const summaryErrors = $derived(showErrors ? fieldErrors.other : []);
+  const quantityInvalid = $derived(showErrors && !isValidQuantity(quantity, maxQuantity));
+  const missingIds = $derived(new Set(missingGroups.map((g) => g.id)));
 
   async function submit() {
     // aria-disabled (not disabled) while in flight, so the focused button keeps focus (WCAG 2.4.3).
     if (submitting) return;
-    submitErrors = [];
+    serverErrors = [];
     rateLimited = false;
     if (formErrorCount > 0 || quantity === null) {
       showErrors = true;
-      submitErrors = fieldErrors.other;
       await tick();
       formEl?.querySelector<HTMLElement>("[aria-invalid='true']")?.focus();
       return;
@@ -156,6 +183,8 @@
       },
     );
     submitting = false;
+    // Whatever happened, "Sending your order." no longer applies.
+    announce("");
 
     if (result.ok && result.id !== undefined && result.priceCents !== undefined) {
       // The order is placed: a shared device shouldn't keep the visitor's name and email around.
@@ -163,6 +192,7 @@
       clearVisitor();
       onordered({
         id: result.id,
+        reference: result.reference,
         priceCents: result.priceCents,
         itemName: item.name,
         optionName: optionSummary(item.optionGroups, selected),
@@ -171,37 +201,68 @@
       });
       return;
     }
+    serverErrorsFor = formSnapshot;
     if (result.status === 429) {
       rateLimited = true;
       return;
     }
     if (result.status === 503) {
       // Friendlier than the raw backpressure message; this is the visitor's own retry path.
-      submitErrors = ["The shop is busy right now. Try again in a moment."];
+      serverErrors = ["The shop is busy right now. Try again in a moment."];
       return;
     }
     // Any other failure (network, 422, ...) leaves the visitor's typed fields untouched.
-    submitErrors = result.errors;
+    serverErrors = result.errors;
+  }
+
+  // Escape goes back to the gallery, like the Back button. Ignored in text fields and selects (which use Escape
+  // themselves) and while the photo is enlarged (the dialog closes itself).
+  function onKeydown(e: KeyboardEvent) {
+    if (e.key !== "Escape" || e.defaultPrevented || lightbox?.open) return;
+    const t = e.target as HTMLElement | null;
+    if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+    onback();
   }
 </script>
 
-<div class="panel">
-  <button type="button" class="quiet back" onclick={onback}>&larr; Back to gallery</button>
+<svelte:window onkeydown={onKeydown} />
 
+<div class="panel">
   <div class="card item-summary">
-    {#if displayImage}
-      <!-- Same fixed box as the item photo, so swapping never shifts the layout; the alt names the option. -->
-      <img class="thumb" src={displayImage.url} alt={displayImage.alt} data-option-photo />
-    {:else if item.imageUrl}
-      <img class="thumb" src={item.imageUrl} alt="" />
+    {#if heroImage}
+      <!-- Tap to enlarge. The alt names the option, so the swap is announced; the box is fixed, so swapping
+           never shifts the layout. -->
+      <button type="button" class="photo-btn" aria-label="Enlarge photo" onclick={() => lightbox?.showModal()}>
+        {#if displayImage}
+          <img class="hero" src={displayImage.url} alt={displayImage.alt} data-option-photo />
+        {:else}
+          <img class="hero" src={heroImage.url} alt="" />
+        {/if}
+      </button>
     {:else}
-      <div class="thumb thumb-empty" aria-hidden="true"></div>
+      <div class="hero thumb-empty" aria-hidden="true"></div>
     {/if}
     <div class="item-summary-text">
       <h2 tabindex="-1" bind:this={headingEl}>{item.name}</h2>
       {#if item.description}<p class="i-desc">{item.description}</p>{/if}
+      <p class="stock-line">{stockLine}</p>
+      <!-- After the heading in the DOM, so the first Tab from the heading reaches it. -->
+      <button type="button" class="quiet back" onclick={onback}>&larr; Back to gallery</button>
+      <small class="esc-hint">Press Esc to go back.</small>
     </div>
   </div>
+
+  <dialog
+    class="lightbox"
+    bind:this={lightbox}
+    aria-label="Photo of {item.name}"
+    onclick={(e) => {
+      if (e.target === lightbox) lightbox?.close();
+    }}
+  >
+    {#if heroImage}<img src={heroImage.url} alt={displayImage?.alt ?? item.name} />{/if}
+    <button type="button" onclick={() => lightbox?.close()}>Close</button>
+  </dialog>
 
   <!-- novalidate: the panel validates itself and shows the messages inline (WCAG 3.3.1). -->
   <form
@@ -214,14 +275,16 @@
     }}
   >
     {#each item.optionGroups as g (g.id)}
-      {@const invalid = showErrors && g.required && !selected[g.id]}
-      <label class="field">
-        <span>{g.label}{g.required ? "" : " (optional)"}</span>
+      {@const invalid = showErrors && g.required && missingIds.has(g.id)}
+      <div class="field">
+        <label for="item-group-{g.id}">{g.label}{g.required ? " (required)" : " (optional)"}</label>
         <select
+          id="item-group-{g.id}"
           required={g.required}
           value={selected[g.id] ?? ""}
           onchange={(e) => choose(g.id, e.currentTarget.value)}
           aria-invalid={invalid ? "true" : undefined}
+          aria-describedby={invalid ? `item-group-err-${g.id}` : undefined}
           data-group-id={g.id}
         >
           <option value="">{g.required ? `Choose ${g.label}` : "None"}</option>
@@ -233,7 +296,8 @@
             >
           {/each}
         </select>
-      </label>
+        {#if invalid}<small class="warn-text" id="item-group-err-{g.id}">Choose {g.label}.</small>{/if}
+      </div>
     {/each}
 
     <label class="field">
@@ -244,8 +308,13 @@
         max={maxQuantity}
         step="1"
         bind:value={quantity}
-        oninput={() => (quantityClampNotice = "")}
+        oninput={(e) => {
+          // The clamp effect runs between the bind and this handler and has already rewritten the box to the
+          // clamped value, so keep the notice while the box still shows exactly that; any other edit clears it.
+          if (Number(e.currentTarget.value) !== lastClampedTo) quantityClampNotice = "";
+        }}
         required
+        aria-invalid={quantityInvalid ? "true" : undefined}
         aria-describedby="item-qty-notice"
       />
     </label>
@@ -312,19 +381,20 @@
             {/if}
           </p>
         {:else}
-          <p class="muted">Enter a quantity to see a price.</p>
+          <p class="muted">Enter a whole number from 1 to {maxQuantity} to see a total.</p>
         {/if}
       </div>
+      <p class="muted shipping-note">Shipping, if any, is confirmed by email.</p>
     </div>
 
     <!-- Persistent alert container with a plain list inside (WCAG 1.3.1, 4.1.3). -->
     <div role="alert">
-      {#if rateLimited}
-        <p class="warn-text">Too many requests from this network. Try again in an hour.</p>
+      {#if visibleRateLimited}
+        <p class="warn-text">{rateLimitMessage(branding)}</p>
       {/if}
-      {#if submitErrors.length > 0}
+      {#if summaryErrors.length > 0 || visibleServerErrors.length > 0}
         <ul class="error-list">
-          {#each submitErrors as e (e)}<li class="warn-text">{e}</li>{/each}
+          {#each new Set([...summaryErrors, ...visibleServerErrors]) as e (e)}<li class="warn-text">{e}</li>{/each}
         </ul>
       {/if}
     </div>
@@ -342,25 +412,63 @@
     flex-direction: column;
     gap: var(--space-3);
   }
-  .back { align-self: flex-start; }
 
   .item-summary {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: var(--space-3);
   }
-  .item-summary-text { min-width: 0; }
+  .item-summary-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: var(--space-1); align-items: flex-start; }
   .item-summary-text h2 { margin: 0; }
-  .item-summary .i-desc { margin: var(--space-1) 0 0; color: var(--muted); font-size: var(--text-sm); }
-  .item-summary .thumb {
-    width: 4.5rem;
-    height: 4.5rem;
+  .item-summary .i-desc { margin: 0; color: var(--muted); font-size: var(--text-sm); }
+  .stock-line { margin: 0; font-size: var(--text-sm); color: var(--muted); }
+  .back { margin-top: var(--space-1); }
+  .esc-hint { color: var(--muted); font-size: var(--text-sm); }
+  /* No keyboard on a touch screen, so the hint is noise there. */
+  @media (hover: none) {
+    .esc-hint { display: none; }
+  }
+
+  /* A real photo size, not a thumbnail: 12rem beside the text on a wide screen, full width on a phone. */
+  .photo-btn {
+    padding: 0;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    border-radius: calc(var(--radius) / 2);
+    line-height: 0;
     flex-shrink: 0;
+    cursor: zoom-in;
+    min-height: 0;
+  }
+  .hero {
+    display: block;
+    width: 12rem;
+    height: 12rem;
     object-fit: cover;
     border-radius: calc(var(--radius) / 2);
     background: var(--surface-2);
   }
-  .item-summary .thumb-empty { border: 1px dashed var(--border); }
+  .item-summary .thumb-empty { border: 1px dashed var(--border); flex-shrink: 0; }
+
+  .lightbox {
+    max-width: min(92vw, 48rem);
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+  }
+  .lightbox::backdrop { background: rgb(0 0 0 / 0.6); }
+  .lightbox img { display: block; max-width: 100%; max-height: 70vh; margin: 0 auto var(--space-3); }
+  .lightbox button { display: block; margin: 0 auto; }
+
+  @media (max-width: 600px) {
+    .item-summary { flex-direction: column; align-items: stretch; }
+    .photo-btn, .item-summary .thumb-empty { width: 100%; }
+    .hero { width: 100%; height: auto; aspect-ratio: 4 / 3; }
+    /* 44 px tap targets on phones; the app-wide quiet button is 32 px. */
+    .back { min-height: 44px; }
+  }
 
   form.card {
     display: flex;
@@ -370,6 +478,7 @@
 
   .estimate { text-align: center; }
   .estimate .muted { color: var(--muted); font-size: var(--text-sm); }
+  .shipping-note { margin: 0; }
   .estimate .price {
     font-size: var(--text-xl);
     font-weight: 700;

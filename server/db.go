@@ -275,7 +275,18 @@ var migrations = []string{
 	  WHERE i.id = item_sales.item_id AND i.option_label != '' AND json_extract(o.value, '$.name') = item_sales.option_name);
 	`,
 
-	// 2 -> 3: optimistic concurrency for items. items.version starts at 1 and the trigger bumps it on
+	// 2 -> 3: public usability fixes.
+	// needs_print_time marks a public estimate submitted without a print time (an unsliced STL or 3MF the visitor
+	// cannot time): price_cents is 0 and means "to be confirmed", not free. The owner enters the time when quoting.
+	// reference is the short, per-shop order reference the visitor sees (for example "HL-1001"); the hex id stays
+	// the primary key. Rows created before this migration keep reference ''. The counter behind it lives in
+	// app_state under 'request_ref_seq' (server/reference.go) and needs no schema.
+	`
+	ALTER TABLE quote_requests ADD COLUMN needs_print_time INTEGER NOT NULL DEFAULT 0 CHECK (needs_print_time IN (0, 1));
+	ALTER TABLE quote_requests ADD COLUMN reference TEXT NOT NULL DEFAULT '';
+	`,
+
+	// 3 -> 4: optimistic concurrency for items. items.version starts at 1 and the trigger bumps it on
 	// every update, whichever code path wrote the row, so a stale editor save (PUT with the loaded version)
 	// is detectable. recursive_triggers is off, so the trigger's own UPDATE does not re-fire it.
 	`
@@ -287,7 +298,7 @@ var migrations = []string{
 	END;
 	`,
 
-	// 3 -> 4: invoice concurrency token and the request-to-invoice link (v1.1.0 usability fixes).
+	// 4 -> 5: invoice concurrency token and the request-to-invoice link (v1.1.0 usability fixes).
 	// invoices.version starts at 1 and every write to the invoices row bumps it; a PUT that carries a stale
 	// version is a 409. quote_requests.invoice_id is the invoice a request was converted to ('' while not
 	// converted); the invoice's number is read through it, so there is no second column to keep in sync.

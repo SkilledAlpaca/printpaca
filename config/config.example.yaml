@@ -195,6 +195,8 @@
 #   paymentInstructions: ""       # max 2000 bytes (also sent in quote/invoice emails)
 #   termsText: ""                 # max 2000 bytes (also sent in quote/invoice emails)
 #   validDays: 14                  # "this quote is valid for N days" note
+#   referencePrefix: ""            # 1-10 letters/digits starting the short order reference customers
+#                                   # see (for example, HL-1001); blank uses your business initials
 
 # ---------------------------------------------------------------------------
 # invoicing: invoice numbering and defaults, plus the payment method list.

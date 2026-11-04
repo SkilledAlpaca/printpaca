@@ -115,6 +115,11 @@
       <span>Quote valid for (days)</span>
       <input type="number" min="0" step="1" bind:value={form.quote.validDays} />
     </label>
+    <div class="field">
+      <label for="quote-reference-prefix">Order reference prefix</label>
+      <input id="quote-reference-prefix" bind:value={form.quote.referencePrefix} maxlength="10" autocomplete="off" aria-describedby="quote-reference-prefix-hint" />
+      <small class="field-hint" id="quote-reference-prefix-hint">Starts the short reference customers see on their order, such as HL-1001. Leave blank to use your business initials.</small>
+    </div>
   </div>
   <label class="field field-textarea">
     <span>Address</span>

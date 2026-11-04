@@ -91,7 +91,11 @@ export interface SubmitResult {
   status: number;
   errors: string[];
   id?: string;
+  /** The short order reference to show the customer ("HL-1001"); falls back to `id` for a server that predates it. */
+  reference?: string;
   priceCents?: number;
+  /** True when an estimate was accepted without a print time: priceCents is 0 and means "to be confirmed". */
+  needsPrintTime?: boolean;
   /** Set on every successful submission (absent on failures). The storage-full path (server/public.go)
    * accepts the submission without the file and signals fileStored: false in the 201 body; true when the
    * file persisted or none was sent. */
@@ -160,8 +164,8 @@ export async function submitItemOrder(
   }
 
   if (res.ok) {
-    const b = parsed as { id: string; priceCents: number } | null;
-    return { ok: true, status: res.status, errors: [], id: b?.id, priceCents: b?.priceCents };
+    const b = parsed as { id: string; reference?: string; priceCents: number } | null;
+    return { ok: true, status: res.status, errors: [], id: b?.id, reference: b?.reference || b?.id, priceCents: b?.priceCents };
   }
 
   const errBody = parsed as { errors?: string[] } | null;
@@ -193,8 +197,17 @@ export async function submitQuoteRequest(form: FormData): Promise<SubmitResult> 
   }
 
   if (res.ok) {
-    const b = body as { id: string; priceCents: number; fileStored: boolean } | null;
-    return { ok: true, status: res.status, errors: [], id: b?.id, priceCents: b?.priceCents, fileStored: b?.fileStored };
+    const b = body as { id: string; reference?: string; priceCents: number; needsPrintTime?: boolean; fileStored: boolean } | null;
+    return {
+      ok: true,
+      status: res.status,
+      errors: [],
+      id: b?.id,
+      reference: b?.reference || b?.id,
+      priceCents: b?.priceCents,
+      needsPrintTime: b?.needsPrintTime === true,
+      fileStored: b?.fileStored,
+    };
   }
 
   // A 413 comes from http.MaxBytesReader (publicMaxUploadBytes) and carries Go's plain-text page, not

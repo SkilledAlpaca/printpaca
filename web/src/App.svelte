@@ -1545,7 +1545,7 @@
   .signout-split .footer-btn { flex: 1 1 0; min-width: 0; justify-content: center; font-weight: 600; border: 1px solid currentColor; }
   .signout-split .cancel { color: var(--danger); }
   .signout-split .confirm { color: var(--ok); }
-  .about { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: var(--text-xs); line-height: 1.3; }
+  .about { display: flex; flex-direction: column; gap: 0; color: var(--muted); font-size: var(--text-xs); line-height: 1.3; }
   .version-rail { align-self: center; color: var(--muted); display: inline-flex; padding: var(--space-1); }
   .version-line { font-variant-numeric: tabular-nums; }
   /* Phone drawer: every footer control is a 44px touch target (D26). */

@@ -155,9 +155,12 @@
     const handler = delta < 0 ? onmoveup : onmovedown;
     if (!handler) return;
     close(false);
+    // Read before the handler: it reorders the list, and `position` is reactive, so afterwards it already holds
+    // the new place and adding the step again announced "position 0 of 3" (A14).
+    const from = position?.index ?? 0;
     await handler();
     if (position) {
-      const to = position.index + delta;
+      const to = from + delta;
       announce(`${name ?? label} moved to position ${to + 1} of ${position.count}.`);
     }
     await tick();

@@ -260,3 +260,92 @@ test.describe("A10 and A11: the payment panel", () => {
   });
 });
 
+async function makeItemWithGroups(request: APIRequestContext, name: string): Promise<string> {
+  const res = await request.post("/admin/api/items", {
+    data: {
+      name,
+      description: "",
+      priceCents: 500,
+      public: false,
+      stockMode: "ready_to_print",
+      stockQty: 0,
+      sortOrder: 900,
+      optionGroups: [{ label: "Color", required: true, options: [{ name: "Red", deltaCents: 0 }, { name: "Blue", deltaCents: 0 }, { name: "Green", deltaCents: 0 }] }],
+    },
+  });
+  expect(res.ok(), await res.text()).toBeTruthy();
+  return ((await res.json()) as { id: string }).id;
+}
+
+test.describe("A11, A12, A14, A15: option rows", () => {
+  test("saving from inside an option row keeps focus; removing a saved choice or group asks first; arrows stop at the ends; moves announce one-based; photo hint is once", async ({ page, request }) => {
+    const name = `A12 Item ${Date.now()}`;
+    const id = await makeItemWithGroups(request, name);
+    try {
+      await page.goto("/admin/#/items");
+      await page.getByRole("button", { name: new RegExp(name) }).first().click();
+      await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+
+      // A11: Ctrl+S from a choice field, which the save rebuilds, leaves focus somewhere real.
+      await page.getByLabel("Group 1 choice 2", { exact: true }).fill("Navy");
+      await page.getByLabel("Group 1 choice 2", { exact: true }).press("Control+s");
+      await expect(page.getByTestId("item-saved")).toContainText("Saved.");
+      const active = await page.evaluate(() => document.activeElement?.tagName ?? "");
+      expect(active).not.toBe("BODY");
+
+      // A12: Remove choice asks first; Cancel keeps it and returns focus to the row's menu button.
+      const menu = (label: string) => page.getByRole("button", { name: `More actions for ${label}` });
+      const green = menu("Group 1 choice 3: Green");
+      await green.focus();
+      await page.keyboard.press("Enter");
+      await page.getByRole("button", { name: "Remove", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Yes, remove Green" })).toBeFocused();
+      await page.getByRole("button", { name: "Cancel" }).click();
+      await expect(page.getByRole("button", { name: "Yes, remove Green" })).toHaveCount(0);
+      await expect(page.getByLabel("Group 1 choice 3", { exact: true })).toHaveValue("Green");
+      await expect(green).toBeFocused();
+
+      // Confirming removes it.
+      await page.keyboard.press("Enter");
+      await page.getByRole("button", { name: "Remove", exact: true }).click();
+      await page.getByRole("button", { name: "Yes, remove Green" }).click();
+      await expect(page.getByLabel("Group 1 choice 3", { exact: true })).toHaveCount(0);
+
+      // The group asks too.
+      await menu("Option group 1: Color").focus();
+      await page.keyboard.press("Enter");
+      await page.getByRole("button", { name: "Remove group" }).click();
+      await expect(page.getByRole("button", { name: "Yes, remove Color" })).toBeVisible();
+      await page.getByRole("button", { name: "Cancel" }).click();
+      await expect(page.getByLabel("Group name")).toHaveValue("Color");
+
+      // A12: on the last choice Move down is disabled; ArrowDown from Move up reaches Remove and stops there.
+      const navy = menu("Group 1 choice 2: Navy");
+      await navy.focus();
+      await page.keyboard.press("Enter");
+      const panel = page.getByRole("group", { name: "More actions for Group 1 choice 2: Navy" });
+      await expect(panel.getByRole("button", { name: "Move up" })).toBeFocused();
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown");
+      await expect(panel.getByRole("button", { name: "Remove" })).toBeFocused();
+      await page.keyboard.press("Escape");
+
+      // A14: Navy moves up to position 1 of 2 (one-based).
+      const live = page.locator("[aria-live=polite]").first();
+      await navy.focus();
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Enter");
+      await expect(live).toContainText("moved to position 1 of 2");
+      await expect(live).not.toContainText("position 0");
+
+      // A15: a new choice has no photo yet; the hint shows once for the group, not on every choice.
+      await page.getByRole("button", { name: "Add choice" }).click();
+      await page.getByRole("button", { name: "Add choice" }).click();
+      await expect(page.getByText(/^Save the item first to add a photo/)).toHaveCount(1);
+    } finally {
+      await request.delete(`/admin/api/items/${id}`);
+    }
+  });
+});
+

@@ -36,11 +36,11 @@
   import DataTable, { type DataColumn } from "./ui/DataTable.svelte";
   import ConfirmInline from "./ui/ConfirmInline.svelte";
   import RowEditor from "./ui/RowEditor.svelte";
-  import { focusAfterRowRemoved } from "./ui/rowEditor";
+  import { focusAfterRowRemoved, rowMenuKey } from "./ui/rowEditor";
   import ItemCategories from "./ItemCategories.svelte";
   import { listCategories, type Category } from "../lib/categoriesApi";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
-  import { focusRowOrHeading, keySelector, neighborId } from "../lib/a11yFocus";
+  import { focusRowOrHeading, keySelector, neighborId, refocusIfLost } from "../lib/a11yFocus";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 
@@ -428,6 +428,9 @@
       };
       announce(result.public ? `${result.name} saved.` : `${result.name} saved. Hidden from the shop.`);
       if (wasNew) openerId = result.id;
+      // The form was rebuilt from the saved item, which can drop the focused field's element: put focus back on
+      // Save when it fell to <body> (A11).
+      void refocusIfLost(keySelector("save-item"));
     } catch (err) {
       if (err instanceof ConflictError) {
         conflict = true;
@@ -505,7 +508,24 @@
     form.groups = [...form.groups, group];
     void focusAfterUpdate(keySelector(`group-label-${group.key}`));
   }
+  // Removing a saved group or choice asks first (A12): unsaved edits can be abandoned, but a stored choice is
+  // gone for good once the item is saved. A row added in this session has no id yet and goes at once.
+  let confirmingRemove = $state<string | null>(null);
+  function askRemoveGroup(gi: number) {
+    const g = form.groups[gi];
+    if (!g) return;
+    if (g.id === "") removeGroup(gi);
+    else confirmingRemove = groupRowKey(g);
+  }
+  function askRemoveOption(gi: number, i: number) {
+    const g = form.groups[gi];
+    const o = g?.options[i];
+    if (!g || !o) return;
+    if (o.id === "") removeOption(gi, i);
+    else confirmingRemove = optionRowKey(g, o);
+  }
   function removeGroup(gi: number) {
+    confirmingRemove = null;
     const label = form.groups[gi]?.label.trim() || `group ${gi + 1}`;
     form.groups = form.groups.filter((_, idx) => idx !== gi);
     announce(`Removed ${label}.`);
@@ -527,6 +547,7 @@
   function removeOption(gi: number, i: number) {
     const g = form.groups[gi];
     if (!g) return;
+    confirmingRemove = null;
     g.options = g.options.filter((_, idx) => idx !== i);
     announce("Choice removed.");
     // The removed row held focus; move to the next choice's ⋯ button, else this group's Add choice.
@@ -808,9 +829,20 @@
             position={{ index: gi, count: form.groups.length }}
             onmoveup={() => moveGroup(gi, -1)}
             onmovedown={() => moveGroup(gi, 1)}
-            onremove={() => removeGroup(gi)}
+            onremove={() => askRemoveGroup(gi)}
             removeLabel="Remove group"
           >
+            {#snippet notice()}
+              {#if confirmingRemove === groupRowKey(g)}
+                <ConfirmInline
+                  confirmLabel={`Yes, remove ${g.label.trim() || `group ${gi + 1}`}`}
+                  danger
+                  restore={keySelector(rowMenuKey(groupRowKey(g)))}
+                  onconfirm={() => removeGroup(gi)}
+                  oncancel={() => (confirmingRemove = null)}
+                >It and its {g.options.length === 1 ? "choice" : `${g.options.length} choices`} are deleted when you save the item.</ConfirmInline>
+              {/if}
+            {/snippet}
             {#snippet fields()}
               <FormGrid>
                 <Field id={`group-name-${g.key}`} label="Group name" size="m">
@@ -836,8 +868,40 @@
                   position={{ index: i, count: g.options.length }}
                   onmoveup={() => moveOption(gi, i, -1)}
                   onmovedown={() => moveOption(gi, i, 1)}
-                  onremove={() => removeOption(gi, i)}
+                  onremove={() => askRemoveOption(gi, i)}
                 >
+                  {#snippet notice()}
+                    {#if confirmingRemove === optionRowKey(g, opt)}
+                      <ConfirmInline
+                        confirmLabel={`Yes, remove ${opt.name.trim() || `choice ${i + 1}`}`}
+                        danger
+                        restore={keySelector(rowMenuKey(optionRowKey(g, opt)))}
+                        onconfirm={() => removeOption(gi, i)}
+                        oncancel={() => (confirmingRemove = null)}
+                      >It is deleted when you save the item.</ConfirmInline>
+                    {/if}
+                    {#if opt.id && detailId !== null}
+                      <div class="option-photo">
+                        {#if photo}
+                          <img class="option-thumb" src={"item-images/" + photo} alt={`Photo of ${opt.name.trim() || "choice"}`} />
+                        {/if}
+                        <label class="file-label">
+                          <span class="visually-hidden">{photo ? "Replace" : "Add"} photo for group {gi + 1} choice {i + 1}{opt.name.trim() ? ` (${opt.name.trim()})` : ""}</span>
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            data-focus-key={`option-photo-${opt.key}`}
+                            onchange={(e) => handleOptionFile(e, opt)}
+                            disabled={optionImageBusy !== null}
+                            aria-busy={optionImageBusy === opt.id}
+                          />
+                        </label>
+                        {#if photo}
+                          <button type="button" aria-label={`Remove photo from group ${gi + 1} choice ${i + 1}`} onclick={() => removeOptionPhoto(opt)}>Remove photo</button>
+                        {/if}
+                      </div>
+                    {/if}
+                  {/snippet}
                   {#snippet fields()}
                     <FormGrid>
                       <Field id={`option-name-${g.key}-${opt.key}`} label="Choice" size="m">
@@ -862,32 +926,12 @@
                         warn={deltaWarn}
                       />
                     </FormGrid>
-                    <div class="option-photo">
-                      {#if !opt.id || detailId === null}
-                        <small class="field-hint">Save the item first to add a photo.</small>
-                      {:else}
-                        {#if photo}
-                          <img class="option-thumb" src={"item-images/" + photo} alt={`Photo of ${opt.name.trim() || "choice"}`} />
-                        {/if}
-                        <label class="file-label">
-                          <span class="visually-hidden">{photo ? "Replace" : "Add"} photo for group {gi + 1} choice {i + 1}{opt.name.trim() ? ` (${opt.name.trim()})` : ""}</span>
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp"
-                            data-focus-key={`option-photo-${opt.key}`}
-                            onchange={(e) => handleOptionFile(e, opt)}
-                            disabled={optionImageBusy !== null}
-                            aria-busy={optionImageBusy === opt.id}
-                          />
-                        </label>
-                        {#if photo}
-                          <button type="button" aria-label={`Remove photo from group ${gi + 1} choice ${i + 1}`} onclick={() => removeOptionPhoto(opt)}>Remove photo</button>
-                        {/if}
-                      {/if}
-                    </div>
                   {/snippet}
                 </RowEditor>
               {/each}
+              {#if detailId === null || g.options.some((o) => o.id === "")}
+                <small class="field-hint">Save the item first to add a photo to a new choice.</small>
+              {/if}
               <div class="add-line">
                 <button type="button" data-focus-key={`add-option-${g.key}`} aria-disabled={g.options.length >= MAX_OPTIONS_PER_GROUP} onclick={() => addOption(gi)}>Add choice</button>
                 {#if g.options.length >= MAX_OPTIONS_PER_GROUP}<small class="field-hint">A group has at most {MAX_OPTIONS_PER_GROUP} choices.</small>{/if}
@@ -922,7 +966,7 @@
 
     <div class="save-area">
       <div class="form-actions start">
-        <button type="button" class="primary" onclick={() => save()} aria-disabled={saving || !dirty}>{saving ? "Saving…" : "Save"}</button>
+        <button type="button" class="primary" data-focus-key="save-item" onclick={() => save()} aria-disabled={saving || !dirty}>{saving ? "Saving…" : "Save"}</button>
       </div>
       <p class="status-line saved-status" role="status" data-testid="item-saved">
         {#if savedStatus}

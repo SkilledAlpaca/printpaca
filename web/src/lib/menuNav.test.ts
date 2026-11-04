@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { nextMenuIndex } from "./menuNav";
 
 describe("nextMenuIndex", () => {
-  it("moves down and wraps at the end", () => {
+  it("moves down and stops at the end", () => {
     expect(nextMenuIndex("ArrowDown", 0, 3)).toBe(1);
-    expect(nextMenuIndex("ArrowDown", 2, 3)).toBe(0);
+    expect(nextMenuIndex("ArrowDown", 2, 3)).toBe(2);
   });
-  it("moves up and wraps at the start", () => {
+  it("moves up and stops at the start", () => {
     expect(nextMenuIndex("ArrowUp", 2, 3)).toBe(1);
-    expect(nextMenuIndex("ArrowUp", 0, 3)).toBe(2);
+    expect(nextMenuIndex("ArrowUp", 0, 3)).toBe(0);
   });
   it("starts from the ends when focus is not on an item", () => {
     expect(nextMenuIndex("ArrowDown", -1, 3)).toBe(0);

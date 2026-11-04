@@ -1,6 +1,8 @@
 <script lang="ts">
   import { canLeave, escapeBelongsToField } from "../lib/unsavedGuard";
   import { unsavedForm } from "../lib/unsavedForm.svelte";
+  import type { ConfigUser } from "../lib/permissions";
+  import { registerPageSave } from "../lib/pageShortcuts.svelte";
   import { onMount, tick, untrack } from "svelte";
   import { toCents, type EffectiveConfig } from "../lib/engine/index";
   import { listClients, type Client } from "../lib/clientsApi";
@@ -43,7 +45,7 @@
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
   import { focusAfterRowRemoval, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "../lib/a11yFocus";
 
-  let { cfg }: { cfg: EffectiveConfig } = $props();
+  let { cfg, user = null }: { cfg: EffectiveConfig; user?: ConfigUser | null } = $props();
 
   let invoices = $state<InvoiceSummary[]>([]);
   let loading = $state(true);
@@ -111,18 +113,19 @@
     form.clientId = id;
   }
 
+  // Ctrl/Cmd+S (App.svelte's handler) saves an invoice that is still editable (a new draft or a saved one); with
+  // nothing editable it does nothing.
+  $effect(() => {
+    if (view !== "detail") return;
+    return registerPageSave(() => {
+      if (!detailLoading && (detail === null || detail.status === "draft")) void save();
+    });
+  });
+
   // Escape closes an open detail view like "Back to list", but first cancels any armed two-click confirm
   // (delete or cancel invoice, remove line, delete payment). Ignored while a native <select> is focused so
   // the browser can close its own dropdown.
   function handleDetailKeydown(e: KeyboardEvent) {
-    // Ctrl+S / Cmd+S saves an invoice that is still editable (a new draft or a saved one). Like the quote
-    // editor's, it always swallows the browser's own Save-page, and no-ops when there is nothing to save.
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.code === "KeyS" || e.key?.toLowerCase() === "s")) {
-      if (view !== "detail") return;
-      e.preventDefault();
-      if (!detailLoading && (detail === null || detail.status === "draft")) void save();
-      return;
-    }
     if (e.key !== "Escape") return;
     if (view !== "detail") return;
     if (escapeBelongsToField(e.target)) return;
@@ -669,6 +672,7 @@
   {:else}
     <InvoiceDetail
       {cfg}
+      {user}
       {clients}
       {items}
       {detail}

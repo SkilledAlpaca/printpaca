@@ -28,9 +28,11 @@
   import DetailTitle from "../DetailTitle.svelte";
   import ScrollRegion from "../ScrollRegion.svelte";
   import { confirmFocus, keySelector } from "../../lib/a11yFocus";
+  import { canConfigureShop, type ConfigUser } from "../../lib/permissions";
 
   let {
     cfg,
+    user = null,
     clients,
     items,
     detail,
@@ -84,6 +86,8 @@
     onCancelDeletePaymentConfirm,
     onConfirmDeletePayment,
   }: {
+    /** The signed-in user: only an admin gets the link to Settings; staff are told to ask an admin. */
+    user?: ConfigUser | null;
     cfg: EffectiveConfig;
     clients: Client[];
     items: Item[];
@@ -476,7 +480,8 @@
       {#if emailReason}
         <p id="email-disabled-reason" class="hint">
           {#if emailReason === "unconfigured"}
-            Email isn't configured. <a href="#/settings">Set it up in Settings.</a>
+            Email isn't configured.
+            {#if canConfigureShop(user)}<a href="#/settings">Set it up in Settings.</a>{:else}Ask an admin to set up email.{/if}
           {:else}
             This client has no email on file. Add one on the Clients page.
           {/if}

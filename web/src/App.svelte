@@ -985,7 +985,7 @@
   {:else if tab === "clients"}
     <ClientsTab cfg={config} />
   {:else if tab === "invoices"}
-    <InvoicesTab cfg={config} />
+    <InvoicesTab cfg={config} user={configUser} />
   {:else if tab === "items"}
     <ItemsTab cfg={config} />
   {:else if tab === "requests"}

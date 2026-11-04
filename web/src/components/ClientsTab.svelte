@@ -2,6 +2,7 @@
   import ErrorSummary from "./ErrorSummary.svelte";
   import { canLeave, escapeBelongsToField } from "../lib/unsavedGuard";
   import { unsavedForm } from "../lib/unsavedForm.svelte";
+  import { registerPageSave } from "../lib/pageShortcuts.svelte";
   import { onMount } from "svelte";
   import type { EffectiveConfig } from "../lib/engine/index";
   import { listClients, createClient, updateClient, deleteClient, type Client, type ClientInput } from "../lib/clientsApi";
@@ -302,17 +303,15 @@
     });
   }
 
+  // Ctrl/Cmd+S (App.svelte's handler) saves the open client form, even from inside a field.
+  $effect(() => {
+    if (view !== "detail") return;
+    return registerPageSave(() => void save());
+  });
+
   // Escape closes an open detail view like "Back to list", but cancels an armed two-click delete first.
   // Ignored while focus is in a text field or select, which use Escape themselves (dismissing autocomplete or a dropdown).
   function handleDetailKeydown(e: KeyboardEvent) {
-    // Ctrl+S / Cmd+S saves the open client form, even from inside a field; with nothing changed it still
-    // swallows the browser's own Save-page.
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.code === "KeyS" || e.key?.toLowerCase() === "s")) {
-      if (view !== "detail") return;
-      e.preventDefault();
-      void save();
-      return;
-    }
     if (e.key !== "Escape") return;
     if (view !== "detail") return;
     if (escapeBelongsToField(e.target)) return;

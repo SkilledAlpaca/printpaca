@@ -30,7 +30,7 @@
   import { buildQuoteSendPayload, sendQuoteEmail } from "../lib/sendApi";
   import { sendWithEnteredEmail, type CreatedClients } from "../lib/walkInSend";
   import { clientEmailFor, emailDisabledReason, needsEmailEntry, validEntryEmail, canManageClientsFor } from "../lib/quoteEmail";
-  import type { ConfigUser } from "../lib/permissions";
+  import { canConfigureShop, canEditQuotes, type ConfigUser } from "../lib/permissions";
   import { computeMenuAnchor } from "../lib/menuAnchor";
   import { handleMenuKeydown } from "../lib/menuNav";
   import { matchesQuoteFilter, QUOTE_STATUS_CHIPS, type QuoteStatusFilter } from "../lib/quoteFilter";
@@ -46,6 +46,9 @@
 
   let { cfg, user = null }: { cfg: EffectiveConfig; user?: ConfigUser | null } = $props();
   const canManageClients = $derived(canManageClientsFor(user));
+  // Staff without the quote grant can list and read saved quotes but not edit or create them (permissions.ts).
+  const canEdit = $derived(canEditQuotes(user));
+  const canConfigure = $derived(canConfigureShop(user));
 
   // The full quote list with filter, sort, export/import, convert, duplicate and delete. `quotes` holds the
   // raw server shape because status-only mutations re-PUT the quote with inputs/options/formState echoed back
@@ -759,7 +762,9 @@
   <div class="head-row">
     <h1 tabindex="-1">Quotes</h1>
     <div class="head-actions">
-      <button type="button" class="primary" onclick={() => { if (startNewQuote(cfg)) location.hash = "#/quote"; }}>New quote</button>
+      {#if canEdit}
+        <button type="button" class="primary" onclick={() => { if (startNewQuote(cfg)) location.hash = "#/quote"; }}>New quote</button>
+      {/if}
       <button type="button" class="quiet" onclick={exportQuotes} aria-disabled={quotes.length === 0 || backfill.backfilling}>
         Export
       </button>
@@ -834,7 +839,8 @@
 
   {#if cfg.smtp.host === ""}
     <p class="banner-muted">
-      Email isn't configured, so quotes can't be emailed from here. <a href="#/settings">Set it up in Settings.</a>
+      Email isn't configured, so quotes can't be emailed from here.
+      {#if canConfigure}<a href="#/settings">Set it up in Settings.</a>{:else}Ask an admin to set up email.{/if}
     </p>
   {/if}
 
@@ -863,7 +869,11 @@
               {@const primaryT = primaryTransition(q)}
               <tr class="quote-row">
                 <td class="c-label">
-                  <button type="button" class="quiet linkish" data-row-id={q.id} onclick={() => openInEditor(q)}>{q.label}</button>
+                  {#if canEdit}
+                    <button type="button" class="quiet linkish" data-row-id={q.id} onclick={() => openInEditor(q)}>{q.label}</button>
+                  {:else}
+                    <span data-row-id={q.id}>{q.label}</span>
+                  {/if}
                   {#if isMultiPart(q)}<span class="parts-badge">{q.partCount} parts</span>{/if}
                   <AttributionLine createdBy={q.createdBy} updatedBy={q.updatedBy} />
                 </td>
@@ -891,7 +901,9 @@
                 <td class="nowrap c-saved" data-label="Saved">{formatSavedAt(q.savedAt)}</td>
                 <td class="c-actions">
                   <div class="row-actions">
-                    <button type="button" class="quiet" onclick={() => openInEditor(q)}>Open in editor</button>
+                    {#if canEdit}
+                      <button type="button" class="quiet" onclick={() => openInEditor(q)}>Open in editor</button>
+                    {/if}
                     {#if primaryT}
                       <button
                         type="button"

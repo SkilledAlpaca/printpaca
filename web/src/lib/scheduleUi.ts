@@ -1,4 +1,4 @@
-import { parseClock, validateEnergySchedule, type EnergySchedule, type TouDay } from "./engine/schedule";
+import { parseClock, sameTouWindows, validateEnergySchedule, type EnergySchedule, type TouDay } from "./engine/schedule";
 
 /** A schedule problem in the user's terms. `path` is the server path without the `energy.schedule.` prefix
  * (for example `seasons[1].weekday.windows[0].start`), used to mark the matching input. */
@@ -45,6 +45,7 @@ function plainMessage(msg: string): string {
     .replace(/^required$/, "can't be empty")
     .replace(/^must be >= 0$/, "must be 0 or more")
     .replace(/^start must be before end$/, "the start must be earlier than the end")
+    .replace(/^sameWindowsAllYear is on, so the windows must match seasons\[0\] \(rates may differ\)$/, "Same schedule all year is on, so the windows must match the first season's (only the rates can differ)")
     .replace(/^windows must not overlap$/, "windows can't overlap")
     .replace(/^at most (\d+) characters$/, "use at most $1 characters")
     .replace(/^(\d+) windows exceeds max (\d+)$/, "$1 windows is more than the limit of $2")
@@ -102,6 +103,30 @@ function splitDay(day: TouDay): number {
   }
   day.windows = out;
   return n;
+}
+
+/** Whether the seasons' base period names and windows (name, start, end) are not all the same, so turning on
+ * "Same schedule all year" would change some of them. Rates are ignored. */
+export function windowsDifferAcrossSeasons(schedule: EnergySchedule): boolean {
+  const first = schedule.seasons[0];
+  if (!first) return false;
+  return schedule.seasons.some((se) => !sameTouWindows(first.weekday, se.weekday) || !sameTouWindows(first.weekend, se.weekend));
+}
+
+function shareDay(first: TouDay, day: TouDay): void {
+  day.baseName = first.baseName;
+  day.windows = first.windows.map((w, i) => ({ name: w.name, start: w.start, end: w.end, rate: day.windows[i]?.rate ?? w.rate }));
+}
+
+/** Writes the first season's base period names and windows (name, start, end) into every other season, keeping
+ * each season's own rates (a window the season didn't have yet starts at the first season's rate). Mutates. */
+export function shareWindowsAcrossSeasons(schedule: EnergySchedule): void {
+  const first = schedule.seasons[0];
+  if (!first) return;
+  for (const se of schedule.seasons.slice(1)) {
+    shareDay(first.weekday, se.weekday);
+    shareDay(first.weekend, se.weekend);
+  }
 }
 
 /** Splits every window that runs past midnight (start later than end) into two windows at midnight, which

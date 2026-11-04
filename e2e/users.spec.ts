@@ -14,6 +14,7 @@ const EMPLOYEE_NEW_PASSWORD = "e2e-employee-secret-2";
 // page.goto doesn't race it and die with net::ERR_ABORTED.
 async function logOut(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm sign out" }).click();
   await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
 }
 

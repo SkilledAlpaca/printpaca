@@ -149,14 +149,14 @@ test.describe("invoices", () => {
     await expect(page.getByRole("button", { name: /^Record \$14\.84 .*today$/ })).toBeVisible();
 
     // Enter in the amount field records it; the draft becomes sent with a balance.
-    await page.getByLabel("Payment amount").fill("5.01");
+    await page.locator(".payments-card").getByLabel(/^Amount/).fill("5.01");
     await expect(page.getByRole("button", { name: /^Record \$5\.01 .*today$/ })).toBeVisible();
-    await page.getByLabel("Payment amount").press("Enter");
+    await page.locator(".payments-card").getByLabel(/^Amount/).press("Enter");
     await expect(page.getByText(/Paid \$5\.01 of \$14\.84, balance \$9\.83/)).toBeVisible();
     await expect(page.getByText("sent", { exact: true })).toBeVisible();
 
     // $20.00 is $10.17 over the $9.83 balance.
-    await page.getByLabel("Payment amount").fill("20.00");
+    await page.locator(".payments-card").getByLabel(/^Amount/).fill("20.00");
     await page.getByRole("button", { name: /^Record \$20\.00 / }).click();
     await expect(page.getByText("This is $10.17 more than the balance. Record anyway?")).toBeVisible();
     await page.getByRole("button", { name: "Cancel", exact: true }).click();

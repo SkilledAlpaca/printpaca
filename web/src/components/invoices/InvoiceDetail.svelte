@@ -11,6 +11,7 @@
     previewTotalsFor,
     hasQuoteProvenance,
     hasAtMostTwoDecimals,
+    lineProblems,
     totalsRows,
     linkLineToItem,
     unlinkLine,
@@ -21,6 +22,8 @@
     type PaymentForm,
   } from "../../lib/invoiceForm";
   import { mdiArrowLeft } from "@mdi/js";
+  import { requestReference } from "../../lib/requestRow";
+  import { pendingOpen } from "../../lib/state.svelte";
   import Icon from "../Icon.svelte";
   import StatusBadge from "../StatusBadge.svelte";
   import PaymentsPanel from "./PaymentsPanel.svelte";
@@ -28,7 +31,7 @@
   import DetailTitle from "../DetailTitle.svelte";
   import ScrollRegion from "../ScrollRegion.svelte";
   import { confirmFocus, keySelector } from "../../lib/a11yFocus";
-  import { canConfigureShop, type ConfigUser } from "../../lib/permissions";
+  import { canConfigureShop, hasTabAccess, type ConfigUser } from "../../lib/permissions";
 
   let {
     cfg,
@@ -170,7 +173,16 @@
         })
       : [],
   );
+  // Picking a shop item needs the Shop items grant (GET /api/items is gated on it); without it the picker is
+  // left out rather than offered empty.
+  const canPickItems = $derived(hasTabAccess("items", user));
   const provenance = $derived(hasQuoteProvenance(form));
+
+  // The linked request opens through the same cross-tab hand-off as the Dashboard's rows.
+  function openRequest(id: string) {
+    pendingOpen.current = { tab: "requests", id };
+    location.hash = "#/requests";
+  }
 
   // Picking an item (or switching its option) rewrites the line's description, price and link; "" unlinks.
   function pickItem(i: number, line: LineForm, itemId: string) {
@@ -221,6 +233,12 @@
     <DetailTitle>{detail ? `Invoice ${detail.number}` : "New invoice"}</DetailTitle>
     {#if detail}<AttributionLine createdBy={detail.createdBy} updatedBy={detail.updatedBy} />{/if}
     {#if provenance}<p class="hint">Created from a saved quote.</p>{/if}
+    {#if detail?.requestId}
+      <p class="hint">
+        Created from request
+        <button type="button" class="quiet linkish" onclick={() => openRequest(detail!.requestId!)}>{requestReference({ id: detail.requestId, reference: detail.requestReference })}</button>.
+      </p>
+    {/if}
 
     <ErrorSummary errors={formErrors} />
     {#if versionConflict}
@@ -278,7 +296,7 @@
       </label>
 
       <h3>Lines</h3>
-      <p class="hint">Link a line to a shop item so a counter sale counts in Top items once the invoice is sent or paid, and sending takes in-stock items off the shelf.</p>
+      {#if canPickItems}<p class="hint">Link a line to a shop item so a counter sale counts in Top items once the invoice is sent or paid, and sending takes in-stock items off the shelf.</p>{/if}
       <div class="table-scroll">
         <table>
           <thead>
@@ -287,10 +305,12 @@
           <tbody>
             {#each form.lines as line, i (i)}
               {@const linked = items.find((x) => x.id === line.itemId)}
+              {@const lp = lineProblems(line)}
               <tr>
                 <td>
                   <input aria-label={`Line ${i + 1} description`} bind:value={line.description} />
                   <div class="item-link">
+                    {#if canPickItems}
                     <select
                       aria-label={`Line ${i + 1} shop item`}
                       value={line.itemId}
@@ -313,6 +333,9 @@
                         </select>
                       {/each}
                     {/if}
+                    {:else if line.itemId}
+                      <span class="hint">Linked to a shop item</span>
+                    {/if}
                     {#if line.itemId}
                       <button type="button" class="quiet" aria-label={`Unlink line ${i + 1} from its shop item`} onclick={() => pickItem(i, line, "")}>Unlink</button>
                     {/if}
@@ -327,10 +350,19 @@
                     </label>
                   </div>
                 </td>
-                <td><input type="number" min={line.itemId ? 1 : 0.0001} step={line.itemId ? 1 : "any"} aria-label={`Line ${i + 1} quantity`} aria-invalid={!(line.quantity > 0) || undefined} bind:value={line.quantity} /></td>
-                <td><input type="number" min="0" step="0.01" aria-label={`Line ${i + 1} unit price`} aria-invalid={!hasAtMostTwoDecimals(line.unitPrice ?? 0) || undefined} bind:value={line.unitPrice} /></td>
-                <td><input type="number" min="0" step="0.01" aria-label={`Line ${i + 1} discount`} aria-invalid={!hasAtMostTwoDecimals(line.discount ?? 0) || undefined} bind:value={line.discount} /></td>
-                <td class="num">{money(previewTotals.lineAmounts[i] ?? 0, cfg)}</td>
+                <td>
+                  <input type="number" min={line.itemId ? 1 : 0.0001} step={line.itemId ? 1 : "any"} aria-label={`Line ${i + 1} quantity`} aria-invalid={lp.quantity ? true : undefined} aria-describedby={lp.quantity ? `line-${i}-qty-err` : undefined} bind:value={line.quantity} />
+                  {#if lp.quantity}<small class="line-error" id={`line-${i}-qty-err`}>{lp.quantity}</small>{/if}
+                </td>
+                <td>
+                  <input type="number" min="0" step="0.01" aria-label={`Line ${i + 1} unit price`} aria-invalid={lp.unitPrice ? true : undefined} aria-describedby={lp.unitPrice ? `line-${i}-price-err` : undefined} bind:value={line.unitPrice} />
+                  {#if lp.unitPrice}<small class="line-error" id={`line-${i}-price-err`}>{lp.unitPrice}</small>{/if}
+                </td>
+                <td>
+                  <input type="number" min="0" step="0.01" aria-label={`Line ${i + 1} discount`} aria-invalid={lp.discount ? true : undefined} aria-describedby={lp.discount ? `line-${i}-disc-err` : undefined} bind:value={line.discount} />
+                  {#if lp.discount}<small class="line-error" id={`line-${i}-disc-err`}>{lp.discount}</small>{/if}
+                </td>
+                <td class="num">{Object.keys(lp).length > 0 ? "-" : money(previewTotals.lineAmounts[i] ?? 0, cfg)}</td>
                 <td>
                   {#if confirmingLineRemove === i}
                     <button type="button" class="danger quiet" aria-label={`Yes, remove line ${i + 1}`} onclick={() => onRemoveLine(i)} use:confirmFocus={{ restore: keySelector(`remove-line-${i}`), cancel: onCancelRemoveLine }}>Yes, remove</button>
@@ -496,6 +528,7 @@
 
 <style>
   .back-link { display: inline-flex; align-items: center; gap: 0.35rem; }
+  .line-error { display: block; color: var(--danger); font-size: var(--text-xs); margin-top: 0.15rem; }
 
   .card .field { margin-bottom: 0.6rem; }
   .address, .notes { font-size: var(--text-sm); margin: 0.3rem 0; }

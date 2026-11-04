@@ -157,12 +157,18 @@ export function unlinkLine(line: LineForm): LineForm {
  * server recomputes on save. kind is passed per line so a shipping line previews exempt exactly as stored. */
 export function previewTotalsFor(form: InvoiceForm): InvoiceTotals {
   return invoiceTotals(
-    form.lines.map((l) => ({
-      quantity: l.quantity,
-      unitPriceCents: toCents(l.unitPrice),
-      discountCents: toCents(l.discount),
-      kind: l.kind,
-    })),
+    form.lines.map((l) =>
+      // A line with a problem (negative or zero quantity, a sub-cent price) is left out of the preview rather
+      // than priced from a value that can't be saved.
+      lineHasProblem(l)
+        ? { quantity: 0, unitPriceCents: 0, discountCents: 0, kind: l.kind }
+        : {
+            quantity: l.quantity,
+            unitPriceCents: toCents(l.unitPrice),
+            discountCents: toCents(l.discount),
+            kind: l.kind,
+          },
+    ),
     toCents(form.discount),
     pctToBp(form.taxPct),
   );
@@ -205,6 +211,20 @@ export function defaultPaymentForm(
     note: "",
     reference: "",
   };
+}
+
+/**
+ * The Amount the payment form should hold after the invoice's balance changed (a save, a new total, a
+ * payment). A user-typed amount stays; an untouched one (still equal to the previous default) follows the
+ * balance, so a freshly saved invoice never offers "Record $0.00". Returns the amount in currency units.
+ */
+export function followBalanceAmount(
+  current: number | null | undefined,
+  previousDefaultCents: number,
+  balanceCents: number,
+): number | null | undefined {
+  const untouched = current === null || current === undefined || current === 0 || toCents(current) === previousDefaultCents;
+  return untouched ? balanceCents / 100 : current;
 }
 
 // Disabled reason for "Email to client", from cfg.smtp.host (already loaded). "to" is never overridden here:
@@ -318,4 +338,36 @@ export function totalsRows(t: {
   rows.push({ key: "tax", label: "Tax", cents: t.taxCents });
   rows.push({ key: "total", label: "Total", cents: t.totalCents });
   return rows;
+}
+
+/** Per-field problems of one invoice line, as short sentences for the message under the field. */
+export interface LineProblems {
+  quantity?: string;
+  unitPrice?: string;
+  discount?: string;
+}
+
+function moneyFieldProblem(value: number | null | undefined): string | undefined {
+  const v = amountOf(value);
+  if (!Number.isFinite(v)) return "Enter a number.";
+  if (v < 0) return "Can't be negative.";
+  if (!hasAtMostTwoDecimals(v)) return "Use at most two decimal places.";
+  return undefined;
+}
+
+/** What is wrong with a line right now, as you type: a quantity of zero or less, a negative or sub-cent price
+ * or discount. Empty when the line can be saved. */
+export function lineProblems(l: Pick<LineForm, "quantity" | "unitPrice" | "discount">): LineProblems {
+  const out: LineProblems = {};
+  const qty = amountOf(l.quantity);
+  if (!Number.isFinite(qty) || qty <= 0) out.quantity = "Must be greater than zero.";
+  const price = moneyFieldProblem(l.unitPrice);
+  if (price) out.unitPrice = price;
+  const discount = moneyFieldProblem(l.discount);
+  if (discount) out.discount = discount;
+  return out;
+}
+
+export function lineHasProblem(l: Pick<LineForm, "quantity" | "unitPrice" | "discount">): boolean {
+  return Object.keys(lineProblems(l)).length > 0;
 }

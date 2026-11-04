@@ -68,6 +68,9 @@ export interface Invoice {
   createdAt: string;
   updatedAt: string;
   lines: InvoiceLine[];
+  /** The shop request this invoice was created from (full invoice only; '' or absent when none). */
+  requestId?: string;
+  requestReference?: string;
   payments: Payment[];
   paidCents: number;
   balanceCents: number;

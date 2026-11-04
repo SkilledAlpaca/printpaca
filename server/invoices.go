@@ -110,6 +110,10 @@ type Invoice struct {
 	Payments []Payment     `json:"payments"`
 	// Sends is the delivery history, oldest first. Only on the full Invoice, like Payments.
 	Sends []InvoiceSend `json:"sends"`
+	// RequestID and RequestReference name the shop request this invoice was created from ('' when it was not),
+	// so the invoice can say "Created from request HLP-1017" and link back. Only on the full Invoice.
+	RequestID        string `json:"requestId"`
+	RequestReference string `json:"requestReference"`
 }
 
 // invoiceColumns lists the 21 invoices columns every read selects, in scanInvoiceSummary's order, so the
@@ -555,6 +559,11 @@ func (iv *invoices) load(id string) (*Invoice, bool, error) {
 		return nil, false, err
 	}
 	inv.Sends = sends
+
+	err = iv.db.QueryRow(`SELECT id, reference FROM quote_requests WHERE invoice_id = ? ORDER BY created_at DESC LIMIT 1`, id).Scan(&inv.RequestID, &inv.RequestReference)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, false, err
+	}
 
 	return &inv, true, nil
 }

@@ -206,6 +206,9 @@
    * min-width in rem so it scales with root font size and doesn't clip "Canceled". */
   .chips button { min-width: 6.5rem; }
 
+  /* "Partially paid" and "Overpaid $x" never break mid-phrase; they sit under the status badge, not beside it. */
+  .c-status .pill { display: inline-block; white-space: nowrap; margin-top: 0.25rem; }
+
   /* Phones: each row becomes a stacked card with the number and amount on top, then client and status, then
    * the two dates, so nothing is clipped behind a horizontal scroll. The header row stays in the DOM, hidden
    * with the visually-hidden clip (not display: none), and the table elements keep their table semantics.
@@ -232,7 +235,7 @@
     .c-num { grid-area: num; }
     .c-amount { grid-area: amount; text-align: right; font-weight: 600; }
     .c-client { grid-area: client; overflow-wrap: anywhere; }
-    .c-status { grid-area: status; text-align: right; }
+    .stack td.c-status { grid-area: status; display: flex; flex-direction: column; align-items: flex-end; }
     .c-issued { grid-area: issued; }
     .c-due { grid-area: due; text-align: right; }
     .c-issued, .c-due { color: var(--muted); font-size: var(--text-sm); }

@@ -87,6 +87,12 @@ interface SiteConfig {
   adminUrl: string;
 }
 
+// Mirrors server/config.go's Shop: customer-facing shop limits. Applies without a restart.
+interface ShopConfig {
+  /** The largest quantity one public estimate request or gallery order may carry (1 to 10000). */
+  maxOrderQty: number;
+}
+
 // Mirrors server/config.go's Smtp. The password never travels here; it comes only from SMTP_PASSWORD.
 interface SmtpConfig {
   host: string;
@@ -147,6 +153,7 @@ export interface EffectiveConfig {
   invoicing: InvoicingConfig;
   publicQuotes: PublicQuotesConfig;
   site: SiteConfig;
+  shop: ShopConfig;
   // Operator-authored CSS served verbatim and unsanitized at GET /custom.css on both listeners
   // (server/config.go's Config.CustomCss). The admin app loads it with media="print" only, so it styles
   // printed quotes and invoices, never the on-screen UI.

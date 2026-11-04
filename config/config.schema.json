@@ -299,6 +299,15 @@
           "description": "Absolute http or https URL of the admin app, the Staff sign-in target in the footer of the shop on PUBLIC_PORT. Empty hides the link there."
         }
       }
+    },
+    "shop": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "maxOrderQty": {
+          "type": "integer", "minimum": 1, "maximum": 10000,
+          "description": "The largest quantity one public estimate request or gallery order may carry. Default 100."
+        }
+      }
     }
   }
 }

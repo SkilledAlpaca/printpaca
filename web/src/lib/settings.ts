@@ -98,6 +98,7 @@ const SECTION_IDS = new Set([
   "invoicing",
   "publicQuotes",
   "site",
+  "shop",
   "customCss",
   "smtp",
   "ui",

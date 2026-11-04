@@ -40,6 +40,7 @@ function baseConfig(): ServerConfig {
     integrationsUrls: { spoolmanUrl: "", moonrakerUrl: "", fluiddUrl: "" },
     ui: { disabledTabs: [] },
     site: { shopOnMainPort: true, staffLink: true, adminUrl: "" },
+    shop: { maxOrderQty: 100 },
     users: { multiUser: false, accessAdminEmail: "" },
   };
 }

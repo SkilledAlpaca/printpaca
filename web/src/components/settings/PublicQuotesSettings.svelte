@@ -11,7 +11,7 @@
   const introTextBytes = $derived(utf8ByteLength(form.publicQuotes.introText));
 </script>
 
-<div id="section-public-quotes" class="card roomy" class:danger-border={hasError("publicQuotes") || hasError("site")}>
+<div id="section-public-quotes" class="card roomy" class:danger-border={hasError("publicQuotes") || hasError("site") || hasError("shop")}>
   <p class="section-label">Settings</p>
   <h2>Public estimates</h2>
   <p class="hint">The printer and preset that price every visitor estimate. The intro text appears at the top of your
@@ -61,6 +61,11 @@
     <span>Show a Staff sign-in link in the shop footer</span>
   </label>
   <small class="field-hint">Adds a Staff sign-in link to the footer of the shop that opens the admin app at /admin/.</small>
+  <label class="field">
+    <span>Largest order quantity</span>
+    <input type="number" min="1" max="10000" step="1" bind:value={form.shop.maxOrderQty} aria-describedby="shop-max-qty-hint" />
+    <small class="field-hint" id="shop-max-qty-hint">The most units one estimate request or gallery order may carry, from 1 to 10,000. Customers see a message instead of a total above it.</small>
+  </label>
   <LabeledText
     label="Staff sign-in link on the public port"
     bind:value={form.site.adminUrl}

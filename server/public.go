@@ -258,6 +258,8 @@ type publicConfigResponse struct {
 	MaxUploadBytes int `json:"maxUploadBytes"`
 	// DemoMode lets the page show a "nothing is saved" banner up front (demo submissions insert no row).
 	DemoMode bool `json:"demoMode"`
+	// MaxOrderQty is shop.maxOrderQty: the largest quantity one estimate request or gallery order may carry.
+	MaxOrderQty int `json:"maxOrderQty"`
 }
 
 // staffURLFunc computes the shop footer's Staff sign-in target for one listener from the live config.
@@ -310,6 +312,7 @@ func handlePublicConfig(store *ConfigStore, demoMode bool, staffURL staffURLFunc
 			FilamentDiameterMm: printer.FilamentDiameterMm,
 			MaxUploadBytes:     publicMaxUploadBytes,
 			DemoMode:           demoMode,
+			MaxOrderQty:        cfg.maxOrderQty(),
 		}
 		resp.Branding.BusinessName = cfg.Quote.BusinessName
 		resp.Branding.LogoURL = cfg.Quote.LogoURL
@@ -594,8 +597,8 @@ func handlePublicItemOrder(db *sql.DB, store *ConfigStore, rl *rateLimiter, trus
 		if len(note) > 2000 {
 			problems = append(problems, "note: max 2000 characters")
 		}
-		if in.Quantity < 1 || in.Quantity > maxItemOrderQty {
-			problems = append(problems, fmt.Sprintf("quantity: must be an integer 1-%d", maxItemOrderQty))
+		if in.Quantity < 1 || in.Quantity > cfg.maxOrderQty() {
+			problems = append(problems, fmt.Sprintf("quantity: must be an integer 1-%d", cfg.maxOrderQty()))
 		}
 
 		item, found, err := getItem(db, in.ItemID)
@@ -822,8 +825,8 @@ func handlePublicQuotePreview(store *ConfigStore, rl *rateLimiter, trustProxy bo
 		} else if !materialIsPublic {
 			problems = append(problems, "material: no longer offered; choose another")
 		}
-		if in.Quantity < 1 || in.Quantity > maxPublicQuoteQty {
-			problems = append(problems, fmt.Sprintf("quantity: must be an integer 1-%d", maxPublicQuoteQty))
+		if in.Quantity < 1 || in.Quantity > cfg.maxOrderQty() {
+			problems = append(problems, fmt.Sprintf("quantity: must be an integer 1-%d", cfg.maxOrderQty()))
 		}
 		if in.WeightG < 0 || in.WeightG > 100000 {
 			problems = append(problems, "weightG: must be 0-100000")
@@ -913,9 +916,6 @@ func sanitizeGcodeFilename(name string) string {
 }
 
 const maxTimeSeconds = 30 * 24 * 3600 // 30 days
-
-// maxPublicQuoteQty caps the quantity on a public quote or request. web/src/public/PublicQuotePage.svelte mirrors it.
-const maxPublicQuoteQty = 10000
 
 // readBoundedField reads at most publicMaxFieldBytes from a non-file part, so no text field grows the
 // heap. A value truncated at the cap still fails its length check with the right error.
@@ -1358,8 +1358,8 @@ func handlePublicQuoteRequest(db *sql.DB, store *ConfigStore, configDir string, 
 		}
 
 		quantity, err := strconv.Atoi(strings.TrimSpace(fields["quantity"]))
-		if err != nil || quantity < 1 || quantity > maxPublicQuoteQty {
-			problems = append(problems, fmt.Sprintf("quantity: must be an integer 1-%d", maxPublicQuoteQty))
+		if err != nil || quantity < 1 || quantity > cfg.maxOrderQty() {
+			problems = append(problems, fmt.Sprintf("quantity: must be an integer 1-%d", cfg.maxOrderQty()))
 		}
 
 		// strconv.ParseFloat accepts "NaN"/"Inf"/"-Inf" with a nil err, and every comparison against NaN is

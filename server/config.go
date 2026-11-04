@@ -243,6 +243,26 @@ type Site struct {
 	AdminURL string `yaml:"adminUrl" json:"adminUrl"`
 }
 
+// Shop holds customer-facing shop limits. MaxOrderQty caps the quantity on one public estimate request or
+// gallery order; the page and the server validation both read it.
+type Shop struct {
+	MaxOrderQty int `yaml:"maxOrderQty" json:"maxOrderQty"`
+}
+
+const (
+	defaultShopMaxOrderQty = 100
+	shopMaxOrderQtyCeiling = 10000
+)
+
+// maxOrderQty is the per-order quantity cap for the public shop, falling back to the default for a Config
+// that was built without one.
+func (c Config) maxOrderQty() int {
+	if c.Shop.MaxOrderQty < 1 {
+		return defaultShopMaxOrderQty
+	}
+	return c.Shop.MaxOrderQty
+}
+
 // Smtp configures outgoing email; this struct stores and validates config only. The password comes solely
 // from the SMTP_PASSWORD env var, keeping secrets out of config.yaml. RequireTLS makes a server without
 // STARTTLS fail the send instead of falling back to plaintext; default false.
@@ -313,6 +333,7 @@ type Config struct {
 	PublicQuotes PublicQuotes   `yaml:"publicQuotes" json:"publicQuotes"`
 	Users        Users          `yaml:"users" json:"users"`
 	Site         Site           `yaml:"site" json:"site"`
+	Shop         Shop           `yaml:"shop" json:"shop"`
 	// CustomCss is operator-authored CSS served verbatim, unsanitized: same trust as every free-text field
 	// here, so only the byte cap applies. GET /custom.css styles the public page; the admin listener links
 	// it with media="print" only, for printed documents.
@@ -658,6 +679,9 @@ func validate(c *Config) []string {
 	p = append(p, validateDisabledTabs(c.UI.DisabledTabs)...)
 	p = append(p, validateIntegrationsUrls(c.IntegrationsUrls)...)
 	p = append(p, validateSite(c.Site)...)
+	if c.Shop.MaxOrderQty < 1 || c.Shop.MaxOrderQty > shopMaxOrderQtyCeiling {
+		p = append(p, fmt.Sprintf("shop.maxOrderQty: must be a whole number from 1 to %d", shopMaxOrderQtyCeiling))
+	}
 	return p
 }
 

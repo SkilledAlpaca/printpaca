@@ -382,7 +382,7 @@ func TestPublicItemOrderValidation(t *testing.T) {
 		`"stockMode":"in_stock","stockQty":0}`)
 	hidden := mustPostItem(`{"name":"Hidden","priceCents":500,"public":false}`)
 	// allowBackorder: same stockQty:3 cap as withOptions, but the flag lifts
-	// it up to the global maxItemOrderQty instead.
+	// it up to the shop.maxOrderQty instead.
 	backorder := mustPostItem(`{"name":"Backorder","priceCents":500,"public":true,` +
 		`"stockMode":"in_stock","stockQty":3,"allowBackorder":true}`)
 
@@ -432,7 +432,7 @@ func TestPublicItemOrderValidation(t *testing.T) {
 		},
 		{
 			name:       "quantity over max",
-			body:       validItemOrderBody(noOptions.ID, nil, maxItemOrderQty+1),
+			body:       validItemOrderBody(noOptions.ID, nil, defaultShopMaxOrderQty+1),
 			wantStatus: http.StatusUnprocessableEntity,
 		},
 		{
@@ -458,13 +458,13 @@ func TestPublicItemOrderValidation(t *testing.T) {
 			wantStatus: http.StatusCreated,
 		},
 		{
-			name:       "allowBackorder accepts up to the global max",
-			body:       validItemOrderBody(backorder.ID, nil, maxItemOrderQty),
+			name:       "allowBackorder accepts up to the shop max",
+			body:       validItemOrderBody(backorder.ID, nil, defaultShopMaxOrderQty),
 			wantStatus: http.StatusCreated,
 		},
 		{
-			name:       "allowBackorder still rejects beyond the global max",
-			body:       validItemOrderBody(backorder.ID, nil, maxItemOrderQty+1),
+			name:       "allowBackorder still rejects beyond the shop max",
+			body:       validItemOrderBody(backorder.ID, nil, defaultShopMaxOrderQty+1),
 			wantStatus: http.StatusUnprocessableEntity,
 		},
 		{

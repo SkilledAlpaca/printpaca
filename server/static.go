@@ -105,6 +105,7 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, cfgStore *ConfigStore, auth 
 	mux.HandleFunc("DELETE /api/requests/{id}", requirePermission(db, "requests", qr.handleDelete))
 
 	it := newItems(db, configDir)
+	it.store = cfgStore
 	mux.HandleFunc("GET /api/items", requirePermission(db, "items", it.handleList))
 	mux.HandleFunc("POST /api/items", requirePermission(db, "items", it.handlePost))
 	mux.HandleFunc("PUT /api/items/{id}", requirePermission(db, "items", it.handlePut))
@@ -112,9 +113,18 @@ func registerRoutes(mux *http.ServeMux, db *sql.DB, cfgStore *ConfigStore, auth 
 	mux.HandleFunc("POST /api/items/{id}/image", requirePermission(db, "items", it.handleImageUpload))
 	mux.HandleFunc("POST /api/items/{id}/options/{optionId}/image", requirePermission(db, "items", it.handleOptionImageUpload))
 	mux.HandleFunc("DELETE /api/items/{id}/options/{optionId}/image", requirePermission(db, "items", it.handleOptionImageDelete))
+	cats := newCategories(db)
+	mux.HandleFunc("GET /api/categories", requirePermission(db, "items", cats.handleList))
+	mux.HandleFunc("POST /api/categories", requirePermission(db, "items", cats.handlePost))
+	mux.HandleFunc("PUT /api/categories/{id}", requirePermission(db, "items", cats.handlePut))
+	mux.HandleFunc("DELETE /api/categories/{id}", requirePermission(db, "items", cats.handleDelete))
 	// Outside /api/ on purpose: keeps the long-lived Cache-Control past noStoreAPIMiddleware, and item
 	// images are public content. No permission wrapper applies.
 	mux.HandleFunc("GET /item-images/{file}", itemImageHandler(configDir))
+
+	// Shop hero image: admin-only, like the settings it belongs to.
+	mux.HandleFunc("POST /api/shop/hero-image", adminOnly(handleHeroImageUpload(configDir, db, cfgStore)))
+	mux.HandleFunc("DELETE /api/shop/hero-image", adminOnly(handleHeroImageDelete(configDir, db, cfgStore)))
 
 	// Manual-backup export bundle. Hard admin-only.
 	mux.HandleFunc("GET /api/export", adminOnly(handleExport(cfgStore, db)))

@@ -53,7 +53,7 @@
     describeStoredModelHint,
   } from "../lib/gcodeMessage";
   import { describeStorageBanner, type StorageBanner } from "../lib/storageBanner";
-  import { money, formatDate, formatDateTime } from "../lib/format";
+  import { money, formatDate, formatDateTime, materialDisplayName } from "../lib/format";
   import { mdiArrowLeft } from "@mdi/js";
   import Icon from "./Icon.svelte";
   import StatusBadge from "./StatusBadge.svelte";
@@ -228,9 +228,11 @@
   let confirmingBulkFinalize = $state(false);
   let bulkFinalizing = $state(false);
   const viewedRows = $derived(filteredRequests.filter((r) => r.status === "viewed"));
-  // Drop ids that left the list or are no longer viewed (a refresh after finalizing, a filter change).
+  // NEW rows are selectable too: finalizing one opens it first (which marks it viewed), then finalizes it.
+  const newRows = $derived(filteredRequests.filter((r) => r.status === "new"));
+  // Drop ids that left the list or were finalized (a refresh after finalizing, a filter change).
   $effect(() => {
-    const ok = new Set(requests.filter((r) => r.status === "viewed").map((r) => r.id));
+    const ok = new Set(requests.filter((r) => r.status === "viewed" || r.status === "new").map((r) => r.id));
     if (selectedIds.some((id) => !ok.has(id))) selectedIds = selectedIds.filter((id) => ok.has(id));
   });
   function toggleSelected(id: string) {
@@ -239,6 +241,10 @@
   }
   function selectAllViewed() {
     selectedIds = viewedRows.map((r) => r.id);
+    confirmingBulkFinalize = false;
+  }
+  function selectAllNew() {
+    selectedIds = newRows.map((r) => r.id);
     confirmingBulkFinalize = false;
   }
   function clearSelection() {
@@ -254,6 +260,8 @@
     let firstError = "";
     for (const id of ids) {
       try {
+        // The server finalizes only a viewed request; opening a NEW one is what marks it viewed.
+        if (requests.find((r) => r.id === id)?.status === "new") await loadRequest(id);
         await finalizeRequest(id);
         done++;
       } catch (err) {
@@ -757,10 +765,11 @@
       </div>
     {/if}
 
-    {#if viewedRows.length > 0}
+    {#if viewedRows.length > 0 || newRows.length > 0}
       <div class="bulk-bar">
         {#if selectedIds.length === 0}
-          <button type="button" class="quiet" onclick={selectAllViewed}>Select all viewed ({viewedRows.length})</button>
+          {#if newRows.length > 0}<button type="button" class="quiet" onclick={selectAllNew}>Select all new ({newRows.length})</button>{/if}
+          {#if viewedRows.length > 0}<button type="button" class="quiet" onclick={selectAllViewed}>Select all viewed ({viewedRows.length})</button>{/if}
         {:else}
           <span class="bulk-count" role="status">{selectedIds.length} selected</span>
           {#if confirmingBulkFinalize}
@@ -772,7 +781,7 @@
               use:confirmFocus={{ restore: keySelector("finalize-selected"), cancel: () => (confirmingBulkFinalize = false) }}
             >{bulkFinalizing ? "Finalizing…" : `Yes, finalize ${selectedIds.length} ${selectedIds.length === 1 ? "request" : "requests"}`}</button>
             <button type="button" onclick={() => (confirmingBulkFinalize = false)}>Cancel</button>
-            <span class="advisory-text">Marks them handled. It doesn't email the customers.</span>
+            <span class="advisory-text">Marks them handled (new ones are marked viewed first). It doesn't email the customers.</span>
           {:else}
             <button type="button" class="primary" data-focus-key="finalize-selected" onclick={() => (confirmingBulkFinalize = true)}>Finalize selected</button>
             <button type="button" class="quiet" onclick={clearSelection}>Clear selection</button>
@@ -809,7 +818,7 @@
           {#each filteredRequests as r (r.id)}
             <li class="req-row">
               <span class="r-check">
-                {#if r.status === "viewed"}
+                {#if r.status === "viewed" || r.status === "new"}
                   <label class="check-label">
                     <input
                       type="checkbox"
@@ -833,7 +842,7 @@
                   {#if isInvoiced(r)}<span class="pill item-pill">{r.invoiceNumber}</span>{/if}
                   {#if duplicateRequestIds.has(r.id)}<span class="pill dup-pill">possible duplicate</span>{/if}
                 </span>
-                <span class="r-material">{r.kind === "item" ? r.itemName : r.material}</span>
+                <span class="r-material">{r.kind === "item" ? r.itemName : materialDisplayName(r.material, cfg.materials)}</span>
                 <span class="r-qty">×{r.quantity}</span>
                 <span class="r-price">{r.needsPrintTime ? "To be confirmed" : money(r.priceCents, cfg)}</span>
                 <span class="r-date">{formatDate(r.createdAt)}</span>
@@ -879,7 +888,7 @@
             <div><span class="lbl">Quantity</span><span>{detail.quantity}</span></div>
             <div><span class="lbl">Total</span><span>{money(detail.priceCents, cfg)}</span></div>
           {:else}
-            <div><span class="lbl">Material</span><span>{detail.material}</span></div>
+            <div><span class="lbl">Material</span><span>{materialDisplayName(detail.material, cfg.materials)}</span></div>
             <div><span class="lbl">Quantity</span><span>{detail.quantity}</span></div>
             <div><span class="lbl">Weight</span><span>{detail.weightG} g</span></div>
             <div><span class="lbl">Print time</span><span>{detail.needsPrintTime ? "Not provided" : formatDuration(detail.timeSeconds)}</span></div>
@@ -1007,9 +1016,11 @@
         {#if actionError}<p class="banner-warn" role="alert">{actionError}</p>{/if}
         {#if convertError}<p class="banner-warn" role="alert">{convertError}</p>{/if}
 
-        <p class="hint">
-          {#if detail.status === "viewed"}Finalize marks this request as handled in your list. It doesn't email the customer; use Reply by email to tell them. Finalized shop item orders count toward Top items.{" "}{/if}Convert to invoice creates the client if this email isn't on file, then marks the request invoiced.
-        </p>
+        {#if detail.status === "viewed" || !isInvoiced(detail)}
+          <p class="hint">
+            {#if detail.status === "viewed"}Finalize marks this request as handled in your list. It doesn't email the customer; use Reply by email to tell them. Finalized shop item orders count toward Top items.{" "}{/if}{#if !isInvoiced(detail)}Convert to invoice creates the client if this email isn't on file, then marks the request invoiced.{/if}
+          </p>
+        {/if}
         <div class="status-actions">
           {#if detail.status === "viewed"}
             {#if confirmingFinalize}

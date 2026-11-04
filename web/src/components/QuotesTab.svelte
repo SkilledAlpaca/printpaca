@@ -912,9 +912,6 @@
                 <td class="nowrap c-saved" data-label="Saved">{formatSavedAt(q.savedAt)}</td>
                 <td class="c-actions">
                   <div class="row-actions">
-                    {#if canEdit}
-                      <button type="button" class="quiet" onclick={() => openInEditor(q)}>Open in editor</button>
-                    {/if}
                     {#if primaryT}
                       <button
                         type="button"
@@ -958,6 +955,9 @@
                                claim arrow-key roving this panel doesn't implement. The email-reason note
                                below is a sibling, not a child: it describes, not acts. -->
                           <div class="menu-group" role="group" aria-label={`More actions for "${q.label}"`}>
+                            {#if canEdit}
+                              <button type="button" class="quiet menu-item" onclick={() => { closeMenu(false); openInEditor(q); }} aria-label={`Open "${q.label}" in editor`}>Open in editor</button>
+                            {/if}
                             {#each overflowTransitions(q) as t (t)}
                               <button
                                 type="button"

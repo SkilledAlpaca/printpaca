@@ -32,8 +32,19 @@ export function nextMenuIndex(key: string, current: number, count: number): numb
  * panel; Tab calls it with true so focus lands on the toggle before the browser moves it on. */
 export function handleMenuKeydown(e: KeyboardEvent, panel: Element, close: (restoreFocus: boolean) => void): boolean {
   if (e.key === "Tab") {
+    const toggle = panel.id ? document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(panel.id)}"]`) : null;
+    if (toggle && !e.shiftKey) {
+      // The panel is still in the DOM while this keydown runs, so the browser's own Tab from the toggle would
+      // step into it and then lose focus to <body> when it unmounts. Move focus to the element after the
+      // toggle ourselves, skipping the panel.
+      const target = tabTargetAfter(toggle, panel);
+      close(false);
+      e.preventDefault();
+      (target ?? toggle).focus();
+      return true;
+    }
     close(true);
-    return false; // not consumed: the browser's Tab now starts from the toggle
+    return false; // Shift+Tab: the toggle is focused and the browser steps back from it
   }
   const items = menuItems(panel);
   const next = nextMenuIndex(e.key, items.indexOf(document.activeElement as HTMLElement), items.length);
@@ -41,4 +52,20 @@ export function handleMenuKeydown(e: KeyboardEvent, panel: Element, close: (rest
   e.preventDefault();
   items[next]?.focus();
   return true;
+}
+
+const TABBABLE = 'a[href], button, input, select, textarea, summary, [tabindex]';
+
+/** The next Tab stop after `toggle` that isn't inside `panel`, or null when the toggle is the last one. */
+export function tabTargetAfter(toggle: HTMLElement, panel: Element): HTMLElement | null {
+  const all = Array.from(document.querySelectorAll<HTMLElement>(TABBABLE)).filter(
+    (el) =>
+      !panel.contains(el) &&
+      !el.hasAttribute("disabled") &&
+      el.getAttribute("tabindex") !== "-1" &&
+      !el.closest("[hidden], [inert]") &&
+      el.getClientRects().length > 0,
+  );
+  const i = all.indexOf(toggle);
+  return i >= 0 ? (all[i + 1] ?? null) : null;
 }

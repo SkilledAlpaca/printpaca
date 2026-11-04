@@ -4,7 +4,7 @@ A self-hosted, open-source 3D print cost and quote calculator: transparent formu
 
 printpaca was developed with AI assistance.
 
-To try printpaca with fake data first, [run the demo yourself](docs/demo.md).
+**Live demo:** try the [admin app](https://demo.printpaca.com/admin/) (password `demo`) and the [customer shop](https://demo-cust.printpaca.com/). It's read-only and seeded with fake data. You can also [run the demo yourself](docs/demo.md).
 
 [![The New quote tab for a batch of three prints, with your cost, the client price, profit, and margin at the top](docs/screenshot.png)](docs/screenshot.png)
 

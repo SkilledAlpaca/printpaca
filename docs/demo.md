@@ -1,5 +1,7 @@
 # Run the demo yourself
 
+To look around without installing anything, use the hosted demo: the [admin app](https://demo.printpaca.com/admin/) (password `demo`) and the [customer shop](https://demo-cust.printpaca.com/). It runs the same read-only demo mode described below.
+
 printpaca ships a read-only demo mode, seeded with fake data, so you can look around without entering your own clients or prices. `DEMO_MODE=1` is in the normal image behind a flag that is off by default, and [`docker-compose.demo.yml`](../docker-compose.demo.yml) turns it on.
 
 Don't use demo mode for your own deployment. It waives the admin password length floor and disarms the Cloudflare tunnel guard.

@@ -88,6 +88,7 @@
   import ItemGallery from "./ItemGallery.svelte";
   import PublicFooter from "./PublicFooter.svelte";
   import ShopHero from "./ShopHero.svelte";
+  import RichText from "./RichText.svelte";
   import { applyShopAccent } from "./shopAccent";
   import projectLogoUrl from "../assets/alpaca-logo.svg";
   import ItemOrderPanel, { type ItemOrderConfirmation } from "./ItemOrderPanel.svelte";
@@ -1125,14 +1126,14 @@
         Demo mode: this walks through the real customer flow, but your request isn't submitted.
       </p>
     {/if}
-    {#if shop.announcement}<p class="shop-announcement" role="note">{shop.announcement}</p>{/if}
+    {#if shop.announcement}<div class="shop-announcement" role="note"><RichText text={shop.announcement} /></div>{/if}
     <!-- An item page drops the hero, heading and intro: the visitor chose an item, and the options belong on the
          first screen, not below the shop's pitch. The announcement stays. -->
     {#if !orderItem}
       {#if shop.heroImage}<ShopHero hero={shop.heroImage} />{/if}
       {#if shop.heading}<h2 class="shop-heading">{shop.heading}</h2>{/if}
       <!-- The shop's own intro when it wrote one; otherwise a default that says what this page is. -->
-      <p class="intro">{introText}</p>
+      <div class="intro"><RichText text={introText} /></div>
     {/if}
     <!-- Persistent status region (text swapped in) for "That item is no longer available." and similar. -->
     <div class="route-note" role="status">

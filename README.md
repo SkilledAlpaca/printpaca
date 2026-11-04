@@ -48,6 +48,20 @@ printpaca was developed with AI assistance.
 <a href="docs/screenshots/public-quote.png"><img src="docs/screenshots/public-quote.png" alt="The public quote page: a customer picks a material, enters weight and print time, and sees an estimated price" width="400"></a>
 </td>
 </tr>
+<tr>
+<td>
+<a href="docs/screenshots/shop.png"><img src="docs/screenshots/shop.png" alt="The customer shop: an announcement, a hero image, category chips, a featured item in the gallery, and a footer with contact details and links" width="400"></a>
+</td>
+<td>
+<a href="docs/screenshots/storefront.png"><img src="docs/screenshots/storefront.png" alt="The Storefront card in Settings: shop toggles, Closed page preview, hero image, accent color swatches, and footer links" width="400"></a>
+</td>
+</tr>
+<tr>
+<td>
+<a href="docs/screenshots/business-identity.png"><img src="docs/screenshots/business-identity.png" alt="The Business identity card in Settings: business name, contact details, logo, address, payment instructions, and terms" width="400"></a>
+</td>
+<td></td>
+</tr>
 </table>
 
 ## Quick start

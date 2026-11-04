@@ -47,6 +47,8 @@ You can paste a logo URL, or upload a PNG, JPG, WebP, or SVG image of up to 64 K
 **Order reference prefix** (`quote.referencePrefix`) starts the short reference a customer sees after sending an order or estimate, such as `HL-1001`, so they can quote it by phone. Leave it blank to use your business initials: two or more words give their initials (Hot Layer Prints becomes `HLP`), one word gives its first three letters, and no usable letters gives `REQ`. Set it to 1 to 10 letters or digits to choose your own. The numbers count up per shop, starting at 1001, across orders and estimates together. Changing the prefix keeps the count going under the new prefix, and references already issued keep the prefix they had. The Requests tab still identifies each request by its long internal ID.
 The business name and logo also appear on the shop, and in the admin app: the sidebar (and the top bar on a phone) shows them in place of the printpaca name and mark, the browser tab title ends with the name, and a logo that fails to load falls back to the printpaca mark. They update when you save Settings, with no reload. In the admin app, the name and logo are a link to the first tab (usually New quote). The shared footer on every customer page shows your **email**, **phone**, and **address** when you set them here (the `quote.email`, `quote.phone`, and `quote.address` keys in `config.yaml`), as a `mailto:` link, a `tel:` link, and plain text. The footer also shows a **Staff sign-in** link when [`site.staffLink`](#site-settings) or `site.adminUrl` provides one. The tax ID, payment instructions, and terms text stay private.
 
+![The Business identity card in Settings: business name, email, phone, tax ID, order reference prefix, an uploaded logo with its preview, address, payment instructions, and terms text](screenshots/business-identity.png)
+
 ### Custom CSS
 
 Your own CSS, saved to the top-level `customCss` key in `config.yaml` and served verbatim and unsanitized, because it's CSS you wrote for your own instance, the same trust level as every other free-text field on this page. It applies on two surfaces:
@@ -240,6 +242,10 @@ The `site` section of `config.yaml`, also under **Storefront** on the Requests t
 The `shop` section of `config.yaml` controls what the customer-facing shop offers and how it reads. Every default keeps the shop as it was in v1.1, so an upgrade changes nothing until you opt in. A change applies without a restart.
 
 In this release the settings are plain inputs under **Public estimates** in Settings, and in `config.yaml`. The hero image upload, the footer links editor, the accent color picker, and the **Preview shop** button arrive with the redesigned Storefront card.
+
+![The Storefront card in Settings: shop toggles, the Closed page preview, wording with live announcement preview, the hero image, accent color swatches for light and dark mode, and footer links](screenshots/storefront.png)
+
+![The customer shop: an announcement, a hero image, category chips, a featured item in the gallery, and the footer with contact details and links](screenshots/shop.png)
 
 | Key | Default | Effect |
 |---|---|---|

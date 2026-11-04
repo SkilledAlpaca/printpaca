@@ -104,7 +104,7 @@ After step 4, check the following.
 - **The server responds.** Open [http://localhost:8080/healthz](http://localhost:8080/healthz) or run `curl http://localhost:8080/healthz`. Success is a plain `ok`.
 - **The app accepts your login.** Open [http://localhost:8080/admin/](http://localhost:8080/admin/) and enter the password from step 4. Success is the New quote calculator with a sidebar listing Dashboard, Invoices, Clients, and other sections.
 
-![The New quote page: material, printer, and preset pickers on the left, a live cost breakdown on the right](screenshots/quote.png)
+![The New quote page: the form on the left, and the summary on the right with the client price, your cost, profit, margin, and a Breakdown](screenshots/quote.png)
 
 If the container isn't `Up`, or `/healthz` doesn't respond, start with [Reading the logs](#reading-the-logs).
 

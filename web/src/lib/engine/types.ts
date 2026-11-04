@@ -105,8 +105,6 @@ export interface ShopConfig {
   pageTitle: string;
   heading: string;
   announcement: string;
-  /** Browser tab title, up to 70 characters (D30). Optional until the server always sends it; absent is "". */
-  pageTitle?: string;
   /** Set only by the hero image upload endpoint; a settings save keeps the stored file and takes only alt. */
   heroImage: { file: string; alt: string };
   /** "" for the theme accent, else #rrggbb passing lib/accent.ts's check. */

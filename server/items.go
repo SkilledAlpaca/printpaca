@@ -29,7 +29,7 @@ const (
 	stockModeInStock      = "in_stock"
 )
 
-// maxItemOrderQty caps the units of one item in a gallery order (handlePublicItemOrder), backorders included.
+// maxItemOrderQty caps the units of one item on an invoice item line (invoices.go); public gallery orders are capped by shop.maxOrderQty instead.
 const maxItemOrderQty = 10000
 
 // itemConflictMessage is the 409 body for a PUT sent with a stale version.

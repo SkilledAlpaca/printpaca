@@ -248,9 +248,9 @@ test("the order appears in the admin Requests list as an item order", async ({ p
   await navButton(page, "Requests").click();
   await expect(page).toHaveURL(/#\/requests$/);
 
-  const row = page.locator(".plain-list li", { hasText: CUSTOMER_NAME });
+  const row = page.locator("tr.req-row", { hasText: CUSTOMER_NAME });
   await expect(row).toBeVisible();
-  await expect(row.locator(".r-price")).toHaveText(EXPECTED_TOTAL);
+  await expect(row.locator(".c-price")).toHaveText(EXPECTED_TOTAL);
   await expect(row.getByText("item order")).toBeVisible();
 
   // The pill is the UI check; Kind/ItemID/ItemName/OptionName live in the API response.

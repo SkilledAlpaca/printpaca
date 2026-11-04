@@ -122,9 +122,9 @@ test("a visitor submits a manual quote request and it reaches the owner", async 
   await navButton(page, "Requests").click();
   await expect(page).toHaveURL(/#\/requests$/);
 
-  const row = page.locator(".plain-list li", { hasText: VISITOR_NAME });
+  const row = page.locator("tr.req-row", { hasText: VISITOR_NAME });
   await expect(row).toBeVisible();
-  await expect(row.locator(".r-price")).toHaveText(priceTotalText);
+  await expect(row.locator(".c-price")).toHaveText(priceTotalText);
 
   // 3. The stored price_cents is server-computed (the browser never sends one) and equals the price the
   // visitor's page displayed.
@@ -192,7 +192,7 @@ test("a visitor drops an STL and the admin Requests row exposes the uploaded fil
   await navButton(page, "Requests").click();
   await expect(page).toHaveURL(/#\/requests$/);
 
-  const row = page.locator(".plain-list li", { hasText: STL_VISITOR_NAME });
+  const row = page.locator("tr.req-row", { hasText: STL_VISITOR_NAME });
   await expect(row).toBeVisible();
   await row.getByRole("button").click();
 

@@ -127,7 +127,7 @@ test.describe("an item order placed through the shop at / on the main port", () 
     await page.goto("/admin/");
     await navButton(page, "Requests").click();
     await expect(page).toHaveURL(/#\/requests$/);
-    const row = page.locator(".plain-list li", { hasText: CUSTOMER_NAME });
+    const row = page.locator("tr.req-row", { hasText: CUSTOMER_NAME });
     await expect(row).toBeVisible();
     await expect(row.getByText("item order")).toBeVisible();
   });

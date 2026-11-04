@@ -11,7 +11,7 @@ async function gotoClients(page: Page): Promise<void> {
 }
 
 function clientRow(page: Page, name: string) {
-  return page.locator("li", { hasText: name });
+  return page.locator("tr.client-row", { hasText: name });
 }
 
 test("create, edit, and delete a client through the detail view", async ({ page }) => {

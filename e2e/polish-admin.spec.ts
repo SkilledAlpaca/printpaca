@@ -133,7 +133,7 @@ test.describe("invoices", () => {
     const id = await seedRequest(request, name);
     await page.goto("/admin/");
     await navButton(page, "Requests").click();
-    await page.locator(".plain-list li", { hasText: name }).getByRole("button", { name: new RegExp(name) }).click();
+    await page.locator("tr.req-row", { hasText: name }).getByRole("button", { name: new RegExp(name) }).click();
     await expect(page.getByText(/Convert to invoice creates the client/)).toBeVisible();
     await page.getByRole("button", { name: "Convert to invoice" }).click();
     await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
@@ -192,7 +192,7 @@ test.describe("quotes list", () => {
     await page.goto("/admin/#/quotes");
     const rows = page.locator("tbody tr.quote-row");
     await expect(rows.first()).toBeVisible();
-    const wrapper = (await page.locator(".table-scroll").first().boundingBox())!;
+    const wrapper = (await page.locator(".dt-scroll").first().boundingBox())!;
     const count = await rows.count();
     for (let i = 0; i < count; i++) {
       const row = rows.nth(i);
@@ -230,7 +230,7 @@ test.describe("requests", () => {
     const name = `Polish Bulk ${Date.now() % 100000}`;
     const id = await seedRequest(request, name);
     await page.goto("/admin/#/requests");
-    const row = page.locator(".plain-list li", { hasText: name });
+    const row = page.locator("tr.req-row", { hasText: name });
     await expect(row).toBeVisible();
     await expect(row.getByRole("checkbox", { name: `Select request from ${name}` })).toBeVisible();
     await page.getByLabel("Filter requests by name, item, or file").fill(name);

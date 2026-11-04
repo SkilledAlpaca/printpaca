@@ -66,7 +66,7 @@
   import AttributionLine from "./AttributionLine.svelte";
   import SettingsEditor from "./settings/SettingsEditor.svelte";
   import PublicQuotesSettings from "./settings/PublicQuotesSettings.svelte";
-  import LoadMoreRow from "./LoadMoreRow.svelte";
+  import DataTable, { type DataColumn } from "./ui/DataTable.svelte";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
   import { confirmFocus, focusOnMount, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "../lib/a11yFocus";
 
@@ -693,6 +693,16 @@
     }
   }
 
+  const COLUMNS: DataColumn[] = [
+    { key: "select", label: "Select", hideLabel: true },
+    { key: "status", label: "Status" },
+    { key: "who", label: "Requester" },
+    { key: "what", label: "Item or material" },
+    { key: "qty", label: "Qty", num: true },
+    { key: "price", label: "Price", num: true },
+    { key: "date", label: "Received", num: true },
+  ];
+
   // Formatting helpers
 
   function formatDuration(seconds: number): string {
@@ -741,51 +751,6 @@
       <h1 tabindex="-1" data-focus-key="requests-heading">Requests</h1>
     </div>
 
-    {#if requests.length > 0}
-      <div class="toolbar">
-        <input
-          id="requests-filter"
-          class="search-input"
-          data-focus-key="requests-filter-input"
-          placeholder="Filter by name, item, or file"
-          aria-label="Filter requests by name, item, or file"
-          bind:value={filterText}
-        />
-        {#if newCount > 0}
-          <div class="more" data-more-menu onfocusout={handleMoreFocusOut}>
-            <button
-              type="button"
-              class="quiet menu-toggle"
-              bind:this={moreToggleEl}
-              data-focus-key="requests-more"
-              aria-expanded={moreOpen}
-              aria-controls="requests-more-menu"
-              aria-label="More actions for requests"
-              onclick={toggleMore}
-            >⋯</button>
-            {#if moreOpen}
-              <div class="menu-panel" id="requests-more-menu">
-                <div class="menu-group" role="group" aria-label="More actions for requests">
-                  <button type="button" class="quiet menu-item" onclick={askDeleteAllNew}>Delete all new…</button>
-                </div>
-              </div>
-            {/if}
-          </div>
-        {/if}
-      </div>
-      <div class="chips" role="group" aria-label="Filter by status">
-        {#each REQUEST_FILTER_CHIPS as chip (chip.key)}
-          <button
-            type="button"
-            class:active={filterChip === chip.key}
-            aria-pressed={filterChip === chip.key}
-            onclick={() => (filterChip = chip.key)}
-          >{chip.label}</button>
-        {/each}
-      </div>
-      <BackfillStatus backfilling={backfill.backfilling} backfillFailed={backfill.backfillFailed} verb="filter" />
-    {/if}
-
     {#if confirmingDeleteAllNew}
       <div class="banner-warn confirm-delete-all" role="group" aria-label="Confirm deleting all new requests">
         <p>{deleteAllNewQuestion(newCount)}</p>
@@ -793,31 +758,6 @@
           <button type="button" use:focusOnMount onclick={cancelDeleteAllNew}>Cancel</button>
           <button type="button" class="danger" onclick={removeAllNew} aria-disabled={bulkDeleting}>{bulkDeleting ? "Deleting…" : deleteAllNewConfirmLabel(newCount)}</button>
         </div>
-      </div>
-    {/if}
-
-    {#if viewedRows.length > 0 || newRows.length > 0}
-      <div class="bulk-bar">
-        {#if selectedIds.length === 0}
-          {#if newRows.length > 0}<button type="button" class="quiet" onclick={selectAllNew}>Select all new ({newRows.length})</button>{/if}
-          {#if viewedRows.length > 0}<button type="button" class="quiet" onclick={selectAllViewed}>Select all viewed ({viewedRows.length})</button>{/if}
-        {:else}
-          <span class="bulk-count" role="status">{selectedIds.length} selected</span>
-          {#if confirmingBulkFinalize}
-            <button
-              type="button"
-              class="primary"
-              aria-disabled={bulkFinalizing}
-              onclick={finalizeSelected}
-              use:confirmFocus={{ restore: keySelector("finalize-selected"), cancel: () => (confirmingBulkFinalize = false) }}
-            >{bulkFinalizing ? "Finalizing…" : `Yes, finalize ${selectedIds.length} ${selectedIds.length === 1 ? "request" : "requests"}`}</button>
-            <button type="button" onclick={() => (confirmingBulkFinalize = false)}>Cancel</button>
-            <span class="advisory-text">Marks them handled (new ones are marked viewed first). It doesn't email the customers.</span>
-          {:else}
-            <button type="button" class="primary" data-focus-key="finalize-selected" onclick={() => (confirmingBulkFinalize = true)}>Finalize selected</button>
-            <button type="button" class="quiet" onclick={clearSelection}>Clear selection</button>
-          {/if}
-        {/if}
       </div>
     {/if}
 
@@ -841,53 +781,123 @@
       <p class={storageBanner.level === "full" ? "banner-error" : "banner-warn"} role="alert">{storageBanner.text}</p>
     {/if}
 
-    <div class="card">
-      <ul class="plain-list">
-        {#if loading}
-          <li class="empty-state"><span role="status">Loading…</span></li>
-        {:else}
-          {#each filteredRequests as r (r.id)}
-            <li class="req-row">
-              <span class="r-check">
-                {#if r.status === "viewed" || r.status === "new"}
-                  <label class="check-label">
-                    <input
-                      type="checkbox"
-                      aria-label={`Select request from ${r.name}`}
-                      checked={selectedIds.includes(r.id)}
-                      onchange={() => toggleSelected(r.id)}
-                    />
-                  </label>
-                {/if}
-              </span>
-              <button type="button" class="row-link" data-row-id={r.id} onclick={() => openDetail(r.id)}>
-                <StatusBadge status={requestDisplayStatus(r)} />
-                <!-- Name and its optional pills share one grid cell (.r-who): as siblings of the metadata
-                     spans they were extra tracks and pushed later columns out of line with rows that
-                     lacked them. -->
-                <span class="r-who">
-                  <span class="r-name">{r.name}</span>
-                  {#if r.reference}<span class="pill ref-pill">{r.reference}</span>{/if}
-                  {#if r.kind === "item"}<span class="pill item-pill">item order</span>{/if}
-                  {#if r.needsPrintTime}<span class="pill time-pill">Needs print time</span>{/if}
-                  {#if isInvoiced(r)}<span class="pill item-pill">{r.invoiceNumber}</span>{/if}
-                  {#if duplicateRequestIds.has(r.id)}<span class="pill dup-pill">possible duplicate</span>{/if}
-                </span>
-                <span class="r-material">{r.kind === "item" ? r.itemName : materialDisplayName(r.material, cfg.materials)}</span>
-                <span class="r-qty">×{r.quantity}</span>
-                <span class="r-price">{r.needsPrintTime ? "To be confirmed" : money(r.priceCents, cfg)}</span>
-                <span class="r-date">{formatDate(r.createdAt)}</span>
-              </button>
-            </li>
-          {:else}
-            <li class="empty-state">{requests.length === 0 ? "No estimate requests yet. They arrive here when a visitor submits your public estimate page. Set that page up below." : "No requests match the filter. Clear it, or choose All, to see every request."}</li>
+    <DataTable
+      label="Requests"
+      columns={COLUMNS}
+      loadMore={!loading && !filterActive ? { shown: requests.length, total, loadingMore, onLoadMore: loadMore } : null}
+    >
+      {#snippet filters()}
+    {#if requests.length > 0}
+        <div class="toolbar">
+          <Field id="requests-filter" label="Filter requests by name, item, or file" size="l">
+            {#snippet children(f)}
+              <input
+                id={f.id}
+                type="search"
+                data-focus-key="requests-filter-input"
+                placeholder="Name, item, or file"
+                bind:value={filterText}
+              />
+            {/snippet}
+          </Field>
+          {#if newCount > 0}
+            <div class="more" data-more-menu onfocusout={handleMoreFocusOut}>
+              <button
+                type="button"
+                class="quiet menu-toggle"
+                bind:this={moreToggleEl}
+                data-focus-key="requests-more"
+                aria-expanded={moreOpen}
+                aria-controls="requests-more-menu"
+                aria-label="More actions for requests"
+                onclick={toggleMore}
+              >⋯</button>
+              {#if moreOpen}
+                <div class="menu-panel" id="requests-more-menu">
+                  <div class="menu-group" role="group" aria-label="More actions for requests">
+                    <button type="button" class="quiet menu-item" onclick={askDeleteAllNew}>Delete all new…</button>
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+        <div class="chips" role="group" aria-label="Filter by status">
+          {#each REQUEST_FILTER_CHIPS as chip (chip.key)}
+            <button
+              type="button"
+              class:active={filterChip === chip.key}
+              aria-pressed={filterChip === chip.key}
+              onclick={() => (filterChip = chip.key)}
+            >{chip.label}</button>
           {/each}
-        {/if}
-      </ul>
-      {#if !loading && !filterActive}
-        <LoadMoreRow shown={requests.length} {total} {loadingMore} onLoadMore={loadMore} />
+        </div>
+        <BackfillStatus backfilling={backfill.backfilling} backfillFailed={backfill.backfillFailed} verb="filter" />
       {/if}
-    </div>
+      {#if viewedRows.length > 0 || newRows.length > 0}
+          <div class="bulk-bar">
+            {#if selectedIds.length === 0}
+              {#if newRows.length > 0}<button type="button" class="quiet" onclick={selectAllNew}>Select all new ({newRows.length})</button>{/if}
+              {#if viewedRows.length > 0}<button type="button" class="quiet" onclick={selectAllViewed}>Select all viewed ({viewedRows.length})</button>{/if}
+            {:else}
+              <span class="bulk-count" role="status">{selectedIds.length} selected</span>
+              {#if confirmingBulkFinalize}
+                <button
+                  type="button"
+                  class="primary"
+                  aria-disabled={bulkFinalizing}
+                  onclick={finalizeSelected}
+                  use:confirmFocus={{ restore: keySelector("finalize-selected"), cancel: () => (confirmingBulkFinalize = false) }}
+                >{bulkFinalizing ? "Finalizing…" : `Yes, finalize ${selectedIds.length} ${selectedIds.length === 1 ? "request" : "requests"}`}</button>
+                <button type="button" onclick={() => (confirmingBulkFinalize = false)}>Cancel</button>
+                <span class="advisory-text">Marks them handled (new ones are marked viewed first). It doesn't email the customers.</span>
+              {:else}
+                <button type="button" class="primary" data-focus-key="finalize-selected" onclick={() => (confirmingBulkFinalize = true)}>Finalize selected</button>
+                <button type="button" class="quiet" onclick={clearSelection}>Clear selection</button>
+              {/if}
+            {/if}
+          </div>
+        {/if}
+
+      {/snippet}
+      {#if loading}
+        <tr><td colspan="7" class="empty-state"><span role="status">Loading…</span></td></tr>
+      {:else}
+        {#each filteredRequests as r (r.id)}
+          <tr class="req-row clickable-row" onclick={() => openDetail(r.id)}>
+            <td class="c-check" onclick={(e) => e.stopPropagation()}>
+              {#if r.status === "viewed" || r.status === "new"}
+                <label class="check-label">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select request from ${r.name}`}
+                    checked={selectedIds.includes(r.id)}
+                    onchange={() => toggleSelected(r.id)}
+                  />
+                </label>
+              {/if}
+            </td>
+            <td class="c-status"><StatusBadge status={requestDisplayStatus(r)} /></td>
+            <td class="c-who">
+              <span class="r-who">
+                <button type="button" class="row-link" data-row-id={r.id} onclick={(e) => { e.stopPropagation(); openDetail(r.id); }}>{r.name}</button>
+                {#if r.reference}<span class="pill ref-pill">{r.reference}</span>{/if}
+                {#if r.kind === "item"}<span class="pill item-pill">item order</span>{/if}
+                {#if r.needsPrintTime}<span class="pill time-pill">Needs print time</span>{/if}
+                {#if isInvoiced(r)}<span class="pill item-pill">{r.invoiceNumber}</span>{/if}
+                {#if duplicateRequestIds.has(r.id)}<span class="pill dup-pill">possible duplicate</span>{/if}
+              </span>
+            </td>
+            <td class="c-material">{r.kind === "item" ? r.itemName : materialDisplayName(r.material, cfg.materials)}</td>
+            <td class="num c-qty">×{r.quantity}</td>
+            <td class="num c-price">{r.needsPrintTime ? "To be confirmed" : money(r.priceCents, cfg)}</td>
+            <td class="num c-date">{formatDate(r.createdAt)}</td>
+          </tr>
+        {:else}
+          <tr><td colspan="7" class="empty-state">{requests.length === 0 ? "No estimate requests yet. They arrive here when a visitor submits your public estimate page. Set that page up below." : "No requests match the filter. Clear it, or choose All, to see every request."}</td></tr>
+        {/each}
+      {/if}
+    </DataTable>
 
     <SettingsEditor>
       {#snippet children({ form, hasError })}
@@ -1101,8 +1111,8 @@
 </div>
 
 <style>
-  .toolbar { display: flex; gap: var(--space-2); align-items: center; }
-  .search-input { flex: 1; min-width: 0; }
+  .toolbar { display: flex; gap: var(--space-2); align-items: end; }
+  .toolbar > :global(.ui-field) { flex: 1; }
   .more { position: relative; flex-shrink: 0; }
   .menu-toggle { min-width: var(--tap-sm); font-weight: 700; letter-spacing: 1px; }
   /* Not position: fixed like QuotesTab's row menu: this one sits beside the filter, outside any scroll
@@ -1112,7 +1122,7 @@
     z-index: 5;
     right: 0;
     top: calc(100% + 4px);
-    min-width: 11rem;
+    min-width: var(--field-s);
     padding: var(--space-1);
     background: var(--surface);
     border: 1px solid var(--border);
@@ -1127,10 +1137,8 @@
   .bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
   .bulk-count { font-size: var(--text-sm); font-weight: 600; }
 
-  .req-row { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr); align-items: center; }
-  .r-check { display: flex; justify-content: center; }
   .check-label { display: flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; cursor: pointer; }
-  .check-label input { width: 1.25rem; height: 1.25rem; margin: 0; }
+  .check-label input { width: var(--space-5); height: var(--space-5); margin: 0; }
   .time-pill { color: var(--warn); }
 
   .invoiced-note {
@@ -1170,37 +1178,38 @@
    * live region while it is empty. */
   .action-status.collapsed { min-height: 0; margin-top: calc(var(--gap-section) * -1); margin-bottom: calc(var(--gap-section) * -1); }
 
-  li { border-top: 1px solid var(--border); }
-  li:first-child { border-top: none; }
-
-  /* Grid, not flex: min-width on a flex item is a floor, not a track, so rows sized their metadata cells to
-   * their own content and the columns zig-zagged. Fixed tracks align them; the name (minmax(0, 1fr)) is the
-   * only part that truncates. Collapses to stacked flow below 700px. */
-  .row-link {
-    width: 100%;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) 8rem 3rem 5.5rem 6rem;
-    align-items: center;
-    gap: var(--space-3);
-    background: none;
-    border: none;
-    padding: var(--space-2) 0;
-    text-align: left;
-    min-height: 32px;
-  }
-  .row-link:hover { background: var(--surface-2); }
-  .r-who { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+  .clickable-row { cursor: pointer; }
+  td.empty-state { text-align: center; }
+  .c-check { width: 1%; padding-block: 0; }
+  .c-status, .c-material { white-space: nowrap; }
+  .r-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
   .r-who .pill { flex-shrink: 0; white-space: nowrap; }
-  .r-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-  .r-material { color: var(--muted); font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .r-qty { color: var(--muted); font-size: var(--text-sm); text-align: right; }
-  .r-price { font-variant-numeric: tabular-nums; text-align: right; }
-  .r-date { color: var(--muted); font-size: var(--text-sm); text-align: right; font-variant-numeric: tabular-nums; }
-  @media (max-width: 700px) {
-    .row-link {
-      display: flex;
-      flex-wrap: wrap;
+  /* The requester's name is the row's primary link. min-height: 0 keeps the button from inflating the row. */
+  .row-link { background: none; border: none; padding: 0; min-height: 0; font-weight: 600; color: var(--accent-text); text-align: left; overflow-wrap: anywhere; }
+  .row-link:hover { text-decoration: underline; }
+  .c-material, .c-qty, .c-date { color: var(--muted); font-size: var(--text-sm); }
+  .c-material { max-width: var(--field-s); overflow: hidden; text-overflow: ellipsis; }
+
+  /* Phones: each request becomes a card: select, requester and price on top, then status and date, then what
+   * was asked for and the quantity. DataTable hides the header row and makes the table a block list. */
+  @media (max-width: 600px) {
+    tr.req-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-areas: "check who price" "check status date" "check material qty";
+      align-items: center;
+      gap: var(--space-1) var(--space-3);
+      padding: var(--space-2) 0;
+      border-bottom: 1px solid var(--border);
     }
+    .c-check { grid-area: check; width: auto; }
+    .c-who { grid-area: who; }
+    td.c-price { grid-area: price; text-align: right; font-weight: 600; }
+    td.c-status { grid-area: status; }
+    td.c-date { grid-area: date; text-align: right; }
+    .c-material { grid-area: material; max-width: none; white-space: normal; }
+    .c-qty { grid-area: qty; text-align: right; }
+    .empty-state { grid-column: 1 / -1; }
   }
   /* .pill (theme) covers border, radius, font-size and padding; the muted color is local, like QuotesTab's
    * .invoiced-badge notes. */

@@ -33,7 +33,7 @@ test("a finalized gallery order is listed in Top items and survives deleting the
   // Finalize it in the Requests tab: opening the row marks it viewed, then Finalize records the sale.
   await page.goto("/admin/");
   await navButton(page, "Requests").click();
-  await page.locator(".plain-list li", { hasText: BUYER_NAME }).getByRole("button").first().click();
+  await page.locator("tr.req-row", { hasText: BUYER_NAME }).getByRole("button").first().click();
   await page.getByRole("button", { name: "Finalize", exact: true }).click();
   await page.getByRole("button", { name: "Yes, finalize this request" }).click();
   await expect(page.getByRole("button", { name: "Finalize", exact: true })).toHaveCount(0);
@@ -53,10 +53,10 @@ test("a finalized gallery order is listed in Top items and survives deleting the
 
   // Delete the request. The sale stays.
   await navButton(page, "Requests").click();
-  await page.locator(".plain-list li", { hasText: BUYER_NAME }).getByRole("button").first().click();
+  await page.locator("tr.req-row", { hasText: BUYER_NAME }).getByRole("button").first().click();
   await page.getByRole("button", { name: "Delete this request" }).click();
   await page.getByRole("button", { name: "Yes, delete this request" }).click();
-  await expect(page.locator(".plain-list li", { hasText: BUYER_NAME })).toHaveCount(0);
+  await expect(page.locator("tr.req-row", { hasText: BUYER_NAME })).toHaveCount(0);
 
   await openDashboard();
   await expect(topItemsRow()).toBeVisible();

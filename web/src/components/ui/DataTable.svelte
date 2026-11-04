@@ -60,7 +60,7 @@
     role="region"
     aria-label={label}
     style:--dt-rows={rows}
-    style:--dt-head-h="{headHeight}px"
+    style:--dt-head-measured="{headHeight}px"
   >
     <table>
       <thead bind:offsetHeight={headHeight}>
@@ -83,6 +83,7 @@
   /* About `rows` rows tall, from the control height and the cell padding so it follows the density, and never
    * more than three quarters of the viewport so a short screen still reaches the controls below. */
   .dt-scroll {
+    --dt-head-h: var(--dt-head-measured, 0px);
     --row-h: calc(var(--control-h) + var(--cell-pad-y) * 2);
     max-height: min(calc(var(--dt-rows) * var(--row-h) + var(--dt-head-h)), 75dvh);
     overflow: auto;
@@ -106,9 +107,9 @@
 
   @media (max-width: 600px) {
     .dt-scroll :global(table), .dt-scroll :global(tbody) { display: block; }
+    .dt-scroll { --dt-head-h: 0px; }
     .dt-scroll thead {
       position: absolute;
-      width: 1px;
       height: 1px;
       overflow: hidden;
       clip-path: inset(50%);

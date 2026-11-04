@@ -631,7 +631,7 @@
 
 <div class="page">
   {#if view === "list"}
-    <PageHeader title="Shop items">
+    <PageHeader title="Shop items" actionsFill>
       {#snippet actions()}
         <button type="button" class="primary" onclick={openNew} disabled={unavailable}>Add shop item</button>
       {/snippet}

@@ -438,7 +438,7 @@
 
 <div class="page">
   {#if view === "list"}
-    <PageHeader title="Clients">
+    <PageHeader title="Clients" actionsFill>
       {#snippet actions()}<button type="button" class="primary" onclick={openNew}>Add client</button>{/snippet}
     </PageHeader>
 

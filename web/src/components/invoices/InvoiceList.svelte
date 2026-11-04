@@ -90,7 +90,7 @@
   const canEditInvoicingSettings = $derived(canReadSettings(cfg.user));
 </script>
 
-<PageHeader title="Invoices">
+<PageHeader title="Invoices" actionsFill>
   {#snippet actions()}<button type="button" class="primary" onclick={onNew}>New invoice</button>{/snippet}
 </PageHeader>
 

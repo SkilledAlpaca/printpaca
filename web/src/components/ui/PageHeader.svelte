@@ -19,6 +19,7 @@
     status,
     subtitle,
     actions,
+    actionsFill = false,
   }: {
     title?: string;
     onback?: () => void;
@@ -28,6 +29,9 @@
     subtitle?: Snippet;
     /** The view's own buttons (Add item, Save), right-aligned beside the title; they wrap under it at narrow widths. */
     actions?: Snippet;
+    /** On a phone the actions keep their natural width, left-aligned under the title. Set this when the page has one
+     * main action ("Add shop item") that should stretch to a full-width button there. */
+    actionsFill?: boolean;
   } = $props();
 </script>
 
@@ -43,7 +47,7 @@
         <h1 tabindex="-1">{title}</h1>
       {/if}
       {#if status}{@render status()}{/if}
-      {#if actions}<div class="page-actions">{@render actions()}</div>{/if}
+      {#if actions}<div class="page-actions" class:fill={actionsFill}>{@render actions()}</div>{/if}
     </div>
     {#if subtitle}{@render subtitle()}{/if}
   {/if}
@@ -54,11 +58,11 @@
   .back { display: inline-flex; align-items: center; gap: var(--space-1); }
   .title-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); align-self: stretch; }
   /* Right-aligned beside the title; once the row is too narrow the actions wrap to their own line (still at the
-   * end on a wide-enough line, full-width stack on a phone). */
+   * end on a wide-enough line; on a phone, a left-aligned row of natural-width buttons). */
   .page-actions { margin-inline-start: auto; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
   @media (max-width: 600px) {
     .page-actions { margin-inline-start: 0; width: 100%; }
-    .page-actions > :global(button) { flex: 1 1 auto; }
+    .page-actions.fill > :global(button) { flex: 1 1 auto; }
   }
   h1 { margin: 0; font-size: var(--type-title); }
 </style>

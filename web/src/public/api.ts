@@ -30,6 +30,9 @@ export interface PublicConfig {
   /** Whether DEMO_MODE=1 (server/main.go): the submission is simulated (validated and priced, nothing
    * persisted), so the page shows a banner. */
   demoMode: boolean;
+  /** shop.maxOrderQty: the largest quantity one request or order may carry. Absent from a server that predates
+   * the setting; the page then assumes 100. */
+  maxOrderQty?: number;
 }
 
 /** A plain fetch/json cast like web/src/lib/api.ts's loadConfig(): null on any network failure or non-2xx,

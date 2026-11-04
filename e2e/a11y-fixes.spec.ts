@@ -208,7 +208,7 @@ test.describe("public forms", () => {
     }
   });
 
-  test("name and email carry between forms while unsent, and are cleared after an order", async ({ page }) => {
+  test("name and email carry between forms and past an order until cleared", async ({ page }) => {
     await page.setExtraHTTPHeaders({ "X-Forwarded-For": "203.0.113.42" });
     await page.goto("/order");
     await page.getByRole("button", { name: new RegExp(ITEM) }).click();
@@ -224,6 +224,9 @@ test.describe("public forms", () => {
     await expect(page.getByRole("heading", { name: "Order received" })).toBeFocused();
     await page.getByRole("button", { name: /Back to gallery/ }).click();
     await page.getByRole("button", { name: "Custom estimate" }).click();
+    // Kept for the next order, in the same tab only; "Not you? Clear" empties both.
+    await expect(page.getByLabel("Name")).toHaveValue(`${PREFIX} Carry`);
+    await page.getByRole("button", { name: "Not you? Clear name and email" }).click();
     await expect(page.getByLabel("Name")).toHaveValue("");
     await expect(page.getByLabel("Email")).toHaveValue("");
   });

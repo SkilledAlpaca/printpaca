@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampQuantity, isValidQuantity, MAX_ITEM_ORDER_QTY, perUnitCents, rateLimitMessage } from "./publicPricing";
+import { DEFAULT_MAX_ORDER_QTY, isValidQuantity, normalizedQuantityText, overCapMessage, perUnitCents, telHref } from "./publicPricing";
 
 describe("perUnitCents", () => {
   it("divides an integer total evenly", () => {
@@ -16,27 +16,31 @@ describe("perUnitCents", () => {
   });
 });
 
-describe("clampQuantity", () => {
-  it("passes through a value already within range, with no message", () => {
-    expect(clampQuantity(5, 100)).toEqual({ value: 5, message: null });
+describe("overCapMessage", () => {
+  it("is empty within the cap, or for a blank entry", () => {
+    expect(overCapMessage(100, 100)).toBe("");
+    expect(overCapMessage(null, 100)).toBe("");
   });
 
-  it("clamps a value above max down to max, with a named message", () => {
-    const result = clampQuantity(500, 100);
-    expect(result.value).toBe(100);
-    expect(result.message).toBe("Max 100 per order.");
+  it("names the policy cap, with a thousands separator", () => {
+    expect(overCapMessage(101, 100)).toBe("Max 100 per order.");
+    expect(overCapMessage(10001, 10000)).toBe("Max 10,000 per order.");
   });
 
   it("names the stock when stock is the limit", () => {
-    expect(clampQuantity(9, 3, 1, "stock")).toEqual({ value: 3, message: "Only 3 in stock." });
+    expect(overCapMessage(9, 3, "stock")).toBe("Only 3 in stock.");
+  });
+});
+
+describe("normalizedQuantityText", () => {
+  it("rewrites scientific notation to a plain integer", () => {
+    expect(normalizedQuantityText("1e3")).toBe("1000");
+    expect(normalizedQuantityText(" 2E2 ")).toBe("200");
+    expect(normalizedQuantityText("1.5e1")).toBe("15");
   });
 
-  it("clamps a value below the default min (1) up to 1, with no message", () => {
-    expect(clampQuantity(0, 100)).toEqual({ value: 1, message: null });
-  });
-
-  it("respects a custom min", () => {
-    expect(clampQuantity(0, 100, 0)).toEqual({ value: 0, message: null });
+  it("leaves plain, fractional, and non-numeric text alone", () => {
+    for (const raw of ["12", "2.5", "1.5e0", "abc", "", "1e-1"]) expect(normalizedQuantityText(raw)).toBeNull();
   });
 });
 
@@ -48,22 +52,15 @@ describe("isValidQuantity", () => {
   });
 });
 
-describe("rateLimitMessage", () => {
-  it("offers the shop's email and phone", () => {
-    expect(rateLimitMessage({ email: "shop@example.com", phone: "555-0100" })).toBe(
-      "We've had a lot of requests from your connection. Try again later or email shop@example.com or call 555-0100.",
-    );
-  });
-  it("uses whichever contact exists, or none", () => {
-    expect(rateLimitMessage({ email: "", phone: "555-0100" })).toContain("or call 555-0100.");
-    expect(rateLimitMessage({ email: "", phone: "" })).toBe("We've had a lot of requests from your connection. Try again later.");
+describe("telHref", () => {
+  it("keeps digits and a leading plus", () => {
+    expect(telHref("(555) 010-0142")).toBe("tel:5550100142");
+    expect(telHref("+1 555-010-0142")).toBe("tel:+15550100142");
   });
 });
 
-describe("MAX_ITEM_ORDER_QTY", () => {
-  it("is the 10000 per-order ceiling the clamp message names", () => {
-    expect(MAX_ITEM_ORDER_QTY).toBe(10000);
-    expect(clampQuantity(10001, MAX_ITEM_ORDER_QTY)).toEqual({ value: 10000, message: "Max 10000 per order." });
-    expect(isValidQuantity(10000, MAX_ITEM_ORDER_QTY)).toBe(true);
+describe("DEFAULT_MAX_ORDER_QTY", () => {
+  it("is the shop default of 100", () => {
+    expect(DEFAULT_MAX_ORDER_QTY).toBe(100);
   });
 });

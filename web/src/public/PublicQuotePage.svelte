@@ -17,6 +17,10 @@
   /** Message text for the drop zone's status line. Local rather than gcodeMessage.ts's describeGcodeResult
    * (built for the admin form's always-visible fields) so the wording can point at the inline print-time
    * inputs below. */
+  /** The intro shown when the shop wrote none. "Estimate", not "instant estimate": an unsliced file gets no
+   * number until the shop has its print time. */
+  export const DEFAULT_INTRO_TEXT = "Order a ready-made 3D print, or upload your own 3D model for a price estimate.";
+
   export function describeGcode(result: GcodeResult, fname: string): string {
     if (result.status === "not-found") {
       return `No slicer metadata found in ${fname}. Try re-slicing with metadata comments enabled.`;
@@ -77,7 +81,15 @@
   import { clearConfirmation, loadConfirmation, saveConfirmation } from "./confirmationStorage";
   import { BoundsCollector, boundsWarning, formatBounds, type ModelBounds } from "./modelBounds";
   import { materialDescription } from "./materialInfo";
-  import { clampQuantity, isValidQuantity, perUnitCents, rateLimitMessage } from "./publicPricing";
+  import {
+    DEFAULT_MAX_ORDER_QTY,
+    isValidQuantity,
+    normalizedQuantityText,
+    overCapMessage,
+    perUnitCents,
+  } from "./publicPricing";
+  import FormErrorSummary from "./FormErrorSummary.svelte";
+  import RateLimitNotice from "./RateLimitNotice.svelte";
   import { parseRoute, routeHash, type Route } from "./route";
   import {
     fetchQuotePreview,
@@ -242,7 +254,8 @@
   // flagged first.
   const MAX_WEIGHT_G = 100000;
   const MAX_TIME_SECONDS = 30 * 24 * 3600;
-  const MAX_QUOTE_QUANTITY = 10000;
+  // The per-order cap is shop.maxOrderQty, served with the public config.
+  const maxQty = $derived(cfg?.maxOrderQty ?? DEFAULT_MAX_ORDER_QTY);
   // The Solidity hint says "most prints are 15 to 25%", so the default sits inside that range. (The admin
   // quote form keeps the engine's own default.)
   const PUBLIC_DEFAULT_SOLIDITY_PCT = 20;
@@ -257,19 +270,8 @@
   // Name and email live in the shared visitor store (see visitor.svelte.ts) so they carry over to an item order.
   const name = $derived(visitor.name);
   const email = $derived(visitor.email);
-  // Set only when a typed quantity exceeded MAX_QUOTE_QUANTITY and was clamped. Cleared on the next edit (the
-  // input's oninput), not by the effect, which would clear it in the same reactive pass that set it.
-  let quantityClampNotice = $state("");
-  let lastClampedTo = -1;
-  $effect(() => {
-    if (quantity === null) return;
-    const clamped = clampQuantity(quantity, MAX_QUOTE_QUANTITY);
-    if (clamped.message) {
-      lastClampedTo = clamped.value;
-      quantity = clamped.value;
-      quantityClampNotice = clamped.message;
-    }
-  });
+  // A quantity above the cap stays as typed: this message replaces the total and the submit is blocked.
+  const quantityCapMessage = $derived(overCapMessage(quantity, maxQty));
 
   let fileName = $state("");
   let file = $state<File | null>(null);
@@ -395,7 +397,9 @@
   // no round trip. No print time means no preview: the shop confirms that price, nothing is estimated from volume.
   const previewInput = $derived.by(() => {
     if (materialName === "") return null;
-    if (!isValidQuantity(quantity, MAX_QUOTE_QUANTITY)) return null;
+    // Nothing is priced while a field is invalid (solidity, minutes, weight, quantity).
+    if (issues.length > 0) return null;
+    if (!isValidQuantity(quantity, maxQty)) return null;
     if (weightG === null || weightG < 0 || weightG > MAX_WEIGHT_G) return null;
     if (timeSeconds === null || timeSeconds < 0 || timeSeconds > MAX_TIME_SECONDS) return null;
     return { material: materialName, quantity, weightG, timeSeconds };
@@ -657,8 +661,11 @@
   const issues = $derived.by<Issue[]>(() => {
     const out: Issue[] = [];
     if (materialName === "") out.push({ field: "material", message: "Choose a material." });
-    if (!isValidQuantity(quantity, MAX_QUOTE_QUANTITY)) {
-      out.push({ field: "quantity", message: `Quantity must be a whole number from 1 to ${MAX_QUOTE_QUANTITY}.` });
+    if (!isValidQuantity(quantity, maxQty)) {
+      out.push({
+        field: "quantity",
+        message: quantityCapMessage !== "" ? quantityCapMessage : `Quantity must be a whole number from 1 to ${maxQty.toLocaleString("en-US")}.`,
+      });
     }
     // A parsed g-code or sliced 3MF supplies the weight (and usually the time); an STL or geometry-3MF
     // estimate supplies a weight the visitor can override. A model file without a print time is allowed: the
@@ -725,8 +732,36 @@
   const noteError = $derived(showErrors ? fieldErrors.note : undefined);
   /** True when `field` has an issue the visitor should now see (after the first submit attempt). */
   const marked = (field: IssueField): boolean => showErrors && issueFields.has(field);
-  // The summary under the form: live, so each message disappears the moment its problem is fixed.
-  const summaryErrors = $derived(showErrors ? issues.map((i) => i.message) : []);
+  /** The message to show under `field` once the first submit was attempted. Each error appears here and
+   * nowhere else; the line above the button only counts them and links to the first. */
+  const issueMessage = (field: IssueField): string => (showErrors ? (issues.find((i) => i.field === field)?.message ?? "") : "");
+  // Hours and minutes share one message line under the pair.
+  const timeIssueMessage = $derived(issueMessage("hours") || issueMessage("minutes"));
+  const FIELD_LABEL: Record<IssueField, string> = {
+    material: "Material",
+    quantity: "Quantity",
+    weight: "Model weight",
+    hours: "Print time",
+    minutes: "Print time",
+    solidity: "Solidity",
+    file: "Model file",
+  };
+  const summaryProblems = $derived.by(() => {
+    if (!showErrors) return [];
+    const out: { id: string; label: string }[] = [];
+    for (const i of issues) {
+      const id = ISSUE_TARGET[i.field];
+      if (!out.some((p) => p.id === id || (p.label === FIELD_LABEL[i.field]))) out.push({ id, label: FIELD_LABEL[i.field] });
+    }
+    if (fieldErrors.name) out.push({ id: "quote-name", label: "Name" });
+    if (fieldErrors.email) out.push({ id: "quote-email", label: "Email" });
+    if (fieldErrors.note) out.push({ id: "quote-note", label: "Note" });
+    return out;
+  });
+  // The text under the Quantity field: the cap message live, or the validation message after a submit attempt.
+  const quantityMessage = $derived(quantityCapMessage !== "" ? quantityCapMessage : issueMessage("quantity"));
+  // Whether "How we estimated this" is open; a blocked submit opens it when the first problem is inside.
+  let howOpen = $state(false);
   const formSnapshot = $derived(
     JSON.stringify([materialName, quantity, weightG, timeSeconds, visitor.name, visitor.email, note, fileName]),
   );
@@ -735,6 +770,8 @@
 
   // What the price panel says while there is no price: the first thing standing in the way, or the promise that
   // the shop will price a file that has no print time.
+  // "Estimated price" only when a price can be computed; otherwise it would promise a number that isn't there.
+  const priceHeading = $derived(previewInput !== null ? "Estimated price" : "Price");
   const priceWaitingOnShop = $derived(issues.length === 0 && timeSeconds === null && hasModelFile);
 
   /** Moves focus to the field of the first issue, or to the first invalid text field. */
@@ -753,6 +790,7 @@
     // right away (WCAG 3.3.1).
     if (formErrorCount > 0) {
       showErrors = true;
+      if (issues[0]?.field === "solidity") howOpen = true;
       await tick();
       focusFirstProblem();
       return;
@@ -818,9 +856,9 @@
       };
       fileStoredCaveat = caveat;
       saveConfirmation(QUOTE_CONFIRMATION_KEY, submitted);
-      // The request is sent: a shared device shouldn't keep the visitor's name and email around, and Back from
-      // the confirmation shows an empty form, not one that could be sent twice.
-      clearVisitor();
+      // The form resets so Back from the confirmation can't send the same request twice. Name and email stay in
+      // the in-memory store for "Request another estimate" or "Order another item"; "Not you? Clear" and a
+      // reload empty them.
       resetEstimateForm();
       navigate({ name: "estimate-received" });
       await focusAfterUpdate(() => quoteConfirmationHeading);
@@ -878,7 +916,7 @@
   );
 
   const introText = $derived(
-    cfg?.introText ? cfg.introText : "Order a ready-made 3D print, or upload your own 3D model for a price estimate.",
+    cfg?.introText ? cfg.introText : DEFAULT_INTRO_TEXT,
   );
 </script>
 
@@ -891,7 +929,12 @@
 {#snippet timeFields(describedBy: string)}
   <div class="field">
     <span id="quote-time-label">Print time</span>
-    <div class="time-pair" role="group" aria-labelledby="quote-time-label" aria-describedby={describedBy}>
+    <div
+      class="time-pair"
+      role="group"
+      aria-labelledby="quote-time-label"
+      aria-describedby={[describedBy, timeIssueMessage ? "quote-time-err" : ""].filter(Boolean).join(" ") || undefined}
+    >
       <span class="time-input">
         <input
           id="quote-hours"
@@ -916,6 +959,7 @@
         <span class="suffix">min</span>
       </span>
     </div>
+    {#if timeIssueMessage}<small class="warn-text" id="quote-time-err">{timeIssueMessage}</small>{/if}
   </div>
 {/snippet}
 
@@ -970,7 +1014,8 @@
           <div class="card confirmation">
             <h2 class="section-label" tabindex="-1" bind:this={itemConfirmationHeading}>Order received</h2>
             <p class="price">{formatMoney(itemOrderConfirmation.priceCents, cfg.currency)}</p>
-            <p class="ref">Reference: {itemOrderConfirmation.reference || itemOrderConfirmation.id}</p>
+            <p class="ref">Reference: <strong>{itemOrderConfirmation.reference || itemOrderConfirmation.id}</strong></p>
+            <p class="ref-hint">Save this reference. Quote it if you contact us about your order.</p>
             <p class="order-summary">{orderSummaryLine}</p>
             <p>We'll follow up at {itemOrderConfirmation.email}.</p>
             <p class="next-steps">{WHAT_HAPPENS_NEXT}</p>
@@ -984,6 +1029,7 @@
               item={orderItem}
               currency={cfg.currency}
               branding={cfg.branding}
+              maxOrderQty={maxQty}
               onback={closeItem}
               onordered={(confirmation) => {
                 itemOrderConfirmation = confirmation;
@@ -1015,7 +1061,8 @@
           <p class="meta">Estimated price</p>
           <p class="price">{formatMoney(submitted.priceCents, cfg.currency)}</p>
         {/if}
-        <p class="ref">Reference: {submitted.reference || submitted.id}</p>
+        <p class="ref">Reference: <strong>{submitted.reference || submitted.id}</strong></p>
+        <p class="ref-hint">Save this reference. Quote it if you contact us about your request.</p>
         <p class="order-summary">{submitted.quantity} &times; {submitted.material}</p>
         {#if submitted.fileName}<p class="meta">File: {submitted.fileName}</p>{/if}
         {#if submitted.printTimeLabel}<p class="meta">Print time used: {submitted.printTimeLabel}</p>{/if}
@@ -1048,12 +1095,13 @@
             bind:value={materialName}
             required
             aria-invalid={marked("material") ? "true" : undefined}
-            aria-describedby="quote-material-desc"
+            aria-describedby={marked("material") ? "quote-material-desc quote-material-err" : "quote-material-desc"}
           >
             <option value="" disabled>Choose a material</option>
             {#each cfg.materials as m (m.name)}<option value={m.name}>{m.name}</option>{/each}
           </select>
           <small class="field-hint" id="quote-material-desc">{materialName ? materialDescription(materialName) : ""}</small>
+          {#if marked("material")}<small class="warn-text" id="quote-material-err">{issueMessage("material")}</small>{/if}
         </div>
 
         <div class="field">
@@ -1062,20 +1110,22 @@
             id="quote-qty"
             type="number"
             min="1"
-            max={MAX_QUOTE_QUANTITY}
+            max={maxQty}
             step="1"
             bind:value={quantity}
-            oninput={(e) => {
-              if (Number(e.currentTarget.value) !== lastClampedTo) quantityClampNotice = "";
+            onchange={(e) => {
+              // "1e3" stays on screen as typed; show the number it prices.
+              const plain = normalizedQuantityText(e.currentTarget.value);
+              if (plain !== null) e.currentTarget.value = plain;
             }}
             required
-            aria-invalid={marked("quantity") ? "true" : undefined}
+            aria-invalid={quantityMessage !== "" ? "true" : undefined}
             aria-describedby="quote-qty-notice"
           />
         </div>
-        <!-- Outside the field so the notice isn't part of its name, and always mounted so the live region
-             announces its text changes (WCAG 1.3.1, 4.1.3). -->
-        <p class="clamp-notice" id="quote-qty-notice" role="status">{quantityClampNotice}</p>
+        <!-- Outside the field so the message isn't part of its name, and always mounted so the live region
+             announces its text changes (WCAG 1.3.1, 4.1.3). The only place the quantity message appears. -->
+        <p class="clamp-notice" id="quote-qty-notice" role="status">{quantityMessage}</p>
 
         <div
           class="card drop"
@@ -1092,8 +1142,9 @@
           <label for="public-gcode-file">
             <strong id="drop-lead">Upload your 3D file (STL, 3MF, or G-code)</strong>
             <span id="drop-help">
-              Optional. Drag a file here or choose one. We'll estimate the weight from its shape; a file from your slicer
-              also gives the print time. No file? Enter the weight and print time below.
+              Optional. Drag a file here or choose one. We'll estimate the weight from its shape. A file from your slicer (the
+              program that prepares a model for printing, such as Cura or PrusaSlicer) also gives the print time.
+              No file? Enter the weight and print time below.
             </span>
           </label>
           <!-- The visible control is the button; the real input stays in the DOM (visually hidden, out of the
@@ -1104,7 +1155,7 @@
               id="choose-file"
               class="choose-file"
               class:invalid={marked("file")}
-              aria-describedby="drop-help"
+              aria-describedby={marked("file") ? "drop-help file-err" : "drop-help"}
               onclick={() => fileInputEl?.click()}
             >
               Choose file
@@ -1128,6 +1179,7 @@
           <p class="status {gcodeStatus}" aria-live="polite">{gcodeIsProblem && !busy ? "" : busy ? `Parsing ${fileName}…` : gcodeMessage}</p>
           <p class="status {gcodeStatus}" role="alert">{gcodeIsProblem && !busy ? gcodeMessage : ""}</p>
           <p class="advisory-text" role="status">{modelAttachmentAdvisory}</p>
+          {#if marked("file")}<small class="warn-text" id="file-err">{issueMessage("file")}</small>{/if}
         </div>
 
         {#if previewTriangles.length > 0}
@@ -1170,7 +1222,7 @@
                 bind:value={weightG}
                 oninput={() => (weightEdited = true)}
                 aria-invalid={marked("weight") ? "true" : undefined}
-                aria-describedby="quote-weight-hint"
+                aria-describedby={marked("weight") ? "quote-weight-hint quote-weight-err" : "quote-weight-hint"}
               />
               <small class="field-hint" id="quote-weight-hint">
                 {#if weightEdited}
@@ -1180,8 +1232,9 @@
                   Estimated from the model's shape. If you already know the weight, type it here.
                 {/if}
               </small>
+              {#if marked("weight")}<small class="warn-text" id="quote-weight-err">{issueMessage("weight")}</small>{/if}
             </div>
-            <details class="how-estimated">
+            <details class="how-estimated" bind:open={howOpen}>
               <summary>How we estimated this</summary>
               <p>
                 Weight = model volume × material density × solidity.
@@ -1201,7 +1254,9 @@
                   step="1"
                   bind:value={solidityInput}
                   aria-invalid={marked("solidity") ? "true" : undefined}
+                  aria-describedby={marked("solidity") ? "quote-solidity-err" : undefined}
                 />
+                {#if marked("solidity")}<small class="warn-text" id="quote-solidity-err">{issueMessage("solidity")}</small>{/if}
               </div>
             </details>
             {@render timeFields("quote-time-hint")}
@@ -1222,7 +1277,9 @@
                 step="0.01"
                 bind:value={weightG}
                 aria-invalid={marked("weight") ? "true" : undefined}
+                aria-describedby={marked("weight") ? "quote-weight-err" : undefined}
               />
+              {#if marked("weight")}<small class="warn-text" id="quote-weight-err">{issueMessage("weight")}</small>{/if}
             </div>
             {@render timeFields("")}
           </div>
@@ -1257,6 +1314,9 @@
           />
           {#if emailError}<small class="warn-text" id="quote-email-err">{emailError}</small>{/if}
         </div>
+        {#if visitor.name !== "" || visitor.email !== ""}
+          <button type="button" class="quiet inline-link not-you" onclick={clearVisitor}>Not you? Clear name and email</button>
+        {/if}
         <div class="field">
           <label for="quote-note">Note (optional)</label>
           <textarea
@@ -1271,7 +1331,7 @@
         </div>
 
         <div class="card estimate" role="group" aria-labelledby="estimate-label">
-          <h2 class="section-label" id="estimate-label">Estimated price</h2>
+          <h2 class="section-label" id="estimate-label">{priceHeading}</h2>
           <!-- One persistent live region whose content changes, announced as a whole, so the settled price
                is spoken (WCAG 4.1.3). "Updating" is aria-hidden: it would chatter on every keystroke. -->
           <div aria-live="polite" aria-atomic="true">
@@ -1299,8 +1359,9 @@
               <p class="price-later">We'll confirm the price after we prepare your file for printing.</p>
               <p class="muted">Add a print time above if you'd like an estimate now.</p>
             {:else if issues.length > 0}
-              <!-- Names the actual blocker (a limit, a bad field), not a generic prompt. -->
-              <p class="muted">{issues[0]?.message}</p>
+              <!-- Before the first submit attempt this names the blocker; after it, the message sits under the
+                   field, so the panel does not repeat it. -->
+              <p class="muted">{showErrors ? "Fix the fields marked above to see a price." : issues[0]?.message}</p>
             {:else}
               <p class="muted">Choose a material and add a weight and print time to see a price.</p>
             {/if}
@@ -1312,11 +1373,12 @@
              would remove its list semantics (WCAG 1.3.1, 4.1.3). -->
         <div role="alert">
           {#if visibleRateLimited}
-            <p class="warn-text">{rateLimitMessage(cfg.branding)}</p>
+            <RateLimitNotice branding={cfg.branding} />
           {/if}
-          {#if summaryErrors.length > 0 || visibleServerErrors.length > 0}
+          <FormErrorSummary problems={summaryProblems} />
+          {#if visibleServerErrors.length > 0}
             <ul class="error-list">
-              {#each new Set([...summaryErrors, ...visibleServerErrors]) as e (e)}<li class="warn-text">{e}</li>{/each}
+              {#each new Set(visibleServerErrors) as e (e)}<li class="warn-text">{e}</li>{/each}
             </ul>
           {/if}
         </div>
@@ -1450,7 +1512,10 @@
   }
   .estimate .meta { color: var(--muted); font-size: var(--text-sm); margin: 0; }
   .confirmation { text-align: center; }
-  .confirmation .ref { color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+  .confirmation .ref { margin: 0; font-variant-numeric: tabular-nums; }
+  .confirmation .ref strong { display: block; font-size: var(--text-xl); letter-spacing: 0.04em; }
+  .confirmation .ref-hint { color: var(--muted); font-size: var(--text-sm); margin: 0; }
+  .not-you { align-self: flex-start; }
   .confirmation .order-summary { font-weight: 600; margin: 0; }
 
   /* Wraps the restored (post-reload) gallery item-order confirmation; same "back" affordance as
@@ -1496,7 +1561,7 @@
   .how-estimated .field { margin-top: var(--space-2); }
   @media (max-width: 600px) {
     /* 44 px tap targets on phones (the app-wide quiet button is 32 px). */
-    .back, .remove-file, .inline-link, .confirmation .quiet { min-height: 44px; }
+    .back, .remove-file, .inline-link, .confirmation .quiet, .not-you { min-height: 44px; }
     .how-estimated summary { min-height: 44px; display: flex; align-items: center; }
   }
 </style>

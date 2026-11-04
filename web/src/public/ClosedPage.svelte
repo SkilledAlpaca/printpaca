@@ -12,6 +12,7 @@
     message = "",
     branding,
     headingLevel = 1,
+    notice = "",
   }: {
     businessName?: string;
     /** Custom logo (quote.logoUrl); the project mark when empty. */
@@ -21,6 +22,9 @@
     branding: Pick<PublicConfig["branding"], "email" | "phone" | "address">;
     /** Heading level of "We're closed right now": 1 on the shop's own page, 2 inside the admin Settings preview. */
     headingLevel?: 1 | 2;
+    /** Shown above the heading when a submit was refused because the shop closed mid-form ("Your order wasn't
+     * placed."). The host focuses it by id (closed-notice). */
+    notice?: string;
   } = $props();
 </script>
 
@@ -32,6 +36,7 @@
   </header>
   <Card>
     <div class="closed-body">
+      {#if notice}<p class="closed-notice" id="closed-notice" role="status" tabindex="-1">{notice}</p>{/if}
       <svelte:element this={`h${headingLevel}`} id="closed-heading" class="closed-heading">We're closed right now</svelte:element>
       {#if message}<p class="paused-message">{message}</p>{/if}
       <ContactDetails {branding} />
@@ -46,5 +51,7 @@
   .brand-name { margin: 0; font-size: var(--type-title); font-weight: 700; overflow-wrap: anywhere; }
   .closed-body { display: flex; flex-direction: column; gap: var(--gap); align-items: flex-start; }
   .closed-heading { margin: 0; }
+  .closed-notice { margin: 0; padding: var(--space-3); border-left: 3px solid var(--danger); background: var(--inset-bg); font-weight: 600; overflow-wrap: anywhere; }
+  .closed-notice:focus-visible { outline: none; }
   .paused-message { margin: 0; font-size: var(--type-heading); overflow-wrap: anywhere; }
 </style>

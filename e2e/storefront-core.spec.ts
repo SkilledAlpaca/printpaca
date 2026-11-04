@@ -328,7 +328,9 @@ test("paused: a saved confirmation stays visible with a note, a missing one show
     expect(await axeProblems(page, "paused order confirmation")).toEqual([]);
 
     // Starting another order leads to the Closed page.
-    await page.getByRole("button", { name: "Order another item" }).click();
+    // Taps in the first half second after a confirmation appears are ignored (a double tap on Place order).
+    await page.waitForTimeout(600);
+    await page.getByRole("button", { name: "Back to gallery" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "We're closed right now" })).toBeVisible();
 
     // With nothing saved for the route, the Closed page shows.

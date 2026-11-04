@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { APIRequestContext } from "@playwright/test";
+import { deflateSync, crc32 } from "node:zlib";
 import { requestIdByReference } from "./helpers";
 
 // v1.2 public-shop usability fixes (P1-P10 of the simulated review). Each test fails without its fix.
@@ -7,6 +8,46 @@ import { requestIdByReference } from "./helpers";
 // submission budget the other specs use.
 
 type Json = Record<string, any>;
+
+/** A valid 1x1 PNG of one color. */
+function tinyPng(r: number, g: number, b: number): Buffer {
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(1, 0);
+  ihdr.writeUInt32BE(1, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(Buffer.from([0, r, g, b]))),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+/** A cube of `size` model units on a side, as ASCII STL. */
+function cubeStl(size: number): string {
+  const s = size;
+  const tris = [
+    [[0, 0, 0], [0, s, 0], [s, s, 0]], [[0, 0, 0], [s, s, 0], [s, 0, 0]],
+    [[0, 0, s], [s, 0, s], [s, s, s]], [[0, 0, s], [s, s, s], [0, s, s]],
+    [[0, 0, 0], [s, 0, 0], [s, 0, s]], [[0, 0, 0], [s, 0, s], [0, 0, s]],
+    [[0, s, 0], [0, s, s], [s, s, s]], [[0, s, 0], [s, s, s], [s, s, 0]],
+    [[0, 0, 0], [0, 0, s], [0, s, s]], [[0, 0, 0], [0, s, s], [0, s, 0]],
+    [[s, 0, 0], [s, s, 0], [s, s, s]], [[s, 0, 0], [s, s, s], [s, 0, s]],
+  ];
+  const facets = tris
+    .map((t) => `  facet normal 0 0 0\n    outer loop\n${t.map((v) => `      vertex ${v[0]} ${v[1]} ${v[2]}`).join("\n")}\n    endloop\n  endfacet`)
+    .join("\n");
+  return `solid cube\n${facets}\nendsolid cube\n`;
+}
 const PREFIX = "PubFix";
 const WIDGET = `${PREFIX} Widget`;
 const TRAY = `${PREFIX} Tray`;
@@ -35,6 +76,10 @@ async function resetShop(request: APIRequestContext): Promise<void> {
   const config = await getConfig(request);
   config.shop = structuredClone(originalConfig.shop);
   config.quote = structuredClone(originalConfig.quote);
+  config.publicQuotes = structuredClone(originalConfig.publicQuotes);
+  // The settings save keeps the stored hero file; the delete endpoint is what removes it.
+  await request.delete("/admin/api/shop/hero-image");
+  config.shop.heroImage = { file: "", alt: "" };
   await putConfig(request, config);
 }
 async function mkItem(request: APIRequestContext, body: Json): Promise<string> {
@@ -200,3 +245,154 @@ test.describe("P2: Escape never discards a dirty order form", () => {
     await ctx.close();
   });
 });
+
+async function placeWidgetOrder(page: import("@playwright/test").Page, request: APIRequestContext, who: string): Promise<string> {
+  await openItem(page, WIDGET);
+  await page.getByLabel("Name", { exact: true }).fill(`${PREFIX} ${who}`);
+  await page.getByLabel("Email").fill("pubfix@example.com");
+  await page.getByRole("button", { name: "Place order" }).click();
+  const region = page.getByRole("region", { name: "Order received" });
+  await expect(region).toBeFocused();
+  const ref = ((await region.locator(".ref strong").textContent()) ?? "").trim();
+  createdRequests.push(await requestIdByReference(request, ref));
+  return ref;
+}
+
+test.describe("P3/P5: the order confirmation", () => {
+  test("a double tap where Place order was keeps the confirmation; Copy reference copies it", async ({ page, request, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.setExtraHTTPHeaders(xff());
+    await openItem(page, WIDGET);
+    await page.getByLabel("Name", { exact: true }).fill(`${PREFIX} Tap`);
+    await page.getByLabel("Email").fill("pubfix@example.com");
+    const submit = page.getByRole("button", { name: "Place order" });
+    const box = (await submit.boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await submit.click();
+    const region = page.getByRole("region", { name: "Order received" });
+    await expect(region).toBeVisible();
+    // The second tap of a double tap, at the same screen position, right after the confirmation shows.
+    await page.mouse.click(x, y);
+    await page.mouse.click(x, y);
+    await expect(region).toBeVisible();
+    await expect(page).toHaveURL(/#\/order\/received$/);
+    const ref = ((await region.locator(".ref strong").textContent()) ?? "").trim();
+    createdRequests.push(await requestIdByReference(request, ref));
+    // Even a click straight on the navigation links is ignored in the first moments.
+    await page.getByRole("button", { name: "Back to gallery" }).dispatchEvent("click");
+    await expect(region).toBeVisible();
+    // No primary "Order another item" button remains.
+    await expect(page.getByRole("button", { name: "Order another item" })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Copy reference" }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(ref);
+    // After the moment passes the confirmation reload still works and the links act.
+    await page.reload();
+    await expect(region).toBeVisible();
+    await expect(page.locator(".confirmation .ref strong")).toHaveText(ref);
+  });
+
+  test("Back to <item> focuses that item's card; Back to gallery follows the heading in DOM order", async ({ page, request }) => {
+    await page.setExtraHTTPHeaders(xff());
+    await placeWidgetOrder(page, request, "Back");
+    const order = await page.evaluate(() => {
+      const pos = (el: Element | null) => (el ? Array.from(document.querySelectorAll("*")).indexOf(el) : -1);
+      return {
+        heading: pos(document.getElementById("item-conf-heading")),
+        gallery: pos(Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("Back to gallery")) ?? null),
+        summary: pos(document.querySelector(".order-summary")),
+      };
+    });
+    expect(order.heading).toBeLessThan(order.gallery);
+    expect(order.gallery).toBeLessThan(order.summary);
+    await page.waitForTimeout(600);
+    await page.getByRole("button", { name: `Back to ${WIDGET}` }).click();
+    await expect(page.getByRole("button", { name: new RegExp(WIDGET) })).toBeFocused();
+    await expect(page.getByRole("heading", { name: "Items" })).toBeVisible();
+  });
+
+  test("at 200% zoom the amount and reference are in view and the card is at the top", async ({ browser, request }) => {
+    const ctx = await browser.newContext({ viewport: { width: 683, height: 384 }, deviceScaleFactor: 2, extraHTTPHeaders: xff() });
+    const page = await ctx.newPage();
+    await page.goto("http://127.0.0.1:8099/");
+    await page.getByRole("button", { name: new RegExp(WIDGET) }).click();
+    await page.getByLabel("Name", { exact: true }).fill(`${PREFIX} Zoom`);
+    await page.getByLabel("Email").fill("pubfix@example.com");
+    await page.getByRole("button", { name: "Place order" }).click();
+    const region = page.getByRole("region", { name: "Order received" });
+    await expect(region).toBeFocused();
+    createdRequests.push(await requestIdByReference(request, ((await region.locator(".ref strong").textContent()) ?? "").trim()));
+    await page.waitForTimeout(300);
+    const vh = 384;
+    for (const sel of [".confirmation .price", ".confirmation .ref strong"]) {
+      const b = (await page.locator(sel).boundingBox())!;
+      expect(b.y, sel).toBeGreaterThanOrEqual(0);
+      expect(b.y + b.height, sel).toBeLessThanOrEqual(vh);
+    }
+    const card = (await page.locator(".confirmation-card").boundingBox())!;
+    expect(card.y).toBeLessThan(40);
+    await ctx.close();
+  });
+});
+
+test.describe("P4: a submit refused because the shop closed", () => {
+  test("the Closed page says the order wasn't placed, focuses the notice, and the details return after reopening", async ({ page, request }) => {
+    await page.setExtraHTTPHeaders(xff());
+    try {
+      await openItem(page, TRAY);
+      await page.getByLabel("Size (required)").selectOption({ label: "Large (+$4.00)" });
+      await page.getByLabel("Quantity").fill("2");
+      await page.getByLabel("Name", { exact: true }).fill(`${PREFIX} Closing`);
+      await page.getByLabel("Email").fill("closing@example.com");
+      await page.getByLabel("Note (optional)").fill("please hurry");
+      await setShop(request, { acceptingOrders: false, pausedMessage: "Back Monday" });
+      await page.getByRole("button", { name: "Place order" }).click();
+      await expect(page.getByRole("heading", { level: 1, name: "We're closed right now" })).toBeVisible();
+      const notice = page.locator("#closed-notice");
+      await expect(notice).toContainText("Your order wasn't placed. The shop closed while you were ordering.");
+      await expect(notice).toBeFocused();
+      await expect(page.getByText("Back Monday")).toBeVisible();
+
+      // The shop reopens; a reload brings the form back with everything typed.
+      await resetShop(request);
+      await page.reload();
+      await expect(page.getByRole("heading", { name: TRAY, level: 2 })).toBeVisible();
+      await expect(page.getByLabel("Size (required)")).toHaveValue(/.+/);
+      await expect(page.getByLabel("Quantity")).toHaveValue("2");
+      await expect(page.getByLabel("Name", { exact: true })).toHaveValue(`${PREFIX} Closing`);
+      await expect(page.getByLabel("Email")).toHaveValue("closing@example.com");
+      await expect(page.getByLabel("Note (optional)")).toHaveValue("please hurry");
+      await expect(page.locator("#closed-notice")).toHaveCount(0);
+    } finally {
+      await resetShop(request);
+    }
+  });
+
+  test("a refused estimate request says so and keeps its details", async ({ page, request }) => {
+    await page.setExtraHTTPHeaders(xff());
+    try {
+      await page.goto("/#/estimate");
+      await page.getByLabel("Material").selectOption("PLA");
+      await page.getByLabel(/Model weight/).fill("40");
+      await page.getByLabel(/^Print time \(h/).fill("1");
+      await page.getByLabel(/Print time \(minutes\)/).fill("10");
+      await page.getByLabel("Name", { exact: true }).fill(`${PREFIX} Est`);
+      await page.getByLabel("Email").fill("est@example.com");
+      await page.getByLabel("Note (optional)").fill("est note");
+      await expect(page.locator(".estimate .price")).toContainText("$");
+      await setShop(request, { acceptingOrders: false, pausedMessage: "Back Monday" });
+      await page.getByRole("button", { name: "Request an estimate" }).click();
+      await expect(page.locator("#closed-notice")).toContainText("Your estimate request wasn't sent");
+      await expect(page.locator("#closed-notice")).toBeFocused();
+      await resetShop(request);
+      await page.reload();
+      await expect(page.getByLabel("Name", { exact: true })).toHaveValue(`${PREFIX} Est`);
+      await expect(page.getByLabel("Note (optional)")).toHaveValue("est note");
+      await expect(page.getByLabel("Material")).toHaveValue("PLA");
+    } finally {
+      await resetShop(request);
+    }
+  });
+});
+

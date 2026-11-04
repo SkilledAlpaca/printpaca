@@ -4,6 +4,8 @@
    * item may since be deleted). */
   export interface ItemOrderConfirmation {
     id: string;
+    /** The ordered item's id, so the confirmation can lead back to its card; absent in a confirmation saved by an older build. */
+    itemId?: string;
     /** The short reference the customer quotes ("HL-1001"); absent in a confirmation saved by an older build. */
     reference?: string;
     priceCents: number;
@@ -31,6 +33,7 @@
   } from "../lib/itemOptions";
   import { NAME_MAX_BYTES, NOTE_MAX_BYTES, ITEM_ORDER_EMAIL_MAX_BYTES, utf8ByteLength, isPlausibleEmail, EMAIL_FORMAT_ERROR } from "../lib/publicFormLimits";
   import { DEFAULT_MAX_ORDER_QTY, isValidQuantity, normalizedQuantityText, overCapMessage } from "./publicPricing";
+  import type { OrderDraft } from "./orderDraft";
   import VisitorReset from "./VisitorReset.svelte";
   import FormErrorSummary from "./FormErrorSummary.svelte";
   import Card from "../components/ui/Card.svelte";
@@ -46,6 +49,7 @@
     onback,
     onordered,
     onpaused,
+    draft,
     shippingNote = "",
     turnaroundNote = "",
   }: {
@@ -61,7 +65,9 @@
     onordered: (confirmation: ItemOrderConfirmation) => void;
     /** Fired when the server refuses the order because the shop closed after this page loaded (503 with
      * paused: true); the parent then shows the Closed page. */
-    onpaused?: (message: string) => void;
+    onpaused?: (message: string, draft: OrderDraft) => void;
+    /** What the visitor had typed when an earlier submit was refused because the shop closed; restores the form. */
+    draft?: OrderDraft;
     /** shop.shippingNote; the fixed wording shows when blank. */
     shippingNote?: string;
     /** shop.turnaroundNote: shown with the total when the owner wrote one. */
@@ -71,7 +77,8 @@
   // groupId -> optionId. Starts empty: a required group shows its "Choose ..." placeholder and an optional one
   // shows "None" (an empty choice adds no price). item is a remount-on-change prop (PublicQuotePage.svelte
   // wraps this component in {#key orderItem.id}), so nothing here needs to reset when it changes.
-  let selected = $state<Selected>({});
+  // svelte-ignore state_referenced_locally -- the draft only seeds the form once, on mount
+  let selected = $state<Selected>({ ...(draft?.selected ?? {}) });
   function choose(groupId: string, optionId: string) {
     selected[groupId] = optionId;
   }
@@ -80,12 +87,14 @@
   const heroImage = $derived(displayImage ?? (item.imageUrl ? { url: item.imageUrl, alt: item.name } : null));
   let lightbox: HTMLDialogElement | undefined = $state();
   // number | null like PublicQuotePage's quantity: a cleared number input binds null, not 0 or NaN.
-  let quantity = $state<number | null>(1);
+  // svelte-ignore state_referenced_locally -- see above
+  let quantity = $state<number | null>(draft ? draft.quantity : 1);
   // Name and email are shared with the custom-estimate form (visitor.svelte.ts), so a visitor who already
   // typed them isn't asked again (WCAG 3.3.7).
   const name = $derived(visitor.name);
   const email = $derived(visitor.email);
-  let note = $state("");
+  // svelte-ignore state_referenced_locally -- see above
+  let note = $state(draft?.note ?? "");
   // Focus target on open (WCAG 2.4.3): the card that opened this panel unmounts, so focus would otherwise drop
   // to <body>.
   let headingEl: HTMLElement | undefined = $state();
@@ -210,6 +219,7 @@
       const sentEmail = email.trim();
       onordered({
         id: result.id,
+        itemId: item.id,
         reference: result.reference,
         priceCents: result.priceCents,
         itemName: item.name,
@@ -225,7 +235,15 @@
       return;
     }
     if (result.paused) {
-      onpaused?.(result.paused);
+      onpaused?.(result.paused, {
+        kind: "order",
+        itemId: item.id,
+        selected: { ...selected },
+        quantity,
+        note,
+        name: visitor.name,
+        email: visitor.email,
+      });
       return;
     }
     if (result.status === 503) {

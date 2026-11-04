@@ -97,6 +97,8 @@
     overCapMessage,
     perUnitCents,
   } from "./publicPricing";
+  import { clearDraft, loadDraft, refusedNotice, saveDraft, type Draft } from "./orderDraft";
+  import { createTapGuard, focusConfirmation } from "./confirmationFocus";
   import VisitorReset from "./VisitorReset.svelte";
   import FormErrorSummary from "./FormErrorSummary.svelte";
   import RateLimitNotice from "./RateLimitNotice.svelte";
@@ -185,6 +187,21 @@
     if (!cfg) return;
     cfg = { ...cfg, shop: { ...shopOf(cfg), acceptingOrders: false, pausedMessage: message } };
   }
+  // A submit the server refused because the shop closed mid-form: the Closed page says the order wasn't placed,
+  // and the typed details wait in sessionStorage for when the shop reopens (orderDraft.ts).
+  let refusedNoticeText = $state("");
+  function submitRefused(message: string, draft: Draft) {
+    saveDraft(draft);
+    refusedNoticeText = refusedNotice(draft.kind);
+    markPaused(message);
+    void focusAfterUpdate("#closed-notice");
+  }
+  // Details saved by a refused submit come back after the shop reopens and the page reloads.
+  const restoredDraft = loadDraft();
+  if (restoredDraft) {
+    visitor.name = restoredDraft.name;
+    visitor.email = restoredDraft.email;
+  }
   // The owner's accent color, public-only: set on <html> while this page is mounted.
   $effect(() => applyShopAccent(shop.accent));
   const hasGallery = $derived(shop.gallery && items !== null && items.length > 0);
@@ -259,14 +276,30 @@
   });
 
   /** Dismisses a gallery item-order confirmation and returns to the item grid. */
-  function dismissItemOrderConfirmation() {
+  function dismissItemOrderConfirmation(focusItemId?: string) {
     itemOrderConfirmation = null;
     clearConfirmation(ITEM_ORDER_CONFIRMATION_KEY);
     // Replace, so Back doesn't return to a confirmation that no longer exists.
     navigate({ name: "gallery" }, { replace: true });
-    // The Back button that held focus is about to unmount (WCAG 2.4.3).
-    void focusAfterUpdate("#gallery-heading");
+    // The Back button that held focus is about to unmount (WCAG 2.4.3). "Back to <item>" lands on that item's
+    // card; the gallery heading takes over when the card isn't shown.
+    void focusAfterUpdate(() => {
+      const card = focusItemId ? document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(focusItemId)}"]`) : null;
+      return card ?? document.getElementById("gallery-heading");
+    });
   }
+
+  /** Copies the order or request reference so the customer keeps it past the page. */
+  async function copyReference(reference: string) {
+    try {
+      await navigator.clipboard.writeText(reference);
+      announce("Reference copied.");
+    } catch {
+      announce("Couldn't copy the reference. Select it and copy it by hand.");
+    }
+  }
+  // Taps in the first moments after a confirmation appears are ignored (see confirmationFocus.ts).
+  const confirmationTap = createTapGuard();
 
   // Focus management for the gallery <-> item panel swap (WCAG 2.4.3): opening a card focuses the panel's
   // heading (ItemOrderPanel does that itself on mount); going back refocuses the card that was opened, or the
@@ -322,11 +355,11 @@
 
   // Form state
 
-  let materialName = $state("");
+  let materialName = $state(restoredDraft?.kind === "estimate" ? restoredDraft.materialName : "");
   // Falls back to PLA's density while no material is chosen, so an early file drop still shows an estimate.
   const density = $derived(densityOrFallback(cfg?.materials.find((m) => m.name === materialName)?.density));
-  let quantity = $state<number | null>(1);
-  let note = $state("");
+  let quantity = $state<number | null>(restoredDraft?.kind === "estimate" ? restoredDraft.quantity : 1);
+  let note = $state(restoredDraft?.kind === "estimate" ? restoredDraft.note : "");
   // Name and email live in the shared visitor store (see visitor.svelte.ts) so they carry over to an item order.
   const name = $derived(visitor.name);
   const email = $derived(visitor.email);
@@ -930,12 +963,14 @@
       // reload empty them.
       resetEstimateForm();
       navigate({ name: "estimate-received" });
-      await focusAfterUpdate(() => quoteConfirmationHeading);
+      clearDraft();
+      confirmationTap.arm();
+      await focusConfirmation(() => quoteConfirmationHeading);
       return;
     }
     serverErrorsFor = formSnapshot;
     if (result.paused) {
-      markPaused(result.paused);
+      submitRefused(result.paused, { kind: "estimate", materialName, quantity, note, name: visitor.name, email: visitor.email });
       return;
     }
     if (result.status === 429) {
@@ -1062,6 +1097,7 @@
       logoUrl={cfg.branding.logoUrl}
       message={shop.pausedMessage}
       branding={cfg.branding}
+      notice={refusedNoticeText}
     />
     <PublicFooter branding={cfg.branding} staffUrl={cfg.staffUrl} footerLinks={shop.footerLinks} showContact={false} />
   {:else if cfg}
@@ -1113,19 +1149,31 @@
     {:else if view === "gallery"}
       {#if route.name === "order-received" && itemOrderConfirmation}
         <div class="panel">
-          <button type="button" class="quiet back" onclick={dismissItemOrderConfirmation}>&larr; Back to gallery</button>
           {#if paused}{@render pausedNote()}{/if}
-          <Card>
+          <Card class="confirmation-card">
             <div class="confirmation">
-              <h2 class="section-label" tabindex="-1" bind:this={itemConfirmationHeading}>Order received</h2>
-              <p class="price">{formatMoney(itemOrderConfirmation.priceCents, cfg.currency)}</p>
-              <p class="ref">Reference: <strong>{itemOrderConfirmation.reference || itemOrderConfirmation.id}</strong></p>
+              <!-- The focused region holds the heading, the amount and the reference, so they are what a screen
+                   reader and a magnifier land on. -->
+              <div class="conf-region" role="region" aria-labelledby="item-conf-heading" tabindex="-1" bind:this={itemConfirmationHeading}>
+                <h2 class="section-label" id="item-conf-heading">Order received</h2>
+                <p class="price">{formatMoney(itemOrderConfirmation.priceCents, cfg.currency)}</p>
+                <p class="ref">Reference: <strong>{itemOrderConfirmation.reference || itemOrderConfirmation.id}</strong></p>
+                <button type="button" class="quiet copy-ref" onclick={() => void copyReference(itemOrderConfirmation?.reference || itemOrderConfirmation?.id || "")}>Copy reference</button>
+              </div>
+              <!-- Quiet links, not a primary button: nothing here is where Place order was, and a tap in the
+                   first moments is ignored. -->
+              <div class="conf-nav">
+                <button type="button" class="quiet back" onclick={confirmationTap.guarded(() => dismissItemOrderConfirmation())}>&larr; Back to gallery</button>
+                {#if itemOrderConfirmation.itemId}
+                  {@const backId = itemOrderConfirmation.itemId}
+                  <button type="button" class="quiet back" onclick={confirmationTap.guarded(() => dismissItemOrderConfirmation(backId))}>Back to {itemOrderConfirmation.itemName}</button>
+                {/if}
+              </div>
               <p class="ref-hint">Save this reference. Quote it if you contact us about your order.</p>
               <p class="order-summary">{orderSummaryLine}</p>
               <p>We'll follow up at {itemOrderConfirmation.email}.</p>
               <p class="next-steps">{WHAT_HAPPENS_NEXT}</p>
               {#if shop.turnaroundNote}<p class="next-steps turnaround-note">{shop.turnaroundNote}</p>{/if}
-              <button type="button" class="primary" onclick={dismissItemOrderConfirmation}>Order another item</button>
             </div>
           </Card>
         </div>
@@ -1140,12 +1188,15 @@
               shippingNote={shop.shippingNote}
               turnaroundNote={shop.turnaroundNote}
               onback={closeItem}
-              onpaused={markPaused}
+              onpaused={submitRefused}
+              draft={restoredDraft?.kind === "order" && restoredDraft.itemId === orderItem.id ? restoredDraft : undefined}
               onordered={(confirmation) => {
                 itemOrderConfirmation = confirmation;
                 saveConfirmation(ITEM_ORDER_CONFIRMATION_KEY, confirmation);
+                clearDraft();
+                confirmationTap.arm();
                 navigate({ name: "order-received" });
-                void focusAfterUpdate(() => itemConfirmationHeading);
+                void focusConfirmation(() => itemConfirmationHeading);
               }}
             />
           </div>
@@ -1189,7 +1240,7 @@
           </p>
           {#if shop.turnaroundNote}<p class="next-steps turnaround-note">{shop.turnaroundNote}</p>{/if}
           {#if fileStoredCaveat}<p class="advisory-text">{fileStoredCaveat}</p>{/if}
-          <button type="button" class="quiet" onclick={dismissQuoteConfirmation}>Request another estimate</button>
+          <button type="button" class="quiet" onclick={confirmationTap.guarded(dismissQuoteConfirmation)}>Request another estimate</button>
         </div>
       </Card>
     {:else}

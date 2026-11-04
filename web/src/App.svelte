@@ -1226,9 +1226,7 @@
    * tabindex="-1": targets for moving the reading position, not controls. Chromium still matches
    * :focus-visible for them when the trigger was the keyboard, which framed the whole content area in a ring.
    * They take no ring; real controls (and Guide's tabindex="0" scroll region) keep theme.css's. */
-  #main[tabindex="-1"]:focus-visible,
-  :global(h1[tabindex="-1"]:focus-visible),
-  :global(h2[tabindex="-1"]:focus-visible) { outline: none; }
+  #main[tabindex="-1"]:focus-visible { outline: none; }
   /* Lives inside <main> as its last child, not a separate grid row: content ends where it ends and the
    * footer follows, instead of a fixed row pinning it to the viewport bottom with a void above on short
    * pages. The top border/margin separate it. No max-width or horizontal margin of its own: it's already

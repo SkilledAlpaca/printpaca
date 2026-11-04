@@ -234,6 +234,10 @@ input, select, textarea { border-color: var(--control-border); }
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+/* View headings with tabindex="-1" are script focus targets that move the reading position after
+ * navigation (admin and shop). They aren't controls, so they take no ring. */
+h1[tabindex="-1"]:focus-visible,
+h2[tabindex="-1"]:focus-visible { outline: none; }
 /* Boxy controls draw the focus ring just INSIDE their own border box: the outward ring protrudes 4px per
  * side, and .field-rows stacks rows with no row gap, so a focused control's ring would be overdrawn by the
  * next row's box. Nothing in the UI may overlap a neighbor except a deliberate popout (the row menus,

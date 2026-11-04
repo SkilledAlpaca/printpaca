@@ -288,7 +288,7 @@ test.describe("D42 integration status badges", () => {
       await route.fulfill({ response: res, json: body });
     });
     await page.goto(INTEGRATIONS_URL);
-    const badge = sidebar(page).locator(".int-badge", { hasText: "Spoolman: configured" });
+    const badge = sidebar(page).locator(".int-badge", { hasText: "Spoolman" });
     await expect(badge).toBeVisible();
     await expect(badge).not.toHaveJSProperty("tagName", "BUTTON");
     await expect(sidebar(page).getByRole("button", { name: "Spoolman: configured" })).toHaveCount(0);

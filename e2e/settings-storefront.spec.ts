@@ -125,7 +125,10 @@ test("pausing the shop shows a live Closed page preview and closes the public sh
   const card = storefront(page);
   const preview = card.getByRole("region", { name: "Closed page preview" });
   await expect(preview).toContainText("The shop is open. This is what customers will see while it is paused.");
-  await expect(preview.getByRole("heading", { name: "We're closed right now" })).toHaveCount(1);
+  await expect(preview.getByRole("heading", { name: "We're closed right now", level: 2 })).toHaveCount(1);
+  // The preview is a sample of the shop's page, not the admin page's title: Settings keeps exactly one h1.
+  await expect(page.locator("h1:visible")).toHaveCount(1);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
 
   await card.getByLabel("Pause the shop (vacation mode)").check();
   await card.getByLabel("Message on the Closed page").fill("Closed until January 5");

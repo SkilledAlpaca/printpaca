@@ -11,6 +11,7 @@
     logoUrl = "",
     message = "",
     branding,
+    headingLevel = 1,
   }: {
     businessName?: string;
     /** Custom logo (quote.logoUrl); the project mark when empty. */
@@ -18,6 +19,8 @@
     /** The owner's pausedMessage; nothing extra is shown when it is blank. */
     message?: string;
     branding: Pick<PublicConfig["branding"], "email" | "phone" | "address">;
+    /** Heading level of "We're closed right now": 1 on the shop's own page, 2 inside the admin Settings preview. */
+    headingLevel?: 1 | 2;
   } = $props();
 </script>
 
@@ -29,7 +32,7 @@
   </header>
   <Card>
     <div class="closed-body">
-      <h1 id="closed-heading">We're closed right now</h1>
+      <svelte:element this={`h${headingLevel}`} id="closed-heading" class="closed-heading">We're closed right now</svelte:element>
       {#if message}<p class="paused-message">{message}</p>{/if}
       <ContactDetails {branding} />
     </div>
@@ -42,6 +45,6 @@
   .logo { height: 2.5rem; width: auto; }
   .brand-name { margin: 0; font-size: var(--type-title); font-weight: 700; overflow-wrap: anywhere; }
   .closed-body { display: flex; flex-direction: column; gap: var(--gap); align-items: flex-start; }
-  h1 { margin: 0; }
+  .closed-heading { margin: 0; }
   .paused-message { margin: 0; font-size: var(--type-heading); overflow-wrap: anywhere; }
 </style>

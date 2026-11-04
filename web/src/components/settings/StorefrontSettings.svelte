@@ -259,6 +259,7 @@
               logoUrl={form.quote.logoUrl.trim()}
               message={form.shop.pausedMessage.trim()}
               branding={previewBranding}
+              headingLevel={2}
             />
           </div>
         </Card>

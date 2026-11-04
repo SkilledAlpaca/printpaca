@@ -465,7 +465,7 @@ type publicConfigFunc func() publicConfigResponse
 
 // renderShopHTML fills the shop's head from the live settings (D30), so a hard refresh paints the owner's
 // own title, description and config, never built-in defaults: <title> is the shop title, the description meta
-// is the intro (when there is one), and the config is embedded as a JSON data block the page reads
+// is the intro as plain text, markup stripped (when there is one), and the config is embedded as a JSON data block the page reads
 // synchronously. The block is type="application/json", which the browser never executes, so the CSP needs no
 // unsafe-inline. json.Marshal escapes <, > and & (and U+2028/2029), so no value can close the script element
 // or open a comment. It returns false when the template has no <title>..</title> to fill.
@@ -487,7 +487,7 @@ func renderShopHTML(tmpl string, cfg publicConfigResponse) ([]byte, bool) {
 	b.Grow(len(tmpl) + len(data) + 256)
 	b.WriteString(tmpl[:start])
 	b.WriteString("<title>" + html.EscapeString(cfg.Shop.PageTitle) + "</title>")
-	if intro := strings.TrimSpace(cfg.IntroText); intro != "" {
+	if intro := lightMarkdownToPlain(cfg.IntroText); intro != "" {
 		b.WriteString(`<meta name="description" content="` + html.EscapeString(intro) + `">`)
 	}
 	b.WriteString(`<script type="application/json" id="shop-config">`)

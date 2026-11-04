@@ -66,11 +66,12 @@ export function hasTabAccess(id: string, user: ConfigUser | null | undefined): b
   return user.permissions.includes(id);
 }
 
-/** Whether `user` can use the quote editor. Pricing in the editor calls POST /api/quote/compute, which the
- * server gates on the "quote" grant (server/static.go), separately from the "quotes" grant that covers the
- * saved-quote list. A user holding only "quotes" can list, filter and read saved quotes but not edit or
- * create them, so the UI hides New quote and Open in editor for them instead of leading to "No access".
- * The New quote nav entry follows the same grant (hasTabAccess), so nav and buttons agree. */
+/** Whether `user` can use the quote editor. This is UI gating, not a server boundary: pricing in the editor
+ * calls POST /api/quote/compute, which the server gates on the "quote" grant (server/static.go), so the
+ * buttons follow that grant. The server still lets a "quotes" holder create and update saved quotes
+ * (POST/PUT /api/quotes are gated on "quotes"), so hiding New quote and Open in editor for a user holding
+ * only "quotes" avoids leading them to "No access" at pricing time; it does not stop them calling those
+ * endpoints directly. The New quote nav entry follows the same grant (hasTabAccess), so nav and buttons agree. */
 export function canEditQuotes(user: ConfigUser | null | undefined): boolean {
   return hasTabAccess("quote", user);
 }

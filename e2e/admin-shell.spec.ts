@@ -47,9 +47,9 @@ test("item editor: group wording, hidden-on-save notice with Show in shop, and a
   await expect(page.getByLabel("Group name")).toBeVisible();
   const required = page.getByLabel("Customer must choose one");
   await expect(required).toBeChecked();
-  await expect(page.getByLabel("Choice", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Group 1 choice 1")).toBeVisible();
   await page.getByLabel("Group name").fill("Color");
-  await page.getByLabel("Choice", { exact: true }).fill("Red");
+  await page.getByLabel("Group 1 choice 1").fill("Red");
 
   await page.getByRole("button", { name: "Save", exact: true }).click();
   const status = page.getByTestId("item-saved");
@@ -73,12 +73,12 @@ test("item editor: Ctrl+S saves and the list filter takes Ctrl+K", async ({ page
   await page.keyboard.press("Control+k");
   await expect(page.locator("#items-filter")).toBeFocused();
   await page.locator("#items-filter").fill("shell test");
-  await expect(page.getByRole("button", { name: /Shell Test Item/ })).toBeVisible();
+  await expect(page.locator("button.row-open", { hasText: "Shell Test Item" })).toBeVisible();
   await page.locator("#items-filter").fill("zzzz-no-match");
   await expect(page.getByText("No shop items match that filter.")).toBeVisible();
   await page.locator("#items-filter").fill("shell test");
 
-  await page.getByRole("button", { name: /Shell Test Item/ }).click();
+  await page.locator("button.row-open", { hasText: "Shell Test Item" }).click();
   await expect(page.locator(".sidebar-footer .shortcuts-line")).toContainText("Ctrl+S save");
   await page.getByLabel("Description").fill("Saved by shortcut");
   await page.getByLabel("Description").press("Control+s");
@@ -93,7 +93,7 @@ test("item editor: a stale save in a second tab offers Reload or Overwrite", asy
   const b = await ctx.newPage();
   for (const p of [a, b]) {
     await p.goto("/admin/#/items");
-    await p.getByRole("button", { name: /Shell Test Item/ }).click();
+    await p.locator("button.row-open", { hasText: "Shell Test Item" }).click();
   }
   await a.getByLabel("Description").fill("From tab A");
   await a.getByRole("button", { name: "Save", exact: true }).click();
@@ -122,10 +122,10 @@ test("item editor: a stale save in a second tab offers Reload or Overwrite", asy
 test("the list's Public toggle states what happened and offers Undo", async ({ page, request }) => {
   await page.goto("/admin/#/items");
   const row = page.locator("li.item-row", { hasText: "Shell Test Item" });
-  await row.getByLabel(/^Public/).uncheck();
-  await expect(page.getByRole("status").filter({ hasText: "is now hidden from the shop" })).toBeVisible();
+  await row.getByRole("checkbox", { name: /^Public/ }).uncheck();
+  await expect(page.locator(".notice", { hasText: "is now hidden from the shop" })).toBeVisible();
   await page.getByRole("button", { name: "Undo" }).click();
-  await expect(row.getByLabel(/^Public/)).toBeChecked();
+  await expect(row.getByRole("checkbox", { name: /^Public/ })).toBeChecked();
   const list = await (await request.get("/admin/api/items")).json();
   expect((list.items as { name: string; public: boolean }[]).find((i) => i.name === "Shell Test Item")?.public).toBe(true);
 });
@@ -192,7 +192,8 @@ test.describe("electricity schedule", () => {
     await expect(start).toHaveAttribute("aria-invalid", "true");
     const save = page.getByRole("button", { name: "Save changes" });
     await expect(save).toHaveAttribute("aria-disabled", "true");
-    await save.click();
+    // aria-disabled buttons fail Playwright's enabled check, so force the click: it must still do nothing.
+    await save.click({ force: true });
     await expect(page.getByText("Settings saved.")).toHaveCount(0);
     await start.fill("16:00");
     await expect(problems).toHaveCount(0);
@@ -296,7 +297,7 @@ test("Explain this page scrolls the first note into view", async ({ page }) => {
 
 test("a dirty item form asks before the page unloads", async ({ page }) => {
   await page.goto("/admin/#/items");
-  await page.getByRole("button", { name: /Shell Test Item/ }).click();
+  await page.locator("button.row-open", { hasText: "Shell Test Item" }).click();
   await page.getByLabel("Description").fill("unsaved edit");
   // The handler cancels the event; assert through the same path the browser uses.
   const prevented = await page.evaluate(() => {

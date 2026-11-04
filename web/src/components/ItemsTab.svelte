@@ -590,7 +590,7 @@
       <p class="banner-warn" role="alert">{listActionError}</p>
     {/if}
     {#if listNotice}
-      <p class="banner-muted notice" role="status">{listNotice.text} <button type="button" class="quiet" onclick={undoPublic}>Undo</button></p>
+      <p class="banner-muted notice">{listNotice.text} <button type="button" class="quiet" onclick={undoPublic}>Undo</button></p>
     {/if}
 
     {#if items.length > 0}

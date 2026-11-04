@@ -7382,7 +7382,7 @@
   },
   {
     "name": "pricing-markupMultiplier-boundary-10000-valid",
-    "derivation": "maxMarkupMultiplier is INCLUSIVE, the same shape as marginPct's 99.9 ceiling: 10000 prices. On the 1210c cost basis, recommended = resolved = 1210 x 10000 = 121000000; revenue = same at quantity 1; netProfit = 121000000 - 1210 = 12098790.",
+    "derivation": "maxMarkupMultiplier is INCLUSIVE, the same shape as marginPct's 99.9 ceiling: 10000 prices. On the 1210c cost basis, recommended = resolved = 1210 x 10000 = 12100000; revenue = same at quantity 1; netProfit = 12100000 - 1210 = 12098790.",
     "inputs": {
       "weightG": 100,
       "pricePerKg": 20,

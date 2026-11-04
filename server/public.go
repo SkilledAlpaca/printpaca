@@ -463,13 +463,26 @@ func handlePublicConfig(store *ConfigStore, demoMode bool, staffURL staffURLFunc
 // publicConfigFunc returns the public config for the current settings snapshot.
 type publicConfigFunc func() publicConfigResponse
 
+// shopThemeCookie returns the pp_theme cookie when it is exactly "light" or "dark", else "" (absent).
+func shopThemeCookie(r *http.Request) string {
+	c, err := r.Cookie("pp_theme")
+	if err != nil || (c.Value != "light" && c.Value != "dark") {
+		return ""
+	}
+	return c.Value
+}
+
 // renderShopHTML fills the shop's head from the live settings (D30), so a hard refresh paints the owner's
 // own title, description and config, never built-in defaults: <title> is the shop title, the description meta
 // is the intro as plain text, markup stripped (when there is one), and the config is embedded as a JSON data block the page reads
 // synchronously. The block is type="application/json", which the browser never executes, so the CSP needs no
 // unsafe-inline. json.Marshal escapes <, > and & (and U+2028/2029), so no value can close the script element
 // or open a comment. It returns false when the template has no <title>..</title> to fill.
-func renderShopHTML(tmpl string, cfg publicConfigResponse) ([]byte, bool) {
+//
+// theme is the visitor's pp_theme cookie value (D53). Only "light" and "dark" set data-theme on <html>; anything
+// else, including a missing cookie, leaves it off so the device setting decides. The value is matched against
+// those two literals, so nothing from the request is ever written into the page.
+func renderShopHTML(tmpl string, cfg publicConfigResponse, theme string) ([]byte, bool) {
 	start := strings.Index(tmpl, "<title>")
 	if start < 0 {
 		return nil, false
@@ -483,9 +496,16 @@ func renderShopHTML(tmpl string, cfg publicConfigResponse) ([]byte, bool) {
 	if err != nil {
 		return nil, false
 	}
+	prefix := tmpl[:start]
+	if theme == "light" || theme == "dark" {
+		if i := strings.Index(prefix, "<html"); i >= 0 {
+			i += len("<html")
+			prefix = prefix[:i] + ` data-theme="` + theme + `"` + prefix[i:]
+		}
+	}
 	var b strings.Builder
 	b.Grow(len(tmpl) + len(data) + 256)
-	b.WriteString(tmpl[:start])
+	b.WriteString(prefix)
 	b.WriteString("<title>" + html.EscapeString(cfg.Shop.PageTitle) + "</title>")
 	if intro := lightMarkdownToPlain(cfg.IntroText); intro != "" {
 		b.WriteString(`<meta name="description" content="` + html.EscapeString(intro) + `">`)
@@ -1803,7 +1823,7 @@ func publicIndexHandler(sub fs.FS, config publicConfigFunc) http.Handler {
 			serveUnavailable(w)
 			return
 		}
-		page, ok := renderShopHTML(shopTemplate, config())
+		page, ok := renderShopHTML(shopTemplate, config(), shopThemeCookie(r))
 		if !ok {
 			log.Printf("public listener: public.html has no <title> to fill; serving it unrendered")
 			page = []byte(shopTemplate)

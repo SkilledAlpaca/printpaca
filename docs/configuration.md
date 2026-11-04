@@ -124,6 +124,8 @@ In schedule mode you edit the tariff on the Electricity tab (or Settings):
 - **Holidays** are dates written `YYYY-MM-DD`, one per line, up to 100. A holiday uses the weekend schedule.
 - **Seasons** (up to 6) each have a name and the months they cover. Every month from 1 to 12 must belong to exactly one season.
 - Each season has a **Weekday** and a **Weekend and holidays** schedule. Each has a base period name and rate, and up to 8 windows with a name, a start, an end (`24:00` is allowed), and a rate. Windows in one schedule can't overlap. Hours outside every window use the base rate.
+- Window start and end times are time fields on a 15-minute step. An end of `00:00` (stored as `24:00`) means the end of the day.
+- **Same schedule all year** (`sameWindowsAllYear` in `config.yaml`) gives every season the same base period names and the same windows (name, start, and end) for weekday and for weekend and holidays, and leaves only the rates to differ by season. When it's on, the editor shows one set of windows, then each season's months and rates. If your seasons have different windows when you turn it on, printpaca asks whether to use the first season's windows for every season before it changes anything. Turning it off keeps each season's own copy. The flag doesn't change how a print is priced: it only constrains what you can save, and it is left out of `config.yaml` when it's off.
 - A window that runs past midnight, such as 22:00 to 06:00, is accepted. The editor explains that it will be split, and Save turns it into two windows with the same name and rate (22:00 to 24:00 and 00:00 to 06:00), because the server needs each window's start before its end.
 
 The editor writes a problem in your terms, for example "Season 2 › Weekday › Window 1: enter a time like 16:00", marks the fields that need attention, and keeps **Save changes** disabled until the schedule is valid.
@@ -132,7 +134,7 @@ Times are wall-clock times in the [time zone](#time-zone) from Settings.
 
 **Load SCE TOU-D-4-9PM example** fills in the structure of Southern California Edison's TOU-D-4-9PM plan: a summer season (June to September) and a winter season (October to May), each with weekday and weekend hours, an on-peak window from 4 to 9 pm, and a winter super off-peak window from 8 am to 4 pm. The rates it loads are examples, not SCE's published rates, which change. Check every rate against your own bill. If you already have a schedule, printpaca asks you to confirm before it replaces it. The structure comes from [SCE's time-of-use plans page](https://www.sce.com/save-money/rates-financing/residential-rate-plans/time-of-use-plans).
 
-On **New quote**, the **Print start (order)** field defaults to the next default print start. Each part has an optional **Print start (this part)** field. The quote saves the starts you used, so a reopened quote prices the same. On the **Electricity** tab, the calculator takes a start, a duration, and the printer power, and shows how the hours split across periods.
+On **New quote**, the **Print start (order)** field defaults to the next default print start. **Use the next 22:00** (the default start time shown) sets it to the next occurrence of that time in your shop time zone, and a line under the button says what it set, or that the field already held that time. Each part has an optional **Print start (this part)** field. The quote saves the starts you used, so a reopened quote prices the same. On the **Electricity** tab, the calculator takes a start, a duration, and the printer power, and shows how the hours split across periods.
 
 The same keys in `config.yaml`:
 
@@ -157,7 +159,9 @@ energy:
             - { name: Mid-peak, start: "16:00", end: "21:00", rate: 0.44 }
 ```
 
-printpaca rejects a schedule with a month in no season or in two seasons, overlapping windows, a start that isn't before its end, a time that isn't `HH:MM`, a negative rate, or more than 6 seasons, 8 windows per schedule, or 100 holidays. In `flat` and `tou` mode the schedule isn't used, and an empty one is accepted.
+To give every season the same windows, add `sameWindowsAllYear: true` under `schedule` and write the same names, starts, and ends in each season. Only `baseRate` and each window's `rate` can differ.
+
+printpaca rejects a schedule with a month in no season or in two seasons, `sameWindowsAllYear: true` with seasons whose base period names or windows (name, start, end) differ, overlapping windows, a start that isn't before its end, a time that isn't `HH:MM`, a negative rate, or more than 6 seasons, 8 windows per schedule, or 100 holidays. In `flat` and `tou` mode the schedule isn't used, and an empty one is accepted.
 
 ### Diagnostics
 

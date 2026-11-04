@@ -185,9 +185,11 @@ test.describe("electricity schedule", () => {
     await page.getByLabel("Mode").selectOption("schedule");
     await page.getByRole("button", { name: "Load SCE TOU-D-4-9PM example" }).click();
     const start = page.getByLabel("Season 1 Weekday window 1 start");
-    await start.fill("4pm");
+    // A time input can't hold "4pm"; an emptied one is the invalid state the editor can reach.
+    await start.fill("");
     const problems = page.getByRole("list", { name: "Schedule problems" });
     await expect(problems).toContainText("Season 1 › Weekday › Window 1");
+    await expect(problems).toContainText("enter a time like 16:00");
     await expect(problems).not.toContainText("seasons[0]");
     await expect(start).toHaveAttribute("aria-invalid", "true");
     const save = page.getByRole("button", { name: "Save changes" });

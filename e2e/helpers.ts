@@ -193,3 +193,9 @@ export async function requestIdByReference(request: APIRequestContext, reference
   expect(row, `a request with reference ${reference}`).toBeTruthy();
   return row!.id;
 }
+
+/** Opens the Price and profit card's collapsed "More pricing options" (tax and shipping), if it is closed. */
+export async function openMorePricing(page: Page): Promise<void> {
+  const details = page.locator("details.more-pricing");
+  if ((await details.getAttribute("open")) === null) await details.locator("summary").click();
+}

@@ -178,6 +178,10 @@ func round2(n float64) float64 {
 
 // formatf renders a number as JS's string coercion would (50, 1.3333333333333333). Display-only, best effort.
 func formatf[T ~float64](v T) string {
+	// A blank input arrives as NaN; the formula reads "– g × 20/kg" instead of "NaN g × 20/kg".
+	if math.IsNaN(float64(v)) {
+		return "–"
+	}
 	return strconv.FormatFloat(float64(v), 'g', -1, 64)
 }
 
@@ -612,7 +616,7 @@ func ComputeQuote(inputs QuoteInputs, options EngineOptions) CostBreakdown {
 		overheadFormula = formatf(round2(hours)) + " h × " + formatf(inputs.MonthlyFixed) + " ÷ " + formatf(inputs.MonthlyHours) + " h/mo"
 	}
 
-	laborLabel := "Prep labor (batch, amortized)"
+	laborLabel := "Prep labor (per batch)"
 	if options.LaborPerUnit {
 		laborLabel = "Prep labor (per unit)"
 	}

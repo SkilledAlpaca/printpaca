@@ -72,3 +72,22 @@ export function quoteBlockers(order: OrderBreakdown, partLabels: readonly string
   }
   return out;
 }
+
+/**
+ * The cost bar's sentence naming every blank field: "Price needs a print time and a material". Print time
+ * gets its article and leads the list (a model file never supplies it); every other label is lower-cased. A
+ * multi-part label such as "Print time (Part 2)" keeps its part name. Empty when nothing is missing.
+ */
+export function needSentence(missing: readonly Pick<QuoteBlocker, "label" | "field">[]): string {
+  if (missing.length === 0) return "";
+  const isTime = (b: Pick<QuoteBlocker, "field">) => b.field === "timeHours" || b.field === "timeMinutes";
+  const ordered = [...missing.filter(isTime), ...missing.filter((b) => !isTime(b))];
+  const names = ordered.map((b) => (isTime(b) ? b.label.replace(/^Print time/, "a print time") : b.label.toLowerCase()));
+  const list =
+    names.length === 1
+      ? names[0]!
+      : names.length === 2
+        ? `${names[0]} and ${names[1]}`
+        : `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+  return `Price needs ${list}`;
+}

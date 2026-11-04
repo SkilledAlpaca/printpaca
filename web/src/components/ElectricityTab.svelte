@@ -11,7 +11,7 @@
     type EnergyInputs,
     type FieldWarning,
   } from "../lib/engine/index";
-  import { warnFor, moneyAmount, moneyPrecise } from "../lib/format";
+  import { warnFor, moneyAmount, moneyPrecise, rateText } from "../lib/format";
   import LabeledNumber from "./LabeledNumber.svelte";
   import { focusAfterUpdate } from "../lib/a11y.svelte";
   import SettingsEditor from "./settings/SettingsEditor.svelte";
@@ -102,6 +102,7 @@
 
   <div class="card">
     <h2>Electricity calculator</h2>
+    <p class="hint">A kilowatt-hour (kWh) is the unit on your power bill: one kilowatt (1,000 W) running for one hour. Rates are dollars per kWh, such as {rateText(0.15, cfg)}. Times use the 24-hour clock, so 22:00 is 10 PM.</p>
     <div class="field-rows">
       <LabeledNumber label="Printer power" suffix="W" bind:value={watts} warn={warnFor(warnings, "watts")} />
       <LabeledNumber label="Print time" suffix="h" bind:value={hours} warn={warnFor(warnings, "hours")} />
@@ -129,7 +130,7 @@
       <p class="rate-note" tabindex="-1">
         Rate overridden for this calculation.
         <button type="button" class="quiet" onclick={useConfiguredRate}>
-          {#if cfg.energy.mode === "tou"}Use configured rates{:else}Use configured rate ({moneyPrecise(cfg.energy.flatRate, cfg, 3)}/kWh){/if}
+          {#if cfg.energy.mode === "tou"}Use configured rates{:else}Use configured rate ({rateText(cfg.energy.flatRate, cfg)}){/if}
         </button>
       </p>
     {:else}

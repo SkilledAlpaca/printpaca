@@ -12,5 +12,8 @@ export async function goToBlocker(b: QuoteBlocker): Promise<void> {
   noteSaveAttempt();
   await tick();
   await tick();
-  findFieldByLabel(b.inputLabel)?.focus();
+  const field = findFieldByLabel(b.inputLabel);
+  // A field inside a collapsed "More pricing options" (or any closed <details>) can't take focus: open it.
+  for (let d = field?.closest("details"); d; d = d.parentElement?.closest("details") ?? null) d.open = true;
+  field?.focus();
 }

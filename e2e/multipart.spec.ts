@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { historyRow, quotesRow } from "./helpers";
+import { historyRow, quotesRow, openMorePricing } from "./helpers";
 
 // Multi-part quote: drop three small synthetic G-code files at once (one part
 // each, no real personal data), price them with per-part quantities and one
@@ -48,6 +48,7 @@ test("a three-part order: drop, price, save, restore, print, convert", async ({ 
   await expect(weight).toHaveValue("5");
 
   await page.getByLabel("Set a selling price").check();
+  await openMorePricing(page);
   await page.getByLabel(/^Tax \(included in price\)/).fill("10");
   await page.getByLabel(/Shipping charged/).fill("5");
 

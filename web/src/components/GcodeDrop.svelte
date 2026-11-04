@@ -331,7 +331,7 @@
 
   {#if outcome?.kind === "estimate"}
     <label class="solidity-field" for={solidityInputId}>
-      Solidity
+      Infill (solidity)
       <input
         id={solidityInputId}
         type="number"

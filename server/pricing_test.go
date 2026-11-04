@@ -1204,3 +1204,12 @@ func TestLimitsExtremesDoNotOverflow(t *testing.T) {
 		}
 	})
 }
+
+func TestFormatfShowsADashForABlankInput(t *testing.T) {
+	if got := formatf(math.NaN()); got != "–" {
+		t.Errorf("formatf(NaN) = %q, want an en dash", got)
+	}
+	if got := formatf(1.5); got != "1.5" {
+		t.Errorf("formatf(1.5) = %q, want 1.5", got)
+	}
+}

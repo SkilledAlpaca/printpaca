@@ -2,7 +2,7 @@
   import { timezoneOptions as timezoneOptionList } from "../lib/timezones";
   import { nextKey, type ServerConfig } from "../lib/settings";
   import { settingsWarnings } from "../lib/settingsRules";
-  import { presetDisplayName, warnFor } from "../lib/format";
+  import { presetDisplayName, feeScheduleDisplayName, warnFor } from "../lib/format";
   import { extractConfigUser } from "../lib/permissions";
   import { appConfig } from "../lib/state.svelte";
   import SettingsEditor from "./settings/SettingsEditor.svelte";
@@ -241,7 +241,7 @@
             <span>Default fee schedule</span>
             <select bind:value={form.pricing.defaultFeeSchedule}>
               <option value="none">None (direct sale)</option>
-              {#each Object.keys(form.feeSchedules) as key (key)}<option value={key}>{presetDisplayName(key)}</option>{/each}
+              {#each Object.keys(form.feeSchedules) as key (key)}<option value={key}>{feeScheduleDisplayName(key)}</option>{/each}
             </select>
           </label>
         </div>
@@ -281,7 +281,7 @@
         {#each Object.entries(form.feeSchedules) as [key, fs] (key)}
           <div class="subcard">
             <div class="subhead">
-              <h3>{presetDisplayName(key)}</h3>
+              <h3>{feeScheduleDisplayName(key)}</h3>
               {#if builtinFeeScheduleKeys.has(key)}
                 <span class="pill">built-in</span>
               {:else}

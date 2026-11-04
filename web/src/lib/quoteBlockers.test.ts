@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FieldWarning, OrderBreakdown } from "./engine/index";
-import { quoteBlockers } from "./quoteBlockers";
+import { quoteBlockers, needSentence } from "./quoteBlockers";
 
 function w(field: string, code: FieldWarning["code"] = "required", severity: FieldWarning["severity"] = "error"): FieldWarning {
   return { field, code, message: "x", severity };
@@ -41,5 +41,24 @@ describe("quoteBlockers", () => {
     const b = quoteBlockers(order([[]], [w("marginPct", "above-max"), w("feeSchedule", "nan"), w("parts[0].salePriceOverride", "below-min")]), ["Part 1"]);
     expect(b.map((x) => x.label)).toEqual(["Margin"]);
     expect(b[0]?.partIndex).toBeNull();
+  });
+});
+
+describe("needSentence", () => {
+  const b = (label: string, field: string) => ({ label, field });
+  it("is empty with nothing missing", () => {
+    expect(needSentence([])).toBe("");
+  });
+  it("names a single field", () => {
+    expect(needSentence([b("Print time", "timeHours")])).toBe("Price needs a print time");
+  });
+  it("names every field, print time first", () => {
+    expect(needSentence([b("Model weight", "weightG"), b("Print time", "timeHours")])).toBe("Price needs a print time and model weight");
+    expect(needSentence([b("Model weight", "weightG"), b("Filament price", "pricePerKg"), b("Print time", "timeMinutes")])).toBe(
+      "Price needs a print time, model weight, and filament price",
+    );
+  });
+  it("keeps the part name of a multi-part label", () => {
+    expect(needSentence([b("Print time (Lid)", "timeHours")])).toBe("Price needs a print time (Lid)");
   });
 });

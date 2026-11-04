@@ -182,7 +182,7 @@ test.describe("electricity schedule", () => {
 
   test("problems are written in UI terms, fields are marked, and Save is blocked until fixed", async ({ page }) => {
     await page.goto("/admin/#/electricity");
-    await page.getByLabel("Mode").selectOption("schedule");
+    await page.getByLabel("Mode", { exact: true }).selectOption("schedule");
     await page.getByRole("button", { name: "Load SCE TOU-D-4-9PM example" }).click();
     const start = page.getByLabel("Season 1 Weekday window 1 start");
     // A time input can't hold "4pm"; an emptied one is the invalid state the editor can reach.
@@ -204,7 +204,7 @@ test.describe("electricity schedule", () => {
 
   test("an overnight window is accepted, explained, and split at midnight on save", async ({ page, request }) => {
     await page.goto("/admin/#/electricity");
-    await page.getByLabel("Mode").selectOption("schedule");
+    await page.getByLabel("Mode", { exact: true }).selectOption("schedule");
     await page.getByRole("button", { name: "Load SCE TOU-D-4-9PM example" }).click();
     await page.getByLabel("Season 1 Weekday window 1 start").fill("22:00");
     await page.getByLabel("Season 1 Weekday window 1 end").fill("06:00");

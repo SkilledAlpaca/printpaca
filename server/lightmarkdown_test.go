@@ -38,7 +38,7 @@ func TestLightMarkdownVectors(t *testing.T) {
 // The shop head carries the plain text, escaped, never the raw markup.
 func TestRenderShopHTMLDescriptionIsPlainText(t *testing.T) {
 	cfg := publicConfigResponse{IntroText: "Made **to order** by [us](https://example.com).\n- a <b>\n- b"}
-	out, ok := renderShopHTML("<html><head><title>x</title></head></html>", cfg)
+	out, ok := renderShopHTML("<html><head><title>x</title></head></html>", cfg, "")
 	if !ok {
 		t.Fatal("render failed")
 	}

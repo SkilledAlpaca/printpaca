@@ -114,7 +114,7 @@ When your system requests reduced motion (`prefers-reduced-motion: reduce`), pri
 These are the gaps left in 1.0.4:
 
 - **Gallery descriptions are clipped.** On the shop gallery, an item's description is cut to one line. With increased text spacing (WCAG 1.4.12) it can be cut further. The full text is in the item panel that opens when you select the card.
-- **Collapsed sidebar tooltips.** When you collapse the admin sidebar to icons, the tab names and the Spoolman, Moonraker, and Fluidd status lines appear as `title` tooltips. Those tooltips show on mouse hover only, not on keyboard focus. Screen readers still hear the names, because the text stays in the page. Expand the sidebar to see the labels.
+- **Collapsed sidebar tooltips.** When you collapse the admin sidebar to icons, the tab names and the version appear as `title` tooltips. Those tooltips show on mouse hover only, not on keyboard focus. Screen readers still hear the names, because the text stays in the page. Expand the sidebar to see the labels.
 - **No screen-reader or assistive-technology testing.** See [How it's tested](#how-its-tested).
 - **Print views and emails.** The printed quote, cost audit, and invoice views were scanned in emulated print media during review but aren't in the automated gate. The HTML and plain-text emails (quotes, invoices, and request notifications) weren't audited.
 - **Gate coverage is partial.** See [What the gate doesn't cover](#what-the-gate-doesnt-cover).

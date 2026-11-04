@@ -2,6 +2,9 @@ import { test, expect } from "@playwright/test";
 import { navButton, gotoSettings } from "./helpers";
 import { geometryOnly3mf } from "./geometry3mf";
 
+/** D54: the theme button names the theme it switches to. */
+const THEME_BTN = /^(Dark|Light) mode$/;
+
 test("a wheel over the right gutter scrolls main at 1920 px", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto("/admin/");
@@ -208,7 +211,7 @@ test("at 1366x768 every nav item can be reached, and the footer controls stay in
     expect(hit, `${name} is clickable`).toBe(true);
   }
   const aside = (await page.getByRole("complementary").boundingBox())!;
-  for (const name of ["Guide", "Compact density", "Dark theme", "Collapse sidebar"]) {
+  for (const name of ["Guide", "Compact density", THEME_BTN, "Collapse sidebar"]) {
     const b = (await page.getByRole("complementary").getByRole("button", { name }).boundingBox())!;
     expect(b.y + b.height, `${name} bottom edge`).toBeLessThanOrEqual(aside.y + aside.height + 0.5);
   }

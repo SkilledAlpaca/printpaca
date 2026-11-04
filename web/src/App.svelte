@@ -17,7 +17,8 @@
     mdiFileDocumentMultipleOutline,
     mdiLogout,
     mdiFormatLineSpacing,
-    mdiThemeLightDark,
+    mdiWeatherNight,
+mdiWhiteBalanceSunny,
     mdiCheck,
     mdiInformationOutline,
     mdiClose,
@@ -526,35 +527,17 @@
 
   // D40: the sidebar Theme toggle. In the demo the banner's Theme select persists its own copy, so the toggle
   // writes through to it and the sidebar re-reads <html> when the select changes.
+  // D54: the button names the theme it switches to.
+  const themeLabel = $derived(theme.current === "dark" ? "Light mode" : "Dark mode");
   function onToggleTheme() {
     const next = toggleTheme();
     if (demoMode) setDemoTheme(next);
+    announce(next === "dark" ? "Dark mode on" : "Light mode on");
   }
   $effect(() => {
     void demoLocal.theme;
     void tick().then(syncThemeFromDocument);
   });
-
-  // D42: a status badge opens Settings, then scrolls to and focuses the Integrations card once the Settings
-  // page has loaded its sections.
-  async function openIntegrations() {
-    activate("settings");
-    if (tab !== "settings") return; // an unsaved-changes prompt was declined
-    for (let i = 0; i < 40; i++) {
-      await tick();
-      const section = document.getElementById("section-integrationsUrls");
-      if (section) {
-        section.scrollIntoView({ block: "start" });
-        const heading = section.querySelector<HTMLElement>("h2");
-        if (heading) {
-          heading.tabIndex = -1;
-          heading.focus({ preventScroll: true });
-        }
-        return;
-      }
-      await new Promise((r) => setTimeout(r, 100));
-    }
-  }
 
   async function logout() {
     try {
@@ -717,21 +700,6 @@
     })();
   });
 
-  const spoolmanEnabled = $derived(appConfig.current?.integrations.spoolman === true);
-  const moonrakerConfigured = $derived(appConfig.current?.moonraker === true);
-  // Integration status is for people who can use or change the integration: an admin, or a user holding a
-  // grant for a page that depends on it (Spoolman: the spool picker on New quote, the Filament page;
-  // Moonraker: Recent prints on New quote). Anyone else would see status they can't act on.
-  const showSpoolmanLine = $derived(hasTabAccess("quote", configUser) || hasTabAccess("filament", configUser));
-  const showMoonrakerLine = $derived(hasTabAccess("quote", configUser));
-  // D42: badges are links only for someone who can reach Settings (admin-only; no user means authentication is off); everyone else gets plain status.
-  const canOpenSettings = $derived((!configUser || configUser.isAdmin) && !disabledTabs.has("settings"));
-  function integrationDetail(kind: "spoolman" | "moonraker"): string {
-    const src = appConfig.current?.integrationSources?.[kind];
-    if (src === "env") return "Configured through an environment variable.";
-    if (src === "config") return "Configured in Settings.";
-    return demoMode ? "Configured with demo data." : "Configured.";
-  }
   const versionLabel = $derived(appConfig.current?.version ? `printpaca ${appConfig.current.version}` : "printpaca dev");
   // DEMO_MODE=1 server-side (server/main.go), a plain field on the loaded config like authEnabled.
   const demoMode = $derived(config?.demoMode === true);
@@ -990,45 +958,6 @@
     {/if}
   </nav>
   <div class="sidebar-footer">
-    <!-- D42: only configured integrations get a badge; a disabled one shows nothing. The badge text is its
-         accessible name; the detail is its description and, on hover or focus in the expanded sidebar, a
-         small panel above it. Someone without Settings access gets the same badge as plain status. -->
-    {#snippet integrationBadge(kind: "spoolman" | "moonraker", name: string)}
-      {@const detail = integrationDetail(kind)}
-      <div class="badge-wrap" class:rail={navCollapsed}>
-        {#if canOpenSettings}
-          <button
-            type="button"
-            class="int-badge"
-            aria-label={`${name}: configured`}
-            aria-describedby={`int-${kind}-detail`}
-            title={navCollapsed ? `${name}: configured. ${detail} Opens Settings, Integrations.` : undefined}
-            onclick={openIntegrations}
-          >
-            <span class="dot ok" aria-hidden="true"></span>
-            {#if !navCollapsed}<span aria-hidden="true">{name}</span>{/if}
-          </button>
-        {:else}
-          <span
-            class="int-badge static"
-            role="img"
-            aria-label={`${name}: configured`}
-            aria-describedby={`int-${kind}-detail`}
-            title={navCollapsed ? `${name}: configured. ${detail}` : undefined}
-          >
-            <span class="dot ok" aria-hidden="true"></span>
-            {#if !navCollapsed}<span aria-hidden="true">{name}</span>{/if}
-          </span>
-        {/if}
-        <span class="badge-detail" id={`int-${kind}-detail`} role="presentation">{detail}{canOpenSettings ? " Opens Settings, Integrations." : ""}</span>
-      </div>
-    {/snippet}
-    {#if (spoolmanEnabled && showSpoolmanLine) || (moonrakerConfigured && showMoonrakerLine)}
-      <div class="badges" class:rail={navCollapsed}>
-        {#if spoolmanEnabled && showSpoolmanLine}{@render integrationBadge("spoolman", "Spoolman")}{/if}
-        {#if moonrakerConfigured && showMoonrakerLine}{@render integrationBadge("moonraker", "Moonraker")}{/if}
-      </div>
-    {/if}
     <div class="footer-actions" class:rail={navCollapsed}>
       {#if !disabledTabs.has("guide")}
         <button
@@ -1098,13 +1027,12 @@
       <button
         type="button"
         class="footer-btn"
-        aria-label="Dark theme"
-        aria-pressed={theme.current === "dark"}
-        title={navCollapsed ? "Dark theme" : undefined}
+        aria-label={themeLabel}
+        title={navCollapsed ? themeLabel : undefined}
         onclick={onToggleTheme}
       >
-        <Icon path={mdiThemeLightDark} size={16} />
-        {#if !navCollapsed}<span>Dark</span>{/if}
+        <Icon path={theme.current === "dark" ? mdiWhiteBalanceSunny : mdiWeatherNight} size={16} />
+        {#if !navCollapsed}<span>{themeLabel}</span>{/if}
       </button>
     </div>
     {#if isDesktop}
@@ -1125,8 +1053,7 @@
          version as a tooltip. -->
     {#if !navCollapsed}
       <div class="about">
-        <span class="about-text">Open-source 3D print quote calculator.</span>
-        <span class="version-line">{versionLabel}</span>
+        <span class="version-line">{versionLabel} · open source</span>
       </div>
     {:else}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -1467,67 +1394,13 @@
     margin-top: auto;
     padding-top: var(--space-3);
   }
-  /* Integration badges (D42): a pill with a status dot and "Name: configured". A link-badge is a button; a
-   * static one (no Settings access) is a span with the same look. Contrast: --text on --surface-2 in both
-   * themes; the dot is decoration. The detail panel is an overlay above the badge, inside the sidebar. */
-  /* D47: small chips side by side in one row, wrapping only if they must. The visible text is the integration's
-   * name; "configured" is the accessible name and the green dot. The detail panel anchors to the row, so it spans
-   * the sidebar rather than one chip. */
-  .badges { position: relative; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
-  .badges.rail { flex-direction: column; flex-wrap: nowrap; }
-  .badge-wrap { display: contents; }
-  .badge-wrap.rail { display: block; }
-  .int-badge {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    max-width: 100%;
-    min-height: 0;
-    padding: var(--space-1) var(--space-2);
-    line-height: 1.2;
-    border: none;
-    border-radius: 999px;
-    background: var(--surface-2);
-    color: var(--text);
-    font-size: var(--type-caption);
-    white-space: nowrap;
-  }
-  button.int-badge { cursor: pointer; }
-  button.int-badge:hover { outline: 1px solid var(--control-border); }
-  .int-badge.static { cursor: default; }
-  .badge-wrap.rail .int-badge { width: 100%; justify-content: center; padding: 0; }
-  .dot {
-    width: calc(var(--space-2) * 0.75);
-    height: calc(var(--space-2) * 0.75);
-    border-radius: 50%;
-    background: var(--border);
-    flex-shrink: 0;
-  }
-  .dot.ok { background: var(--ok); }
-  .badge-detail {
-    display: none;
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: calc(100% + var(--space-1));
-    z-index: 5;
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius);
-    background: var(--surface-2);
-    color: var(--text);
-    font-size: var(--text-xs);
-    box-shadow: var(--shadow);
-  }
-  .badge-wrap:not(.rail):hover .badge-detail,
-  .badge-wrap:not(.rail):focus-within .badge-detail { display: block; }
-
   /* Footer buttons (Guide, Sign out, Density, Theme): small tinted buttons, each with an icon and a name. The
    * rail keeps the icon alone, with the name as its aria-label and tooltip. */
   .footer-actions, .footer-prefs { display: flex; flex-direction: column; gap: var(--space-1); }
   .footer-prefs { flex-direction: row; }
   .footer-prefs.rail { flex-direction: column; }
-  .footer-prefs > .footer-btn { flex: 1 1 0; min-width: 0; }
+  /* Content-sized then shared, and never wrapping: "Light mode" is wider than "Compact" (D54). */
+  .footer-prefs > .footer-btn { flex: 1 1 auto; min-width: 0; white-space: nowrap; padding-inline: var(--space-2); }
   .footer-btn {
     display: inline-flex;
     align-items: center;
@@ -1557,15 +1430,13 @@
   .signout-split .footer-btn { flex: 1 1 0; min-width: 0; justify-content: center; font-weight: 600; border: 1px solid currentColor; }
   .signout-split .cancel { color: var(--danger); }
   .signout-split .confirm { color: var(--ok); }
-  /* D48: the footer line and the version are caption type in the muted color. */
-  .about { display: flex; flex-direction: column; gap: 0; color: var(--muted); font-size: var(--type-caption); line-height: 1.3; }
+  /* D57: one muted line below caption size, never wrapping. */
+  .about { color: var(--muted); font-size: var(--type-micro); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .version-rail { align-self: center; color: var(--muted); display: inline-flex; padding: var(--space-1); }
   .version-line { font-variant-numeric: tabular-nums; }
   /* Phone drawer: every footer control is a 44px touch target (D26). */
   @media (max-width: 600px) {
     .footer-btn { min-height: 44px; }
-    /* The chip keeps its small look; its 44px hit area is a pseudo-element centered on it (D47, D26). */
-    .int-badge::after { content: ""; position: absolute; inset-block: calc((100% - 44px) / 2); inset-inline: 0; }
     .collapse-toggle { min-height: 44px; }
   }
   /* Short windows (1366x768 and 1366x860 laptops): tighter nav rows and footer so every destination, Settings included,

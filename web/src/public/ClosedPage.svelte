@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import type { PublicConfig } from "./api";
   import ContactDetails from "./ContactDetails.svelte";
   import Card from "../components/ui/Card.svelte";
@@ -14,6 +15,7 @@
     headingLevel = 1,
     notice = "",
     homeHref = "",
+    actions,
   }: {
     businessName?: string;
     /** Custom logo (quote.logoUrl); the project mark when empty. */
@@ -28,6 +30,8 @@
     notice?: string;
     /** D45: when set, the logo and name are one link to it (a reload of the Closed page on the shop). The Settings preview leaves it empty. */
     homeHref?: string;
+    /** Right end of the header row; the shop puts its theme toggle here (D53). The Settings preview leaves it out. */
+    actions?: Snippet;
   } = $props();
 </script>
 
@@ -43,6 +47,7 @@
       <img class="logo" src={logoUrl || projectLogoUrl} alt="" />
       <p class="brand-name">{businessName || "printpaca"}</p>
     {/if}
+    {@render actions?.()}
   </header>
   <Card>
     <div class="closed-body">

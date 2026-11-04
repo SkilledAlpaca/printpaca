@@ -344,12 +344,12 @@ test("paused: a saved confirmation stays visible with a note, a missing one show
   }
 });
 
-test("the temporary Settings inputs (Requests tab, Public estimates) reach the server rules", async ({ page, request }) => {
+test("the Settings > Storefront card reaches the server rules", async ({ page, request }) => {
   await page.goto("/admin/");
-  await navButton(page, "Requests").click();
-  await expect(page).toHaveURL(/#\/requests$/);
-  await page.getByRole("checkbox", { name: "Accepting orders" }).uncheck();
-  await page.getByRole("textbox", { name: "Message while not accepting orders" }).fill(PAUSED);
+  await navButton(page, "Settings").click();
+  await expect(page).toHaveURL(/#\/settings$/);
+  await page.getByRole("checkbox", { name: "Pause the shop (vacation mode)" }).check();
+  await page.getByRole("textbox", { name: "Message on the Closed page" }).fill(PAUSED);
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Settings saved.")).toBeVisible();
   try {
@@ -357,8 +357,8 @@ test("the temporary Settings inputs (Requests tab, Public estimates) reach the s
     expect((await publicShop(request)).pausedMessage).toBe(PAUSED);
 
     // The both-off rule shows before saving, with the next step.
-    await page.getByRole("checkbox", { name: "Offer the item gallery" }).uncheck();
-    await page.getByRole("checkbox", { name: "Offer custom estimates" }).uncheck();
+    await page.getByRole("checkbox", { name: "Item gallery" }).uncheck();
+    await page.getByRole("checkbox", { name: "Custom estimates" }).uncheck();
     await expect(page.getByText(/can't both be off/)).toBeVisible();
   } finally {
     await resetShop(request);

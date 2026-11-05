@@ -1013,6 +1013,18 @@ func buildPublicQuoteInputs(cfg *Config, material Material, quantity int, weight
 	return qi, opt
 }
 
+// publicEstimateCents is the one place the public price is computed: the preview endpoint, the request
+// submission and the demo seed all call it. ok is false when the engine yields no valid priced breakdown (a
+// config-shaped failure). The result is the batch total, shipping excluded.
+func publicEstimateCents(cfg *Config, material Material, quantity int, weightG float64, timeSeconds int) (cents int, ok bool) {
+	qi, opt := buildPublicQuoteInputs(cfg, material, quantity, weightG, timeSeconds)
+	bd := ComputeQuote(qi, opt)
+	if !bd.Valid || bd.Pricing == nil || !bd.Pricing.Valid {
+		return 0, false
+	}
+	return int(bd.Pricing.Revenue), true
+}
+
 // publicQuotePreviewMaxBytes caps the JSON body: four small fields, like publicItemOrderMaxBytes.
 const publicQuotePreviewMaxBytes = 2 * 1024
 
@@ -1107,9 +1119,8 @@ func handlePublicQuotePreview(store *ConfigStore, rl *rateLimiter, trustProxy bo
 			return
 		}
 
-		qi, opt := buildPublicQuoteInputs(cfg, matchedMaterial, in.Quantity, in.WeightG, in.TimeSeconds)
-		bd := ComputeQuote(qi, opt)
-		if !bd.Valid || bd.Pricing == nil || !bd.Pricing.Valid {
+		priceCents, priced := publicEstimateCents(cfg, matchedMaterial, in.Quantity, in.WeightG, in.TimeSeconds)
+		if !priced {
 			// A config-shaped failure, not a visitor input problem: log the detail, tell the visitor only "try
 			// again" since the cause is in the owner's pricing configuration.
 			log.Printf("public quote-preview: recompute produced an invalid breakdown for material %q", material)
@@ -1119,7 +1130,7 @@ func handlePublicQuotePreview(store *ConfigStore, rl *rateLimiter, trustProxy bo
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(publicQuotePreviewResponse{
-			PriceCents:    int(bd.Pricing.Revenue),
+			PriceCents:    priceCents,
 			ShippingCents: int(toCents(cfg.Pricing.DefaultShippingCharge)),
 			Currency:      cfg.Currency,
 		}); err != nil {
@@ -1668,9 +1679,8 @@ func handlePublicQuoteRequest(db *sql.DB, store *ConfigStore, configDir string, 
 		// "to be confirmed", never "free".
 		priceCents := 0
 		if !needsPrintTime {
-			qi, opt := buildPublicQuoteInputs(cfg, matchedMaterial, quantity, weightG, timeSeconds)
-			bd := ComputeQuote(qi, opt)
-			if !bd.Valid || bd.Pricing == nil || !bd.Pricing.Valid {
+			cents, priced := publicEstimateCents(cfg, matchedMaterial, quantity, weightG, timeSeconds)
+			if !priced {
 				// Same fail-closed posture as handlePublicQuotePreview: a form that passed every bound shouldn't hit
 				// an invalid breakdown, so this is a config-shaped failure; refuse to store a fabricated price, not 0.
 				cleanupFile()
@@ -1679,7 +1689,7 @@ func handlePublicQuoteRequest(db *sql.DB, store *ConfigStore, configDir string, 
 				return
 			}
 			// ShippingCharge is forced to 0 in buildPublicQuoteInputs, so Revenue is ResolvedPrice * quantity.
-			priceCents = int(bd.Pricing.Revenue)
+			priceCents = cents
 		}
 		// The shipping charge the preview showed, stored so converting the request to an invoice adds the
 		// same Shipping line the visitor saw even if the setting changes later.

@@ -644,12 +644,13 @@ func TestSeedDemoDataWritesConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("defaultConfig: %v", err)
 	}
-	wantMaterials := make([]Material, len(defaults.Materials))
-	copy(wantMaterials, defaults.Materials)
-	for i := range wantMaterials {
-		if wantMaterials[i].ID == "pla" || wantMaterials[i].ID == "petg" {
-			wantMaterials[i].Public = true
-		}
+	// The demo filament: one material per demo spool material, priced from its first spool (see demo.go and
+	// TestDemoMaterialsFollowThePrimarySpool). Only pla and petg are public.
+	wantMaterials := []Material{
+		{ID: "pla", Name: "PLA", Density: 1.24, PricePerKg: 22.99, Public: true},
+		{ID: "petg", Name: "PETG", Density: 1.27, PricePerKg: 24.99, Public: true},
+		{ID: "abs", Name: "ABS", Density: 1.04, PricePerKg: 27.99},
+		{ID: "tpu", Name: "TPU", Density: 1.21, PricePerKg: 31.99},
 	}
 
 	if err := seedDemoData(db, store, dir); err != nil {
@@ -954,7 +955,7 @@ func TestSeedDemoInvoiceAttributionMatchesIntendedPlan(t *testing.T) {
 	}
 
 	// The standalone Casey Nakamura invoice (issued 48d ago) must still
-	// carry its own "Resin minis (10)" line and its own "other"/"Venmo"
+	// carry its own "PLA minis (10)" line and its own "other"/"Venmo"
 	// payment, not another plan's.
 	var invID string
 	if err := db.QueryRow(`SELECT id FROM invoices WHERE client_name = ? AND issue_date = ?`,
@@ -965,8 +966,8 @@ func TestSeedDemoInvoiceAttributionMatchesIntendedPlan(t *testing.T) {
 	if err := db.QueryRow(`SELECT description FROM invoice_lines WHERE invoice_id = ?`, invID).Scan(&lineDescription); err != nil {
 		t.Fatalf("query invoice line: %v", err)
 	}
-	if lineDescription != "Resin minis (10)" {
-		t.Errorf("Casey Nakamura invoice line = %q, want %q", lineDescription, "Resin minis (10)")
+	if lineDescription != "PLA minis (10)" {
+		t.Errorf("Casey Nakamura invoice line = %q, want %q", lineDescription, "PLA minis (10)")
 	}
 	var method, note string
 	if err := db.QueryRow(`SELECT method, note FROM payments WHERE invoice_id = ?`, invID).Scan(&method, &note); err != nil {

@@ -1,6 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { deflateSync, crc32 } from "node:zlib";
-import { navButton } from "./helpers";
+import { navButton, tinyPng } from "./helpers";
 
 // Admin shell: sidebar fit, item editor wording and concurrency, page shortcuts, materials, electricity
 // schedule, logo upload, and the Guide. Runs on the shared :8099 server and removes what it creates.
@@ -234,34 +233,12 @@ test.describe("electricity schedule", () => {
   });
 });
 
-function tinyPng(): Buffer {
-  const chunk = (type: string, data: Buffer): Buffer => {
-    const len = Buffer.alloc(4);
-    len.writeUInt32BE(data.length);
-    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-    const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(crc32(body));
-    return Buffer.concat([len, body, crc]);
-  };
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(1, 0);
-  ihdr.writeUInt32BE(1, 4);
-  ihdr[8] = 8;
-  ihdr[9] = 2;
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", ihdr),
-    chunk("IDAT", deflateSync(Buffer.from([0, 10, 120, 200]))),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
-}
-
 test("business identity: upload a logo, see the preview, save, and remove it", async ({ page, request }) => {
   const original = (await (await request.get("/admin/api/settings")).json()).config;
   try {
     await page.goto("/admin/#/settings");
     await expect(page.locator("#section-quote .hint").first()).toContainText("admin header");
-    await page.getByLabel("Upload logo").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: tinyPng() });
+    await page.getByLabel("Upload logo").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: tinyPng(10, 120, 200) });
     await expect(page.getByAltText("Your logo")).toBeVisible();
     await expect(page.getByText(/^Uploaded image, \d+ KB$/)).toBeVisible();
     await expect(page.locator("#quote-logo-url")).toHaveCount(0);

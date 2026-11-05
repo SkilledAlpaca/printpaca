@@ -1,5 +1,45 @@
 import { expect, request as pwRequest } from "@playwright/test";
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
+import { deflateSync, crc32 } from "node:zlib";
+
+/** A settings document or any other loosely typed JSON body. */
+export type Json = Record<string, any>;
+
+/** The effective config from the admin settings API. */
+export async function getConfig(request: APIRequestContext): Promise<Json> {
+  const res = await request.get("/admin/api/settings");
+  expect(res.ok()).toBeTruthy();
+  return (await res.json()).config as Json;
+}
+
+/** PUTs a full config document to the admin settings API. */
+export async function putConfig(request: APIRequestContext, config: Json): Promise<void> {
+  const res = await request.put("/admin/api/settings", { data: { config } });
+  expect(res.ok(), await res.text()).toBeTruthy();
+}
+
+/** A valid 1x1 PNG of one color: distinct colors give distinct bytes, so distinct content-addressed files. */
+export function tinyPng(r: number, g: number, b: number): Buffer {
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(1, 0);
+  ihdr.writeUInt32BE(1, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // RGB
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(Buffer.from([0, r, g, b]))),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
 
 /** A minimal valid POST /api/quotes body: one part in the {parts} inputs bag and the matching
  * formState, written field for field as the editor's toFormState does (every PartFormState and OrderForm key,

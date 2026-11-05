@@ -1,36 +1,11 @@
 import { test, expect } from "@playwright/test";
 import type { APIRequestContext } from "@playwright/test";
-import { deflateSync, crc32 } from "node:zlib";
-import { requestIdByReference } from "./helpers";
+import { requestIdByReference, getConfig, putConfig, tinyPng } from "./helpers";
+import type { Json } from "./helpers";
 
 // v1.2 public-shop usability fixes (P1-P10 of the simulated review). Each test fails without its fix.
 // Orders use their own X-Forwarded-For address (ADMIN_TRUST_PROXY is on for this server), outside the per-IP
 // submission budget the other specs use.
-
-type Json = Record<string, any>;
-
-/** A valid 1x1 PNG of one color. */
-function tinyPng(r: number, g: number, b: number): Buffer {
-  const chunk = (type: string, data: Buffer): Buffer => {
-    const len = Buffer.alloc(4);
-    len.writeUInt32BE(data.length);
-    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-    const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(crc32(body));
-    return Buffer.concat([len, body, crc]);
-  };
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(1, 0);
-  ihdr.writeUInt32BE(1, 4);
-  ihdr[8] = 8;
-  ihdr[9] = 2;
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", ihdr),
-    chunk("IDAT", deflateSync(Buffer.from([0, r, g, b]))),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
-}
 
 /** A cube of `size` model units on a side, as ASCII STL. */
 function cubeStl(size: number): string {
@@ -57,15 +32,6 @@ const createdRequests: string[] = [];
 let xffCounter = 0;
 const xff = () => ({ "X-Forwarded-For": `192.0.2.${100 + (xffCounter++ % 100)}` });
 
-async function getConfig(request: APIRequestContext): Promise<Json> {
-  const res = await request.get("/admin/api/settings");
-  expect(res.ok()).toBeTruthy();
-  return (await res.json()).config as Json;
-}
-async function putConfig(request: APIRequestContext, config: Json): Promise<void> {
-  const res = await request.put("/admin/api/settings", { data: { config } });
-  expect(res.ok(), await res.text()).toBeTruthy();
-}
 async function setShop(request: APIRequestContext, patch: Json, top: Json = {}): Promise<void> {
   const config = await getConfig(request);
   Object.assign(config.shop, patch);
@@ -460,7 +426,7 @@ test.describe("P8: the estimate form tells a buyer without a slicer what is opti
     expect(upload).toBeLessThan(material);
     await expect(page.getByLabel(/Model weight/)).toHaveAccessibleDescription(/Optional if you upload a 3D file above/);
     await expect(page.locator("#quote-time-hint")).toContainText("Optional if you upload a 3D file above");
-    // The shop keeps field hints visible (D32): its hint is text under the label, with no Help button.
+    // The shop keeps field hints visible: its hint is text under the label, with no Help button.
     await expect(page.locator("#quote-weight-hint")).toBeVisible();
     await expect(page.getByRole("button", { name: /^Help:/ })).toHaveCount(0);
     await expect(page.getByLabel(/^Print time \(h/)).toHaveAccessibleDescription(/Optional if you upload/);

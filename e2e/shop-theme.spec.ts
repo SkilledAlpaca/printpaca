@@ -1,24 +1,16 @@
 import { test, expect } from "@playwright/test";
 import type { APIRequestContext, Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { getConfig, putConfig } from "./helpers";
+import type { Json } from "./helpers";
 
-// D53/D54: the customer shop's light/dark toggle. The choice is the pp_theme cookie, which the server turns into
+// The customer shop's light/dark toggle. The choice is the pp_theme cookie, which the server turns into
 // data-theme on <html> in the HTML itself, so a reload never flashes. The button names the theme it switches to.
 
-type Json = Record<string, any>;
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 const ACCENT = "#1f6f8b";
 let original: Json;
 
-async function getConfig(request: APIRequestContext): Promise<Json> {
-  const res = await request.get("/admin/api/settings");
-  expect(res.ok()).toBeTruthy();
-  return (await res.json()).config as Json;
-}
-async function putConfig(request: APIRequestContext, config: Json): Promise<void> {
-  const res = await request.put("/admin/api/settings", { data: { config } });
-  expect(res.ok(), await res.text()).toBeTruthy();
-}
 async function setShop(request: APIRequestContext, patch: Json): Promise<void> {
   const config = await getConfig(request);
   config.shop = { ...config.shop, ...patch };
@@ -194,7 +186,7 @@ for (const width of [390, 1440]) {
   }
 }
 
-// D55: the footer's content shares the header's width and left edge; the tinted band stays full width.
+// The footer's content shares the header's width and left edge; the tinted band stays full width.
 test("the footer content lines up with the header content at 1440 and 390 px", async ({ page }) => {
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });

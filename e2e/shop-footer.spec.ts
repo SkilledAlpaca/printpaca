@@ -1,12 +1,12 @@
 import { test, expect } from "@playwright/test";
 import type { APIRequestContext, Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { requestIdByReference } from "./helpers";
+import { requestIdByReference, getConfig } from "./helpers";
+import type { Json } from "./helpers";
 
-// D44 (the shop footer) and D45 (the header logo and name link home). The shop's branding, footer links and
+// The shop footer and the header logo and name link home. The shop's branding, footer links and
 // pause state are set through the settings API; the original config is restored afterwards.
 
-type Json = Record<string, any>;
 const ITEM = "FooterSpec Planter";
 const NAME = "Footer Spec Shop";
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAA3ElEQVR4nO3QwQ2DQAwFUUpJaZROJ+GKkBDJwu6s7fmS7563LM653tvWz7f16N+b9yQ6LEaP6DAYI+OnQiDCp4GgwzEEOhaFoANRBDoMRaCDUAQ6BEegI1AAOgBFoB/HEeinUQD6YRSBfhRHoJ8UgASgH8QR6OcEIAHox3AE+ikBBBBAAAEEEEAAAQQQQAABCIAqCJfxAgiQH+E2XgAB8iL8HJ8R4e94ARIhNMdnQHgcL0BghNfiIyK8Hh8JoVt8BITu8bNCDA2fDQGLP65s+HGl488rGX21ktEuyHYEagXuNXObIQAAAABJRU5ErkJggg==";
@@ -18,11 +18,6 @@ const requests: string[] = [];
 let xffN = 0;
 const xff = () => ({ "X-Forwarded-For": `198.51.100.${10 + (xffN++ % 200)}` });
 
-async function getConfig(request: APIRequestContext): Promise<Json> {
-  const res = await request.get("/admin/api/settings");
-  expect(res.ok()).toBeTruthy();
-  return (await res.json()).config as Json;
-}
 async function apply(request: APIRequestContext, quote: Json, shop: Json = {}): Promise<void> {
   const config = structuredClone(original);
   config.materials = config.materials.map((m: Json) => (m.name === "PLA" ? { ...m, public: true } : m));
@@ -73,7 +68,7 @@ const VIEWS = [
   { w: 1440, h: 900 },
 ];
 
-test.describe("D44 footer", () => {
+test.describe("Footer", () => {
   test("full shop: three columns, bottom row with copyright, Staff sign-in and the credit on the right", async ({ page, request }) => {
     await apply(request, FULL, { footerLinks: LINKS });
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -193,7 +188,7 @@ test.describe("D44 footer", () => {
   }
 });
 
-test.describe("D45 header link", () => {
+test.describe("Header link", () => {
   const homeLink = (page: Page) => page.getByRole("link", { name: `${NAME}, shop home` });
 
   test("from an item the link goes home with focus on the gallery heading", async ({ page, request }) => {

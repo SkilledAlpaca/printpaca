@@ -1,11 +1,11 @@
 import { test, expect } from "@playwright/test";
 import type { APIRequestContext } from "@playwright/test";
+import { getConfig, putConfig } from "./helpers";
+import type { Json } from "./helpers";
 
-// D30: a hard refresh of the shop paints the owner's settings, never built-in defaults. The server renders the
+// A hard refresh of the shop paints the owner's settings, never built-in defaults. The server renders the
 // shop's head (title, description) and embeds the public config; the page reads it synchronously and refreshes
 // it in the background. All specs share one server, so every test restores what it changed.
-
-type Json = Record<string, any>;
 
 const NAME = "Zephyr Print Works";
 const INTRO = "Zephyr intro: hand-finished prints from our garage.";
@@ -17,17 +17,6 @@ const DEFAULTS = ["Get an estimate", "Order a ready-made 3D print", "Loading…"
 
 let original: Json;
 let itemId = "";
-
-async function getConfig(request: APIRequestContext): Promise<Json> {
-  const res = await request.get("/admin/api/settings");
-  expect(res.ok()).toBeTruthy();
-  return (await res.json()).config as Json;
-}
-
-async function putConfig(request: APIRequestContext, config: Json): Promise<void> {
-  const res = await request.put("/admin/api/settings", { data: { config } });
-  expect(res.ok(), await res.text()).toBeTruthy();
-}
 
 async function applyShop(request: APIRequestContext, shop: Json = {}): Promise<void> {
   const config = await getConfig(request);

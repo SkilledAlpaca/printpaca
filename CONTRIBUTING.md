@@ -45,7 +45,7 @@ To regenerate the documentation screenshots after a UI change, run `node --exper
    - Use the theme tokens (`--control-border`, `--focus-ring`, `--muted`) and no new hex colors.
    - Check the new UI with the keyboard, and with a screen reader if you have one. Add new pages or detail views to the gate.
 
-   [Accessibility](docs/accessibility.md#contributor-guidance) has the details. Run just the gate with `npx playwright test -c e2e a11y.spec.ts`.
+   [Accessibility](docs/accessibility.md#contributor-guidance) has the details. Run only the gate with `npx playwright test -c e2e a11y.spec.ts`.
 
 6. **Use the spacing and width tokens in migrated layout code.** `npm run lint:css` fails CI when a migrated file (`web/src/components/ui/**` and the screens listed under `blocking` in `scripts/css-lint.config.json`) writes a raw spacing or width literal such as `margin: 12px` or `max-width: 44rem`. Use the tokens from `web/src/theme.css` (`--space-*`, `--gap`, `--field-*`, `--content-max`). Unmigrated files only warn. If a literal is right (an image box, a popout width), add an entry with a reason to `exceptions` in the same config file, and a reviewer reads it in the diff.
 

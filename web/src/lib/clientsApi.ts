@@ -1,4 +1,5 @@
 import { formatServerErrors } from "./serverErrors";
+import { GRANTABLE_TAB_LABELS, isGrantableTab } from "./permissions";
 import { DEFAULT_FETCH_TIMEOUT_MS } from "./fetchTimeouts";
 import { pageSuffix, totalFromHeader, type Page, type PagedResult } from "./pagination";
 
@@ -23,12 +24,22 @@ export type ClientInput = Omit<Client, "id" | "createdAt" | "updatedAt" | "creat
  * generic message, not the raw status. Shared with other API modules such as invoicesApi.ts. */
 export async function errorsFrom(res: Response): Promise<Error> {
   try {
-    const body = (await res.json()) as { errors?: unknown };
+    const body = (await res.json()) as { errors?: unknown; error?: unknown };
     const errors = Array.isArray(body.errors) ? body.errors.filter((e): e is string => typeof e === "string") : [];
     if (errors.length > 0) return new Error(formatServerErrors(errors));
+    if (res.status === 403) return new Error(forbiddenMessage(typeof body.error === "string" ? body.error : ""));
   } catch {
+    if (res.status === 403) return new Error(forbiddenMessage(""));
   }
   return new Error("The server couldn't complete that request. Try again.");
+}
+
+/** "You don't have access to Clients." from the server's 403 body ("missing permission: clients"), so a refused
+ * request names the area instead of reading as an outage (A13). */
+export function forbiddenMessage(serverError: string): string {
+  const key = /^missing permission: (\w+)$/.exec(serverError)?.[1];
+  if (key && isGrantableTab(key)) return `You don't have access to ${GRANTABLE_TAB_LABELS[key]}.`;
+  return "You don't have access to do that.";
 }
 
 /** A network failure returns null so the page can show an offline note. With no argument no

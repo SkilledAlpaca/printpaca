@@ -56,3 +56,24 @@ export function quoteIdFromHash(hash: string): string | null {
     return null;
   }
 }
+
+/** The tab route a hash base names: `#/new` is another way to type New quote, and `#/settings/<section>` is
+ * Settings (the section is read by settingsSectionFromHash). Both resolve to a real tab, so a user who lacks
+ * access sees the "No access" note instead of a silent redirect (A16). Everything else passes through
+ * quoteRouteBase. */
+export function routeBase(base: string): string {
+  if (base === "#/new") return "#/quote";
+  if (/^#\/settings\/[^/#]+$/.test(base)) return "#/settings";
+  return quoteRouteBase(base);
+}
+
+/** The section named by `#/settings/<section>` ("storefront"), lower-cased, or null. */
+export function settingsSectionFromHash(hash: string): string | null {
+  const m = /^#\/settings\/([^/#]+)/.exec(hash);
+  if (!m) return null;
+  try {
+    return decodeURIComponent(m[1]!).toLowerCase();
+  } catch {
+    return null;
+  }
+}

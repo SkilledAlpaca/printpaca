@@ -28,15 +28,17 @@
   import { quote, partLabel } from "../lib/state.svelte";
   import { formatSavedAt } from "../lib/quoteRow";
   import { listClients, createClient, type Client } from "../lib/clientsApi";
-  import CardHelp from "./CardHelp.svelte";
-  import { TILE_HELP } from "../lib/guideContent";
-  import { stickyInset } from "../lib/stickyInset";
+  import type { Snippet } from "svelte";
+  import StickySummary from "./ui/StickySummary.svelte";
+  import Field from "./ui/Field.svelte";
 
   let {
     cfg,
     order,
     pricingPending,
     settledOrder,
+    summary,
+    compactStats,
   }: {
     cfg: EffectiveConfig;
     order: OrderBreakdown;
@@ -49,6 +51,10 @@
     // (quotePreview.ts's settled()), or null if none. save()/update() call it first so the write uses a price
     // the server stands behind, not the stale placeholder.
     settledOrder: () => Promise<OrderBreakdown | null>;
+    /** The summary's numbers and breakdown, from QuoteTab; the save fields follow them in the sticky summary. */
+    summary: Snippet;
+    /** The headline numbers for the compact bar pinned to the bottom below 1100px. */
+    compactStats: Snippet;
   } = $props();
 
   // The saved-quote list, mapped via quotesApi's toSavedQuote (`.inputs` is the editor's form snapshot, not
@@ -469,68 +475,107 @@
 
 <svelte:window onhashchange={onHashChange} />
 
-<div class="card">
-  <div class="head-row with-help">
-    <h2>Saved quotes</h2>
-    <CardHelp id="history" title="Saved quotes" text={TILE_HELP.history} />
-  </div>
-
-  {#if quotesUnavailable}
-    <p class="banner-warn space-above" role="alert">Couldn't load saved quotes. The server couldn't be reached.</p>
-  {/if}
-
-  <div class="saverow" class:dirty={floating} use:stickyInset={{ edge: "bottom", active: floating }}>
-    <div class="save-field">
-      <label for="history-label">Label for this quote</label>
-      <input
-        id="history-label"
-        placeholder={`for example "Benchy for Sam"`}
-        bind:value={quoteSession.label}
-        onkeydown={handleLabelKeydown}
-      />
+<!-- The sticky summary: the numbers and breakdown from QuoteTab, then the save fields. Below 1100px the
+     same content opens from a compact bar pinned to the bottom (price, profit and Save). This component owns the
+     saved-quote state, so it renders the summary and places it, and the recent saves, in QuoteTab's layout
+     (grid areas below). -->
+<StickySummary label="Quote summary" class="quote-summary">
+  {#snippet compact()}
+    <div class="compact-row">
+      {@render compactStats()}
+      <button
+        type="button"
+        class="primary"
+        onclick={primaryAction}
+        disabled={!saving && saveRowDisabled()}
+        aria-disabled={saving}
+        aria-busy={saving}
+      >{saving ? "Saving…" : quoteSession.loadedId ? "Update" : "Save"}</button>
     </div>
-    <div class="save-field">
-      <label for="history-client">Client for this quote</label>
-      <input
-        id="history-client"
-        list="history-client-options"
-        placeholder="Type to search or add"
-        autocomplete="off"
-        value={quoteClient.name}
-        oninput={handleClientInput}
-        onfocus={ensureClientsLoaded}
-      />
+  {/snippet}
+
+  <div class="summary-stack">
+    {@render summary()}
+
+    <div class="tile save-tile" role="group" aria-label="Saved quotes">
+      <h3 class="sub-heading">Save this quote</h3>
+
+      {#if quotesUnavailable}
+        <p class="banner-warn" role="alert">Couldn't load saved quotes. The server couldn't be reached.</p>
+      {/if}
+
+      {#if quoteSession.loadedId}
+        {#if dirty}
+          <p class="hint">You are editing a saved quote. Your changes aren't saved until you update it.</p>
+        {:else}
+          <p class="hint">This quote is saved. Change anything, then press Update to save the changes.</p>
+        {/if}
+      {/if}
+
+      <Field id="history-client" label="Client for this quote">
+        {#snippet children(a)}
+          <input
+            id={a.id}
+            list="history-client-options"
+            placeholder="Type to search or add"
+            autocomplete="off"
+            value={quoteClient.name}
+            oninput={handleClientInput}
+            onfocus={ensureClientsLoaded}
+          />
+        {/snippet}
+      </Field>
+      <datalist id="history-client-options">
+        {#each clients ?? [] as c (c.id)}<option value={c.name}></option>{/each}
+      </datalist>
+      {#if clientsLoaded && clients === null}
+        <span class="advisory-text">Couldn't load the client list. This quote keeps the client it already has, but you can't pick a new one right now.</span>
+      {/if}
+      {#if clientIsNew}
+        <span class="advisory-text">New client. Saving adds them to your clients.</span>
+      {/if}
+
+      <Field id="history-label" label="Label for this quote">
+        {#snippet children(a)}
+          <input
+            id={a.id}
+            placeholder={`for example "Benchy for Sam"`}
+            bind:value={quoteSession.label}
+            onkeydown={handleLabelKeydown}
+          />
+        {/snippet}
+      </Field>
+
+      {#if floating}<span class="unsaved-badge">Unsaved changes</span>{/if}
+      {#if quoteSession.loadedId}
+        <div class="save-actions" role="group" aria-label="Save changes to this quote">
+          <button type="button" class="primary" onclick={update} disabled={!saving && saveRowDisabled()} aria-disabled={saving} aria-busy={saving}>
+            {saving ? "Saving…" : "Update quote"}
+          </button>
+          <button type="button" onclick={save} disabled={!saving && saveRowDisabled()} aria-disabled={saving} aria-busy={saving}>Save as new</button>
+        </div>
+      {:else}
+        <div class="save-actions">
+          <button type="button" class="primary" onclick={save} disabled={!saving && saveRowDisabled()} aria-disabled={saving} aria-busy={saving}>
+            {saving ? "Saving…" : "Save quote"}
+          </button>
+        </div>
+      {/if}
+      {#if saveHint}<p class="hint">{saveHint}</p>{/if}
+
+      <!-- action-status carries no styles: it is the stable hook e2e/history.spec.ts selects, since several
+           .status-line elements can share a page. The one always-present live region: text swaps, the element
+           doesn't. -->
+      <p class="status-line action-status" class:failed={quoteSession.status.failed} role={quoteSession.status.failed ? "alert" : "status"} aria-live={quoteSession.status.failed ? "assertive" : "polite"}>
+        {quoteSession.status.text}
+      </p>
     </div>
-    <datalist id="history-client-options">
-      {#each clients ?? [] as c (c.id)}<option value={c.name}></option>{/each}
-    </datalist>
-    {#if clientsLoaded && clients === null}
-      <span class="advisory-text">Couldn't load the client list. This quote keeps the client it already has, but you can't pick a new one right now.</span>
-    {/if}
-    {#if clientIsNew}
-      <span class="advisory-text">New client. Saving adds them to your clients.</span>
-    {/if}
-    {#if floating}<span class="unsaved-badge">Unsaved changes</span>{/if}
-    {#if quoteSession.loadedId}
-      <button class="primary" onclick={update} disabled={!saving && saveRowDisabled()} aria-disabled={saving} aria-busy={saving}>
-        {saving ? "Saving…" : `Update "${loadedQuote?.label ?? ""}"`}
-      </button>
-      <button type="button" onclick={save} disabled={!saving && saveRowDisabled()} aria-disabled={saving} aria-busy={saving}>Save as new</button>
-    {:else}
-      <button class="primary" onclick={save} disabled={!saving && saveRowDisabled()} aria-disabled={saving} aria-busy={saving}>
-        {saving ? "Saving…" : "Save quote"}
-      </button>
-    {/if}
   </div>
-  {#if saveHint}<p class="hint">{saveHint}</p>{/if}
+</StickySummary>
 
-  <!-- action-status carries no styles: it is the stable hook e2e/history.spec.ts selects, since several
-       .status-line elements can share a page. -->
-  <p class="status-line action-status" role={quoteSession.status.failed ? "alert" : "status"} aria-live={quoteSession.status.failed ? "assertive" : "polite"}>
-    {quoteSession.status.text}
-  </p>
-
-  <ul class="plain-list space-above">
+<div class="card recent" role="group" aria-label="Recent saves">
+  <h2 class="recent-heading">Saved quotes</h2>
+  <ul class="plain-list">
     {#if loading}
       <li class="empty-state"><span role="status">Loading…</span></li>
     {:else}
@@ -548,7 +593,7 @@
           </button>
         </li>
       {:else}
-        <li class="empty-state">No saved quotes yet. Save your first quote with the button above.</li>
+        <li class="empty-state">No saved quotes yet. Save your first quote with the button in the summary.</li>
       {/each}
     {/if}
   </ul>
@@ -558,36 +603,30 @@
 </div>
 
 <style>
-  /* flex-wrap so the row (label input, client select, save buttons) reflows at very narrow widths instead
-   * of forcing horizontal scroll; the input's intrinsic min-width can't shrink enough around 380px, and
-   * min-width: 0 lets it shrink before a wrap is needed. */
-  .saverow { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.6rem; }
-  .saverow input { width: 100%; min-width: 0; }
-  .save-field { flex: 1 1 12rem; display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
-  .save-field label { font-size: var(--text-sm); }
-  .saverow > button { align-self: flex-end; }
-  /* Below 480px the label and client inputs each take a full line so their placeholders stay readable, and
-   * the save buttons share the next line. */
-  @media (max-width: 480px) {
-    .save-field { flex: 1 1 100%; }
-    .saverow button { flex: 1 1 auto; }
+  /* Where the two pieces sit in QuoteTab's layout: one column below 1100px (recent saves, then the summary
+   * pinned to the bottom, last in flow), the summary column to the right from 1100px. */
+  :global(.quote-summary) { order: 3; }
+  .recent { order: 2; }
+  @media (min-width: 1100px) {
+    :global(.quote-summary) { grid-area: summary; }
+    .recent { grid-area: recent; }
   }
 
-  /* Floats the row to the viewport bottom only while there is an unsaved edit a save/update would act on,
-   * so it stays reachable while scrolling; same sticky + surface background + top border as
-   * SettingsEditor's .save-bar. The clean state keeps the static row with no layout shift. */
-  .saverow.dirty {
-    position: sticky;
-    bottom: 0;
-    z-index: 1;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-    padding: 0.5rem 0.4rem;
-  }
-  .unsaved-badge { font-size: var(--text-xs); color: var(--warn); }
+  .summary-stack { display: flex; flex-direction: column; gap: var(--gap-section); }
+  .compact-row { display: flex; align-items: center; gap: var(--space-3); }
+  .compact-row > :global(*:first-child) { flex: 1 1 auto; min-width: 0; }
+  .compact-row button { flex: none; }
+  .save-tile { display: flex; flex-direction: column; gap: var(--space-3); padding-block-start: var(--gap); border-top: 1px solid var(--border); }
+  .sub-heading { margin: 0; font-size: var(--type-heading); }
+  .save-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .save-tile .hint, .save-tile .status-line { margin: 0; }
+  .status-line.failed { color: var(--danger); }
+  .unsaved-badge { font-size: var(--type-caption); color: var(--warn); }
+
+  .recent-heading { margin: 0 0 var(--space-2); }
   li {
-    display: flex; align-items: center; flex-wrap: nowrap; gap: 0.5rem;
-    padding: 0.3rem 0 0.3rem 0.4rem;
+    display: flex; align-items: center; flex-wrap: nowrap; gap: var(--space-2);
+    padding: var(--space-1) 0 var(--space-1) var(--space-2);
     border-top: 1px solid var(--border);
     /* Transparent by default so the active-row highlight changes only the border color, not its width
      * (otherwise loading a quote shifts every row 3px). The accent is re-declared locally because this
@@ -610,7 +649,7 @@
   .q-client { color: var(--muted); }
   .all-quotes-link {
     display: inline-block;
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
     font-size: var(--text-sm);
   }
 </style>

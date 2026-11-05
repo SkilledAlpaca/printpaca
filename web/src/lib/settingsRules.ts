@@ -1,6 +1,7 @@
 import { validateField, type FieldRule, type FieldWarning } from "./engine/index";
 import type { ServerConfig } from "./settings";
 import { utf8ByteLength } from "./publicFormLimits";
+import { accentProblem } from "./accent";
 
 // Byte caps mirroring server/config.go's validate() exactly. Go's len() counts bytes, so they are measured
 // with utf8ByteLength (TextEncoder), not .length (see publicFormLimits.ts). Keep in sync with
@@ -173,6 +174,95 @@ function maxBytesWarning(f: string, value: string, maxBytes: number): FieldWarni
   return [];
 }
 
+// Mirrors server/config.go's shop* length constants (characters, not bytes: validateShop counts runes).
+const SHOP_HEADING_MAX = 120;
+const SHOP_LONG_TEXT_MAX = 300; // announcement, pausedMessage, shippingNote, turnaroundNote
+const SHOP_HERO_ALT_MAX = 200;
+const SHOP_PAGE_TITLE_MAX = 70;
+const SHOP_FOOTER_LINKS_MAX = 6;
+const SHOP_FOOTER_LABEL_MAX = 40;
+const SHOP_FOOTER_URL_MAX = 500;
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/;
+
+function plainTextWarning(f: string, value: string, maxChars: number): FieldWarning[] {
+  if ([...value].length > maxChars) {
+    return [{ field: f, code: "above-max", message: `must be ${maxChars} characters or fewer`, severity: "error", bound: maxChars }];
+  }
+  if (CONTROL_CHARS.test(value)) {
+    return [{ field: f, code: "invalid-enum", message: "must be plain text on one line", severity: "error" }];
+  }
+  return [];
+}
+
+function httpsUrlWarning(f: string, raw: string): FieldWarning[] {
+  if (raw === "") return [{ field: f, code: "required", message: `${f} is required`, severity: "error" }];
+  if ([...raw].length > SHOP_FOOTER_URL_MAX) {
+    return [{ field: f, code: "above-max", message: `must be ${SHOP_FOOTER_URL_MAX} characters or fewer`, severity: "error", bound: SHOP_FOOTER_URL_MAX }];
+  }
+  if (/\s/.test(raw) || CONTROL_CHARS.test(raw)) {
+    return [{ field: f, code: "invalid-enum", message: "must not contain spaces", severity: "error" }];
+  }
+  let u: URL | null = null;
+  try {
+    u = new URL(raw);
+  } catch {
+    u = null;
+  }
+  if (!u || u.protocol !== "https:" || u.hostname === "" || u.username !== "" || u.password !== "") {
+    return [{ field: f, code: "invalid-enum", message: "must be an https:// address", severity: "error" }];
+  }
+  return [];
+}
+
+/** Mirrors server/config.go's validateShop. The accent message is lib/accent.ts's, the same text the server
+ * returns (the shared accent-vectors fixture pins both). */
+export function shopWarnings(shop: ServerConfig["shop"]): FieldWarning[] {
+  const warnings: FieldWarning[] = [
+    ...field("shop.maxOrderQty", shop.maxOrderQty, { min: 1, max: 10000, integer: true }),
+    ...plainTextWarning("shop.heading", shop.heading, SHOP_HEADING_MAX),
+    ...plainTextWarning("shop.pageTitle", shop.pageTitle ?? "", SHOP_PAGE_TITLE_MAX),
+    ...plainTextWarning("shop.announcement", shop.announcement, SHOP_LONG_TEXT_MAX),
+    ...plainTextWarning("shop.pausedMessage", shop.pausedMessage, SHOP_LONG_TEXT_MAX),
+    ...plainTextWarning("shop.shippingNote", shop.shippingNote, SHOP_LONG_TEXT_MAX),
+    ...plainTextWarning("shop.turnaroundNote", shop.turnaroundNote, SHOP_LONG_TEXT_MAX),
+    ...plainTextWarning("shop.heroImage.alt", shop.heroImage.alt, SHOP_HERO_ALT_MAX),
+  ];
+  if (!shop.gallery && !shop.customEstimates) {
+    warnings.push({
+      field: "shop.gallery",
+      code: "invalid-enum",
+      message: "the item gallery and custom estimates can't both be off; to stop taking orders, turn off accepting orders instead",
+      severity: "error",
+    });
+  }
+  if (shop.heroImage.file !== "" && shop.heroImage.alt.trim() === "") {
+    warnings.push({
+      field: "shop.heroImage.alt",
+      code: "required",
+      message: "required when a hero image is set; describe the image for people who can't see it",
+      severity: "error",
+    });
+  }
+  const accent = accentProblem(shop.accentColor.trim());
+  if (accent !== "") {
+    warnings.push({ field: "shop.accentColor", code: "invalid-enum", message: accent.replace(/^Accent color: /, ""), severity: "error" });
+  }
+  if (shop.footerLinks.length > SHOP_FOOTER_LINKS_MAX) {
+    warnings.push({ field: "shop.footerLinks", code: "above-max", message: `at most ${SHOP_FOOTER_LINKS_MAX} links`, severity: "error", bound: SHOP_FOOTER_LINKS_MAX });
+  }
+  shop.footerLinks.slice(0, SHOP_FOOTER_LINKS_MAX).forEach((l, i) => {
+    const f = `shop.footerLinks[${i}]`;
+    if (l.label.trim() === "") {
+      warnings.push({ field: `${f}.label`, code: "required", message: `${f}.label is required`, severity: "error" });
+    } else {
+      warnings.push(...plainTextWarning(`${f}.label`, l.label.trim(), SHOP_FOOTER_LABEL_MAX));
+    }
+    warnings.push(...httpsUrlWarning(`${f}.url`, l.url.trim()));
+  });
+  return warnings;
+}
+
 /** smtp.port/from/to are validated only once smtp.host is non-empty, matching server/config.go (the host
  * check is un-trimmed there too). */
 function smtpWarnings(smtp: ServerConfig["smtp"]): FieldWarning[] {
@@ -238,6 +328,7 @@ export function settingsWarnings(form: ServerConfig): FieldWarning[] {
     ...idWarnings("printers", form.printers.map((p) => p.id)),
     ...hardwareNameWarnings(form.hardware.map((h) => h.name)),
     ...smtpWarnings(form.smtp),
+    ...shopWarnings(form.shop),
   ];
 
   form.materials.forEach((m, i) => {

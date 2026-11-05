@@ -14,6 +14,7 @@ const EMPLOYEE_NEW_PASSWORD = "e2e-employee-secret-2";
 // page.goto doesn't race it and die with net::ERR_ABORTED.
 async function logOut(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm sign out" }).click();
   await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
 }
 
@@ -82,6 +83,9 @@ test("employee login sees only granted tabs; the login screen asks for a usernam
   await expect(navButton(page, "Electricity")).not.toBeVisible();
   await expect(navButton(page, "Printers")).not.toBeVisible();
   await expect(navButton(page, "Settings")).toBeVisible();
+  // Without Dashboard access the logo opens the first permitted tab, never the Dashboard.
+  const brand = page.getByRole("complementary").getByRole("link", { name: /home$/ });
+  await expect(brand).toHaveAttribute("href", "#/quotes");
 });
 
 test("a direct API call to an ungranted route family 403s regardless of the hidden nav", async ({ page }) => {

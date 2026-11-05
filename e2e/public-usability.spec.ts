@@ -98,7 +98,7 @@ test("an unsliced STL can be sent without a print time and the shop sees it need
   await page.getByRole("button", { name: "Request an estimate" }).click();
 
   await expect(page).toHaveURL(/#\/estimate\/received$/);
-  await expect(page.getByRole("heading", { name: "Request received" })).toBeFocused();
+  await expect(page.getByRole("region", { name: "Request received" })).toBeFocused();
   await expect(page.locator(".confirmation .price")).toHaveText("Price to be confirmed");
   await expect(page.locator(".confirmation")).toContainText("File: cube.stl");
   const refText = (await page.locator(".confirmation .ref").textContent())?.trim() ?? "";
@@ -268,7 +268,7 @@ test("quantity: no total for an invalid value, and the clamp names the limit", a
   await page.goto("/order");
   await page.getByRole("button", { name: new RegExp(ITEM) }).click();
   await page.getByLabel("Color").selectOption({ label: "Sage" });
-  const total = page.locator(".estimate .price");
+  const total = page.getByRole("group", { name: "Total" }).locator(".price");
   await expect(total).toContainText("$7.00");
 
   await page.getByLabel("Quantity").fill("-3");
@@ -297,7 +297,7 @@ test("an order shows a short reference and what happens next, and another can be
   await page.getByRole("button", { name: "Place order" }).click();
 
   await expect(page).toHaveURL(/#\/order\/received$/);
-  await expect(page.getByRole("heading", { name: "Order received" })).toBeFocused();
+  await expect(page.getByRole("region", { name: "Order received" })).toBeFocused();
   const ref = ((await page.locator(".confirmation .ref").textContent()) ?? "").replace("Reference: ", "").trim();
   expect(ref).toMatch(/^[A-Z0-9]{1,10}-\d{4,}$/);
   createdRefs.push(ref);
@@ -306,7 +306,9 @@ test("an order shows a short reference and what happens next, and another can be
   await expect(page.locator(".confirmation")).toContainText("You won't be charged until then.");
   expect(await requestIdByReference(request, ref)).toMatch(/^[0-9a-f]{32}$/);
 
-  await page.getByRole("button", { name: "Order another item" }).click();
+  // Taps in the first half second after a confirmation appears are ignored (a double tap on Place order).
+  await page.waitForTimeout(600);
+  await page.getByRole("button", { name: "Back to gallery" }).click();
   await expect(page.getByRole("button", { name: new RegExp(ITEM) })).toBeVisible();
 });
 
@@ -410,7 +412,9 @@ test("name and email carry over to another order, can be cleared, and are gone a
   await expect(page.locator(".confirmation .ref strong")).toBeVisible();
   await expect(page.locator(".confirmation .ref-hint")).toContainText("Save this reference");
 
-  await page.getByRole("button", { name: "Order another item" }).click();
+  // Taps in the first half second after a confirmation appears are ignored (a double tap on Place order).
+  await page.waitForTimeout(600);
+  await page.getByRole("button", { name: "Back to gallery" }).click();
   await page.getByRole("button", { name: new RegExp(ITEM) }).click();
   await expect(page.getByLabel("Name")).toHaveValue(`${PREFIX} Repeat`);
   await expect(page.getByLabel("Email")).toHaveValue("repeat@example.com");
@@ -436,6 +440,7 @@ test("an estimate's name and email carry over to Request another estimate", asyn
   await page.getByRole("button", { name: "Request an estimate" }).click();
   await expect(page.getByRole("heading", { name: "Request received" })).toBeVisible();
   createdRefs.push(((await page.locator(".confirmation .ref").textContent()) ?? "").replace("Reference: ", "").trim());
+  await page.waitForTimeout(600); // taps right after a confirmation appears are ignored
   await page.getByRole("button", { name: "Request another estimate" }).click();
   await expect(page.getByLabel("Name")).toHaveValue(`${PREFIX} Again`);
   await expect(page.getByLabel("Email")).toHaveValue("again@example.com");

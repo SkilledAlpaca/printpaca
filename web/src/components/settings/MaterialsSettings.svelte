@@ -6,6 +6,7 @@
   import { rowProblems, warnId } from "../../lib/rowIssues";
   import { focusAfterRowRemoval, keySelector } from "../../lib/a11yFocus";
   import { focusAfterUpdate } from "../../lib/a11y.svelte";
+  import Card from "../ui/Card.svelte";
 
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 
@@ -51,8 +52,7 @@
   const num = (v: number | null | undefined, digits: number) => (typeof v === "number" && Number.isFinite(v) ? v.toFixed(digits) : "-");
 </script>
 
-<div id="section-materials" class="card roomy" class:danger-border={hasError("materials")}>
-  <h2>Materials</h2>
+<Card id="section-materials" tone={hasError("materials") ? "danger" : "default"} heading="Materials">
   <p class="hint">This list replaces the built-in one entirely. At least one material is required. Materials
     checked "Public" are offered on the public estimate page. Press Edit on a row to change it.</p>
   <label class="toggle">
@@ -158,11 +158,14 @@
   {#each rowIssues as issue (issue.field)}
     <small id={warnId(issue.field)} class="warn-text">Row {issue.row}: {issue.message}</small>
   {/each}
-  <button type="button" data-focus-key="add-material" onclick={addMaterial}>Add material</button>
-</div>
+  <div class="add-row">
+    <button type="button" data-focus-key="add-material" onclick={addMaterial}>Add material</button>
+  </div>
+</Card>
 
 <style>
   /* table/th baseline and .table-scroll come from theme.css; these grids only need cells on one line. */
   td, th { white-space: nowrap; }
-  .actions { display: flex; gap: 0.4rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .add-row { margin-block-start: var(--space-3); }
 </style>

@@ -1,0 +1,370 @@
+{
+ "description": "Shared by server/accent_test.go and web/src/lib/accent.test.ts. Each vector is the result of checkAccentColor / accentProblem for one input. Ratios compare within 0.001; colors and booleans compare exactly. The shop backgrounds are the --bg, --surface and --surface-2 tokens in each scheme. Regenerate with UPDATE_ACCENT_VECTORS=1 go test ./server -run AccentVectors, then review the diff.",
+ "vectors": [
+  {
+   "name": "empty is the theme accent, not checked",
+   "input": "",
+   "problem": ""
+  },
+  {
+   "name": "shop brown passes",
+   "input": "#9c4212",
+   "expected": {
+    "ok": true,
+    "accent": "#9c4212",
+    "light": {
+     "accent": "#9c4212",
+     "buttonText": "#ffffff",
+     "linkRatio": 5.3905,
+     "buttonRatio": 6.5592,
+     "pass": true
+    },
+    "dark": {
+     "accent": "#e66b29",
+     "buttonText": "#141414",
+     "linkRatio": 4.5028,
+     "buttonRatio": 5.7019,
+     "pass": true
+    },
+    "suggestion": ""
+   },
+   "problem": ""
+  },
+  {
+   "name": "uppercase hex is normalized",
+   "input": "#9C4212",
+   "expected": {
+    "ok": true,
+    "accent": "#9c4212",
+    "light": {
+     "accent": "#9c4212",
+     "buttonText": "#ffffff",
+     "linkRatio": 5.3905,
+     "buttonRatio": 6.5592,
+     "pass": true
+    },
+    "dark": {
+     "accent": "#e66b29",
+     "buttonText": "#141414",
+     "linkRatio": 4.5028,
+     "buttonRatio": 5.7019,
+     "pass": true
+    },
+    "suggestion": ""
+   },
+   "problem": ""
+  },
+  {
+   "name": "deep blue passes",
+   "input": "#1d4ed8",
+   "expected": {
+    "ok": true,
+    "accent": "#1d4ed8",
+    "light": {
+     "accent": "#1d4ed8",
+     "buttonText": "#ffffff",
+     "linkRatio": 5.5076,
+     "buttonRatio": 6.7016,
+     "pass": true
+    },
+    "dark": {
+     "accent": "#6b8ceb",
+     "buttonText": "#141414",
+     "linkRatio": 4.5557,
+     "buttonRatio": 5.7689,
+     "pass": true
+    },
+    "suggestion": ""
+   },
+   "problem": ""
+  },
+  {
+   "name": "dark green passes",
+   "input": "#166534",
+   "expected": {
+    "ok": true,
+    "accent": "#166534",
+    "light": {
+     "accent": "#166534",
+     "buttonText": "#ffffff",
+     "linkRatio": 5.8599,
+     "buttonRatio": 7.1303,
+     "pass": true
+    },
+    "dark": {
+     "accent": "#24a454",
+     "buttonText": "#141414",
+     "linkRatio": 4.5122,
+     "buttonRatio": 5.7138,
+     "pass": true
+    },
+    "suggestion": ""
+   },
+   "problem": ""
+  },
+  {
+   "name": "black passes",
+   "input": "#000000",
+   "expected": {
+    "ok": true,
+    "accent": "#000000",
+    "light": {
+     "accent": "#000000",
+     "buttonText": "#ffffff",
+     "linkRatio": 17.2583,
+     "buttonRatio": 21,
+     "pass": true
+    },
+    "dark": {
+     "accent": "#909090",
+     "buttonText": "#141414",
+     "linkRatio": 4.557,
+     "buttonRatio": 5.7705,
+     "pass": true
+    },
+    "suggestion": ""
+   },
+   "problem": ""
+  },
+  {
+   "name": "theme orange fails as link text",
+   "input": "#e06020",
+   "expected": {
+    "ok": false,
+    "accent": "#e06020",
+    "light": {
+     "accent": "#e06020",
+     "buttonText": "#141414",
+     "linkRatio": 2.9434,
+     "buttonRatio": 5.1438,
+     "pass": false
+    },
+    "dark": {
+     "accent": "",
+     "buttonText": "",
+     "linkRatio": 0,
+     "buttonRatio": 0,
+     "pass": false
+    },
+    "suggestion": "#ad4a18"
+   },
+   "problem": "Accent color: #e06020 doesn't have enough contrast on the shop background: links measure 2.94:1, but need 4.5:1; try #ad4a18"
+  },
+  {
+   "name": "bright yellow fails",
+   "input": "#ffd700",
+   "expected": {
+    "ok": false,
+    "accent": "#ffd700",
+    "light": {
+     "accent": "#ffd700",
+     "buttonText": "#141414",
+     "linkRatio": 1.1527,
+     "buttonRatio": 13.1345,
+     "pass": false
+    },
+    "dark": {
+     "accent": "",
+     "buttonText": "",
+     "linkRatio": 0,
+     "buttonRatio": 0,
+     "pass": false
+    },
+    "suggestion": "#7a6700"
+   },
+   "problem": "Accent color: #ffd700 doesn't have enough contrast on the shop background: links measure 1.15:1, but need 4.5:1; try #7a6700"
+  },
+  {
+   "name": "light gray fails",
+   "input": "#cccccc",
+   "expected": {
+    "ok": false,
+    "accent": "#cccccc",
+    "light": {
+     "accent": "#cccccc",
+     "buttonText": "#141414",
+     "linkRatio": 1.3198,
+     "buttonRatio": 11.4716,
+     "pass": false
+    },
+    "dark": {
+     "accent": "",
+     "buttonText": "",
+     "linkRatio": 0,
+     "buttonRatio": 0,
+     "pass": false
+    },
+    "suggestion": "#696969"
+   },
+   "problem": "Accent color: #cccccc doesn't have enough contrast on the shop background: links measure 1.31:1, but need 4.5:1; try #696969"
+  },
+  {
+   "name": "white fails",
+   "input": "#ffffff",
+   "expected": {
+    "ok": false,
+    "accent": "#ffffff",
+    "light": {
+     "accent": "#ffffff",
+     "buttonText": "#141414",
+     "linkRatio": 1.0346,
+     "buttonRatio": 18.4225,
+     "pass": false
+    },
+    "dark": {
+     "accent": "",
+     "buttonText": "",
+     "linkRatio": 0,
+     "buttonRatio": 0,
+     "pass": false
+    },
+    "suggestion": "#696969"
+   },
+   "problem": "Accent color: #ffffff doesn't have enough contrast on the shop background: links measure 1.03:1, but need 4.5:1; try #696969"
+  },
+  {
+   "name": "mid teal fails narrowly",
+   "input": "#2a9d8f",
+   "expected": {
+    "ok": false,
+    "accent": "#2a9d8f",
+    "light": {
+     "accent": "#2a9d8f",
+     "buttonText": "#141414",
+     "linkRatio": 2.7317,
+     "buttonRatio": 5.5424,
+     "pass": false
+    },
+    "dark": {
+     "accent": "",
+     "buttonText": "",
+     "linkRatio": 0,
+     "buttonRatio": 0,
+     "pass": false
+    },
+    "suggestion": "#1f756a"
+   },
+   "problem": "Accent color: #2a9d8f doesn't have enough contrast on the shop background: links measure 2.73:1, but need 4.5:1; try #1f756a"
+  },
+  {
+   "name": "pure red fails narrowly",
+   "input": "#d62828",
+   "expected": {
+    "ok": false,
+    "accent": "#d62828",
+    "light": {
+     "accent": "#d62828",
+     "buttonText": "#ffffff",
+     "linkRatio": 4.1156,
+     "buttonRatio": 5.0079,
+     "pass": false
+    },
+    "dark": {
+     "accent": "",
+     "buttonText": "",
+     "linkRatio": 0,
+     "buttonRatio": 0,
+     "pass": false
+    },
+    "suggestion": "#c92626"
+   },
+   "problem": "Accent color: #d62828 doesn't have enough contrast on the shop background: links measure 4.11:1, but need 4.5:1; try #c92626"
+  },
+  {
+   "name": "borderline blue",
+   "input": "#2563eb",
+   "expected": {
+    "ok": false,
+    "accent": "#2563eb",
+    "light": {
+     "accent": "#2563eb",
+     "buttonText": "#ffffff",
+     "linkRatio": 4.2476,
+     "buttonRatio": 5.1686,
+     "pass": false
+    },
+    "dark": {
+     "accent": "",
+     "buttonText": "",
+     "linkRatio": 0,
+     "buttonRatio": 0,
+     "pass": false
+    },
+    "suggestion": "#1c5cea"
+   },
+   "problem": "Accent color: #2563eb doesn't have enough contrast on the shop background: links measure 4.24:1, but need 4.5:1; try #1c5cea"
+  },
+  {
+   "name": "short form is not accepted",
+   "input": "#fff",
+   "expected": {
+    "ok": false,
+    "accent": "",
+    "light": {
+     "accent": "",
+     "buttonText": "",
+     "linkRatio": 0,
+     "buttonRatio": 0,
+     "pass": false
+    },
+    "dark": {
+     "accent": "",
+     "buttonText": "",
+     "linkRatio": 0,
+     "buttonRatio": 0,
+     "pass": false
+    },
+    "suggestion": ""
+   },
+   "problem": "Accent color: must be a color like #9c4212 (six hex digits), or empty for the theme accent"
+  },
+  {
+   "name": "missing hash is not accepted",
+   "input": "9c4212",
+   "expected": {
+    "ok": false,
+    "accent": "",
+    "light": {
+     "accent": "",
+     "buttonText": "",
+     "linkRatio": 0,
+     "buttonRatio": 0,
+     "pass": false
+    },
+    "dark": {
+     "accent": "",
+     "buttonText": "",
+     "linkRatio": 0,
+     "buttonRatio": 0,
+     "pass": false
+    },
+    "suggestion": ""
+   },
+   "problem": "Accent color: must be a color like #9c4212 (six hex digits), or empty for the theme accent"
+  },
+  {
+   "name": "named color is not accepted",
+   "input": "orange",
+   "expected": {
+    "ok": false,
+    "accent": "",
+    "light": {
+     "accent": "",
+     "buttonText": "",
+     "linkRatio": 0,
+     "buttonRatio": 0,
+     "pass": false
+    },
+    "dark": {
+     "accent": "",
+     "buttonText": "",
+     "linkRatio": 0,
+     "buttonRatio": 0,
+     "pass": false
+    },
+    "suggestion": ""
+   },
+   "problem": "Accent color: must be a color like #9c4212 (six hex digits), or empty for the theme accent"
+  }
+ ]
+}

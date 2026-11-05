@@ -1173,8 +1173,9 @@ func (iv *invoices) handleSend(w http.ResponseWriter, r *http.Request) {
 
 	subject, textBody, htmlBody := renderInvoiceEmail(cfg, existing)
 	if err := sendMailWith(cfg, iv.dial, to, subject, textBody, htmlBody); err != nil {
-		// Verbatim, so the caller's status line shows the real cause.
-		writeAPIError(w, http.StatusBadGateway, err.Error())
+		// Admins see the real cause; everyone else gets a fixed message. The full error is always logged.
+		log.Printf("invoices send: %v", err)
+		writeAPIError(w, http.StatusBadGateway, sendFailureMessage(r, err))
 		return
 	}
 

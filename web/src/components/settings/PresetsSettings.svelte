@@ -3,6 +3,10 @@
   import { nextKey, type ServerConfig } from "../../lib/settings";
   import { focusAfterUpdate } from "../../lib/a11y.svelte";
   import { keySelector } from "../../lib/a11yFocus";
+  import Card from "../ui/Card.svelte";
+  import Field from "../ui/Field.svelte";
+  import Fieldset from "../ui/Fieldset.svelte";
+  import FormGrid from "../ui/FormGrid.svelte";
 
   let {
     form,
@@ -54,52 +58,63 @@
   }
 </script>
 
-<div id="section-presets" class="card roomy" class:danger-border={hasError("presets")}>
-  <h2>Presets</h2>
+<Card id="section-presets" tone={hasError("presets") ? "danger" : "default"} heading="Presets">
   <p class="hint">Named bundles of failure rate, prep time, labor rate, and overhead that new quotes start from. Editing a rate on the New quote page changes that quote only. Built-in presets can't be removed.</p>
-  {#each Object.entries(form.presets) as [key, preset] (key)}
-    <div class="subcard">
-      <div class="subhead">
-        {#if builtinPresetKeys.has(key)}
-          <h3>{presetDisplayName(key)}</h3>
-          <span class="pill">built-in</span>
-        {:else}
-          <label class="field field-inline rename-field">
-            <span>Name</span>
-            <input value={key} onchange={(e) => renamePreset(key, e)} />
-          </label>
-          <button type="button" aria-label={`Remove preset ${key}`} onclick={() => removePreset(key)}>Remove</button>
-        {/if}
-      </div>
-      {#if renameWarnings[key]}<small class="warn-text" role="alert">{renameWarnings[key]}</small>{/if}
-      <div class="field-rows">
-        <label class="field">
-          <span>Failure rate (%)</span>
-          <input type="number" step="any" min="0" max="90" aria-label={`Failure rate (%), ${key}`} bind:value={preset.failureRatePct} />
-        </label>
-        <label class="field">
-          <span>Prep time (min/batch)</span>
-          <input type="number" step="any" aria-label={`Prep time (min/batch), ${key}`} bind:value={preset.prepMinutes} />
-        </label>
-        <label class="field">
-          <span>Labor rate (per h)</span>
-          <input type="number" step="any" aria-label={`Labor rate (per h), ${key}`} bind:value={preset.laborRate} />
-        </label>
-        <label class="field">
-          <span>Monthly fixed costs</span>
-          <input type="number" step="any" aria-label={`Monthly fixed costs, ${key}`} bind:value={preset.monthlyFixed} />
-        </label>
-        <label class="field">
-          <span>Monthly print hours</span>
-          <input type="number" step="any" aria-label={`Monthly print hours, ${key}`} bind:value={preset.monthlyHours} />
-        </label>
-      </div>
-    </div>
-  {/each}
-  <button type="button" data-focus-key="add-preset" onclick={addPreset}>Add preset</button>
-</div>
+  <div class="stack below-heading">
+    {#each Object.entries(form.presets) as [key, preset] (key)}
+      <Card tone="inset">
+        <Fieldset legend={presetDisplayName(key)}>
+          {#if builtinPresetKeys.has(key)}
+            <div class="preset-actions"><span class="pill">built-in</span></div>
+          {:else}
+            <FormGrid>
+              <Field id={`preset-${key}-name`} label="Name" size="m" error={renameWarnings[key] || undefined}>
+                {#snippet children(a)}
+                  <input id={a.id} aria-describedby={a.describedby} aria-invalid={a.invalid ?? "false"} value={key} onchange={(e) => renamePreset(key, e)} />
+                {/snippet}
+              </Field>
+            </FormGrid>
+            <div class="preset-actions">
+              <button type="button" aria-label={`Remove preset ${key}`} onclick={() => removePreset(key)}>Remove preset</button>
+            </div>
+          {/if}
+          <FormGrid align="controls">
+            <Field id={`preset-${key}-failure`} label="Failure rate (%)" size="s">
+              {#snippet children(a)}
+                <input id={a.id} aria-describedby={a.describedby} type="number" step="any" min="0" max="90" bind:value={preset.failureRatePct} />
+              {/snippet}
+            </Field>
+            <Field id={`preset-${key}-prep`} label="Prep time (min/batch)" size="s">
+              {#snippet children(a)}
+                <input id={a.id} aria-describedby={a.describedby} type="number" step="any" bind:value={preset.prepMinutes} />
+              {/snippet}
+            </Field>
+            <Field id={`preset-${key}-labor`} label="Labor rate (per h)" size="s">
+              {#snippet children(a)}
+                <input id={a.id} aria-describedby={a.describedby} type="number" step="any" bind:value={preset.laborRate} />
+              {/snippet}
+            </Field>
+            <Field id={`preset-${key}-fixed`} label="Monthly fixed costs" size="s">
+              {#snippet children(a)}
+                <input id={a.id} aria-describedby={a.describedby} type="number" step="any" bind:value={preset.monthlyFixed} />
+              {/snippet}
+            </Field>
+            <Field id={`preset-${key}-hours`} label="Monthly print hours" size="s">
+              {#snippet children(a)}
+                <input id={a.id} aria-describedby={a.describedby} type="number" step="any" bind:value={preset.monthlyHours} />
+              {/snippet}
+            </Field>
+          </FormGrid>
+        </Fieldset>
+      </Card>
+    {/each}
+  </div>
+  <div class="add-row">
+    <button type="button" data-focus-key="add-preset" onclick={addPreset}>Add preset</button>
+  </div>
+</Card>
 
 <style>
-  .rename-field { flex: 0 0 auto; }
-  .rename-field input { min-height: 32px; padding: 0.25rem 0.5rem; }
+  .preset-actions { display: flex; align-items: center; gap: var(--space-2); }
+  .add-row { margin-block-start: var(--space-3); }
 </style>

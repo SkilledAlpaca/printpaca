@@ -21,6 +21,8 @@ test("/ renders the shop with the business name and a Staff sign-in footer link"
   await expect(page.getByRole("link", { name: "Order or get an estimate" })).toHaveCount(0);
   const footer = page.locator("footer.shop-footer");
   await expect(footer.getByRole("link", { name: "Staff sign-in" })).toHaveAttribute("href", "/admin/");
+  await expect(footer).toContainText("Powered by printpaca");
+  await expect(footer.getByRole("link", { name: "printpaca", exact: true })).toHaveAttribute("href", "https://printpaca.com");
   // One page, so no Home or Shop links.
   await expect(footer.getByRole("link", { name: "Home" })).toHaveCount(0);
   await expect(footer.getByRole("link", { name: "Shop" })).toHaveCount(0);
@@ -127,7 +129,7 @@ test.describe("an item order placed through the shop at / on the main port", () 
     await page.goto("/admin/");
     await navButton(page, "Requests").click();
     await expect(page).toHaveURL(/#\/requests$/);
-    const row = page.locator(".plain-list li", { hasText: CUSTOMER_NAME });
+    const row = page.locator("tr.req-row", { hasText: CUSTOMER_NAME });
     await expect(row).toBeVisible();
     await expect(row.getByText("item order")).toBeVisible();
   });

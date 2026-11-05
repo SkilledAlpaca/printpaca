@@ -40,6 +40,7 @@ test.describe("quote email double submit", () => {
       const res = await route.fetch();
       const cfg = await res.json();
       cfg.smtp = { ...cfg.smtp, host: "smtp.example.test" };
+      cfg.smtpConfigured = true;
       await route.fulfill({ response: res, json: cfg });
     });
     // The seeded quote has no server-computed price; give it one so "Email quote" is offered.
@@ -221,7 +222,8 @@ test.describe("public forms", () => {
     await page.getByRole("button", { name: "Gallery", exact: true }).click();
     await page.getByRole("button", { name: new RegExp(ITEM) }).click();
     await page.getByRole("button", { name: "Place order" }).click();
-    await expect(page.getByRole("heading", { name: "Order received" })).toBeFocused();
+    await expect(page.getByRole("region", { name: "Order received" })).toBeFocused();
+    await page.waitForTimeout(600); // taps right after a confirmation appears are ignored
     await page.getByRole("button", { name: /Back to gallery/ }).click();
     await page.getByRole("button", { name: "Custom estimate" }).click();
     // Kept for the next order, in the same tab only; "Not you? Clear" empties both.
@@ -271,6 +273,7 @@ test.describe("confirm before irreversible actions (3.3.4)", () => {
       const res = await route.fetch();
       const cfg = await res.json();
       cfg.smtp = { ...cfg.smtp, host: "smtp.example.test" };
+      cfg.smtpConfigured = true;
       await route.fulfill({ response: res, json: cfg });
     });
     await page.route(/\/api\/invoices\/[^/]+\/send$/, async (route) => {

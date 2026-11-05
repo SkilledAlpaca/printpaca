@@ -40,7 +40,7 @@ test("record a full payment on a sent invoice and see it reflected on the Dashbo
   await navButton(page, "Dashboard").click();
   await expect(page).toHaveURL(/#\/dashboard$/);
 
-  const monthTile = page.locator(".tile", { has: page.getByText("Revenue this month") });
-  await expect(monthTile.locator(".tile-value")).toBeVisible();
-  await expect(monthTile.locator(".tile-value")).not.toHaveText("$0.00");
+  const monthTile = page.getByRole("region", { name: "This month" }).getByRole("link", { name: /^Revenue/ });
+  await expect(monthTile).toBeVisible();
+  await expect(monthTile.locator(".value")).not.toHaveText("$0.00");
 });

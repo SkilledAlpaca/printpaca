@@ -3,8 +3,11 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
+	"math"
 	"net/http"
+	"strings"
 )
 
 // Fake Spoolman/Moonraker data that registerProxies mounts at the real proxies' paths when
@@ -63,6 +66,33 @@ var demoSpools = []demoSpool{
 		Filament: demoSpoolFilament{Name: "Carbon Fiber Black", Material: "PETG", Density: 1.29, Weight: 1000, Price: 25.99,
 			Vendor: demoSpoolVendor{Name: "Overture"}},
 	},
+	{
+		ID: 1006, RemainingWeight: 720, Price: 31.99, InitialWeight: 1000,
+		Filament: demoSpoolFilament{Name: "Sunset Orange", Material: "TPU", Density: 1.21, Weight: 1000, Price: 31.99,
+			Vendor: demoSpoolVendor{Name: "NinjaTek"}},
+	},
+}
+
+// demoPrimarySpool returns the first non-archived demo spool of a material (case-insensitive, "pla" or
+// "PLA"). The demo Filament list and every seeded quote price from it, so the demo has one filament story.
+func demoPrimarySpool(material string) (demoSpool, bool) {
+	for _, s := range demoSpools {
+		if !s.Archived && strings.EqualFold(s.Filament.Material, material) {
+			return s, true
+		}
+	}
+	return demoSpool{}, false
+}
+
+// demoSpoolPricePerKg is spoolman.ts's spoolPricePerKg, rounded to cents like spoolOverrideFrom: the
+// spool's own price over its initial weight.
+func demoSpoolPricePerKg(s demoSpool) float64 {
+	return math.Round(s.Price/s.InitialWeight*1000*100) / 100
+}
+
+// demoSpoolLabel is spoolman.ts's spoolLabel: "<vendor> <name> #<id>".
+func demoSpoolLabel(s demoSpool) string {
+	return fmt.Sprintf("%s %s #%d", s.Filament.Vendor.Name, s.Filament.Name, s.ID)
 }
 
 // demoSpoolmanHandler serves demoSpools as a bare JSON array, like Spoolman's GET /api/v1/spool.

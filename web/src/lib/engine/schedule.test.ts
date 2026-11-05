@@ -137,3 +137,44 @@ describe("validateEnergySchedule", () => {
     expect(validateEnergySchedule({ defaultStartTime: "22:00", holidays: [], seasons: [] }, true)).not.toEqual([]);
   });
 });
+
+describe("sameWindowsAllYear", () => {
+  const shared = (): EnergySchedule => {
+    const day = (rate: number) => ({ baseName: "Off-peak", baseRate: rate, windows: [{ name: "Peak", start: "16:00", end: "21:00", rate: rate * 2 }] });
+    return {
+      defaultStartTime: "22:00",
+      holidays: [],
+      sameWindowsAllYear: true,
+      seasons: [
+        { name: "Summer", months: [6, 7, 8, 9], weekday: day(0.3), weekend: day(0.3) },
+        { name: "Winter", months: [1, 2, 3, 4, 5, 10, 11, 12], weekday: day(0.2), weekend: day(0.2) },
+      ],
+    };
+  };
+
+  it("accepts the same windows with different rates, and does not constrain a schedule without the flag", () => {
+    expect(validateEnergySchedule(shared(), true)).toEqual([]);
+    const sce = sceExampleSchedule();
+    expect(validateEnergySchedule({ ...sce, sameWindowsAllYear: false }, true)).toEqual([]);
+  });
+
+  it("rejects a season whose windows differ from the first season's, naming the season", () => {
+    const sce = { ...sceExampleSchedule(), sameWindowsAllYear: true };
+    const got = validateEnergySchedule(sce, true).join("\n");
+    expect(got).toContain("energy.schedule.seasons[1].weekday.windows: sameWindowsAllYear");
+    const s = shared();
+    s.seasons[1]!.weekend.windows[0]!.end = "22:00";
+    expect(validateEnergySchedule(s, true).join("\n")).toContain("seasons[1].weekend.windows");
+    const t = shared();
+    t.seasons[1]!.weekday.baseName = "Standard";
+    expect(validateEnergySchedule(t, true)).not.toEqual([]);
+  });
+
+  it("prices the same with the flag on or off", () => {
+    const s = shared();
+    const off = { ...shared(), sameWindowsAllYear: false };
+    for (const start of ["2026-07-03T14:00", "2026-01-14T15:00", "2026-09-30T20:00"]) {
+      expect(scheduleEnergy(s, "America/Los_Angeles", start, 5, 1)).toEqual(scheduleEnergy(off, "America/Los_Angeles", start, 5, 1));
+    }
+  });
+});

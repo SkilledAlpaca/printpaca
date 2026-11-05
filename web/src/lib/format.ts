@@ -74,6 +74,7 @@ const FIELD_LABELS: Record<string, string> = {
   password: "Password",
   price: "Price",
   smtp: "Email",
+  accentColor: "Accent color",
   label: "Label",
   email: "Email",
   username: "Username",
@@ -98,6 +99,8 @@ const FIELD_LABELS: Record<string, string> = {
   // key before lookup. Some keys above (marginPct, quantity, ...) are intentionally reused.
   id: "ID",
   name: "Name",
+  slug: "Address name",
+  categoryId: "Category",
   unitCost: "Unit cost",
   customCss: "Custom CSS",
   timezone: "Time zone",

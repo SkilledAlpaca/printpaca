@@ -1,5 +1,45 @@
 import { expect, request as pwRequest } from "@playwright/test";
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
+import { deflateSync, crc32 } from "node:zlib";
+
+/** A settings document or any other loosely typed JSON body. */
+export type Json = Record<string, any>;
+
+/** The effective config from the admin settings API. */
+export async function getConfig(request: APIRequestContext): Promise<Json> {
+  const res = await request.get("/admin/api/settings");
+  expect(res.ok()).toBeTruthy();
+  return (await res.json()).config as Json;
+}
+
+/** PUTs a full config document to the admin settings API. */
+export async function putConfig(request: APIRequestContext, config: Json): Promise<void> {
+  const res = await request.put("/admin/api/settings", { data: { config } });
+  expect(res.ok(), await res.text()).toBeTruthy();
+}
+
+/** A valid 1x1 PNG of one color: distinct colors give distinct bytes, so distinct content-addressed files. */
+export function tinyPng(r: number, g: number, b: number): Buffer {
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(1, 0);
+  ihdr.writeUInt32BE(1, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // RGB
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(Buffer.from([0, r, g, b]))),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
 
 /** A minimal valid POST /api/quotes body: one part in the {parts} inputs bag and the matching
  * formState, written field for field as the editor's toFormState does (every PartFormState and OrderForm key,
@@ -170,7 +210,7 @@ export async function resetServerState(): Promise<void> {
     const cfgRes = await api.get("api/config");
     const cfg = (await cfgRes.json()) as Record<string, unknown> & { users: { multiUser: boolean; accessAdminEmail: string } };
     if (cfg.users.multiUser || cfg.users.accessAdminEmail !== "") {
-      for (const k of ["integrations", "version", "authEnabled", "moonraker", "fluiddUrl", "demoMode", "integrationSources", "user"]) {
+      for (const k of ["integrations", "version", "authEnabled", "moonraker", "fluiddUrl", "smtpConfigured", "demoMode", "integrationSources", "user"]) {
         delete cfg[k];
       }
       cfg.users = { ...cfg.users, multiUser: false, accessAdminEmail: "" };
@@ -194,8 +234,34 @@ export async function requestIdByReference(request: APIRequestContext, reference
   return row!.id;
 }
 
+/** Opens the summary's collapsed Breakdown (the cost lines and the order-by-part table), if it is closed. At
+ * widths below 1100px the summary itself is collapsed behind its Expand button; open that first. */
+export async function openBreakdown(page: Page): Promise<void> {
+  const details = page.locator("details.breakdown-disclosure");
+  if ((await details.getAttribute("open")) === null) await details.locator("> summary").click();
+}
+
+/** At widths below 1100px the full summary (client, label, Save) sits behind the pinned bar's Expand button. */
+export async function expandSummary(page: Page): Promise<void> {
+  const expand = page.getByRole("button", { name: /^Expand/ });
+  if (await expand.isVisible()) await expand.click();
+}
+
 /** Opens the Price and profit card's collapsed "More pricing options" (tax and shipping), if it is closed. */
 export async function openMorePricing(page: Page): Promise<void> {
   const details = page.locator("details.more-pricing");
   if ((await details.getAttribute("open")) === null) await details.locator("summary").click();
+}
+
+/** Opens a catalog row's ⋯ menu (ui/RowEditor) from its accessible name and presses one of its actions. `row` is
+ * the part of the name after "More actions for": "Hardware 1: e2e magnet", or a RegExp for it. */
+export async function rowAction(page: Page, row: string | RegExp, action: string | RegExp): Promise<void> {
+  const trigger = page.getByRole("button", { name: typeof row === "string" ? `More actions for ${row}` : new RegExp(`^More actions for ${row.source}`) });
+  await trigger.click();
+  await page.getByRole("button", { name: action, exact: typeof action === "string" }).click();
+}
+
+/** Presses the direct Remove button of a row whose only action is Remove (ui/RowEditor): "Remove <row>". */
+export async function removeRow(page: Page, row: string | RegExp): Promise<void> {
+  await page.getByRole("button", { name: typeof row === "string" ? `Remove ${row}` : new RegExp(`^Remove ${row.source}`) }).click();
 }

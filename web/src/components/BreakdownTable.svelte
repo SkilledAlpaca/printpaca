@@ -3,8 +3,6 @@
   import { money, moneyPrecise } from "../lib/format";
   import { computeBreakdownSegments } from "../lib/breakdownBar";
   import { breakdownHint } from "../lib/quoteRow";
-  import { TILE_HELP } from "../lib/guideContent";
-  import CardHelp from "./CardHelp.svelte";
 
   let { breakdown, cfg, partName = "" }: { breakdown: CostBreakdown; cfg: EffectiveConfig; partName?: string } = $props();
 
@@ -40,10 +38,9 @@
   const emptyHint = $derived(breakdownHint(breakdown));
 </script>
 
-<div class="card">
-  <div class="head-row with-help">
-    <h2>Cost breakdown{partName ? `: ${partName}` : ""}{breakdown.quantity > 1 ? " (per unit)" : ""}</h2>
-    <CardHelp id="breakdown" title="Cost breakdown" text={TILE_HELP.breakdown} />
+<div class="breakdown">
+  <div class="head-row">
+    <h3>Cost breakdown{partName ? `: ${partName}` : ""}{breakdown.quantity > 1 ? " (per unit)" : ""}</h3>
   </div>
   {#if segments.length > 0}
     <div class="bar" aria-hidden="true">
@@ -57,7 +54,7 @@
       {/each}
     </ul>
   {/if}
-  <table class="measure-cap">
+  <table>
     <caption class="visually-hidden">Cost breakdown{breakdown.quantity > 1 ? " per unit" : ""}</caption>
     <tbody>
       {#each breakdown.perUnit as line (line.id)}
@@ -109,14 +106,16 @@
   /* table/.num baseline, head row and empty-state styles come from theme.css; only the breakdown-specific
    * layout is here. */
 
+  .breakdown { min-width: 0; }
+  .head-row h3 { margin: 0; font-size: var(--type-heading); }
   tr.muted td { color: var(--muted); }
   details summary { cursor: pointer; }
-  .line-help { display: block; margin: 0.1rem 0 0; color: var(--muted); font-size: var(--text-xs); }
-  .batch-note { margin: 0.5rem 0 0; }
-  details code { display: block; margin: 0.25rem 0 0; color: var(--muted); font-size: var(--text-sm); }
+  .line-help { display: block; margin: var(--space-1) 0 0; color: var(--muted); font-size: var(--text-xs); }
+  .batch-note { margin: var(--space-2) 0 0; }
+  details code { display: block; margin: var(--space-1) 0 0; color: var(--muted); font-size: var(--text-sm); overflow-wrap: anywhere; }
   tfoot th { font-size: var(--text-lg); }
-  .periods { list-style: none; margin: 0.25rem 0 0; padding: 0; font-size: var(--text-sm); color: var(--muted); }
-  .periods li { display: flex; justify-content: space-between; gap: 1rem; }
+  .periods { list-style: none; margin: var(--space-1) 0 0; padding: 0; font-size: var(--text-sm); color: var(--muted); }
+  .periods li { display: flex; justify-content: space-between; gap: var(--space-4); }
 
   .bar {
     display: flex;
@@ -124,22 +123,22 @@
     border-radius: calc(var(--radius) / 2);
     overflow: hidden;
     background: var(--border);
-    margin: 0.4rem 0;
+    margin: var(--space-2) 0;
   }
-  .segment { min-width: 2px; }
+  .segment { min-inline-size: var(--space-1); }
 
   .legend {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.3rem 0.8rem;
+    gap: var(--space-1) var(--space-3);
     list-style: none;
     padding: 0;
-    margin: 0 0 0.4rem;
+    margin: 0 0 var(--space-2);
     font-size: var(--text-sm);
     color: var(--muted);
   }
-  .legend li { display: flex; align-items: center; gap: 0.3rem; }
-  .chip { width: 0.6rem; height: 0.6rem; border-radius: 2px; flex-shrink: 0; }
+  .legend li { display: flex; align-items: center; gap: var(--space-1); }
+  .chip { inline-size: var(--space-2); block-size: var(--space-2); border-radius: 2px; flex-shrink: 0; }
 
   /* The six fixed cost-line ids (engine LineItem.id), each a stable color from the theme's semantic tokens
    * via color-mix() so both palettes stay legible. */

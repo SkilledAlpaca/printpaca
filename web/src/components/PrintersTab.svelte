@@ -2,10 +2,11 @@
   import SettingsEditor from "./settings/SettingsEditor.svelte";
   import PrintersSettings from "./settings/PrintersSettings.svelte";
   import PresetsSettings from "./settings/PresetsSettings.svelte";
+  import PageHeader from "./ui/PageHeader.svelte";
 </script>
 
 <div class="page">
-  <h1>Printers</h1>
+  <PageHeader title="Printers" />
 
   <SettingsEditor>
     {#snippet children({ form, builtin, hasError })}

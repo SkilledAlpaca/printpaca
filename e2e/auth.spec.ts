@@ -33,6 +33,7 @@ test("the correct password logs in, survives reload, and Sign out returns to the
 
   // Sign out clears the session and returns to the login screen.
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm sign out" }).click();
   await expect(page.getByLabel("Password")).toBeVisible();
   await expect(navButton).not.toBeVisible();
 });
@@ -40,7 +41,7 @@ test("the correct password logs in, survives reload, and Sign out returns to the
 test("the username hint tells staff what to enter instead of offering the admin shortcut", async ({ page }) => {
   await page.route("**/api/demo", (route) => route.fulfill({ json: { multiUser: true } }));
   await page.goto(ADMIN_URL);
-  const hint = page.locator("#username-hint");
+  const hint = page.locator("#login-username-hint");
   await expect(hint).toBeVisible();
   await expect(hint).not.toContainText("Leave empty to sign in as the admin");
   await expect(hint).toContainText("Enter the username you were given");

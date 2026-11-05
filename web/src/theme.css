@@ -1,3 +1,17 @@
+/* Self-hosted Figtree (SIL OFL 1.1, see THIRD_PARTY_NOTICES.md): a warm humanist sans with a built-in tnum
+ * feature for aligned figures. Variable weight 300-900, Latin and Latin-1 only (the subset the fontsource
+ * package ships as "latin": U+0000-00FF plus common punctuation, the euro sign and the minus sign). Vite
+ * bundles the file, so it is served same-origin and the CSP's default-src 'self' already covers it. swap
+ * shows the system stack immediately and switches when the file arrives. */
+@font-face {
+  font-family: "Figtree Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 900;
+  src: url("./assets/fonts/figtree-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
   /* Derived from the alpaca logo's own palette (see the comment inside web/src/assets/alpaca-logo.svg):
    * cream ground, dark-brown ink, rim-orange accent. --danger/--warn/--ok are semantic colors with no logo
@@ -43,30 +57,85 @@
   --space-5: 1.25rem;
   --space-6: 1.5rem;
   --space-8: 2rem;
+  --space-12: 3rem;
   /* Below the app-wide 44px tap target on purpose: dense secondary controls (table row actions, the
    * settings jump nav) already sit in tight rows where a 44px target would itself crowd the row. Opted into
    * explicitly by button.quiet, never the app-wide default. */
   --tap-sm: 32px;
 
+  /* Typeface: self-hosted Figtree first, then the system stack, which is what shows during font-display:
+   * swap and if the file ever fails to load. */
+  --font-sans: "Figtree Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Density. Comfortable is the default: 40px controls, 16px gaps. The admin app switches to the compact
+   * set with data-density="compact" on <html> (lib/density.svelte.ts); the public pages never set the
+   * attribute, so they stay comfortable. Controls grow to 44px on phones for touch (see the max-width block
+   * after the control rules). */
+  --control-h: 2.5rem;
+  --gap: var(--space-4);
+  --gap-section: var(--space-6);
+  --card-pad: var(--space-5);
+  --tile-pad: var(--space-5);
+  --cell-pad-y: 0.6rem;
+
+  /* Navigation rail widths (App.svelte): the desktop sidebar, its icon-only collapsed form, and the phone drawer. */
+  --sidebar-w: 220px;
+  --sidebar-w-collapsed: 64px;
+  --drawer-w: min(280px, 85vw);
+
+  /* Content widths. --content-max is the admin content cap: it holds the wide column of lists and
+   * tables. The narrow reading column of the public pages is set by the public page itself. */
+  --content-max: 90rem;
+  /* Preferred field widths (plan: XS, S, M, L), capped by the space available. Currency and quantities sit
+   * at XS-S, names and emails at M, URLs and addresses at L. */
+  --field-xs: 6rem;
+  --field-s: 10rem;
+  --field-m: 20rem;
+  --field-l: 32rem;
+  /* Widest block of running text in a record view. */
+  --measure-record: 44rem;
+
+  /* Five type roles, relative units so browser zoom and font-size settings scale them. */
+  --type-title: 1.5rem;
+  --type-heading: 1.15rem;
+  --type-body: 1rem;
+  --type-secondary: 0.875rem;
+  --type-caption: 0.75rem;
+  --type-micro: 0.6875rem; /* The sidebar footer line */
+
   /* Type scale: page title, section heading, body, small/meta. */
-  --text-xs: 0.75rem;
-  --text-sm: 0.85rem;
-  --text-base: 1rem;
-  --text-lg: 1.15rem;
-  --text-xl: 1.5rem;
+  --text-xs: var(--type-caption);
+  --text-sm: var(--type-secondary);
+  --text-base: var(--type-body);
+  --text-lg: var(--type-heading);
+  --text-xl: var(--type-title);
   --text-2xl: 2rem;
-  /* Long-form prose measure (Guide page, CardHelp's help text), in ch rather than rem: ch tracks the font's
+  /* Long-form prose measure (Guide page), in ch rather than rem: ch tracks the font's
    * own average character width, so the reading-width target stays right even if the type scale above
-   * changes later. Separate from .measure-cap's 44rem below, which caps tabular/list content instead of
-   * prose. */
+   * changes later. */
   --measure-prose: 68ch;
 
-  /* Card border derived from --border/--surface via color-mix: reads as a finer hairline than the 1px solid
-   * --border tables/rows use, without a new literal color. color-mix reads the *computed* values of its
-   * inputs, so this one formula tracks both light and dark automatically; no separate dark-scheme override
-   * needed (verified: Chrome 111+, Safari 16.2+, Firefox 113+ all support relative color-mix, and this is a
-   * self-hosted LAN app with no legacy-browser requirement). */
-  --card-border: color-mix(in srgb, var(--border) 70%, var(--surface));
+  /* Cards are a soft tint: --surface on the --bg page, lighter than the page in both themes, with no
+   * outline and no shadow. Dividers appear only inside tables and lists. --inset is the page tint again, for
+   * a block nested inside a card (an order total, a summary). Text contrast on it is the same as on --bg. */
+  --card-bg: var(--surface);
+  --inset-bg: var(--bg);
+}
+/* Compact density: 32px controls and 8-12px gaps. Admin only. */
+:root[data-density="compact"] {
+  --control-h: 2rem;
+  --gap: var(--space-2);
+  --gap-section: var(--space-3);
+  --card-pad: var(--space-3);
+  --tile-pad: var(--space-3);
+  --cell-pad-y: 0.3rem;
+  --tap-sm: 28px;
+}
+/* Phone card padding (both densities): the one token every card and every block that bleeds to a card's edge
+ * (ui/KeyValueTable) reads. --tile-pad is the same padding without the phone step, for StatTile and StickySummary,
+ * whose phone padding stays as it was. Same specificity as the density sets above and later in the file, so it wins. */
+@media (max-width: 600px) {
+  :root, :root[data-density="compact"] { --card-pad: var(--space-4); }
 }
 /* Tri-state theme: no attribute follows the OS preference (media query below); an explicit choice
  * (demo-local only -- see web/src/lib/demoLocal.svelte.ts) sets data-theme on <html> and wins over the OS
@@ -124,7 +193,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 16px/1.5 var(--font-sans);
 }
 h1, h2, h3 { line-height: 1.2; }
 /* One scale for the two heading levels components actually use: page title (h1) and card/section heading
@@ -136,8 +205,7 @@ h1, h2, h3 { line-height: 1.2; }
 h1 { font-size: var(--text-xl); margin: 0 0 var(--space-4) 0; }
 h2 { font-size: var(--text-lg); margin: 0 0 var(--space-3) 0; }
 h3 { font-size: var(--text-base); margin: 0 0 var(--space-2) 0; }
-/* App-wide anchor color: without this, a bare <a> (CardHelp's "More in the guide" link, RequestsTab's
- * email/download links) renders the UA default link blue, which fails contrast against the dark scheme's
+/* App-wide anchor color: without this, a bare <a> (RequestsTab's email/download links) renders the UA default link blue, which fails contrast against the dark scheme's
  * --bg/--surface. Underline stays the UA default; only color is set here. Components that need a different
  * treatment (e.g. App.svelte's .skip-link) set their own color, which wins on specificity over this element
  * selector. */
@@ -165,6 +233,10 @@ input, select, textarea { border-color: var(--control-border); }
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+/* View headings with tabindex="-1" are script focus targets that move the reading position after
+ * navigation (admin and shop). They aren't controls, so they take no ring. */
+h1[tabindex="-1"]:focus-visible,
+h2[tabindex="-1"]:focus-visible { outline: none; }
 /* Boxy controls draw the focus ring just INSIDE their own border box: the outward ring protrudes 4px per
  * side, and .field-rows stacks rows with no row gap, so a focused control's ring would be overdrawn by the
  * next row's box. Nothing in the UI may overlap a neighbor except a deliberate popout (the row menus,
@@ -177,12 +249,20 @@ textarea:focus-visible,
 button:focus-visible {
   outline-offset: -2px;
 }
-/* 44px tap target, app-wide. Checkbox/radio/range/file keep native sizing; their clickable area comes from
+/* Control height (40px comfortable, 32px compact; see the density tokens), 44px on phones. Checkbox/radio/range/file keep native sizing; their clickable area comes from
  * a wrapping label instead. */
 input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
 select,
 button {
-  min-height: 44px;
+  min-height: var(--control-h);
+}
+/* Phones: 44px touch targets in either density. */
+@media (max-width: 600px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  button {
+    min-height: 44px;
+  }
 }
 /* Accent-filled controls: the ring would be accent-on-accent (1:1), so it takes the fill's contrast color. */
 button.primary:focus-visible,
@@ -370,8 +450,7 @@ input.warn, textarea.warn { border-color: var(--danger); }
 
 /* Form-grid wrapper standardized across components (SettingsTab, ClientsTab, InvoicesTab's editor grids,
  * ElectricityTab, FilamentTab, QuoteTab's tile grids, PricingPanel): always a multi-column grid, the same
- * layout the dashboard already used unconditionally. Readonly display grids (.readonly-grid) and tables are
- * a separate class and unaffected by this rule. */
+ * layout the dashboard already used unconditionally. */
 .app-main .field-rows {
   display: grid;
   /* min(100%, ...) keeps the 24rem floor from overflowing narrow phone viewports (the row can never ask for
@@ -386,20 +465,22 @@ input.warn, textarea.warn { border-color: var(--danger); }
  * tab picking its own gap. h1's own bottom margin (set above) is redundant once .page supplies that
  * spacing, so it's zeroed here rather than removed from the base h1 rule, which
  * public/PublicQuotePage.svelte still relies on outside any .page. */
-.page { display: flex; flex-direction: column; gap: var(--space-6); }
+.page { display: flex; flex-direction: column; gap: var(--gap-section); }
 .page > h1 { margin: 0; }
 
+/* A vertical stack of blocks spaced by the density gap (--gap): form sections and rows inside a card.
+ * `.below-heading` and `.spaced` add the space a stack needs under a card heading or around it. */
+.stack { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+.stack > h2, .stack > h3 { margin: 0; }
+.stack.below-heading { margin-block-start: var(--space-3); }
+.stack.spaced { margin-block: var(--space-3); }
+
 .card {
-  background: var(--surface);
-  border: 1px solid var(--card-border);
+  background: var(--card-bg);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  /* Named onto the spacing scale. */
-  padding: clamp(var(--space-4), 1.2vw, var(--space-6));
+  /* Soft tint, no outline and no shadow. Compact density tightens the padding. */
+  padding: var(--card-pad);
 }
-/* A left border is the severity marker, not a full red card, since the danger classification here is "this
- * section has a destructive action in it," not "this section is itself an error." */
-.card.danger-border { border-left: 3px solid var(--danger); }
 /* Roomier padding for wide settings-page cards: the base .card padding (tuned for compact tiles/rows) reads
  * cramped once a card is a full-width settings section with several field rows. */
 .card.roomy { padding: clamp(var(--space-5), 1.4vw, var(--space-8)); }
@@ -414,18 +495,12 @@ input.warn, textarea.warn { border-color: var(--danger); }
   color: var(--muted);
 }
 
-/* Measure cap: long-form tabular/list content (breakdown table, pricing output) capped to a comfortable
- * reading width even inside a wide card, instead of stretching to fill whatever multi-column track it
- * landed in. */
-.measure-cap { max-width: 44rem; }
-.measure-cap-prose { max-width: var(--measure-prose); }
-
 /* Shared table baseline: header row, row hover, right-aligned money columns. Components still own their own
  * column widths/wrapping; this only normalizes the parts that should look identical everywhere a table
  * appears (breakdown, invoice lines, payments, dashboard chart axis excluded since it's SVG, settings
  * rows). */
 table { width: 100%; border-collapse: collapse; }
-td, th { padding: 0.45rem 0.4rem; border-top: 1px solid var(--border); text-align: left; }
+td, th { padding: var(--cell-pad-y) 0.4rem; border-top: 1px solid var(--border); text-align: left; }
 thead th {
   color: var(--muted);
   font-weight: 600;
@@ -511,19 +586,6 @@ tbody tr:hover { background: var(--surface-2); }
 .chips button { border-radius: 999px; padding: 0.25rem 0.8rem; font-size: var(--text-sm); }
 .chips button.active { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
 
-.head-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
-/* Grid variant for a head row that also carries a CardHelp: CardHelp's help-note sets grid-column: 1 / -1
- * on itself so it lands on its own full-width row under the heading, which the flex variant above can't
- * give it. */
-.head-row.with-help {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: start;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-.head-row.with-help h2 { margin: 0; }
-
 /* position: relative so absolutely positioned descendants (a table header's .visually-hidden label) are
  * clipped by the scroller instead of widening the page: without it, the Quotes ledger scrolled the whole
  * page sideways on a phone. */
@@ -568,12 +630,6 @@ tbody tr:hover { background: var(--surface-2); }
   border: 0;
 }
 
-.readonly-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.6rem; margin-bottom: 0.6rem; }
-/* min-width: 0 lets a cell shrink below its value's intrinsic (unbroken) width instead of overflowing into
- * the next column; overflow-wrap wraps that value (a long email is the common case) onto a second line once
- * it no longer fits, scoped to readonly-grid's own value span so .lbl and other grids are unaffected. */
-.readonly-grid div { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
-.readonly-grid div span:last-child { overflow-wrap: anywhere; }
 .lbl { font-size: var(--text-sm); color: var(--muted); }
 
 .status-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--border); }

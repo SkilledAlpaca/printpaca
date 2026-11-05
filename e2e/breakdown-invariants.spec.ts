@@ -1,11 +1,12 @@
 import { test, expect } from "@playwright/test";
-import { fillCanonicalQuote, readMoney, openMorePricing } from "./helpers";
+import { fillCanonicalQuote, readMoney, openMorePricing, openBreakdown } from "./helpers";
 
 // UI-rendering invariants that no unit or compat test covers: a blanking rule, which number maps to
 // which on-screen field, and a precondition's on-screen consequence.
 
 test("an invalid weight blanks only the Material row and both footer totals, not unrelated rows", async ({ page }) => {
   await page.goto("/admin/");
+  await openBreakdown(page);
   await fillCanonicalQuote(page);
   // Quantity > 1 so both footer totals render; at quantity 1 the Batch total row is absent.
   await page.getByLabel(/Quantity/).fill("2");
@@ -93,9 +94,9 @@ test("the tax row renders the price-inclusive figure, not price x tax%, under it
 
   // Pin the margin so the expected tax figure doesn't depend on what an earlier spec left in config.
   await page.getByLabel("Margin (%)").fill("30");
-  // LabeledNumber renders `${label} (${suffix})`, so the accessible name is "Tax (included in price) (%)".
+  // LabeledNumber renders `${label} (${suffix})`, so the accessible name is "Tax (%)".
   await openMorePricing(page);
-  await page.getByLabel(/^Tax \(included in price\)/).fill("20");
+  await page.getByLabel("Tax (%)", { exact: true }).fill("20");
 
   // Cost $2.24 at 30% margin: the pre-tax price is 224c / 0.7 = 320c, grossed up by 20% tax to 384c.
   // Inclusive tax = 384 x 20 / 120 = 64c (the pre-tax price x 20%), not the exclusive 384c x 0.20 = 76.8c -> 77c.

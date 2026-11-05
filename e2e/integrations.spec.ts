@@ -13,7 +13,7 @@ const SPOOLMAN = "http://127.0.0.1:9127";
 const MOONRAKER = "http://127.0.0.1:9125";
 
 function integration(page: Page, name: string): Locator {
-  return page.locator(".subcard").filter({ has: page.getByRole("heading", { name, exact: true }) });
+  return page.locator("#section-integrationsUrls .card").filter({ has: page.getByRole("heading", { name, exact: true }) });
 }
 
 test("Test reports what Spoolman and Moonraker found, in plain words", async ({ page }) => {
@@ -135,4 +135,65 @@ test("saved URLs apply without a restart", async ({ page }) => {
   await expect.poll(async () => (await page.request.get("/admin/api/spoolman/api/v1/spool")).status()).toBe(404);
   await navButton(page, "Filament").click();
   await expect(page.locator("#spoolman-inventory")).toContainText("Connect Spoolman");
+});
+
+// A save applies live (v1.1): the config refetch that follows "Settings saved." can land after the user has
+// already opened the next page, so the integration-backed screens must follow it without a reload. The delay
+// below makes that order deterministic.
+async function delayConfig(page: Page, ms = 1500): Promise<void> {
+  await page.route("**/api/config", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    await route.continue();
+  });
+}
+
+async function saveUrls(page: Page, urls: { spoolman?: string; moonraker?: string }): Promise<void> {
+  await gotoSettings(page, { load: false });
+  if (urls.spoolman !== undefined) await integration(page, "Spoolman").getByLabel("Spoolman URL").fill(urls.spoolman);
+  if (urls.moonraker !== undefined) await integration(page, "Moonraker").getByLabel("Moonraker URL").fill(urls.moonraker);
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Settings saved.")).toBeVisible();
+}
+
+test("Filament inventory follows a Spoolman URL saved in the same page session", async ({ page }) => {
+  // The previous test left Spoolman cleared.
+  await page.goto("/admin/");
+  await navButton(page, "Filament").click();
+  await expect(page.locator("#spoolman-inventory")).toContainText("Connect Spoolman");
+
+  await delayConfig(page);
+  await saveUrls(page, { spoolman: SPOOLMAN });
+  await navButton(page, "Filament").click();
+  await expect(page.locator("#spoolman-inventory tr[data-spool-id='1']")).toBeVisible({ timeout: 8_000 });
+  await expect(page.locator("#spoolman-inventory")).not.toContainText("Loading spools");
+});
+
+test("Filament inventory follows a changed Spoolman URL while it is loaded", async ({ page }) => {
+  await page.goto("/admin/");
+  await navButton(page, "Filament").click();
+  await expect(page.locator("#spoolman-inventory tr[data-spool-id='1']")).toBeVisible();
+
+  await delayConfig(page);
+  await saveUrls(page, { spoolman: "http://127.0.0.1:9" });
+  await navButton(page, "Filament").click();
+  await expect(page.locator("#spoolman-inventory")).toContainText("Couldn't load the Spoolman inventory", { timeout: 8_000 });
+  await expect(page.locator("#spoolman-inventory tr[data-spool-id='1']")).toHaveCount(0);
+
+  await saveUrls(page, { spoolman: SPOOLMAN });
+  await navButton(page, "Filament").click();
+  await expect(page.locator("#spoolman-inventory tr[data-spool-id='1']")).toBeVisible({ timeout: 8_000 });
+});
+
+test("Recent prints and the spool picker follow URLs saved in the same page session", async ({ page }) => {
+  await page.goto("/admin/");
+  await saveUrls(page, { spoolman: "", moonraker: "" });
+  await navButton(page, "New quote").click();
+  await expect(page.getByLabel("Recent print (from Moonraker)")).toHaveCount(0);
+
+  await delayConfig(page);
+  await saveUrls(page, { spoolman: SPOOLMAN, moonraker: MOONRAKER });
+  await navButton(page, "New quote").click();
+  await expect(page.getByLabel("Recent print (from Moonraker)")).toBeVisible({ timeout: 8_000 });
+  await expect(page.getByLabel("Recent print (from Moonraker)").locator("option")).not.toHaveCount(1);
+  await expect(page.getByLabel("Spool (from Spoolman)").first().locator("option")).not.toHaveCount(1);
 });

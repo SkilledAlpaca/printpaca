@@ -1,6 +1,6 @@
 /** Keyboard behavior shared by the row ⋯ menus (Quotes rows, the Requests header menu). The panels are labeled
  * groups of plain buttons, not ARIA menus, so this adds only what keyboard users expect of a button list:
- * ArrowUp/ArrowDown move between items (wrapping), Home and End jump to the ends, and Tab closes the panel
+ * ArrowUp/ArrowDown move between items and stop at the ends (A12: wrapping past a disabled Move down landed on Move up), Home and End jump to the ends, and Tab closes the panel
  * with focus back on its toggle so the browser's Tab continues from there instead of dropping to <body>. */
 
 /** The enabled items of an open panel, in DOM order. */
@@ -16,9 +16,9 @@ export function nextMenuIndex(key: string, current: number, count: number): numb
   if (count <= 0) return null;
   switch (key) {
     case "ArrowDown":
-      return current < 0 ? 0 : (current + 1) % count;
+      return current < 0 ? 0 : Math.min(current + 1, count - 1);
     case "ArrowUp":
-      return current < 0 ? count - 1 : (current - 1 + count) % count;
+      return current < 0 ? count - 1 : Math.max(current - 1, 0);
     case "Home":
       return 0;
     case "End":

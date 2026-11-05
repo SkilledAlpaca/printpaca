@@ -13,7 +13,7 @@ You don't need a CA listing to run printpaca on Unraid.
    https://raw.githubusercontent.com/SkilledAlpaca/printpaca/main/packaging/unraid/printpaca.xml
    ```
 
-3. Set **ADMIN_PASSWORD**. The template requires it, because printpaca's default, a random password written to the container log, is easy to miss on Unraid.
+3. Set **ADMIN_PASSWORD**. The template requires it, because printpaca's default, a random password written to the container log, is often missed on Unraid.
 4. Before you click **Apply**, note the appdata path for **Config** (`/mnt/user/appdata/printpaca` by default). Unraid creates the directory as root when you add the container. The image runs as UID/GID 65532 (the Dockerfile is the source of truth) and has no shell to fix ownership, so run this in a terminal on the Unraid host:
 
    ```

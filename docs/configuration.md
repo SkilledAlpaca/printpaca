@@ -8,7 +8,19 @@ If you haven't run printpaca yet, see [Getting started](getting-started.md).
 
 ## The Settings tab, section by section
 
-Open **Settings** in the sidebar. A jump nav at the top links to each section below.
+Open **Settings** in the sidebar. A jump nav at the top links to each card, and a card with a problem is marked in the nav. These are the cards, in order:
+
+| Card | Where it's documented |
+|---|---|
+| Account | [Users](#users) (your own password) |
+| Currency, Pricing, Time zone | The sections below |
+| Fee schedules, Hardware, Defaults | The sections below |
+| Business identity | [Business identity](#business-identity) |
+| Storefront | [Storefront](#storefront) |
+| Custom CSS, Email | The sections below |
+| Integrations | [Optional integrations](#optional-integrations) |
+| Users, Features | The sections below |
+| More settings, Data, Diagnostics | [More settings and Data](#more-settings-and-data) and [Diagnostics](#diagnostics) |
 
 ### Currency
 
@@ -28,7 +40,7 @@ The **Time zone** card sets the top-level `timezone` key: an IANA name such as `
 
 ### Fee schedules
 
-Marketplace fee breakdowns (a flat listing fee plus a percentage of revenue, for example), so a quote can show what a marketplace like Etsy or eBay would actually take. Built-in schedules can't be removed, but you can add your own with the **Add fee schedule** button.
+Marketplace fee breakdowns (a flat listing fee plus a percentage of revenue, for example), so a quote can show what a marketplace like Etsy or eBay would take. Built-in schedules can't be removed, but you can add your own with the **Add fee schedule** button.
 
 ### Hardware
 
@@ -44,8 +56,17 @@ Your business name, logo, contact details, tax ID, and how many days a quote sta
 
 You can paste a logo URL, or upload a PNG, JPG, WebP, or SVG image of up to 64 KB with a preview before you save. An uploaded logo is stored in `config.yaml` as a `data:` URL in `quote.logoUrl`, so backups and the demo carry it with the rest of your settings. An uploaded logo appears in the app and on printed quotes and invoices, but emails show your business name instead, because mail clients don't display embedded images; to show a logo in emails, paste a public `https://` URL. Larger pictures are shrunk to fit; an SVG over the limit is refused. **Remove logo** clears it.
 
-**Order reference prefix** (`quote.referencePrefix`) starts the short reference a customer sees after sending an order or estimate, such as `HL-1001`, so they can quote it by phone. Leave it blank to use your business initials: two or more words give their initials (Hot Layer Prints becomes `HLP`), one word gives its first three letters, and no usable letters gives `REQ`. Set it to 1 to 10 letters or digits to choose your own. The numbers count up per shop, starting at 1001, across orders and estimates together. Changing the prefix keeps the count going under the new prefix, and references already issued keep the prefix they had. The Requests tab still identifies each request by its long internal ID.
-The business name and logo also appear on the shop, and in the admin app: the sidebar (and the top bar on a phone) shows them in place of the printpaca name and mark, the browser tab title ends with the name, and a logo that fails to load falls back to the printpaca mark. They update when you save Settings, with no reload. In the admin app, the name and logo are a link to the first tab (usually New quote). The shared footer on every customer page shows your **email**, **phone**, and **address** when you set them here (the `quote.email`, `quote.phone`, and `quote.address` keys in `config.yaml`), as a `mailto:` link, a `tel:` link, and plain text. The footer also shows a **Staff sign-in** link when [`site.staffLink`](#site-settings) or `site.adminUrl` provides one. The tax ID, payment instructions, and terms text stay private.
+#### Order reference prefix
+
+`quote.referencePrefix` starts the short reference a customer sees after sending an order or estimate, such as `HL-1001`, so they can quote it by phone. Leave it blank to use your business initials: two or more words give their initials (Hot Layer Prints becomes `HLP`), one word gives its first three letters, and no usable letters gives `REQ`. Set it to 1 to 10 letters or digits to choose your own. The numbers count up per shop, starting at 1001, across orders and estimates together. Changing the prefix keeps the count going under the new prefix, and references already issued keep the prefix they had. The Requests tab still identifies each request by its long internal ID.
+
+#### Where your branding appears
+
+- **The admin app.** The sidebar (and the top bar on a phone) shows your name and logo in place of the printpaca name and mark, and the browser tab title ends with the name. A logo that fails to load falls back to the printpaca mark. Both update when you save Settings, with no reload. The name and logo link to the Dashboard, or to the first tab in the sidebar when the Dashboard is hidden or not granted to the signed-in user.
+- **The shop.** The shop header shows your name and logo. The shared footer on every customer page shows your **email**, **phone**, and **address** when you set them here (the `quote.email`, `quote.phone`, and `quote.address` keys), as a `mailto:` link, a `tel:` link, and plain text. `shop.showContact` can hide them. The footer also shows a **Staff sign-in** link when [`site.staffLink`](#site-settings) or `site.adminUrl` provides one.
+- **Stays off the shop.** The tax ID, payment instructions, and terms text never appear on the shop. They appear only in the admin app and on documents you print or send.
+
+![The Business identity card in Settings: business name, email, phone, tax ID, order reference prefix, an uploaded logo with its preview, address, payment instructions, and terms text](screenshots/business-identity.png)
 
 ### Custom CSS
 
@@ -70,7 +91,7 @@ Turning multi-user mode off doesn't delete employee accounts. Their logins stop 
 
 Once multi-user mode is on, this card also shows:
 
-- A table of employee accounts: username, a checkbox grid of the ten grantable tabs (New quote, Quotes, Requests, Invoices, Items, Clients, Dashboard, Filament, Electricity, Printers), a disable toggle, a reset password button, and delete (with a confirmation step). This set differs from the [Features](#features) list: Guide is open to every signed-in user and Settings is admin-only, so neither appears here, while New quote is grantable here.
+- A table of employee accounts: username, a checkbox grid of the ten grantable tabs (New quote, Quotes, Requests, Invoices, Shop items, Clients, Dashboard, Filament, Electricity, Printers), a disable toggle, a reset password button, and delete (with a confirmation step). This set differs from the [Features](#features) list: Guide is open to every signed-in user and Settings is admin-only, so neither appears here, while New quote is grantable here.
 - An **Add employee** form: a username (lowercase letters, digits, `.`, `_`, `-`), a password (at least 8 characters), an optional Cloudflare Access email, and the same checkbox grid.
 - An optional **Email** per employee and a **Your Cloudflare Access email** field (`users.accessAdminEmail`), used only when you reach printpaca through [Cloudflare Access](#cloudflare-access-remote-admin-access). The admin email signs in as the admin; an employee's email signs in as that employee. Emails are stored lowercase, must look like an address (at most 254 characters), and each employee email must be unique. A person whose email matches nobody sees the normal sign-in screen.
 
@@ -80,11 +101,13 @@ Some things stay admin-only no matter what you grant: this Settings tab, user ma
 
 One narrow exception: the **Filament**, **Electricity**, and **Printers** tabs each embed a small settings form that has to read the full configuration to render. An employee granted one of those tabs can load its form but can only save keys that tab covers. Filament covers materials and the filament diameter field on Printers. Electricity covers energy rates. Printers covers the printer and preset lists, except a printer's filament diameter. Saving any other key, such as Business identity, Email, or Currency, is rejected.
 
+When an employee loads `/admin/api/config` or `/admin/api/settings`, the server leaves out the `smtp` block, the three integration URLs (`integrationsUrls`), and `users.accessAdminEmail`. Employees still see whether the Email buttons can work, because `/admin/api/config` carries a `smtpConfigured` flag (`true` when `smtp.host` is set) for every role. Read that flag instead of `smtp.host` in scripts that call the API as an employee.
+
 With multi-user mode on, quotes, invoices, payments, clients, and items each show who created and last updated them ("Created by sam · Updated by admin") in their detail views. Records saved before you turned on multi-user mode show no attribution; new records are always stamped.
 
 ### Features
 
-Checkboxes for which of the ten optional tabs (Quotes, Requests, Invoices, Items, Clients, Dashboard, Filament, Electricity, Printers, and Guide) show up in the sidebar. The New quote and Settings tabs can't be hidden.
+Checkboxes for which of the ten optional tabs (Quotes, Requests, Invoices, Shop items, Clients, Dashboard, Filament, Electricity, Printers, and Guide) show up in the sidebar. The New quote and Settings tabs can't be hidden.
 
 Hiding a tab only removes it from navigation; its data stays intact. If you hide **Requests** while your [public quote page](#public-quote-page) is on, submissions keep arriving unseen until you re-enable it, so the page shows a warning.
 
@@ -124,6 +147,8 @@ In schedule mode you edit the tariff on the Electricity tab (or Settings):
 - **Holidays** are dates written `YYYY-MM-DD`, one per line, up to 100. A holiday uses the weekend schedule.
 - **Seasons** (up to 6) each have a name and the months they cover. Every month from 1 to 12 must belong to exactly one season.
 - Each season has a **Weekday** and a **Weekend and holidays** schedule. Each has a base period name and rate, and up to 8 windows with a name, a start, an end (`24:00` is allowed), and a rate. Windows in one schedule can't overlap. Hours outside every window use the base rate.
+- Window start and end times are time fields on a 15-minute step. An end of `00:00` (stored as `24:00`) means the end of the day.
+- **Same schedule all year** (`sameWindowsAllYear` in `config.yaml`) gives every season the same base period names and the same windows (name, start, and end) for weekday and for weekend and holidays, and leaves only the rates to differ by season. When it's on, the editor shows one set of windows, then each season's months and rates. If your seasons have different windows when you turn it on, printpaca asks whether to use the first season's windows for every season before it changes anything. Turning it off keeps each season's own copy. The flag doesn't change how a print is priced: it only constrains what you can save, and it is left out of `config.yaml` when it's off.
 - A window that runs past midnight, such as 22:00 to 06:00, is accepted. The editor explains that it will be split, and Save turns it into two windows with the same name and rate (22:00 to 24:00 and 00:00 to 06:00), because the server needs each window's start before its end.
 
 The editor writes a problem in your terms, for example "Season 2 › Weekday › Window 1: enter a time like 16:00", marks the fields that need attention, and keeps **Save changes** disabled until the schedule is valid.
@@ -132,7 +157,7 @@ Times are wall-clock times in the [time zone](#time-zone) from Settings.
 
 **Load SCE TOU-D-4-9PM example** fills in the structure of Southern California Edison's TOU-D-4-9PM plan: a summer season (June to September) and a winter season (October to May), each with weekday and weekend hours, an on-peak window from 4 to 9 pm, and a winter super off-peak window from 8 am to 4 pm. The rates it loads are examples, not SCE's published rates, which change. Check every rate against your own bill. If you already have a schedule, printpaca asks you to confirm before it replaces it. The structure comes from [SCE's time-of-use plans page](https://www.sce.com/save-money/rates-financing/residential-rate-plans/time-of-use-plans).
 
-On **New quote**, the **Print start (order)** field defaults to the next default print start. Each part has an optional **Print start (this part)** field. The quote saves the starts you used, so a reopened quote prices the same. On the **Electricity** tab, the calculator takes a start, a duration, and the printer power, and shows how the hours split across periods.
+On **New quote**, the **Print start (order)** field defaults to the next default print start. **Use the next 22:00** (the default start time shown) sets it to the next occurrence of that time in your shop time zone, and a line under the button says what it set, or that the field already held that time. Each part has an optional **Print start (this part)** field. The quote saves the starts you used, so a reopened quote prices the same. On the **Electricity** tab, the calculator takes a start, a duration, and the printer power, and shows how the hours split across periods.
 
 The same keys in `config.yaml`:
 
@@ -157,7 +182,9 @@ energy:
             - { name: Mid-peak, start: "16:00", end: "21:00", rate: 0.44 }
 ```
 
-printpaca rejects a schedule with a month in no season or in two seasons, overlapping windows, a start that isn't before its end, a time that isn't `HH:MM`, a negative rate, or more than 6 seasons, 8 windows per schedule, or 100 holidays. In `flat` and `tou` mode the schedule isn't used, and an empty one is accepted.
+To give every season the same windows, add `sameWindowsAllYear: true` under `schedule` and write the same names, starts, and ends in each season. Only `baseRate` and each window's `rate` can differ.
+
+printpaca rejects a schedule with a month in no season or in two seasons, `sameWindowsAllYear: true` with seasons whose base period names or windows (name, start, end) differ, overlapping windows, a start that isn't before its end, a time that isn't `HH:MM`, a negative rate, or more than 6 seasons, 8 windows per schedule, or 100 holidays. In `flat` and `tou` mode the schedule isn't used, and an empty one is accepted.
 
 ### Diagnostics
 
@@ -184,7 +211,7 @@ The Settings page can test a URL against Spoolman before you save it. A passing 
 
 The Settings page can test a URL against Moonraker before you save it, for example "Connected to voron (Klipper ready). 20 recent jobs." When the test finds a printer host name that isn't already the name of one of your printers, it asks "Add printer '<name>' to your printers?". **Add printer** saves a printer with that name and the standard starting values (250 W, 400 purchase cost, 4000 hour lifespan, 1.75 mm filament), then links to the Printers tab so you can check the wattage, cost, and lifespan. **Not now** hides the question until you change the URL.
 
-Set `FLUIDD_URL` (or the Settings page's Fluidd field) to add a **Fluidd** link to the sidebar that opens your printer's Fluidd interface in a new tab. This is link-only: printpaca never sends anything to it, so there's no test button.
+Set `FLUIDD_URL` (or the Settings page's Fluidd field) to add a **Fluidd** link to the sidebar that opens your printer's Fluidd interface in a new tab. This is link-only: printpaca never sends anything to it, so there's no test button. Only admin sign-ins see the link, because employees don't receive the integration URLs; their screens use the `integrations.spoolman` and `moonraker` flags and the permission-gated proxies below.
 
 The Spoolman and Moonraker proxies exist so the browser needs no CORS configuration against them. Spoolman has no authentication of its own, so the proxy is the only gate in front of it. Each proxy enforces an exact method and path allowlist and rejects everything else before any request reaches the upstream service:
 
@@ -221,7 +248,7 @@ Nothing outside `/admin/` serves the admin app or its API, so a single Cloudflar
 
 ### Site settings
 
-The `site` section of `config.yaml`, also under **Storefront** on the Requests tab, controls the root of `PORT`. A change applies without a restart.
+The `site` section of `config.yaml`, also under **Where the shop appears** in **Settings › Storefront**, controls the root of `PORT`. A change applies without a restart.
 
 | Key | Default | Effect |
 |---|---|---|
@@ -231,6 +258,106 @@ The `site` section of `config.yaml`, also under **Storefront** on the Requests t
 
 `GET /api/public/config` returns the result as `staffUrl`, computed per listener: on `PORT` it's `/admin/` when `site.staffLink` is `true` and empty otherwise, and on `PUBLIC_PORT` it's `site.adminUrl`. The shop footer shows the link only when `staffUrl` isn't empty.
 
+## Storefront
+
+The `shop` section of `config.yaml` controls what the customer-facing shop offers and how it reads. Every default keeps the shop as it was in v1.1, so an upgrade changes nothing until you opt in. A change applies without a restart.
+
+Edit these settings in **Settings › Storefront**, or in `config.yaml`. The card has these groups, in order:
+
+| Group | What it holds |
+|---|---|
+| What the shop offers | **Item gallery** and **Custom estimates** checkboxes, **Opening view**, **Item order**, and **Largest order quantity**. |
+| Pause the shop | **Pause the shop (vacation mode)**, **Message on the Closed page**, and a live preview of the Closed page. |
+| Wording | **Browser tab title**, **Shop heading**, **Intro text**, **Announcement**, **Shipping note**, and **Turnaround note**, with a preview under the intro and announcement. |
+| Item display | **Show stock counts**, **Show "from" prices**, and **Show my email, phone, and address in the shop**. |
+| Hero image | Upload, replace, and remove, with required alt text. |
+| Accent color | A color field, a picker, and light and dark swatches. |
+| Footer links | Up to six links. |
+| Where the shop appears | The [`site` settings](#site-settings). |
+
+The **View shop** link at the top of the card opens the live shop in a new tab. It shows saved settings, so save first. Categories and featured items live on the **Shop items** tab; see [Categories and featured items](#categories-and-featured-items).
+
+Only the hero image saves the moment you upload or remove it. Every other change waits for **Save**.
+
+![The Storefront card in Settings: shop toggles, the Closed page preview, wording with live announcement preview, the hero image, accent color swatches for light and dark mode, and footer links](screenshots/storefront.png)
+
+![The customer shop: an announcement, a hero image, category chips, a featured item in the gallery, and the footer with contact details and links](screenshots/shop.png)
+
+| Key | Default | Effect |
+|---|---|---|
+| `shop.maxOrderQty` | `100` | The largest quantity one estimate request or gallery order may carry, from 1 to 10,000. |
+| `shop.customEstimates` | `true` | Offers the custom estimate flow. When `false`, the shop hides the **Custom estimate** switch, the "Need something custom?" card, and the estimate form, and the server refuses estimate previews and submissions with a plain `404`. Materials keep their **Public** flag for when you turn it back on. |
+| `shop.gallery` | `true` | Offers the item gallery. When `false`, the shop shows only the custom estimate, `GET /api/public/items` returns no items, and the server refuses item orders with a plain `404`. |
+| `shop.acceptingOrders` | `true` | When `false` (vacation mode), every shop page shows the [Closed page](#closed-page), and the server refuses new item orders, estimate previews, and estimate submissions with a `503`. The response body carries `paused: true` and the message in `error` and `pausedMessage`. v1.1 answered `403`. Requests you already have are unaffected, and you can still work them. |
+| `shop.pausedMessage` | empty | Up to 300 characters, for example `Closed until January 5`. The Closed page shows it under its heading. When it's empty, the page shows no message, and the `503` body and `GET /api/public/config` use "We aren't taking new orders right now." |
+| `shop.defaultView` | `gallery` | `gallery` or `estimate`: what the shop opens on when both are on. A link to `/#/` always opens the gallery. |
+| `shop.pageTitle` | empty | The browser tab title, plain text up to 70 characters. Empty uses your business name, and then "Shop". The server writes it into the shop page's `<title>` on every load, and inner pages put their own name first, for example "Articulated Dragon · Alpaca Prints" or "Closed · Alpaca Prints". |
+| `shop.heading` | empty | A heading above the intro, up to 120 characters. Empty shows only the business name. |
+| `shop.announcement` | empty | A notice at the top of the shop, up to 300 characters on one line, such as a holiday shipping cutoff. Accepts [light markdown](#light-markdown-in-the-intro-and-announcement). |
+| `shop.heroImage` | none | A banner image with required alt text (up to 200 characters). Uploaded with `POST /admin/api/shop/hero-image?alt=<text>` (a JPEG, PNG, or WebP up to 5 MiB, admin only, raw image as the request body) and removed with `DELETE /admin/api/shop/hero-image`. It is stored like an item photo and served from `/item-images/`. A settings save keeps the stored file and takes only the alt text. The shop hides the banner on short screens so items stay in view. |
+| `shop.accentColor` | empty | A `#rrggbb` color for shop buttons and links. See [Accent color](#accent-color). Empty uses the theme accent. |
+| `shop.showStock` | `true` | Shows stock counts on items. |
+| `shop.showFromPrice` | `true` | Shows "from" prices on items with options. |
+| `shop.itemSort` | `manual` | `manual` (the order in Shop items), `name`, or `price`. Featured items come first in every mode. |
+| `shop.footerLinks` | none | Up to 6 links, each with a `label` (up to 40 characters) and an `https://` `url`. Each opens in a new tab with `rel="noopener noreferrer"`. **Staff sign-in** stays controlled by [`site.staffLink`](#site-settings). The footer also ends with a fixed "Powered by printpaca" link to printpaca.com that you can't turn off in Settings. |
+| `shop.showContact` | `true` | Shows your email, phone, and address in the shop. When `false`, `GET /api/public/config` doesn't serve them at all. |
+| `shop.shippingNote` | empty | Up to 300 characters, replacing "Shipping, if any, is confirmed by email." next to the total on the item order panel and the estimate form. Empty keeps the default wording. |
+| `shop.turnaroundNote` | empty | Up to 300 characters, such as "Most orders ship in 5 business days." The shop shows it under the total and again on the order and estimate confirmations. Empty shows nothing extra. |
+
+Every `shop` text field is plain text on one line: line breaks and other control characters are rejected. Only the intro and the announcement render [light markdown](#light-markdown-in-the-intro-and-announcement); the other fields show markup as typed. The shop never renders owner text as HTML.
+
+### Light markdown in the intro and announcement
+
+The **Intro text** (`publicQuotes.introText`, up to 500 bytes, shown at the top of the shop) and the **Announcement** (`shop.announcement`) accept a small markdown subset. The Storefront card previews both as customers see them.
+
+| Write | Result |
+|---|---|
+| `**bold**` | **Bold** text. |
+| `*italic*` | *Italic* text. |
+| `[text](https://example.com)` | A link. Only `https://` addresses with a host and `mailto:` addresses become links. |
+| `- item` at the start of a line | A bullet list item. |
+| A blank line | A new paragraph. |
+| A single line break | A line break inside the paragraph. |
+
+Anything else stays literal text: underscores, headings, raw HTML, and other URL schemes. Markers nest up to four levels deep, and a link can't contain another link. The announcement is limited to one line, so only the inline markers apply to it in practice. The page's `<meta name="description">` uses the intro with the markup stripped.
+
+### Closed page
+
+While `shop.acceptingOrders` is `false`, every address of the shop shows a Closed page: your logo and business name, the heading "We're closed right now", your message, and your email, phone, and address. The browser tab title becomes "Closed · <shop title>". The one exception is the confirmation of an order or estimate the visitor just placed, which stays visible with a note above it.
+
+If you pause the shop while a visitor is filling in a form, their submit is refused. The Closed page opens with "Your order wasn't placed." (or the estimate equivalent), and the page stores what they typed in that browser tab's session storage. The details come back after the shop reopens and the visitor reloads the page. The Storefront card previews the page, with your accent color applied.
+You can't turn off both the gallery and custom estimates. Settings rejects that combination with a message; to stop taking orders, turn off **Accepting orders** instead.
+
+The server checks `customEstimates`, `gallery`, and `acceptingOrders` on every submission, so hiding a control in the page is never the only gate. A feature that's switched off answers `404` before vacation mode is considered, so a refusal never hints that a feature exists.
+
+An old `#/estimate` link, when custom estimates are off, opens the gallery with the note "Custom estimates aren't offered right now." and your email and phone when they're shown.
+
+`GET /api/public/config` returns the public-safe subset as `shop`. It never carries anything you haven't chosen to show.
+
+### Accent color
+
+`shop.accentColor` must stay readable on the shop backgrounds in both color schemes. The check uses WCAG 2.2 AA contrast, 4.5:1, for two pairs:
+
+- **Link text:** the accent as text on the shop background, the card color, and the tinted card color. The lowest ratio counts.
+- **Button:** the accent as a button background with its label. printpaca picks white or near-black for the label, whichever contrasts more.
+
+If the color you pick fails in the light scheme, Settings rejects it, shows the measured ratios, and suggests the nearest color that passes (same hue and saturation, adjusted lightness). A color that passes gets a dark-mode variant that printpaca derives with the same rule against the dark backgrounds, so you pick one color only. The shop uses the label color the check returns. A color changed in `config.yaml` is checked the same way at startup and when you save.
+
+### Categories and featured items
+
+Group items into categories to give the shop category chips and `/#/category/<slug>` addresses. An item has zero or one category. A category has a name, a slug (lowercase letters, numbers, and single hyphens, up to 40 characters, unique), a position, and a **hidden** flag. A slug left empty is made from the name. Categories need the same permission as Shop items:
+
+| Request | Effect |
+|---|---|
+| `GET /api/categories` | Lists categories in shop order with an `itemCount` each. |
+| `POST /api/categories` | Creates one from `name`, optional `slug`, `sortOrder`, and `hidden`. A repeated slug or name is a `409`. Up to 50 categories. |
+| `PUT /api/categories/{id}` | Updates one. An empty slug keeps the stored slug. |
+| `DELETE /api/categories/{id}` | Deletes the category and unlinks its items, which stay as they were otherwise. |
+
+Items take `categoryId` (empty for none) and `featured` on `POST` and `PUT /api/items`. A `PUT` that leaves them out keeps the stored values, and the item `version` check works as before. Featured items appear first within the selected view.
+
+`GET /api/public/items` returns each public item with its `category` (`slug` and `name`, or `null`) and `featured`, plus `categories`: the visible categories that have at least one public item. An item in a hidden category stays in the shop under **All**, with no category. `GET /api/export` includes `categories` and each item's `categoryId` and `featured`. There's no import endpoint.
+
 ## Public quote page
 
 The main port already serves the shop (see [Routing and hostnames](#routing-and-hostnames)). Set `PUBLIC_PORT` as well to run a second, customer-only listener for people who want isolation: the admin app is never served there, so you can expose that port without exposing `/admin/`. Only the routes below are reachable through it.
@@ -239,8 +366,8 @@ The main port already serves the shop (see [Routing and hostnames](#routing-and-
 
 **Routes.**
 
-- `GET /` and `GET /order`: both serve the shop, so the storefront is the landing page and old `/order` links keep working. It shows your business name, logo, and intro text at the top, the item gallery and estimate page, and a **Staff sign-in** link in the footer when `staffUrl` is set. A visitor picks a material you opted in (`materials[].public: true`), drops a G-code file or enters weight and time, and gets a live price.
-- `GET /api/public/config`: display data only: materials, currency, upload limits, demo-mode flag, business name, logo, email, phone, and address, intro text, and the printer's filament diameter (for client-side weight estimation). No cost-model field (rate, margin, markup, fee schedule, or printer cost input) is in the payload.
+- `GET /` and `GET /order`: both serve the shop, so the storefront is the landing page and old `/order` links keep working. The server fills the page head from your saved settings on every load: the `<title>` (see `shop.pageTitle`), a `<meta name="description">` made from the intro text, and an embedded copy of the public config, so a refresh never flashes default text. The page shows your business name, logo, and intro text at the top, the item gallery and estimate page, and a **Staff sign-in** link in the footer when `staffUrl` is set. A visitor's light or dark choice, from the theme toggle in the shop header, lives in the `pp_theme` cookie, which the server reads so the first paint already uses it. A visitor picks a material you opted in (`materials[].public: true`), drops a G-code file or enters weight and time, and gets a live price.
+- `GET /api/public/config`: display data only: materials, currency, upload limits, demo-mode flag, business name, logo, email, phone, and address, intro text, `maxOrderQty`, the [`shop`](#storefront) subset, `staffUrl`, and the printer's filament diameter (for client-side weight estimation). No cost-model field (rate, margin, markup, fee schedule, or printer cost input) is in the payload.
 - `GET /api/public/items` and `GET /item-images/{file}`: the [item gallery](#items-gallery).
 - `POST /api/public/quote/preview`: returns the price and the shipping charge (`pricing.defaultShippingCharge`) the page displays, computed by the server. It has its own per-IP rate limit, separate from submissions, so typing doesn't spend a visitor's submission budget.
 - `POST /api/public/quote-request` and `POST /api/public/item-order`: the two ways a visitor's request lands in your **Requests** tab for manual review. Both answer `201` with the request's `id`, its short `reference` (see [Business identity](#business-identity)), and `priceCents`. The estimate also returns `needsPrintTime`.
@@ -316,7 +443,8 @@ An option group is one choice the customer makes, such as Color or Size. An item
 - **Customer must choose one** is on by default. A group with it on must be answered before the customer can order: the order panel shows a "Choose *label*" placeholder and blocks the order until the customer picks a choice. With it off, the group starts on **None**, which adds nothing to the price.
 - Each option has a **price adjustment**, positive or negative. The price is the item price plus the adjustments of the selected options, times the quantity. The server computes it, and the cheapest possible selection can't make the price negative.
 - Each option can have a **photo**. The order panel shows the photo of the option the customer changed most recently, or the item photo when none of the selected options has one. The gallery card always shows the item photo. Photos upload after you save the item, the same as the item photo. A new option shows a note until you save.
-- **Move up** and **Move down** reorder groups and options. The customer sees them in this order, and focus stays on the button you pressed.
+- Each group and choice has a **More actions** menu (the ⋯ button) with **Move up**, **Move down**, and **Remove**. The customer sees groups and choices in this order, and focus returns to the ⋯ button after a move. Removing a group or choice you already saved asks you to confirm, and the removal takes effect when you save the item. A row you haven't saved yet has a plain **Remove** button instead of the menu.
+- **Add choice** adds a choice to a group, and **Add group** adds a group to the item.
 
 The server gives each group and option a stable ID. Saving keeps the IDs and photos of the rows you edit, rename, or reorder, and gives new rows new IDs.
 
@@ -329,7 +457,7 @@ Upgrading from an earlier version converts each item's single option list into o
 Each item uses one of two stock modes:
 
 - **Ready to print (made to order)**: the default. The item has no fixed quantity; every order is treated as a new print job for you to plan around.
-- **In stock (fixed quantity)**: the item has an on-hand quantity you set. The gallery shows how many are left, and by default an order can't request more than that quantity, unless you check the item's **Accept orders beyond stock** checkbox, which skips the stock check on the public order path entirely (bounded only by the 100-unit-per-order cap that applies to every item order). Stock only decrements when you finalize the order in the Requests tab (see [Ordering flow](#ordering-flow) below), not when the customer submits it, so an item can't be sold out from under you by a request you haven't reviewed yet.
+- **In stock (fixed quantity)**: the item has an on-hand quantity you set. The gallery shows how many are left, and by default an order can't request more than that quantity, unless you check the item's **Accept orders beyond stock** checkbox, which skips the stock check on the public order path entirely (bounded only by the per-order cap, `shop.maxOrderQty`, 100 by default, that applies to every item order). Stock only decrements when you finalize the order in the Requests tab (see [Ordering flow](#ordering-flow) below), not when the customer submits it, so an item can't be sold out from under you by a request you haven't reviewed yet.
 
 ### The public flag
 
@@ -337,13 +465,15 @@ An item only appears on the public gallery once you check **Public** in its form
 
 ### Ordering flow
 
-The public gallery shares the shop page at `/order` with the [public quote page](#public-quote-page) (on `PORT`, and on `PUBLIC_PORT` when set): a visitor can switch between browsing items and requesting a custom quote from the same page. Picking an item, an option in each required group, and a quantity, then submitting, creates a new entry in your **Requests** tab, priced entirely server-side so nothing the visitor's browser sends is trusted for money. From there, an item order behaves like any other request: review it, then finalize it once you've confirmed you can fulfill it. Finalizing an order against an **in stock** item is what decrements that item's stock quantity.
+The public gallery shares the shop page at `/` (also served at `/order`) with the [public quote page](#public-quote-page) (on `PORT`, and on `PUBLIC_PORT` when set): a visitor can switch between browsing items and requesting a custom quote from the same page. Picking an item, an option in each required group, and a quantity, then submitting, creates a new entry in your **Requests** tab, priced entirely server-side so nothing the visitor's browser sends is trusted for money. From there, an item order behaves like any other request: review it, then finalize it once you've confirmed you can fulfill it. Finalizing an order against an **in stock** item is what decrements that item's stock quantity.
 
 Item orders have their own per-IP limit, separate from estimate requests (see [Operational limits](#operational-limits)): 10 orders per hour.
 
 Each item has its own address in the shop, `/#/item/<id>`, so a visitor can use the browser's Back button, reload the page, or share the link. The custom estimate form is at `/#/estimate`. These addresses use the part of the URL after `#`, which the server never sees, so no routing setup is needed. If a link points at an item that no longer exists, or at a confirmation that is gone (for example, in a new browser tab), the visitor returns to the gallery with a short note.
 
-After an order, the visitor sees the order's short reference (see [Business identity](#business-identity)), what happens next, and an **Order another item** button. The item page shows the stock on hand, and a note that shipping, if any, is confirmed by email.
+While an option can raise the price, the gallery card and the order panel show "from" before the price (turn this off with `shop.showFromPrice`). Once the customer picks every required option, the order panel shows the exact unit price with each surcharge itemized. The item page shows the stock on hand when `shop.showStock` is on, and a note that shipping, if any, is confirmed by email (replace it with `shop.shippingNote`). Pressing Esc on an item goes back to the gallery, but never discards a form that already has choices, a quantity, or a note.
+
+After an order, the visitor sees the order's short reference (see [Business identity](#business-identity)) with a **Copy reference** button, what happens next (plus `shop.turnaroundNote` when you set one), and two links: **Back to gallery** and **Back to** the item they ordered.
 
 ## Quoting from files
 
@@ -367,8 +497,8 @@ Every numeric cap is enforced on the server and mirrored in `config/config.schem
 |---|---|---|---|
 | `pricing.markupMultiplier` (`maxMarkupMultiplier`) | 1000 | 10000 | Owner request. A 10000x markup is extreme but legal. Saturating cent arithmetic stops overflow; see [Input bounds](formulas.md#input-bounds). |
 | Printer `watts` (`maxPrinterWatts`) | 5000 | 10000 | Industrial and multi-printer rigs exceed 5 kW. |
-| Gallery item order quantity (`maxItemOrderQty`), also the invoice item-line quantity | 100 | 10000 | Bulk orders. Stock still caps an in-stock item without backorder. |
-| Public quote and request quantity (`maxPublicQuoteQty`) | 1000 | 10000 | Production runs. The 32 MiB upload cap and rate limits still guard abuse. |
+| Invoice item-line quantity (`maxItemOrderQty`) | 100 | 10000 | Bulk counter sales. Stock still caps an in-stock item without backorder. |
+| Public order and estimate quantity (`shop.maxOrderQty`) | 100 for gallery orders, 1000 for estimates | 100 by default, 1 to 10000 | You set it in [Storefront](#storefront). Stock still caps an in-stock item without backorder, and the 32 MiB upload cap and rate limits still guard abuse. |
 | `invoicing.salesTaxPct` and invoice `taxBp` | 30% (3000 bp) | 100% (10000 bp) | A percentage can't mathematically exceed 100. |
 | `invoicing.dueDays` | 365 | 10000 | About 27 years. Long net terms are plausible, and the date math has no limit near it. |
 | `pricing.marginPct` | 99.9 | 99.9 (kept) | Mathematical. The price is cost / (1 - margin), which is undefined at 100. |
@@ -406,7 +536,7 @@ printpaca merges `config.yaml` over the built-in defaults:
 
 At startup the server validates the merged configuration and, on a problem, exits with a path-level error such as `defaults.material: "abs" not in materials`. These numeric fields have hard range checks that crash-loop the container when violated: `currency.decimals` (0-4), `pricing.marginPct` (0-99.9), `pricing.markupMultiplier` (0-10000), material `density` (> 0) and `wastePct` (0-100), printer `filamentDiameterMm` (> 0), `defaults.quantity` (>= 1), `invoicing.salesTaxPct` (0-100), `invoicing.dueDays` (0-10000), hardware `unitCost` (>= 0), and `smtp.port` (1-65535, checked only when `smtp.host` is set). [`config.schema.json`](../config/config.schema.json) lists the complete set. A schedule that breaks the rules in [Time-of-use schedule](#time-of-use-schedule) also fails at startup. Other rate-like values, such as a negative flat energy rate or labor rate, are accepted at startup; the calculator shows a field warning on the affected line. `defaults.failureRatePct` and each preset `failureRatePct` also have a hard range check (0-90).
 
-The Settings page edits this configuration through `GET`/`PUT /admin/api/settings` with the same validation. A save writes `config.yaml` as sparse overrides, keeps the previous file as `config.yaml.bak`, drops comments, and applies immediately with no restart.
+The Settings page edits this configuration through `GET`/`PUT /admin/api/settings` with the same validation. `PUT` takes the whole configuration as `{"config": {...}}`, and answers `422` with `site: required` or `shop: required` when the body leaves out either object, because a missing object would otherwise reset it to zero values. A script written for v1.1 that sends a full config needs to add the `shop` block (copy it from `GET`). A save writes `config.yaml` as sparse overrides, keeps the previous file as `config.yaml.bak`, drops comments, and applies immediately with no restart.
 
 ## Environment variables
 
@@ -456,7 +586,7 @@ With authentication enabled:
   - **No Access, authentication disabled** (`ADMIN_PASSWORD=`): the request gets `403`. Set `ADMIN_PASSWORD` or configure Access.
 
   Requests without a Cloudflare header are unchanged.
-- Every `POST`, `PUT`, or `PATCH` to `/admin/api/*` with a body needs `Content-Type: application/json` or gets `415`. The exception is `POST /admin/api/items/{id}/image`, which needs `image/jpeg`, `image/png`, or `image/webp`. Separately, any unsafe method (`POST`, `PUT`, `PATCH`, `DELETE`) with an `Origin` header matching neither the request's `Host` nor an `ALLOWED_HOSTS` entry gets `403`. Both checks run whether or not authentication is enabled, so scripts that call the admin API with `curl` need the JSON content type on every body, and the path prefix `/admin/api/`.
+- Every `POST`, `PUT`, or `PATCH` to `/admin/api/*` with a body needs `Content-Type: application/json` or gets `415`. The exceptions are the image uploads (`POST /admin/api/items/{id}/image`, the same for an option's image, and `POST /admin/api/shop/hero-image`), which need `image/jpeg`, `image/png`, or `image/webp`. Separately, any unsafe method (`POST`, `PUT`, `PATCH`, `DELETE`) with an `Origin` header matching neither the request's `Host` nor an `ALLOWED_HOSTS` entry gets `403`. Both checks run whether or not authentication is enabled, so scripts that call the admin API with `curl` need the JSON content type on every body, and the path prefix `/admin/api/`.
 
 **Recipient restriction.** Emailing a quote or invoice (`POST /admin/api/quotes/send`, `POST /admin/api/invoices/{id}/send`) accepts only a recipient that matches a client on file, or an invoice's own saved client email, never an arbitrary address. This stops either endpoint from relaying mail to a third party through your SMTP credentials. `POST /admin/api/smtp/test` is exempt: it always sends to the fixed `smtp.to` address.
 

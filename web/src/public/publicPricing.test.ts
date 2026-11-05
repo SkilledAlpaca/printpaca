@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_MAX_ORDER_QTY, isValidQuantity, normalizedQuantityText, overCapMessage, perUnitCents, telHref } from "./publicPricing";
+import { DEFAULT_MAX_ORDER_QTY, fromUnitCents, isValidQuantity, normalizedQuantityText, overCapMessage, perUnitCents, telHref, unitBreakdown } from "./publicPricing";
 
 describe("perUnitCents", () => {
   it("divides an integer total evenly", () => {
@@ -62,5 +62,26 @@ describe("telHref", () => {
 describe("DEFAULT_MAX_ORDER_QTY", () => {
   it("is the shop default of 100", () => {
     expect(DEFAULT_MAX_ORDER_QTY).toBe(100);
+  });
+});
+
+describe("unitBreakdown / fromUnitCents", () => {
+  const fmt = (c: number) => `$${(c / 100).toFixed(2)}`;
+  const size = { id: "s", required: true, options: [{ id: "sm", name: "Small", deltaCents: 0 }, { id: "lg", name: "Large", deltaCents: 400 }] };
+  const trim = { id: "t", required: false, options: [{ id: "bl", name: "Blue", deltaCents: -50 }] };
+
+  it("itemizes only the chosen options that change the price", () => {
+    expect(unitBreakdown(2200, [size, trim], { s: "lg" }, fmt)).toBe("$22.00 + Large $4.00");
+    expect(unitBreakdown(2200, [size, trim], { s: "lg", t: "bl" }, fmt)).toBe("$22.00 + Large $4.00 − Blue $0.50");
+    expect(unitBreakdown(2200, [size], { s: "sm" }, fmt)).toBe("");
+    expect(unitBreakdown(2200, [size], {}, fmt)).toBe("");
+  });
+
+  it("gives a from price while a required choice that changes the price is unanswered", () => {
+    expect(fromUnitCents(2200, [size], {})).toBe(2200);
+    expect(fromUnitCents(2200, [size, trim], { t: "bl" })).toBe(2150);
+    expect(fromUnitCents(2200, [size], { s: "lg" })).toBeNull();
+    const flat = { id: "f", required: true, options: [{ id: "a", name: "A", deltaCents: 100 }, { id: "b", name: "B", deltaCents: 100 }] };
+    expect(fromUnitCents(2200, [flat], {})).toBeNull();
   });
 });

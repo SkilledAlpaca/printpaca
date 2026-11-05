@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"io/fs"
 	"log"
@@ -260,6 +261,130 @@ type publicConfigResponse struct {
 	DemoMode bool `json:"demoMode"`
 	// MaxOrderQty is shop.maxOrderQty: the largest quantity one estimate request or gallery order may carry.
 	MaxOrderQty int `json:"maxOrderQty"`
+	// Shop is the storefront settings the page needs, built field by field by publicShopFromConfig.
+	Shop publicShop `json:"shop"`
+}
+
+// publicShop is the public-safe projection of Config.Shop. Plain text only: the page renders every string as
+// text. Nothing here is a secret; the hero image is served from /item-images/ like item photos.
+type publicShop struct {
+	CustomEstimates bool `json:"customEstimates"`
+	Gallery         bool `json:"gallery"`
+	AcceptingOrders bool `json:"acceptingOrders"`
+	// PausedMessage is the owner's message, or a default when it is blank. Meaningful when AcceptingOrders is false.
+	PausedMessage string `json:"pausedMessage"`
+	// DefaultView is the view the shop opens on: "estimate" only when estimates are on and either the owner
+	// chose it or the gallery is off; otherwise "gallery".
+	DefaultView string `json:"defaultView"`
+	// PageTitle is the resolved shop title (Config.shopTitle): shop.pageTitle, else the business name, else
+	// "Shop". The page composes its tab title from it, and the server puts it in the <title> of the shop HTML.
+	PageTitle    string           `json:"pageTitle"`
+	Heading      string           `json:"heading"`
+	Announcement string           `json:"announcement"`
+	HeroImage    *publicHeroImage `json:"heroImage"`
+	// Accent is null for the theme accent. Both schemes carry the button label color that passes contrast.
+	Accent         *publicAccent    `json:"accent"`
+	ShowStock      bool             `json:"showStock"`
+	ShowFromPrice  bool             `json:"showFromPrice"`
+	ItemSort       string           `json:"itemSort"`
+	FooterLinks    []ShopFooterLink `json:"footerLinks"`
+	ShowContact    bool             `json:"showContact"`
+	ShippingNote   string           `json:"shippingNote"`
+	TurnaroundNote string           `json:"turnaroundNote"`
+}
+
+type publicHeroImage struct {
+	URL string `json:"url"`
+	Alt string `json:"alt"`
+}
+
+type publicAccentScheme struct {
+	Accent     string `json:"accent"`
+	ButtonText string `json:"buttonText"`
+}
+
+type publicAccent struct {
+	Light publicAccentScheme `json:"light"`
+	Dark  publicAccentScheme `json:"dark"`
+}
+
+// publicShopFromConfig projects cfg.Shop. The accent is re-checked here, so a hand-edited config.yaml that
+// slipped a failing color past an older validate never reaches a page: it falls back to the theme accent.
+func publicShopFromConfig(cfg *Config) publicShop {
+	s := cfg.Shop
+	paused := s.PausedMessage
+	if paused == "" {
+		paused = defaultShopPausedMessage
+	}
+	view := "gallery"
+	if s.CustomEstimates && (s.DefaultView == "estimate" || !s.Gallery) {
+		view = "estimate"
+	}
+	out := publicShop{
+		CustomEstimates: s.CustomEstimates,
+		Gallery:         s.Gallery,
+		AcceptingOrders: s.AcceptingOrders,
+		PausedMessage:   paused,
+		DefaultView:     view,
+		PageTitle:       cfg.shopTitle(),
+		Heading:         s.Heading,
+		Announcement:    s.Announcement,
+		ShowStock:       s.ShowStock,
+		ShowFromPrice:   s.ShowFromPrice,
+		ItemSort:        s.ItemSort,
+		FooterLinks:     append([]ShopFooterLink{}, s.FooterLinks...),
+		ShowContact:     s.ShowContact,
+		ShippingNote:    s.ShippingNote,
+		TurnaroundNote:  s.TurnaroundNote,
+	}
+	if s.HeroImage.File != "" && itemImageName.MatchString(s.HeroImage.File) {
+		out.HeroImage = &publicHeroImage{URL: "/item-images/" + s.HeroImage.File, Alt: s.HeroImage.Alt}
+	}
+	if s.AccentColor != "" {
+		if res := checkAccentColorCached(s.AccentColor); res.OK {
+			out.Accent = &publicAccent{
+				Light: publicAccentScheme{Accent: res.Light.Accent, ButtonText: res.Light.ButtonText},
+				Dark:  publicAccentScheme{Accent: res.Dark.Accent, ButtonText: res.Dark.ButtonText},
+			}
+		}
+	}
+	return out
+}
+
+// shopKind is which customer submission a request is, for shopRejects.
+type shopKind int
+
+const (
+	shopKindEstimate shopKind = iota // preview or submit of a custom estimate
+	shopKindItemOrder
+)
+
+// shopRejects reports whether cfg's storefront settings forbid this kind of submission, and writes the
+// response when they do. A feature that is switched off answers 404 with a generic message, revealing
+// nothing about the setting. Vacation mode answers 503 with the owner's message and "paused": true so the
+// page can show it; requests already stored are unaffected. The checks run before rate limiting and body
+// parsing, so a rejected request costs almost nothing.
+func shopRejects(w http.ResponseWriter, cfg *Config, kind shopKind) bool {
+	if (kind == shopKindEstimate && !cfg.Shop.CustomEstimates) || (kind == shopKindItemOrder && !cfg.Shop.Gallery) {
+		writeAPIError(w, http.StatusNotFound, "not available")
+		return true
+	}
+	if !cfg.Shop.AcceptingOrders {
+		msg := cfg.Shop.PausedMessage
+		if msg == "" {
+			msg = defaultShopPausedMessage
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(struct {
+			Error   string   `json:"error"`
+			Errors  []string `json:"errors"`
+			Paused  bool     `json:"paused"`
+			Message string   `json:"pausedMessage"`
+		}{Error: msg, Errors: []string{msg}, Paused: true, Message: msg})
+		return true
+	}
+	return false
 }
 
 // staffURLFunc computes the shop footer's Staff sign-in target for one listener from the live config.
@@ -278,52 +403,118 @@ func publicPortStaffURL(cfg *Config) string {
 	return cfg.Site.AdminURL
 }
 
+// buildPublicConfig assembles the public config for one Config snapshot. GET /api/public/config serves it and
+// the shop HTML embeds it (renderShopHTML), so the two can never disagree about what is public.
+func buildPublicConfig(cfg *Config, demoMode bool, staffURL staffURLFunc) publicConfigResponse {
+	materials := []publicMaterial{}
+	for _, m := range cfg.Materials {
+		if !m.Public {
+			continue
+		}
+		materials = append(materials, publicMaterial{
+			Name:    m.Name,
+			Density: m.Density,
+		})
+	}
+
+	var printer Printer
+	for _, p := range cfg.Printers {
+		if p.ID == cfg.PublicQuotes.Printer {
+			printer = p
+			break
+		}
+	}
+
+	resp := publicConfigResponse{
+		StaffUrl:           staffURL(cfg),
+		IntroText:          cfg.PublicQuotes.IntroText,
+		Currency:           cfg.Currency,
+		Materials:          materials,
+		FilamentDiameterMm: printer.FilamentDiameterMm,
+		MaxUploadBytes:     publicMaxUploadBytes,
+		DemoMode:           demoMode,
+		MaxOrderQty:        cfg.maxOrderQty(),
+		Shop:               publicShopFromConfig(cfg),
+	}
+	resp.Branding.BusinessName = cfg.Quote.BusinessName
+	resp.Branding.LogoURL = cfg.Quote.LogoURL
+	// shop.showContact off means the details are not served at all, not merely hidden in the footer.
+	if cfg.Shop.ShowContact {
+		resp.Branding.Email = cfg.Quote.Email
+		resp.Branding.Phone = cfg.Quote.Phone
+		resp.Branding.Address = cfg.Quote.Address
+	}
+	return resp
+}
+
 // handlePublicConfig serves the Config subset the public page needs; prices: POST /api/public/quote/preview.
 func handlePublicConfig(store *ConfigStore, demoMode bool, staffURL staffURLFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 
-		cfg := store.Get() // one snapshot for this request
-		materials := []publicMaterial{}
-		for _, m := range cfg.Materials {
-			if !m.Public {
-				continue
-			}
-			materials = append(materials, publicMaterial{
-				Name:    m.Name,
-				Density: m.Density,
-			})
-		}
-
-		var printer Printer
-		for _, p := range cfg.Printers {
-			if p.ID == cfg.PublicQuotes.Printer {
-				printer = p
-				break
-			}
-		}
-
-		resp := publicConfigResponse{
-			StaffUrl:           staffURL(cfg),
-			IntroText:          cfg.PublicQuotes.IntroText,
-			Currency:           cfg.Currency,
-			Materials:          materials,
-			FilamentDiameterMm: printer.FilamentDiameterMm,
-			MaxUploadBytes:     publicMaxUploadBytes,
-			DemoMode:           demoMode,
-			MaxOrderQty:        cfg.maxOrderQty(),
-		}
-		resp.Branding.BusinessName = cfg.Quote.BusinessName
-		resp.Branding.LogoURL = cfg.Quote.LogoURL
-		resp.Branding.Email = cfg.Quote.Email
-		resp.Branding.Phone = cfg.Quote.Phone
-		resp.Branding.Address = cfg.Quote.Address
-
+		resp := buildPublicConfig(store.Get(), demoMode, staffURL) // one snapshot for this request
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			log.Printf("public config encode: %v", err)
 		}
 	}
+}
+
+// publicConfigFunc returns the public config for the current settings snapshot.
+type publicConfigFunc func() publicConfigResponse
+
+// shopThemeCookie returns the pp_theme cookie when it is exactly "light" or "dark", else "" (absent).
+func shopThemeCookie(r *http.Request) string {
+	c, err := r.Cookie("pp_theme")
+	if err != nil || (c.Value != "light" && c.Value != "dark") {
+		return ""
+	}
+	return c.Value
+}
+
+// renderShopHTML fills the shop's head from the live settings, so a hard refresh paints the owner's
+// own title, description and config, never built-in defaults: <title> is the shop title, the description meta
+// is the intro as plain text, markup stripped (when there is one), and the config is embedded as a JSON data block the page reads
+// synchronously. The block is type="application/json", which the browser never executes, so the CSP needs no
+// unsafe-inline. json.Marshal escapes <, > and & (and U+2028/2029), so no value can close the script element
+// or open a comment. It returns false when the template has no <title>..</title> to fill.
+//
+// theme is the visitor's pp_theme cookie value. Only "light" and "dark" set data-theme on <html>; anything
+// else, including a missing cookie, leaves it off so the device setting decides. The value is matched against
+// those two literals, so nothing from the request is ever written into the page.
+func renderShopHTML(tmpl string, cfg publicConfigResponse, theme string) ([]byte, bool) {
+	start := strings.Index(tmpl, "<title>")
+	if start < 0 {
+		return nil, false
+	}
+	end := strings.Index(tmpl[start:], "</title>")
+	if end < 0 {
+		return nil, false
+	}
+	end += start + len("</title>")
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, false
+	}
+	prefix := tmpl[:start]
+	if theme == "light" || theme == "dark" {
+		if i := strings.Index(prefix, "<html"); i >= 0 {
+			i += len("<html")
+			prefix = prefix[:i] + ` data-theme="` + theme + `"` + prefix[i:]
+		}
+	}
+	var b strings.Builder
+	b.Grow(len(tmpl) + len(data) + 256)
+	b.WriteString(prefix)
+	b.WriteString("<title>" + html.EscapeString(cfg.Shop.PageTitle) + "</title>")
+	if intro := lightMarkdownToPlain(cfg.IntroText); intro != "" {
+		b.WriteString(`<meta name="description" content="` + html.EscapeString(intro) + `">`)
+	}
+	b.WriteString(`<script type="application/json" id="shop-config">`)
+	b.Write(data)
+	b.WriteString(`</script>`)
+	b.WriteString(tmpl[end:])
+	return []byte(b.String()), true
 }
 
 // handlePublicCustomCss serves the top-level customCss config key verbatim as a stylesheet, registered
@@ -336,7 +527,7 @@ func handlePublicConfig(store *ConfigStore, demoMode bool, staffURL staffURLFunc
 // body, since both pages link it unconditionally and a 404 is console noise.
 //
 // Cache-Control is "no-cache" (always revalidate), like publicIndexHandler for "/", not no-store: no
-// per-visitor state or PII. nosniff is not set here; securityHeadersMiddleware already sets it.
+// per-visitor state or PII. nosniff is not set here; securityHeadersTLSMiddleware already sets it.
 func handlePublicCustomCss(store *ConfigStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := store.Get() // one snapshot for this request
@@ -364,6 +555,15 @@ type publicItem struct {
 	OptionGroups []publicOptionGroup `json:"optionGroups"`
 	ImageURL     string              `json:"imageUrl"` // "/item-images/{file}" or ""
 	Stock        publicItemStock     `json:"stock"`
+	// Category is null for an item with no category or one in a hidden category (it still shows under All).
+	Category *publicCategoryRef `json:"category"`
+	Featured bool               `json:"featured"`
+}
+
+// publicCategoryRef is the category an item belongs to, as the shop's chips and #/category/<slug> use it.
+type publicCategoryRef struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
 }
 
 // publicOptionGroup and publicOption are ItemOptionGroup and ItemOption without imageFile: the photo is
@@ -407,43 +607,74 @@ var publicItemsCacheTTL = 5 * time.Second
 var publicItemsNow = time.Now
 
 // publicItemsCache holds the last serialized response for publicItemsCacheTTL. One per handlePublicItems
-// closure (not shared) so concurrent requests share it and tests get isolation.
+// closure (not shared) so concurrent requests share it and tests get isolation. The body is only valid for
+// the item sort it was built with, so a settings change shows on the next request.
 type publicItemsCache struct {
 	mu      sync.Mutex
 	body    []byte
+	sort    string
 	expires time.Time
 }
 
-// get returns the cached body and true when it is still within TTL.
-func (c *publicItemsCache) get() ([]byte, bool) {
+// get returns the cached body and true when it is still within TTL and was built for sort.
+func (c *publicItemsCache) get(sort string) ([]byte, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.body != nil && publicItemsNow().Before(c.expires) {
+	if c.body != nil && c.sort == sort && publicItemsNow().Before(c.expires) {
 		return c.body, true
 	}
 	return nil, false
 }
 
-// set stores body, valid for publicItemsCacheTTL.
-func (c *publicItemsCache) set(body []byte) {
+// set stores body for sort, valid for publicItemsCacheTTL.
+func (c *publicItemsCache) set(sort string, body []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.body = body
+	c.sort = sort
 	c.expires = publicItemsNow().Add(publicItemsCacheTTL)
 }
 
-// handlePublicItems serves every public item in admin order (sort_order, name), narrowed to publicItem,
-// cached for publicItemsCacheTTL so a burst costs at most one query per window.
-func handlePublicItems(db *sql.DB) http.HandlerFunc {
+// publicItemsOrderBy is the ORDER BY for shop.itemSort. Featured items come first in every mode, so they
+// lead whichever category chip is selected.
+func publicItemsOrderBy(sort string) string {
+	switch sort {
+	case "name":
+		return "featured DESC, name COLLATE NOCASE, sort_order, id"
+	case "price":
+		return "featured DESC, price_cents, name COLLATE NOCASE, id"
+	default:
+		return "featured DESC, sort_order, name, id"
+	}
+}
+
+// publicItemsResponse is the GET /api/public/items body. Categories lists the visible categories that have
+// at least one public item, in shop order.
+type publicItemsResponse struct {
+	Items      []publicItem        `json:"items"`
+	Categories []publicCategoryRef `json:"categories"`
+}
+
+// handlePublicItems serves every public item, featured first and then in shop.itemSort order, narrowed to
+// publicItem, cached for publicItemsCacheTTL so a burst costs at most one query per window. With the gallery
+// off it serves no items.
+func handlePublicItems(db *sql.DB, store *ConfigStore) http.HandlerFunc {
 	cache := &publicItemsCache{}
 	return func(w http.ResponseWriter, r *http.Request) {
-		if body, ok := cache.get(); ok {
-			w.Header().Set("Content-Type", "application/json")
+		cfg := store.Get()
+		w.Header().Set("Content-Type", "application/json")
+		if !cfg.Shop.Gallery {
+			w.Write([]byte(`{"items":[],"categories":[]}`))
+			return
+		}
+		sortMode := cfg.Shop.ItemSort
+		if body, ok := cache.get(sortMode); ok {
 			w.Write(body)
 			return
 		}
 
-		rows, err := db.Query(`SELECT ` + itemColumns + ` FROM items WHERE public = 1 ORDER BY sort_order, name`)
+		w.Header().Del("Content-Type")
+		rows, err := db.Query(`SELECT ` + itemColumns + ` FROM items WHERE public = 1 ORDER BY ` + publicItemsOrderBy(sortMode))
 		if err != nil {
 			log.Printf("public items query: %v", err)
 			writeAPIError(w, http.StatusInternalServerError, "items unavailable")
@@ -451,8 +682,7 @@ func handlePublicItems(db *sql.DB) http.HandlerFunc {
 		}
 		defer rows.Close()
 
-		// Empty, not nil, so no public items serializes "items":[] not null.
-		items := []publicItem{}
+		var raw []Item
 		for rows.Next() {
 			it, err := scanItem(rows)
 			if err != nil {
@@ -460,9 +690,41 @@ func handlePublicItems(db *sql.DB) http.HandlerFunc {
 				writeAPIError(w, http.StatusInternalServerError, "items unavailable")
 				return
 			}
+			raw = append(raw, it)
+		}
+		if err := rows.Err(); err != nil {
+			log.Printf("public items read: %v", err)
+			writeAPIError(w, http.StatusInternalServerError, "items unavailable")
+			return
+		}
+		rows.Close() // the pool is one connection: finish this result before the next query
+
+		cats, err := listCategories(db)
+		if err != nil {
+			log.Printf("public items categories: %v", err)
+			writeAPIError(w, http.StatusInternalServerError, "items unavailable")
+			return
+		}
+		visible := map[string]publicCategoryRef{}
+		for _, c := range cats {
+			if !c.Hidden {
+				visible[c.ID] = publicCategoryRef{Slug: c.Slug, Name: c.Name}
+			}
+		}
+
+		// Empty, not nil, so no public items serializes "items":[] not null.
+		items := []publicItem{}
+		used := map[string]bool{}
+		for _, it := range raw {
 			imageURL := ""
 			if it.ImageFile != "" {
 				imageURL = "/item-images/" + it.ImageFile
+			}
+			var cat *publicCategoryRef
+			if ref, ok := visible[it.CategoryID]; ok {
+				c := ref
+				cat = &c
+				used[it.CategoryID] = true
 			}
 			items = append(items, publicItem{
 				ID:           it.ID,
@@ -476,23 +738,24 @@ func handlePublicItems(db *sql.DB) http.HandlerFunc {
 					Qty:            it.StockQty,
 					AllowBackorder: it.AllowBackorder,
 				},
+				Category: cat,
+				Featured: it.Featured,
 			})
 		}
-		if err := rows.Err(); err != nil {
-			log.Printf("public items read: %v", err)
-			writeAPIError(w, http.StatusInternalServerError, "items unavailable")
-			return
+		chips := []publicCategoryRef{}
+		for _, c := range cats {
+			if used[c.ID] {
+				chips = append(chips, visible[c.ID])
+			}
 		}
 
-		body, err := json.Marshal(struct {
-			Items []publicItem `json:"items"`
-		}{Items: items})
+		body, err := json.Marshal(publicItemsResponse{Items: items, Categories: chips})
 		if err != nil {
 			log.Printf("public items encode: %v", err)
 			writeAPIError(w, http.StatusInternalServerError, "items unavailable")
 			return
 		}
-		cache.set(body)
+		cache.set(sortMode, body)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(body)
@@ -545,6 +808,9 @@ func writePublicOrderAccepted(w http.ResponseWriter, id, reference string, price
 func handlePublicItemOrder(db *sql.DB, store *ConfigStore, rl *rateLimiter, trustProxy bool, nq *notifyQueue, demoMode bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := store.Get() // one snapshot for this request
+		if shopRejects(w, cfg, shopKindItemOrder) {
+			return
+		}
 		if !rl.allow(clientIP(r, trustProxy), publicRateLimit, publicRateWindow) {
 			writeAPIError(w, http.StatusTooManyRequests, "too many requests, try again later")
 			return
@@ -747,6 +1013,18 @@ func buildPublicQuoteInputs(cfg *Config, material Material, quantity int, weight
 	return qi, opt
 }
 
+// publicEstimateCents is the one place the public price is computed: the preview endpoint, the request
+// submission and the demo seed all call it. ok is false when the engine yields no valid priced breakdown (a
+// config-shaped failure). The result is the batch total, shipping excluded.
+func publicEstimateCents(cfg *Config, material Material, quantity int, weightG float64, timeSeconds int) (cents int, ok bool) {
+	qi, opt := buildPublicQuoteInputs(cfg, material, quantity, weightG, timeSeconds)
+	bd := ComputeQuote(qi, opt)
+	if !bd.Valid || bd.Pricing == nil || !bd.Pricing.Valid {
+		return 0, false
+	}
+	return int(bd.Pricing.Revenue), true
+}
+
 // publicQuotePreviewMaxBytes caps the JSON body: four small fields, like publicItemOrderMaxBytes.
 const publicQuotePreviewMaxBytes = 2 * 1024
 
@@ -783,12 +1061,14 @@ type publicQuotePreviewResponse struct {
 // so a preview and the stored price can't disagree. It behaves the same in DEMO_MODE since it writes nothing.
 func handlePublicQuotePreview(store *ConfigStore, rl *rateLimiter, trustProxy bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		cfg := store.Get() // one snapshot for this request
+		if shopRejects(w, cfg, shopKindEstimate) {
+			return
+		}
 		if !rl.allow(clientIP(r, trustProxy), publicPreviewRateLimit, publicPreviewRateWindow) {
 			writeAPIError(w, http.StatusTooManyRequests, "too many requests, try again later")
 			return
 		}
-
-		cfg := store.Get() // one snapshot for this request
 
 		r.Body = http.MaxBytesReader(w, r.Body, publicQuotePreviewMaxBytes)
 		dec := json.NewDecoder(r.Body)
@@ -839,9 +1119,8 @@ func handlePublicQuotePreview(store *ConfigStore, rl *rateLimiter, trustProxy bo
 			return
 		}
 
-		qi, opt := buildPublicQuoteInputs(cfg, matchedMaterial, in.Quantity, in.WeightG, in.TimeSeconds)
-		bd := ComputeQuote(qi, opt)
-		if !bd.Valid || bd.Pricing == nil || !bd.Pricing.Valid {
+		priceCents, priced := publicEstimateCents(cfg, matchedMaterial, in.Quantity, in.WeightG, in.TimeSeconds)
+		if !priced {
 			// A config-shaped failure, not a visitor input problem: log the detail, tell the visitor only "try
 			// again" since the cause is in the owner's pricing configuration.
 			log.Printf("public quote-preview: recompute produced an invalid breakdown for material %q", material)
@@ -851,7 +1130,7 @@ func handlePublicQuotePreview(store *ConfigStore, rl *rateLimiter, trustProxy bo
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(publicQuotePreviewResponse{
-			PriceCents:    int(bd.Pricing.Revenue),
+			PriceCents:    priceCents,
 			ShippingCents: int(toCents(cfg.Pricing.DefaultShippingCharge)),
 			Currency:      cfg.Currency,
 		}); err != nil {
@@ -1137,6 +1416,9 @@ func handlePublicQuoteRequest(db *sql.DB, store *ConfigStore, configDir string, 
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := store.Get() // one snapshot for this request
+		if shopRejects(w, cfg, shopKindEstimate) {
+			return
+		}
 		if !rl.allow(clientIP(r, trustProxy), publicRateLimit, publicRateWindow) {
 			writeAPIError(w, http.StatusTooManyRequests, "too many requests, try again later")
 			return
@@ -1397,9 +1679,8 @@ func handlePublicQuoteRequest(db *sql.DB, store *ConfigStore, configDir string, 
 		// "to be confirmed", never "free".
 		priceCents := 0
 		if !needsPrintTime {
-			qi, opt := buildPublicQuoteInputs(cfg, matchedMaterial, quantity, weightG, timeSeconds)
-			bd := ComputeQuote(qi, opt)
-			if !bd.Valid || bd.Pricing == nil || !bd.Pricing.Valid {
+			cents, priced := publicEstimateCents(cfg, matchedMaterial, quantity, weightG, timeSeconds)
+			if !priced {
 				// Same fail-closed posture as handlePublicQuotePreview: a form that passed every bound shouldn't hit
 				// an invalid breakdown, so this is a config-shaped failure; refuse to store a fabricated price, not 0.
 				cleanupFile()
@@ -1408,7 +1689,7 @@ func handlePublicQuoteRequest(db *sql.DB, store *ConfigStore, configDir string, 
 				return
 			}
 			// ShippingCharge is forced to 0 in buildPublicQuoteInputs, so Revenue is ResolvedPrice * quantity.
-			priceCents = int(bd.Pricing.Revenue)
+			priceCents = cents
 		}
 		// The shipping charge the preview showed, stored so converting the request to an invoice adds the
 		// same Shipping line the visitor saw even if the setting changes later.
@@ -1500,10 +1781,17 @@ func loadPublicManifest(sub fs.FS) map[string]struct{} {
 // (index.html, assets/main-*.js/css) still 404s here.
 // .gz siblings are negotiated via serveGzipVariant. The allowlist checks the requested plain path
 // (".../app.js"), so no manifest change is needed.
-func publicIndexHandler(sub fs.FS) http.Handler {
+func publicIndexHandler(sub fs.FS, config publicConfigFunc) http.Handler {
 	assets := http.FileServerFS(sub)
 	_, statErr := fs.Stat(sub, "public.html")
 	hasPublicHTML := statErr == nil
+	// The shop HTML is read once; each request fills its head from the live settings (renderShopHTML).
+	var shopTemplate string
+	if hasPublicHTML {
+		if data, err := fs.ReadFile(sub, "public.html"); err == nil {
+			shopTemplate = string(data)
+		}
+	}
 	allowed := loadPublicManifest(sub)
 
 	// buildBroken is the fail-closed check: public.html with no (or an empty) manifest guarantees every
@@ -1540,17 +1828,23 @@ func publicIndexHandler(sub fs.FS) http.Handler {
 			assets.ServeHTTP(w, r)
 			return
 		}
-		w.Header().Set("Cache-Control", "no-cache")
+		// The page varies by the theme cookie, so a shared cache must not reuse one visitor's copy.
+		w.Header().Set("Cache-Control", "private, no-cache")
+		w.Header().Add("Vary", "Cookie")
 		if !hasPublicHTML || buildBroken {
 			serveUnavailable(w)
 			return
 		}
-		r2 := r.Clone(r.Context())
-		r2.URL.Path = "/public.html"
-		if serveGzipVariant(w, r2, sub) {
-			return
+		page, ok := renderShopHTML(shopTemplate, config(), shopThemeCookie(r))
+		if !ok {
+			log.Printf("public listener: public.html has no <title> to fill; serving it unrendered")
+			page = []byte(shopTemplate)
 		}
-		assets.ServeHTTP(w, r2)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		if r.Method != http.MethodHead {
+			w.Write(page)
+		}
 	})
 }
 
@@ -1607,7 +1901,7 @@ func buildPublicMuxShared(store *ConfigStore, db *sql.DB, configDir string, shar
 	mux.HandleFunc("GET /healthz", handlePublicHealthz)
 	mux.HandleFunc("GET /api/public/config", handlePublicConfig(store, demoMode, staffURL))
 	mux.HandleFunc("GET /custom.css", handlePublicCustomCss(store))
-	mux.HandleFunc("GET /api/public/items", handlePublicItems(db))
+	mux.HandleFunc("GET /api/public/items", handlePublicItems(db, store))
 	mux.HandleFunc("GET /item-images/{file}", itemImageHandler(configDir))
 	mux.HandleFunc("POST /api/public/quote/preview", handlePublicQuotePreview(store, shared.previewRl, trustProxy))
 	mux.HandleFunc("POST /api/public/quote-request", handlePublicQuoteRequest(db, store, configDir, shared.quoteRl, trustProxy, shared.uploads, shared.nq, demoMode))
@@ -1617,7 +1911,9 @@ func buildPublicMuxShared(store *ConfigStore, db *sql.DB, configDir string, shar
 	if err != nil {
 		panic(err) // embedded FS shape is a build-time invariant
 	}
-	mux.Handle("GET /", publicIndexHandler(sub))
+	mux.Handle("GET /", publicIndexHandler(sub, func() publicConfigResponse {
+		return buildPublicConfig(store.Get(), demoMode, staffURL)
+	}))
 
 	return mux
 }

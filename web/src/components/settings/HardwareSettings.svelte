@@ -3,7 +3,11 @@
   import { settingsWarnings } from "../../lib/settingsRules";
   import { warnFor } from "../../lib/format";
   import { rowProblems, warnId } from "../../lib/rowIssues";
-  import { focusAfterRowRemoval } from "../../lib/a11yFocus";
+  import Card from "../ui/Card.svelte";
+  import Field from "../ui/Field.svelte";
+  import FormGrid from "../ui/FormGrid.svelte";
+  import RowEditor from "../ui/RowEditor.svelte";
+  import { focusAfterRowRemoved } from "../ui/rowEditor";
 
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 
@@ -22,75 +26,82 @@
   }
   function removeHardware(index: number) {
     form.hardware = form.hardware.filter((_, i) => i !== index);
-    void focusAfterRowRemoval("remove-hardware", index, form.hardware.length, "add-hardware");
+    void focusAfterRowRemoved(form.hardware.map((_, j) => `hardware-${j}`), index, "add-hardware");
   }
 </script>
 
-<div id="section-hardware" class="card roomy" class:danger-border={hasError("hardware")}>
-  <h2>Hardware</h2>
+<Card id="section-hardware" tone={hasError("hardware") ? "danger" : "default"}>
+<div class="stack">
+<h2>Hardware</h2>
   <p class="hint">Add-on parts (such as magnets, earring findings, and inserts) you can attach to a quote as an
     extra per-unit cost. This list replaces the built-in one. An empty list is fine; most shops attach no
     hardware.</p>
   {#if form.hardware.length > 0}
-    <div class="table-scroll">
-      <table>
-        <thead>
-          <tr><th>Name</th><th>Unit cost</th><th>Lost on failed prints</th><th><span class="visually-hidden">Actions</span></th></tr>
-        </thead>
-        <tbody>
-          {#each form.hardware as h, i (i)}
-            {@const nameWarn = warnFor(warnings, `hardware[${i}].name`)}
-            {@const costWarn = warnFor(warnings, `hardware[${i}].unitCost`)}
-            <tr>
-              <td>
-                <input
-                  aria-label={`Hardware ${i + 1} name`}
-                  bind:value={h.name}
-                  class:warn={nameWarn !== ""}
-                  aria-invalid={nameWarn !== ""}
-                  aria-describedby={nameWarn !== "" ? warnId(`hardware[${i}].name`) : undefined}
-                />
-              </td>
-              <td>
-                <input
-                  type="number"
-                  step="0.01"
-                  aria-label={`Hardware ${i + 1} unit cost`}
-                  bind:value={h.unitCost}
-                  class:warn={costWarn !== ""}
-                  aria-invalid={costWarn !== ""}
-                  aria-describedby={costWarn !== "" ? warnId(`hardware[${i}].unitCost`) : undefined}
-                />
-              </td>
-              <td>
+    <div class="rows">
+      {#each form.hardware as h, i (i)}
+        {@const nameWarn = warnFor(warnings, `hardware[${i}].name`)}
+        {@const costWarn = warnFor(warnings, `hardware[${i}].unitCost`)}
+        <RowEditor
+          tone="inset"
+          label={`Hardware ${i + 1}: ${h.name}`}
+          rowKey={`hardware-${i}`}
+          onremove={() => removeHardware(i)}
+          removeLabel={`Remove hardware ${h.name}`}
+        >
+          {#snippet fields()}
+            <FormGrid align="controls">
+              <Field id={`hardware-${i}-name`} label="Name" size="m">
+                {#snippet children(f)}
+                  <input
+                    id={f.id}
+                    aria-label={`Hardware ${i + 1} name`}
+                    bind:value={h.name}
+                    class:warn={nameWarn !== ""}
+                    aria-invalid={nameWarn !== ""}
+                    aria-describedby={nameWarn !== "" ? warnId(`hardware[${i}].name`) : undefined}
+                  />
+                {/snippet}
+              </Field>
+              <Field id={`hardware-${i}-cost`} label="Unit cost" size="s">
+                {#snippet children(f)}
+                  <input
+                    id={f.id}
+                    type="number"
+                    step="0.01"
+                    aria-label={`Hardware ${i + 1} unit cost`}
+                    bind:value={h.unitCost}
+                    class:warn={costWarn !== ""}
+                    aria-invalid={costWarn !== ""}
+                    aria-describedby={costWarn !== "" ? warnId(`hardware[${i}].unitCost`) : undefined}
+                  />
+                {/snippet}
+              </Field>
+              <label class="toggle cell-end">
                 <input
                   type="checkbox"
                   aria-label={`Hardware ${i + 1} lost on failed prints`}
                   checked={h.lostOnFailure}
                   onchange={(e) => (h.lostOnFailure = e.currentTarget.checked)}
                 />
-              </td>
-              <td>
-                <button
-                  type="button"
-                  aria-label={`Remove hardware ${h.name}`}
-                  data-focus-key={`remove-hardware-${i}`}
-                  onclick={() => removeHardware(i)}
-                >Remove</button>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+                <span>Lost on failed prints</span>
+              </label>
+            </FormGrid>
+          {/snippet}
+        </RowEditor>
+      {/each}
     </div>
     {#each rowIssues as issue (issue.field)}
       <small id={warnId(issue.field)} class="warn-text">Row {issue.row}: {issue.message}</small>
     {/each}
   {/if}
-  <button type="button" data-focus-key="add-hardware" onclick={addHardware}>Add hardware</button>
+  <div class="add-line">
+    <button type="button" data-focus-key="add-hardware" onclick={addHardware}>Add hardware</button>
+  </div>
 </div>
+</Card>
 
 <style>
-  /* table/th baseline and .table-scroll come from theme.css; these grids only need cells on one line. */
-  td, th { white-space: nowrap; }
+  .rows { display: flex; flex-direction: column; gap: var(--gap); }
+  .add-line { display: flex; }
+  .cell-end { align-self: end; }
 </style>

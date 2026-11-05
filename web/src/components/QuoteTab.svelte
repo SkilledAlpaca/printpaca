@@ -1,14 +1,19 @@
 <script lang="ts">
   import { onDestroy, tick } from "svelte";
   import type { EffectiveConfig, EngineOptions, OrderBreakdown, OrderInputs } from "../lib/engine/index";
-  import { quote, activePart, partLabel, toOrderInputs, quoteEngineOptions, applyPrinter, applyMaterial, printJob, quoteClient, quoteMeta, nameOrId, quoteSession, quoteActions, storedRatesDiffer, useCurrentRates } from "../lib/state.svelte";
+  import { quote, orderStamp, activePart, partLabel, toOrderInputs, quoteEngineOptions, applyPrinter, applyMaterial, printJob, quoteClient, quoteMeta, nameOrId, quoteSession, quoteActions, storedRatesDiffer, useCurrentRates } from "../lib/state.svelte";
   import { computeOrder, type ComputeOrderResult } from "../lib/quotesApi";
   import { EMPTY_ORDER, orderPrintBlockerHint, partBreakdown } from "../lib/orderView";
   import PartsList from "./PartsList.svelte";
   import PartsTable from "./PartsTable.svelte";
   import { createQuotePreview, type QuotePreviewState } from "../lib/quotePreview";
   import { fieldLabel, warnFor, moneyAmount, moneyPrecise } from "../lib/format";
-    import LabeledNumber from "./LabeledNumber.svelte";
+  import LabeledNumber from "./LabeledNumber.svelte";
+  import Card from "./ui/Card.svelte";
+  import PageHeader from "./ui/PageHeader.svelte";
+  import Fieldset from "./ui/Fieldset.svelte";
+  import Field from "./ui/Field.svelte";
+  import FormGrid from "./ui/FormGrid.svelte";
   import PresetChips from "./PresetChips.svelte";
   import BreakdownTable from "./BreakdownTable.svelte";
   import PricingPanel from "./PricingPanel.svelte";
@@ -21,13 +26,9 @@
   import { prefillFor } from "../lib/prefill.svelte";
   import { saveAttempt } from "../lib/saveAttempt.svelte";
   import QuoteSummaryBar from "./QuoteSummaryBar.svelte";
-  import CardHelp from "./CardHelp.svelte";
-  import { helpState, setAllHelp } from "../lib/help.svelte";
-  import { TILE_HELP, TILE_IDS, type TileId } from "../lib/guideContent";
   import { focusAfterRowRemoval } from "../lib/a11yFocus";
   import { findFieldByLabel } from "../lib/fieldErrors";
   import { presetDisplayName } from "../lib/format";
-  import SlicerHelp from "./SlicerHelp.svelte";
 
   let { cfg }: { cfg: EffectiveConfig } = $props();
 
@@ -50,12 +51,19 @@
     toState: previewToState,
     onChange: (s) => {
       previewState = s;
-      if (s.status === "resolved") order = s.order;
+      if (s.status === "resolved") {
+        order = s.order;
+        // The answer is for the latest update() (a superseded run never publishes), so the ids sent with it
+        // say which editor part each of its entries describes.
+        orderStamp.partIds = requestedPartIds;
+      }
     },
   });
+  let requestedPartIds: string[] = [];
   onDestroy(() => preview.dispose());
 
   $effect(() => {
+    requestedPartIds = quote.parts.map((p) => p.id);
     preview.update({ inputs: toOrderInputs(cfg), options: quoteEngineOptions(cfg) });
   });
 
@@ -81,9 +89,6 @@
   const sellingEnabled = $derived(quote.order.sellingEnabled);
 
   const w = $derived(breakdown.warnings);
-  // Guide is a Tab like any other: when disabled, App.svelte's hashchange fallback rewrites the link off the
-  // guide, so don't render it as if it went somewhere.
-  const guideEnabled = $derived(!cfg.ui.disabledTabs.includes("guide"));
   const touched = () => (part.presetModified = true);
 
   // breakdown.valid doesn't cover pricing validity, but printing needs both or a marginPct of 150 prints a
@@ -132,19 +137,14 @@
   // Accessible group labels for each tile's role="group" div, and the h2 text for the three tiles rendered
   // here (gcode, print, costs); the others' h2 and CardHelp live in their own components, so it is only their
   // aria-label.
-  const TILE_LABELS: Record<TileId, string> = {
+  const TILE_LABELS = {
     gcode: "Model file",
     print: "Print",
     costs: "Costs",
     breakdown: "Cost breakdown",
     pricing: "Price and profit",
     history: "Saved quotes",
-  };
-
-  const allHelpOpen = $derived(TILE_IDS.every((id) => helpState.open[id] === true));
-  function toggleAllHelp() {
-    setAllHelp([...TILE_IDS], !allHelpOpen);
-  }
+  } as const;
 
   // First-run panel: shown once, before the visitor has entered anything or produced a valid quote. Dismissed
   // explicitly ("Got it") or when a quote first computes successfully.
@@ -241,6 +241,25 @@
 
   let costsOpen = $state(readCostsOpen());
 
+  // The summary's Breakdown disclosure remembers its state like the Costs rates: it is the cost view of a
+  // pricing person's quote, so it stays as they left it.
+  const BREAKDOWN_OPEN_KEY = "printpaca-breakdown-open";
+  function readBreakdownOpen(): boolean {
+    try {
+      return localStorage.getItem(BREAKDOWN_OPEN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }
+  function writeBreakdownOpen(v: boolean): void {
+    try {
+      localStorage.setItem(BREAKDOWN_OPEN_KEY, v ? "1" : "0");
+    } catch {
+      /* Safari private mode / quota exceeded: session-only state still works. */
+    }
+  }
+  let breakdownOpen = $state(readBreakdownOpen());
+
   const COSTS_WARN_FIELDS = [
     "flatRate",
     "watts",
@@ -306,37 +325,7 @@
 
 <div class="page">
   <a class="local-skip" href="#main" onclick={skipToPrintFields}>Skip to model weight and print time</a>
-  <div class="head-row">
-    <h1>{quoteSession.loadedId ? `Edit quote: ${quoteSession.label.trim() || "Untitled"}` : "New quote"}</h1>
-    <button type="button" class="explain-toggle" aria-pressed={allHelpOpen} onclick={toggleAllHelp}>
-      Explain this page
-    </button>
-  </div>
-
-  {#if quoteSession.loadedId}
-    <div class="card edit-bar" role="group" aria-label="Save changes to this quote">
-      <p>You are editing a saved quote. Your changes aren't saved until you update it.</p>
-      <div class="edit-actions">
-        <button
-          type="button"
-          class="primary"
-          onclick={() => quoteActions.update?.()}
-          disabled={!quoteActions.busy && quoteActions.blocked}
-          aria-disabled={quoteActions.busy}
-          aria-busy={quoteActions.busy}
-        >{quoteActions.busy ? "Saving…" : "Update quote"}</button>
-        <button
-          type="button"
-          onclick={() => quoteActions.saveAsNew?.()}
-          disabled={!quoteActions.busy && quoteActions.blocked}
-          aria-disabled={quoteActions.busy}
-        >Save as new</button>
-        <!-- aria-hidden: HistoryPanel's status line below is the live region; this repeats it where the
-             buttons are so the result is seen without scrolling. -->
-        <span class="edit-status" class:failed={quoteSession.status.failed} aria-hidden="true">{quoteSession.status.text}</span>
-      </div>
-    </div>
-  {/if}
+  <PageHeader title={quoteSession.loadedId ? `Edit quote: ${quoteSession.label.trim() || "Untitled"}` : "New quote"} />
 
   {#if quoteSession.conflict}
     <div class="card banner-warn" role="alert">
@@ -358,285 +347,313 @@
     </div>
   {/if}
 
-  <QuoteSummaryBar
-    {cfg}
-    {order}
-    previewStatus={previewState.status}
-    previewError={previewState.status === "error" ? `${previewState.errors[0]} Showing the last known price. It retries on the next change.` : ""}
-  />
-
   {#if showFirstRun}
     <div class="card first-run">
       <h2>Three steps to your first quote</h2>
       <ol>
         <li>Drop a sliced .gcode file below, or type the model weight and print time.</li>
-        <li>Your cost appears in the bar above and in Cost breakdown.</li>
-        <li>Selling it? Press Set a price.</li>
+        <li>Your cost appears in the summary beside the form, and in its Breakdown.</li>
+        <li>Selling it? Press Set a client price.</li>
       </ol>
       <p class="hint">Costs use starter rates. Set your filament price on Filament and your energy rate on Electricity.</p>
       <button type="button" onclick={dismissFirstRun}>Got it</button>
     </div>
   {/if}
 
-  <PartsList {cfg} {order} />
-
-  <div class="tile" role="group" aria-label={TILE_LABELS.gcode} aria-describedby="help-gcode">
-    <div class="card">
-      <div class="head-row with-help">
-        <h2>Model file</h2>
-        <CardHelp id="gcode" title={TILE_LABELS.gcode} text={TILE_HELP.gcode} />
-      </div>
-      {#key part.id}
-        <GcodeDrop {cfg} {part} />
-        {#if moonrakerEnabled(cfg)}
-          <RecentPrints {cfg} {part} />
-        {/if}
-      {/key}
-    </div>
-  </div>
-
-  <div class="tile" role="group" aria-label={TILE_LABELS.print} aria-describedby="help-print">
-    <div class="card">
-      <div class="head-row with-help">
-        <h2>Print</h2>
-        <CardHelp id="print" title={TILE_LABELS.print} text={TILE_HELP.print} />
-      </div>
-      <div class="field-rows">
-        <LabeledNumber label="Model weight" suffix="g" bind:value={part.weightG} warn={warnFor(w, "weightG")} help="The weight of the model from your slicer, without supports or waste." />
-        <div class="field">
-          <label for={timeHoursId}>Print time</label>
-          <div class="time-pair" role="group" aria-label="Print time" onfocusout={timeGroupFocusOut}>
-            <span class="time-input">
-              <input
-                id={timeHoursId}
-                type="number"
-                min="0"
-                aria-label="Print time (hours)"
-                bind:value={part.timeHours}
-                class:warn={hoursWarn !== "" && timeTouched}
-                oninput={markTimeTouched}
-                onblur={() => timeBlur(part.timeHours)}
-                aria-invalid={hoursWarn !== "" && timeTouched}
-                aria-describedby={timeDescribedBy}
-              />
-              <span class="suffix">h</span>
-            </span>
-            <span class="time-input">
-              <input
-                type="number"
-                min="0"
-                max="59"
-                aria-label="Print time (minutes)"
-                bind:value={part.timeMinutes}
-                class:warn={minutesWarn !== "" && timeTouched}
-                oninput={markTimeTouched}
-                onblur={() => timeBlur(part.timeMinutes)}
-                aria-invalid={minutesWarn !== "" && timeTouched}
-                aria-describedby={timeDescribedBy}
-              />
-              <span class="suffix">min</span>
-            </span>
-          </div>
-          {#if noSlicerTime}
-            <small id="print-time-note" class="field-hint">This file has no slicer time. Enter the print time from your slicer.</small>
-            <SlicerHelp />
-          {/if}
-          {#if timeWarn !== "" && timeTouched}<small id="print-time-warn" class="warn-text">{timeWarn}</small>{/if}
+  <div class="layout">
+    <div class="main-col">
+      <PartsList {cfg} {order}>
+        <div class="tile" role="group" aria-label={TILE_LABELS.gcode}>
+          <Card>
+            <Fieldset legend="Model and print time" step={1}>
+              <p class="hint">Drop a sliced file, or type the weight and time from your slicer.</p>
+              {#key part.id}
+                <GcodeDrop {cfg} {part} />
+              {/key}
+              <FormGrid align="controls">
+                <LabeledNumber label="Model weight" suffix="g" bind:value={part.weightG} warn={warnFor(w, "weightG")} help="The weight of the model from your slicer, without supports or waste." />
+                <Field id={timeHoursId} label="Print time" error={timeWarn !== "" && timeTouched ? timeWarn : undefined} describedby={noSlicerTime ? "print-time-note" : undefined}>
+                  {#snippet children(a)}
+                    <div class="time-pair" role="group" aria-label="Print time" onfocusout={timeGroupFocusOut}>
+                      <span class="time-input">
+                        <input
+                          id={a.id}
+                          type="number"
+                          min="0"
+                          aria-label="Print time (hours)"
+                          bind:value={part.timeHours}
+                          class:warn={hoursWarn !== "" && timeTouched}
+                          oninput={markTimeTouched}
+                          onblur={() => timeBlur(part.timeHours)}
+                          aria-invalid={hoursWarn !== "" && timeTouched}
+                          aria-describedby={a.describedby}
+                        />
+                        <span class="suffix">h</span>
+                      </span>
+                      <span class="time-input">
+                        <input
+                          type="number"
+                          min="0"
+                          max="59"
+                          aria-label="Print time (minutes)"
+                          bind:value={part.timeMinutes}
+                          class:warn={minutesWarn !== "" && timeTouched}
+                          oninput={markTimeTouched}
+                          onblur={() => timeBlur(part.timeMinutes)}
+                          aria-invalid={minutesWarn !== "" && timeTouched}
+                          aria-describedby={a.describedby}
+                        />
+                        <span class="suffix">min</span>
+                      </span>
+                    </div>
+                  {/snippet}
+                </Field>
+              </FormGrid>
+              {#if noSlicerTime}
+                <small id="print-time-note" class="hint-text">This file has no slicer time. Enter the print time from your slicer.</small>
+              {/if}
+              <!-- After the weight and time (A3): a long picker must not push the two fields the price needs below the fold. -->
+              {#key part.id}
+                {#if moonrakerEnabled(cfg)}
+                  <RecentPrints {cfg} {part} />
+                {/if}
+              {/key}
+            </Fieldset>
+          </Card>
         </div>
-        <LabeledNumber label="Quantity" suffix="units" bind:value={part.quantity} min={1} step={1} warn={warnFor(w, "quantity")} help="How many copies you are printing. Costs are shown per unit and as an order total." />
-        {#if cfg.energy.mode === "schedule"}
-          <PrintStartFields {cfg} {part} warn={warnFor(w, "printStart") || warnFor(w, "schedule")} />
-        {/if}
-        <label class="field">
-          <span>Printer</span>
-          <select
-            value={part.printerId}
-            onchange={(e) => applyPrinter(cfg, part, e.currentTarget.value)}
-          >
-            {#each cfg.printers as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-          </select>
-        </label>
-        <label class="field">
-          <span>Material</span>
-          <select
-            value={part.materialId}
-            onchange={(e) => applyMaterial(cfg, part, e.currentTarget.value)}
-          >
-            {#each cfg.materials as m (m.id)}<option value={m.id}>{m.name}</option>{/each}
-          </select>
-        </label>
-        <LabeledNumber label="Filament price" suffix={`${cfg.currency.symbol} per kg`} bind:value={part.pricePerKg} warn={warnFor(w, "pricePerKg")} help="What you pay per kilogram of this filament." />
-        <LabeledNumber label="Waste" suffix="%" bind:value={part.wastePct} warn={warnFor(w, "wastePct")} help="Extra filament lost to purging, supports, and skirts, as a percentage of the model weight." />
-      </div>
-      {#if cfg.integrations?.spoolman}
-        <SpoolPicker {cfg} {part} />
-      {/if}
-    </div>
-  </div>
 
-  <div class="tile" role="group" aria-label={TILE_LABELS.costs} aria-describedby="help-costs">
-    <div class="card">
-      <div class="head-row with-help">
-        <h2>Costs</h2>
-        <CardHelp id="costs" title={TILE_LABELS.costs} text={TILE_HELP.costs} guideAnchor="configuring-printpaca" {guideEnabled} />
-      </div>
-      <PresetChips {cfg} {part} />
-      <p class="rates-summary">
-        {ratesSummary}
-        {#if costsHasWarning}<span class="advisory-text rates-warn-hint">{fieldLabel(firstCostsWarnField ?? "")} needs a value.</span>{/if}
-      </p>
-      <details class="rates" bind:open={costsOpen} ontoggle={(e) => persistCostsOpen(e.currentTarget.open)}>
-        <summary>Edit rates</summary>
-        <div class="field-rows">
-          {#if cfg.energy.mode === "tou"}
-            <label class="field">
-              <span>Off-peak share: {Math.round(part.offPeakFrac * 100)}%</span>
-              <input type="range" min="0" max="1" step="0.05" bind:value={part.offPeakFrac} />
-            </label>
-          {:else if cfg.energy.mode !== "schedule"}
-            <LabeledNumber label="Electricity rate" suffix={`${cfg.currency.symbol} per kWh`} step={0.01} bind:value={part.flatRate} warn={warnFor(w, "flatRate")} help="What your utility charges per kilowatt-hour." />
-          {/if}
-          <LabeledNumber label="Printer power" suffix="W" bind:value={part.watts} warn={warnFor(w, "watts")} help="Average power draw while printing, in watts." />
-          <LabeledNumber label="Failure rate" suffix="%" max={90} bind:value={part.failureRatePct} warn={warnFor(w, "failureRatePct")} onchanged={touched} help="The share of prints that fail. Adds the cost of reprinting to every quote." />
-          <LabeledNumber label="Prep time" suffix="min per batch" bind:value={part.prepMinutes} warn={warnFor(w, "prepMinutes")} onchanged={touched} help="Hands-on time to slice, load, and remove the print. It is billed as labor." />
-          <LabeledNumber label="Labor rate" suffix={`${cfg.currency.symbol} per hour`} bind:value={part.laborRate} warn={warnFor(w, "laborRate")} onchanged={touched} help="What you charge for your hands-on time." />
-          <LabeledNumber label="Printer cost" suffix={cfg.currency.symbol} bind:value={part.machineCost} warn={warnFor(w, "machineCost")} help="What the printer cost to buy. Spread over its lifespan to price wear." />
-          <LabeledNumber label="Printer lifespan" suffix="h" bind:value={part.machineLifeHours} warn={warnFor(w, "machineLifeHours")} help="How many print hours you expect the printer to last." />
-          <LabeledNumber label="Monthly fixed costs" suffix={cfg.currency.symbol} bind:value={part.monthlyFixed} warn={warnFor(w, "monthlyFixed")} onchanged={touched} help="Rent, software, and other overhead per month. Spread across your monthly print hours." />
-          <LabeledNumber label="Monthly print hours" suffix="h" bind:value={part.monthlyHours} warn={warnFor(w, "monthlyHours")} onchanged={touched} help="How many hours per month your printers run. Divides the monthly fixed costs." />
+        <div class="tile" role="group" aria-label={TILE_LABELS.print}>
+          <Card>
+            <Fieldset legend="Material and printer" step={2}>
+              <p class="hint">What you print on, and how many.</p>
+              <FormGrid align="controls">
+                <Field id={`${uid}-material`} label="Material" size="m">
+                  {#snippet children(a)}
+                    <select id={a.id} aria-describedby={a.describedby} value={part.materialId} onchange={(e) => applyMaterial(cfg, part, e.currentTarget.value)}>
+                      {#each cfg.materials as m (m.id)}<option value={m.id}>{m.name}</option>{/each}
+                    </select>
+                  {/snippet}
+                </Field>
+                <LabeledNumber label="Filament price" suffix={`${cfg.currency.symbol} per kg`} bind:value={part.pricePerKg} warn={warnFor(w, "pricePerKg")} help="What you pay per kilogram of this filament." />
+                <LabeledNumber label="Waste" suffix="%" bind:value={part.wastePct} warn={warnFor(w, "wastePct")} help="Extra filament lost to purging, supports, and skirts, as a percentage of the model weight." />
+                <Field id={`${uid}-printer`} label="Printer" size="m">
+                  {#snippet children(a)}
+                    <select id={a.id} aria-describedby={a.describedby} value={part.printerId} onchange={(e) => applyPrinter(cfg, part, e.currentTarget.value)}>
+                      {#each cfg.printers as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+                    </select>
+                  {/snippet}
+                </Field>
+                <LabeledNumber label="Quantity" suffix="units" bind:value={part.quantity} min={1} step={1} warn={warnFor(w, "quantity")} help="How many copies you are printing. Costs are shown per unit and as an order total." />
+              </FormGrid>
+              {#if cfg.energy.mode === "schedule"}
+                <FormGrid>
+                  <PrintStartFields {cfg} {part} warn={warnFor(w, "printStart") || warnFor(w, "schedule")} />
+                </FormGrid>
+              {/if}
+              {#if cfg.integrations?.spoolman}
+                <SpoolPicker {cfg} {part} />
+              {/if}
+
+              <div class="costs tile" role="group" aria-label={TILE_LABELS.costs}>
+                <h3 class="sub-heading">Costs</h3>
+                <PresetChips {cfg} {part} />
+                <p class="rates-summary">
+                  {ratesSummary}
+                  {#if costsHasWarning}<span class="advisory-text rates-warn-hint">{fieldLabel(firstCostsWarnField ?? "")} needs a value.</span>{/if}
+                </p>
+                <details class="rates" bind:open={costsOpen} ontoggle={(e) => persistCostsOpen(e.currentTarget.open)}>
+                  <summary>Edit rates</summary>
+                  <FormGrid>
+                    {#if cfg.energy.mode === "tou"}
+                      <Field id={`${uid}-offpeak`} label={`Off-peak share: ${Math.round(part.offPeakFrac * 100)}%`}>
+                        {#snippet children(a)}
+                          <input id={a.id} type="range" min="0" max="1" step="0.05" bind:value={part.offPeakFrac} />
+                        {/snippet}
+                      </Field>
+                    {:else if cfg.energy.mode !== "schedule"}
+                      <LabeledNumber label="Electricity rate" suffix={`${cfg.currency.symbol} per kWh`} step={0.01} bind:value={part.flatRate} warn={warnFor(w, "flatRate")} help="What your utility charges per kilowatt-hour." />
+                    {/if}
+                    <LabeledNumber label="Printer power" suffix="W" bind:value={part.watts} warn={warnFor(w, "watts")} help="Average power draw while printing, in watts." />
+                    <LabeledNumber label="Failure rate" suffix="%" max={90} bind:value={part.failureRatePct} warn={warnFor(w, "failureRatePct")} onchanged={touched} help="The share of prints that fail. Adds the cost of reprinting to every quote." />
+                    <LabeledNumber label="Prep time" suffix="min per batch" bind:value={part.prepMinutes} warn={warnFor(w, "prepMinutes")} onchanged={touched} help="Hands-on time to slice, load, and remove the print. It is billed as labor." />
+                    <LabeledNumber label="Labor rate" suffix={`${cfg.currency.symbol} per hour`} bind:value={part.laborRate} warn={warnFor(w, "laborRate")} onchanged={touched} help="What you charge for your hands-on time." />
+                    <LabeledNumber label="Printer cost" suffix={cfg.currency.symbol} bind:value={part.machineCost} warn={warnFor(w, "machineCost")} help="What the printer cost to buy. Spread over its lifespan to price wear." />
+                    <LabeledNumber label="Printer lifespan" suffix="h" bind:value={part.machineLifeHours} warn={warnFor(w, "machineLifeHours")} help="How many print hours you expect the printer to last." />
+                    <LabeledNumber label="Monthly fixed costs" suffix={cfg.currency.symbol} bind:value={part.monthlyFixed} warn={warnFor(w, "monthlyFixed")} onchanged={touched} help="Rent, software, and other overhead per month. Spread across your monthly print hours." />
+                    <LabeledNumber label="Monthly print hours" suffix="h" bind:value={part.monthlyHours} warn={warnFor(w, "monthlyHours")} onchanged={touched} help="How many hours per month your printers run. Divides the monthly fixed costs." />
+                  </FormGrid>
+                </details>
+                {#if cfg.hardware.length > 0}
+                  <div class="hardware-section">
+                    <h4 class="section-label">Hardware</h4>
+                    {#each part.hardware as hw, i (i)}
+                      <div class="hardware-row">
+                        <Field id={`${uid}-hw-${i}-item`} label="Item" size="m">
+                          {#snippet children(a)}
+                            <select id={a.id} aria-label={`Hardware ${i + 1} item`} bind:value={hw.name}>
+                              {#each cfg.hardware as h (h.name)}<option value={h.name}>{h.name}</option>{/each}
+                            </select>
+                          {/snippet}
+                        </Field>
+                        <Field id={`${uid}-hw-${i}-qty`} label="Quantity per unit" size="s">
+                          {#snippet children(a)}
+                            <input
+                              id={a.id}
+                              type="number"
+                              min="0"
+                              step="1"
+                              aria-label={`Hardware ${i + 1} quantity per unit`}
+                              bind:value={hw.qtyPerUnit}
+                            />
+                          {/snippet}
+                        </Field>
+                        <span class="hardware-extended">{hardwareRowExtended(hw)}</span>
+                        <button type="button" aria-label={`Remove hardware row ${i + 1}`} data-focus-key={`remove-hardware-row-${i}`} onclick={() => removeHardwareRow(i)}>Remove</button>
+                      </div>
+                    {/each}
+                    <button type="button" data-focus-key="add-hardware-row" onclick={addHardwareRow}>Add hardware</button>
+                  </div>
+                {/if}
+              </div>
+            </Fieldset>
+          </Card>
         </div>
-      </details>
-      {#if cfg.hardware.length > 0}
-        <div class="hardware-section">
-          <h3 class="section-label">Hardware</h3>
-          {#each part.hardware as hw, i (i)}
-            <div class="hardware-row">
-              <label class="field field-inline">
-                <span>Item</span>
-                <select aria-label={`Hardware ${i + 1} item`} bind:value={hw.name}>
-                  {#each cfg.hardware as h (h.name)}<option value={h.name}>{h.name}</option>{/each}
-                </select>
-              </label>
-              <label class="field field-inline">
-                <span>Quantity per unit</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  aria-label={`Hardware ${i + 1} quantity per unit`}
-                  bind:value={hw.qtyPerUnit}
-                />
-              </label>
-              <span class="hardware-extended">{hardwareRowExtended(hw)}</span>
-              <button type="button" aria-label={`Remove hardware row ${i + 1}`} data-focus-key={`remove-hardware-row-${i}`} onclick={() => removeHardwareRow(i)}>Remove</button>
+      </PartsList>
+
+      <div class="tile" role="group" aria-label={TILE_LABELS.pricing}>
+        <PricingPanel {cfg} {order} {part} {partIndex} />
+      </div>
+
+      {#if sellingEnabled}
+        <div class="tile" role="group" aria-label="Print the quote">
+          <Card>
+            <h2 class="card-heading">Print the quote</h2>
+            <FormGrid>
+              <div class="linked-client">
+                <span class="linked-label">Client on the quote</span>
+                <span class="linked-customer">{quoteClient.name || (quoteClient.id ? "Linked client" : "No client")}</span>
+              </div>
+              <Field id={`${uid}-project`} label="Project (optional)" size="m">
+                {#snippet children(a)}
+                  <input id={a.id} placeholder="Project name" bind:value={quoteMeta.project} />
+                {/snippet}
+              </Field>
+              <Field id={`${uid}-reference`} label="Quote number (optional)" size="m">
+                {#snippet children(a)}
+                  <input id={a.id} placeholder="Quote #" bind:value={quoteMeta.reference} />
+                {/snippet}
+              </Field>
+            </FormGrid>
+            <p class="hint">Set the client in the summary, under Client for this quote. <a href="#main" onclick={focusClientField}>Go to Client for this quote</a></p>
+            <div class="print-actions">
+              <button class="primary" onclick={() => requestPrint("client")} disabled={!canPrint}>Print client quote</button>
+              <button onclick={() => requestPrint("internal")} disabled={!canPrint}>Print cost audit</button>
             </div>
-          {/each}
-          <button type="button" data-focus-key="add-hardware-row" onclick={addHardwareRow}>Add hardware</button>
+            {#if printHint}<p class="hint">{printHint}</p>{/if}
+            {#if cfg.quote.businessName === ""}
+              <p class="hint">Printed quotes have no business name yet. <a href="#/settings">Add yours in Settings &gt; Business identity.</a></p>
+            {/if}
+          </Card>
         </div>
       {/if}
     </div>
-  </div>
 
-  <div class="tile" role="group" aria-label={TILE_LABELS.breakdown} aria-describedby="help-breakdown">
-    {#if sellingEnabled}
-      <div class="card toolbar">
-        <div class="field field-inline">
-          <span>Client</span>
-          <span class="linked-customer">{quoteClient.name || (quoteClient.id ? "Linked client" : "No client")}</span>
-          <small class="linked-customer-hint">Set in <a href="#main" onclick={focusClientField}>Client for this quote</a> under Saved quotes.</small>
+    <HistoryPanel {cfg} {order} {pricingPending} {settledOrder}>
+      {#snippet summary()}
+        <QuoteSummaryBar
+          {cfg}
+          {order}
+          previewStatus={previewState.status}
+          previewError={previewState.status === "error" ? `${previewState.errors[0]} Showing the last known price. It retries on the next change.` : ""}
+        />
+        <div class="tile" role="group" aria-label={TILE_LABELS.breakdown}>
+          <details class="breakdown-disclosure" bind:open={breakdownOpen} ontoggle={(e) => writeBreakdownOpen(e.currentTarget.open)}>
+            <summary>Breakdown</summary>
+            <div class="breakdown-body">
+              {#if multi}<PartsTable {cfg} {order} />{/if}
+              <BreakdownTable {breakdown} {cfg} partName={multi ? labels[partIndex] : ""} />
+            </div>
+          </details>
         </div>
-        <label class="field field-inline">
-          <span>Project (optional)</span>
-          <input placeholder="Project name" bind:value={quoteMeta.project} />
-        </label>
-        <label class="field field-inline">
-          <span>Quote number (optional)</span>
-          <input placeholder="Quote #" bind:value={quoteMeta.reference} />
-        </label>
-        <button class="primary" onclick={() => requestPrint("client")} disabled={!canPrint}>Print client quote</button>
-        <button onclick={() => requestPrint("internal")} disabled={!canPrint}>Print cost audit</button>
-      </div>
-      {#if printHint}<p class="hint">{printHint}</p>{/if}
-      {#if cfg.quote.businessName === ""}
-        <p class="hint">Printed quotes have no business name yet. <a href="#/settings">Add yours in Settings &gt; Business identity.</a></p>
-      {/if}
-    {/if}
-    {#if multi}<PartsTable {cfg} {order} />{/if}
-    <BreakdownTable {breakdown} {cfg} partName={multi ? labels[partIndex] : ""} />
-  </div>
-
-  <div class="tile" role="group" aria-label={TILE_LABELS.pricing} aria-describedby="help-pricing">
-    <PricingPanel {cfg} {order} {part} {partIndex} />
-  </div>
-
-  <div class="tile" role="group" aria-label={TILE_LABELS.history} aria-describedby="help-history">
-    <HistoryPanel {cfg} {order} {pricingPending} {settledOrder} />
+      {/snippet}
+      {#snippet compactStats()}
+        <QuoteSummaryBar {cfg} {order} variant="compact" />
+      {/snippet}
+    </HistoryPanel>
   </div>
 </div>
 
 <style>
-  .head-row h1 { margin: 0; }
-
-  .explain-toggle[aria-pressed="true"] {
-    background: var(--surface-2);
-    border-color: var(--accent);
-    color: var(--accent-text);
-  }
-
   .local-skip {
     position: absolute;
     left: -9999px;
     top: 0;
     z-index: 5;
-    padding: 0.4rem 0.8rem;
+    padding: var(--space-2) var(--space-4);
     background: var(--accent);
     color: var(--accent-contrast);
     border-radius: var(--radius);
   }
-  .local-skip:focus { left: 0.5rem; top: 0.5rem; }
+  .local-skip:focus { left: var(--space-2); top: var(--space-2); }
 
-  .edit-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
-  .edit-bar p { margin: 0; }
-  .edit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
-  .edit-status { font-size: var(--text-sm); color: var(--ok); }
-  .edit-status.failed { color: var(--danger); }
+  .edit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 
-  .first-run ol { margin: 0 0 0.75rem; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.3rem; }
+  :global(.first-run) ol { margin: 0 0 var(--space-3); padding-inline-start: var(--space-5); display: flex; flex-direction: column; gap: var(--space-1); }
 
+  /* One column with the summary pinned to the bottom below 1100px; two columns from 1100px, the form on the
+   * left and the sticky summary on the right. The summary and the recent saves place themselves with
+   * grid areas declared in HistoryPanel. */
+  .layout { display: flex; flex-direction: column; gap: var(--gap-section); min-width: 0; }
+  .main-col { display: flex; flex-direction: column; gap: var(--gap-section); min-width: 0; }
+  @media (min-width: 1100px) {
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(var(--field-m), 24rem);
+      grid-template-areas: "main summary" "recent summary";
+      grid-template-rows: auto 1fr;
+      column-gap: var(--gap-section);
+      align-items: start;
+    }
+    .main-col { grid-area: main; }
+  }
 
-  .tile { display: flex; flex-direction: column; gap: 0.4rem; }
+  .tile { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+  .tile :global(.card) { display: flex; flex-direction: column; gap: var(--gap); }
+  .sub-heading { margin: 0; font-size: var(--type-heading); }
+  :global(.card-heading) { margin-block: 0; }
+  .costs { margin-block-start: var(--gap); padding-block-start: var(--gap); border-top: 1px solid var(--border); }
+  .hint-text { color: var(--muted); font-size: var(--type-secondary); }
 
-  /* Deliberate exception: this compact toolbar keeps its fields side by side (see .field-inline); a wide
-   * label/control row would be wrong for a print-metadata strip. */
-  .toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 0.6rem; }
-  .toolbar .field { flex: 1 1 160px; min-width: 140px; }
-  .toolbar button { white-space: nowrap; }
-
-  /* Static replacement for the customer input once a client is linked; matches the input's box (theme.css
-   * padding/min-height) so swapping doesn't shift the toolbar's height. */
-  .linked-customer { display: flex; align-items: center; min-height: 44px; padding: 0.4rem 0.6rem; }
-  .linked-customer-hint { color: var(--muted); font-size: var(--text-xs); }
+  /* Static replacement for the customer input once a client is linked; matches the input's box so swapping
+   * doesn't shift the row's height. */
+  .linked-client { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+  .linked-label { font-size: var(--type-secondary); font-weight: 600; }
+  .linked-customer { display: flex; align-items: center; min-height: var(--control-h); overflow-wrap: anywhere; }
+  .print-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
   /* Compound print-time field: hours and minutes in one grid cell, so the label/control grid can't split
    * them onto separate rows. */
-  .time-pair { display: flex; align-items: center; gap: 0.6rem; }
-  .time-input { display: inline-flex; align-items: center; gap: 0.3rem; }
-  .field .time-pair input { width: 4.5rem; }
+  .time-pair { display: flex; align-items: center; gap: var(--space-3); }
+  .time-input { display: inline-flex; align-items: center; gap: var(--space-1); }
+  .time-input input { flex: 0 1 var(--field-xs); min-width: 0; }
 
   /* Shop rates: a plain-text summary of the active preset stays visible; the fields collapse behind
    * <details> since they're rarely touched once a preset is picked. */
-  .rates-summary { color: var(--muted); font-size: var(--text-sm); margin: 0.4rem 0; }
-  .rates-warn-hint { display: inline-block; margin-left: 0.5rem; }
-  .rates summary { cursor: pointer; margin: 0.4rem 0; }
+  .rates-summary { color: var(--muted); font-size: var(--type-secondary); margin: var(--space-2) 0; }
+  .rates-warn-hint { display: inline-block; margin-inline-start: var(--space-2); }
+  .rates summary, .breakdown-disclosure summary { cursor: pointer; display: list-item; list-style-position: inside; padding-block: var(--space-2); font-weight: 600; }
+  .rates > :global(.form-grid) { margin-block-start: var(--space-2); }
+  .breakdown-body { display: flex; flex-direction: column; gap: var(--gap); padding-block-start: var(--space-2); }
 
-  /* Hardware rows: one add-row picker (catalog select + qty) per entry, same layout as SettingsTab's
-   * fee-schedule charges. The section is absent from the DOM when cfg.hardware is empty. */
-  .hardware-section { margin-top: 0.6rem; }
-  .hardware-row { display: flex; align-items: end; gap: 0.5rem; margin-bottom: 0.4rem; flex-wrap: wrap; }
-  .hardware-row .field { flex: 1 1 140px; min-width: 120px; }
+  /* Hardware rows: one add-row picker (catalog select + qty) per entry. The section is absent from the DOM
+   * when cfg.hardware is empty. */
+  .hardware-section { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); margin-block-start: var(--gap); }
+  .hardware-section h4 { margin: 0; }
+  .hardware-row { display: flex; align-items: flex-end; gap: var(--space-2) var(--gap); flex-wrap: wrap; }
+  .hardware-row :global(.ui-field) { flex: 1 1 var(--field-s); }
   .hardware-extended {
     flex: 0 0 auto;
-    min-height: 44px;
+    min-height: var(--control-h);
     display: flex;
     align-items: center;
     font-variant-numeric: tabular-nums;

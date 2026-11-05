@@ -3,6 +3,7 @@
 //
 //   #/                    the gallery (or the estimate form when the shop has no items)
 //   #/item/<id>           one item's order panel
+//   #/category/<slug>     the gallery filtered to one category
 //   #/estimate            the custom estimate form
 //   #/order/received      the item order confirmation
 //   #/estimate/received   the estimate confirmation
@@ -13,6 +14,7 @@
 export type Route =
   | { name: "gallery" }
   | { name: "item"; id: string }
+  | { name: "category"; slug: string }
   | { name: "estimate" }
   | { name: "order-received" }
   | { name: "estimate-received" };
@@ -22,6 +24,14 @@ export function parseRoute(hash: string): Route {
   if (path === "estimate") return { name: "estimate" };
   if (path === "estimate/received") return { name: "estimate-received" };
   if (path === "order/received") return { name: "order-received" };
+  if (path.startsWith("category/")) {
+    try {
+      const slug = decodeURIComponent(path.slice("category/".length));
+      if (slug !== "") return { name: "category", slug };
+    } catch {
+      // A malformed escape is not a category link; fall through to the gallery.
+    }
+  }
   if (path.startsWith("item/")) {
     const raw = path.slice("item/".length);
     try {
@@ -38,6 +48,8 @@ export function routeHash(route: Route): string {
   switch (route.name) {
     case "item":
       return `#/item/${encodeURIComponent(route.id)}`;
+    case "category":
+      return `#/category/${encodeURIComponent(route.slug)}`;
     case "estimate":
       return "#/estimate";
     case "estimate-received":

@@ -39,3 +39,10 @@ export function fallbackIfDisabled<T extends string>(tab: T, disabled: ReadonlyS
 export function firstNavTab<T extends string>(sections: readonly NavSection<T>[]): T | null {
   return sections[0]?.items[0] ?? null;
 }
+
+/** Where the brand link goes: `preferred` (the Dashboard) when the identity's nav has it, otherwise the first
+ * tab in the nav. null when every section emptied out. A hidden Dashboard (disabled, or not granted) is
+ * absent from the filtered sections, so the logo never sends anyone to a page they can't open. */
+export function brandTab<T extends string>(sections: readonly NavSection<T>[], preferred: T): T | null {
+  return sections.some((s) => s.items.includes(preferred)) ? preferred : firstNavTab(sections);
+}

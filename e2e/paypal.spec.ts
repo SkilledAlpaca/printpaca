@@ -27,7 +27,7 @@ async function setPaypalConfig(values: { paypalMe: string; code: string }): Prom
   const api = await pwRequest.newContext({ baseURL: "http://127.0.0.1:8099/admin/" });
   try {
     const cfg = (await (await api.get("api/config")).json()) as Record<string, any>;
-    for (const k of ["integrations", "version", "authEnabled", "moonraker", "fluiddUrl", "demoMode", "integrationSources", "user"]) {
+    for (const k of ["integrations", "version", "authEnabled", "moonraker", "fluiddUrl", "smtpConfigured", "demoMode", "integrationSources", "user"]) {
       delete cfg[k];
     }
     cfg.invoicing = { ...cfg.invoicing, paypalMe: values.paypalMe };

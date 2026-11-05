@@ -42,6 +42,10 @@ export interface Item {
    * global max. Stored as given for "ready_to_print" but inert there. */
   allowBackorder: boolean;
   sortOrder: number;
+  /** The item's category id, "" for none. Managed in Shop items, listed by /api/categories. */
+  categoryId: string;
+  /** Featured items come first within the selected shop view. */
+  featured: boolean;
   createdAt: string;
   updatedAt: string;
   /** Who created/last wrote this item (server/items.go). "" when unattributed. */
@@ -54,8 +58,11 @@ export interface Item {
 
 /** The POST/PUT body: every client-writable field. id, imageFile, timestamps and attribution are
  * server-assigned (imageFile is owned by uploadItemImage). */
-export type ItemInput = Omit<Item, "id" | "imageFile" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy" | "optionGroups" | "version"> & {
+export type ItemInput = Omit<Item, "id" | "imageFile" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy" | "optionGroups" | "version" | "categoryId" | "featured"> & {
   optionGroups: ItemOptionGroupInput[];
+  /** Absent keeps the stored value on a PUT (the list's one-field writes leave it out); "" clears the category. */
+  categoryId?: string;
+  featured?: boolean;
   /** The Item.version the form was loaded with; omit to skip the stale-save check. */
   version?: number;
 };

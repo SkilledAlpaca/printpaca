@@ -29,6 +29,9 @@ export interface EnergySchedule {
   defaultStartTime: string;
   holidays: string[];
   seasons: TouSeason[];
+  /** Every season has the same base period names and windows (name, start, end) per day type; only the
+   * rates differ. An editing constraint that pricing ignores. Absent when false. */
+  sameWindowsAllYear?: boolean;
 }
 
 export interface EnergyPeriod {
@@ -103,6 +106,15 @@ function validateDay(path: string, d: TouDay): string[] {
   return p;
 }
 
+/** Whether two day types have the same base name and the same windows (name, start, end). Rates are ignored. */
+export function sameTouWindows(a: TouDay, b: TouDay): boolean {
+  return (
+    a.baseName === b.baseName &&
+    a.windows.length === b.windows.length &&
+    a.windows.every((w, i) => w.name === b.windows[i]!.name && w.start === b.windows[i]!.start && w.end === b.windows[i]!.end)
+  );
+}
+
 /** Problems with a schedule, in the server's words (energy.schedule.* paths). An empty list is valid.
  * requireSeasons is true in schedule mode. */
 export function validateEnergySchedule(s: EnergySchedule, requireSeasons: boolean): string[] {
@@ -141,6 +153,16 @@ export function validateEnergySchedule(s: EnergySchedule, requireSeasons: boolea
     }
     p.push(...validateDay(`${sp}.weekday`, se.weekday), ...validateDay(`${sp}.weekend`, se.weekend));
   });
+  if (s.sameWindowsAllYear) {
+    s.seasons.forEach((se, i) => {
+      if (i === 0) return;
+      for (const dt of ["weekday", "weekend"] as const) {
+        if (!sameTouWindows(s.seasons[0]![dt], se[dt])) {
+          p.push(`energy.schedule.seasons[${i}].${dt}.windows: sameWindowsAllYear is on, so the windows must match seasons[0] (rates may differ)`);
+        }
+      }
+    });
+  }
   const missing: number[] = [];
   for (let m = 1; m <= 12; m++) if (!owner.has(m)) missing.push(m);
   if (missing.length > 0) {

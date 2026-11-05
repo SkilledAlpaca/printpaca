@@ -52,6 +52,10 @@ type EnergySchedule struct {
 	DefaultStartTime string      `yaml:"defaultStartTime" json:"defaultStartTime"`
 	Holidays         []string    `yaml:"holidays" json:"holidays"`
 	Seasons          []TouSeason `yaml:"seasons" json:"seasons"`
+	// SameWindowsAllYear is an editing constraint, not an input to pricing: every season has the same base
+	// period names and the same windows (name, start, end) per day type, and only the rates differ. The
+	// editor shows one set of windows when it is set. Omitted when false, so existing schedules store as before.
+	SameWindowsAllYear bool `yaml:"sameWindowsAllYear,omitempty" json:"sameWindowsAllYear,omitempty"`
 }
 
 // EnergyPeriod is one named period's share of a schedule-priced print. Cost is in currency for the whole
@@ -196,6 +200,9 @@ func validateEnergySchedule(s EnergySchedule, requireSeasons bool) []string {
 		p = append(p, validateTouDay(sp+".weekday", se.Weekday)...)
 		p = append(p, validateTouDay(sp+".weekend", se.Weekend)...)
 	}
+	if s.SameWindowsAllYear {
+		p = append(p, validateSameWindows(s.Seasons)...)
+	}
 	var missing []string
 	for m := 1; m <= 12; m++ {
 		if _, ok := owner[m]; !ok {
@@ -206,6 +213,36 @@ func validateEnergySchedule(s EnergySchedule, requireSeasons bool) []string {
 		p = append(p, "energy.schedule.seasons: month(s) "+strings.Join(missing, ", ")+" are in no season; every month 1-12 needs one")
 	}
 	return p
+}
+
+// validateSameWindows reports each season whose base period names or windows (name, start, end) differ from
+// the first season's, for a schedule with SameWindowsAllYear set. Rates may differ.
+func validateSameWindows(seasons []TouSeason) []string {
+	var p []string
+	first := seasons[0]
+	for i := 1; i < len(seasons); i++ {
+		for _, dt := range []struct {
+			name        string
+			want, other TouDay
+		}{{"weekday", first.Weekday, seasons[i].Weekday}, {"weekend", first.Weekend, seasons[i].Weekend}} {
+			if !sameTouWindows(dt.want, dt.other) {
+				p = append(p, fmt.Sprintf("energy.schedule.seasons[%d].%s.windows: sameWindowsAllYear is on, so the windows must match seasons[0] (rates may differ)", i, dt.name))
+			}
+		}
+	}
+	return p
+}
+
+func sameTouWindows(a, b TouDay) bool {
+	if a.BaseName != b.BaseName || len(a.Windows) != len(b.Windows) {
+		return false
+	}
+	for i, w := range a.Windows {
+		if w.Name != b.Windows[i].Name || w.Start != b.Windows[i].Start || w.End != b.Windows[i].End {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeEnergySchedule(s *EnergySchedule) {

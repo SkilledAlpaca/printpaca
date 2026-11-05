@@ -21,14 +21,16 @@
     type LineForm,
     type PaymentForm,
   } from "../../lib/invoiceForm";
-  import { mdiArrowLeft } from "@mdi/js";
   import { requestReference } from "../../lib/requestRow";
   import { pendingOpen } from "../../lib/state.svelte";
-  import Icon from "../Icon.svelte";
   import StatusBadge from "../StatusBadge.svelte";
   import PaymentsPanel from "./PaymentsPanel.svelte";
   import AttributionLine from "../AttributionLine.svelte";
-  import DetailTitle from "../DetailTitle.svelte";
+  import PageHeader from "../ui/PageHeader.svelte";
+  import Card from "../ui/Card.svelte";
+  import Field from "../ui/Field.svelte";
+  import FormGrid from "../ui/FormGrid.svelte";
+  import KeyValueTable, { type KeyValueRow } from "../ui/KeyValueTable.svelte";
   import ScrollRegion from "../ScrollRegion.svelte";
   import { confirmFocus, keySelector } from "../../lib/a11yFocus";
   import { canConfigureShop, hasTabAccess, type ConfigUser } from "../../lib/permissions";
@@ -173,6 +175,21 @@
         })
       : [],
   );
+  // The read-only facts of a sent, paid or canceled invoice; addresses and notes show only when present.
+  const readonlyRows = $derived.by((): KeyValueRow[] => {
+    const d = detail;
+    if (!d) return [];
+    const rows: KeyValueRow[] = [
+      { label: "Client", value: d.clientName },
+      { label: "Issue date", value: d.issueDate ? formatDate(d.issueDate) : "-" },
+      { label: "Due date", value: d.dueDate ? formatDate(d.dueDate) : "-" },
+      { label: "Sales tax", value: `${bpToPct(d.taxBp).toFixed(2)}%` },
+    ];
+    if (d.clientBillingAddress) rows.push({ label: "Billing", value: d.clientBillingAddress });
+    if (d.clientShippingAddress) rows.push({ label: "Shipping", value: d.clientShippingAddress });
+    if (d.notes) rows.push({ label: "Notes", value: d.notes });
+    return rows;
+  });
   // Picking a shop item needs the Shop items grant (GET /api/items is gated on it); without it the picker is
   // left out rather than offered empty.
   const canPickItems = $derived(hasTabAccess("items", user));
@@ -219,24 +236,30 @@
   />
 {/snippet}
 
-<div class="head-row">
-  <button type="button" class="back-link" onclick={onBackToList}><Icon path={mdiArrowLeft} /> Back to list</button>
-  {#if detail}<StatusBadge status={detail.status} dueDate={detail.dueDate} />{/if}
-</div>
+<PageHeader
+  record
+  title={!detailLoading && !detailError ? (detail ? `Invoice ${detail.number}` : "New invoice") : undefined}
+  onback={onBackToList}
+>
+  {#snippet status()}{#if detail}<StatusBadge status={detail.status} dueDate={detail.dueDate} />{/if}{/snippet}
+  {#snippet subtitle()}{#if detail}<AttributionLine createdBy={detail.createdBy} updatedBy={detail.updatedBy} />{/if}{/snippet}
+</PageHeader>
 
 {#if detailLoading}
   <p role="status">Loading…</p>
 {:else if detailError}
   <p class="banner-warn" role="alert">{detailError}</p>
 {:else}
-  <div class="card">
-    <DetailTitle>{detail ? `Invoice ${detail.number}` : "New invoice"}</DetailTitle>
-    {#if detail}<AttributionLine createdBy={detail.createdBy} updatedBy={detail.updatedBy} />{/if}
+  <Card>
     {#if provenance}<p class="hint">Created from a saved quote.</p>{/if}
     {#if detail?.requestId}
       <p class="hint">
         Created from request
-        <button type="button" class="quiet linkish" onclick={() => openRequest(detail!.requestId!)}>{requestReference({ id: detail.requestId, reference: detail.requestReference })}</button>.
+        {#if hasTabAccess("requests", user)}
+          <button type="button" class="quiet linkish" onclick={() => openRequest(detail!.requestId!)}>{requestReference({ id: detail.requestId, reference: detail.requestReference })}</button>.
+        {:else}
+          {requestReference({ id: detail.requestId, reference: detail.requestReference })}.
+        {/if}
       </p>
     {/if}
 
@@ -253,47 +276,54 @@
     {/if}
 
     {#if detail === null || detail.status === "draft"}
-      <div class="field-rows">
-        <label class="field">
-          <span>Client</span>
-          <select bind:value={form.clientId}>
-            <option value="">Walk-in (no client)</option>
-            {#each clients as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
-          </select>
-        </label>
+      <FormGrid>
+        <Field id="invoice-client" label="Client" size="m">
+          {#snippet children(f)}
+            <select id={f.id} bind:value={form.clientId}>
+              <option value="">Walk-in (no client)</option>
+              {#each clients as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
+            </select>
+          {/snippet}
+        </Field>
         {#if form.clientId === ""}
-          <label class="field">
-            <span>Client name</span>
-            <input bind:value={form.clientName} placeholder="Walk-in client name" />
-          </label>
-          {#if matchingClient}
-            <p class="hint">
-              A client named {matchingClient.name} exists.
-              <button type="button" class="quiet" onclick={() => onLinkMatchingClient(matchingClient!.id)}>Link client</button>
-            </p>
-          {/if}
+          <Field id="invoice-client-name" label="Client name" size="m">
+            {#snippet children(f)}
+              <input id={f.id} bind:value={form.clientName} placeholder="Walk-in client name" />
+            {/snippet}
+          </Field>
         {/if}
-        <label class="field">
-          <span>Issue date</span>
-          <input type="date" bind:value={form.issueDate} />
-        </label>
-        <label class="field">
-          <span>Due date</span>
-          <input type="date" bind:value={form.dueDate} />
-        </label>
-        <label class="field">
-          <span>Sales tax (%)</span>
-          <input type="number" min="0" max="100" step="0.01" bind:value={form.taxPct} />
-        </label>
-        <label class="field">
-          <span>Invoice discount ({cfg.currency.symbol})</span>
-          <input type="number" min="0" step="0.01" bind:value={form.discount} aria-invalid={!hasAtMostTwoDecimals(form.discount ?? 0) || undefined} />
-        </label>
-      </div>
-      <label class="field">
-        <span>Notes</span>
-        <textarea rows="3" bind:value={form.notes}></textarea>
-      </label>
+        <Field id="invoice-issue-date" label="Issue date" size="s">
+          {#snippet children(f)}
+            <input id={f.id} type="date" bind:value={form.issueDate} />
+          {/snippet}
+        </Field>
+        <Field id="invoice-due-date" label="Due date" size="s">
+          {#snippet children(f)}
+            <input id={f.id} type="date" bind:value={form.dueDate} />
+          {/snippet}
+        </Field>
+        <Field id="invoice-tax" label="Sales tax (%)" size="xs">
+          {#snippet children(f)}
+            <input id={f.id} type="number" min="0" max="100" step="0.01" bind:value={form.taxPct} />
+          {/snippet}
+        </Field>
+        <Field id="invoice-discount" label={`Invoice discount (${cfg.currency.symbol})`} size="xs">
+          {#snippet children(f)}
+            <input id={f.id} type="number" min="0" step="0.01" bind:value={form.discount} aria-invalid={!hasAtMostTwoDecimals(form.discount ?? 0) || undefined} />
+          {/snippet}
+        </Field>
+      </FormGrid>
+      {#if form.clientId === "" && matchingClient}
+        <p class="hint">
+          A client named {matchingClient.name} exists.
+          <button type="button" class="quiet" onclick={() => onLinkMatchingClient(matchingClient!.id)}>Link client</button>
+        </p>
+      {/if}
+      <Field id="invoice-notes" label="Notes">
+        {#snippet children(f)}
+          <textarea id={f.id} rows="3" bind:value={form.notes}></textarea>
+        {/snippet}
+      </Field>
 
       <h3>Lines</h3>
       {#if canPickItems}<p class="hint">Link a line to a shop item so a counter sale counts in Top items once the invoice is sent or paid, and sending takes in-stock items off the shelf.</p>{/if}
@@ -394,15 +424,7 @@
         {@render paymentsPanel(detail)}
       {/if}
     {:else if detail}
-      <div class="readonly-grid">
-        <div><span class="lbl">Client</span><span>{detail.clientName}</span></div>
-        <div><span class="lbl">Issue date</span><span>{detail.issueDate ? formatDate(detail.issueDate) : "-"}</span></div>
-        <div><span class="lbl">Due date</span><span>{detail.dueDate ? formatDate(detail.dueDate) : "-"}</span></div>
-        <div><span class="lbl">Sales tax</span><span>{bpToPct(detail.taxBp).toFixed(2)}%</span></div>
-      </div>
-      {#if detail.clientBillingAddress}<p class="address"><span class="lbl">Billing</span> {detail.clientBillingAddress}</p>{/if}
-      {#if detail.clientShippingAddress}<p class="address"><span class="lbl">Shipping</span> {detail.clientShippingAddress}</p>{/if}
-      {#if detail.notes}<p class="notes"><span class="lbl">Notes</span> {detail.notes}</p>{/if}
+      <KeyValueTable rows={readonlyRows} label="Invoice details" />
 
       <ScrollRegion label="Invoice lines">
         <table>
@@ -429,7 +451,7 @@
       </div>
 
       {#if detail.sends.length > 0}
-        <div class="subcard delivery-card">
+        <div class="delivery-card"><Card tone="inset">
           <h3>Delivery</h3>
           <ScrollRegion label="Delivery history">
             <table>
@@ -447,7 +469,7 @@
               </tbody>
             </table>
           </ScrollRegion>
-        </div>
+        </Card></div>
       {/if}
 
       {#if detail.status === "sent" || detail.status === "paid"}
@@ -456,7 +478,7 @@
     {/if}
 
     {#if detail}
-      {@const emailReason = emailDisabledReason(cfg.smtp.host, detail)}
+      {@const emailReason = emailDisabledReason(cfg.smtpConfigured, detail)}
       <p class="status-line" role={statusActionFailed ? "alert" : "status"} aria-live={statusActionFailed ? "assertive" : "polite"}>
         {statusActionMessage}
       </p>
@@ -523,17 +545,14 @@
         <p class="hint">Printed invoices have no business name yet. <a href="#/settings">Add yours in Settings &gt; Business identity.</a></p>
       {/if}
     {/if}
-  </div>
+  </Card>
 {/if}
 
 <style>
-  .back-link { display: inline-flex; align-items: center; gap: 0.35rem; }
-  .line-error { display: block; color: var(--danger); font-size: var(--text-xs); margin-top: 0.15rem; }
+  .line-error { display: block; color: var(--danger); font-size: var(--text-xs); margin-top: var(--space-1); }
 
-  .card .field { margin-bottom: 0.6rem; }
-  .address, .notes { font-size: var(--text-sm); margin: 0.3rem 0; }
-  .from-quote { color: var(--muted); margin-left: 0.35rem; }
-  .item-link { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin-top: 0.25rem; }
+  .from-quote { color: var(--muted); margin-left: var(--space-2); }
+  .item-link { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin-top: var(--space-1); }
   /* Delivery table's Date column: same treatment as InvoiceList's .nowrap (scoped styles don't share); a
    * timestamp scrolls horizontally instead of wrapping mid-token. */
   .nowrap { white-space: nowrap; }
@@ -544,10 +563,10 @@
   .conflict p { margin: 0 0 var(--space-2); }
   .conflict-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-2); }
 
-  .totals { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.2rem; align-items: flex-end; }
-  .totals div { display: flex; gap: 1rem; justify-content: space-between; width: 14rem; }
+  .totals { margin-top: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); align-items: flex-end; }
+  .totals div { display: flex; gap: var(--space-4); justify-content: space-between; width: var(--field-m); }
   .totals span:last-child { font-variant-numeric: tabular-nums; }
-  .total-line { font-weight: 700; border-top: 1px solid var(--border); padding-top: 0.3rem; }
+  .total-line { font-weight: 700; border-top: 1px solid var(--border); padding-top: var(--space-1); }
 
   /* Like PaymentsPanel's .payments-card, just ahead of it: Delivery is history and Payments is the
    * actionable card, so Delivery reads first when both show. */

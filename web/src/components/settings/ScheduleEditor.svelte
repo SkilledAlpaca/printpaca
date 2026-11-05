@@ -1,10 +1,16 @@
 <script lang="ts">
   import type { ServerConfig } from "../../lib/settings";
   import { blankSchedule, sceExampleSchedule } from "../../lib/scheduleExamples";
-  import type { TouDay, TouSeason } from "../../lib/engine/schedule";
-  import { describePath, marksPath, overnightWindowPaths, scheduleProblems } from "../../lib/scheduleUi";
+  import type { TouDay, TouSeason, TouWindow } from "../../lib/engine/schedule";
+  import { untrack } from "svelte";
+  import { describePath, marksPath, overnightWindowPaths, scheduleProblems, shareWindowsAcrossSeasons, windowsDifferAcrossSeasons } from "../../lib/scheduleUi";
   import { announce, focusAfterUpdate } from "../../lib/a11y.svelte";
-  import { confirmFocus, focusAfterRowRemoval, keySelector } from "../../lib/a11yFocus";
+  import { keySelector } from "../../lib/a11yFocus";
+  import Field from "../ui/Field.svelte";
+  import FormGrid from "../ui/FormGrid.svelte";
+  import ConfirmInline from "../ui/ConfirmInline.svelte";
+  import RowEditor from "../ui/RowEditor.svelte";
+  import { focusAfterRowRemoved } from "../ui/rowEditor";
 
   // The editor for energy.schedule (server/energy_schedule.go validates the same rules). Times are wall-clock
   // in the instance time zone from Settings.
@@ -34,6 +40,9 @@
     season.months = [...set].sort((a, b) => a - b);
   }
 
+  // Row keys for RowEditor's ⋯ buttons: by position, since seasons and windows are not reordered here.
+  const seasonKey = (si: number) => `season-${si}`;
+
   function addSeason() {
     if (schedule.seasons.length >= 6) return;
     const n = schedule.seasons.length + 1;
@@ -44,7 +53,7 @@
   function removeSeason(i: number) {
     schedule.seasons = schedule.seasons.filter((_, j) => j !== i);
     announce("Season removed.");
-    void focusAfterRowRemoval("remove-season", i, schedule.seasons.length, "add-season");
+    void focusAfterRowRemoved(schedule.seasons.map((_, j) => seasonKey(j)), i, "add-season");
   }
   function addWindow(day: TouDay, prefix: string) {
     if (day.windows.length >= 8) return;
@@ -55,7 +64,54 @@
   function removeWindow(day: TouDay, i: number, prefix: string) {
     day.windows = day.windows.filter((_, j) => j !== i);
     announce("Window removed.");
-    void focusAfterRowRemoval(prefix, i, day.windows.length, `${prefix}-add`);
+    void focusAfterRowRemoved(day.windows.map((_, j) => `${prefix}-${j}`), i, `${prefix}-add`);
+  }
+
+  // "Same schedule all year": one set of windows (name, start, end) per day type for every season, edited on the
+  // first season and copied into the others; each season keeps its own rates. The stored shape is the ordinary
+  // per-season one plus the flag, so pricing is unchanged (engine/schedule.ts ignores it).
+  const same = $derived(schedule.sameWindowsAllYear === true);
+  let confirmingShare = $state(false);
+  const firstSeasonName = $derived(schedule.seasons[0]?.name || "the first season");
+  function onSameChange(on: boolean) {
+    if (!on) {
+      confirmingShare = false;
+      schedule.sameWindowsAllYear = false;
+      announce("Same schedule all year is off. Each season keeps its own copy of the windows.");
+    } else if (windowsDifferAcrossSeasons(schedule)) {
+      // Don't overwrite the other seasons' windows silently.
+      confirmingShare = true;
+    } else {
+      schedule.sameWindowsAllYear = true;
+      announce("Same schedule all year is on.");
+    }
+  }
+  function confirmShare() {
+    shareWindowsAcrossSeasons(schedule);
+    schedule.sameWindowsAllYear = true;
+    confirmingShare = false;
+    announce(`Same schedule all year is on. Every season now uses ${firstSeasonName}'s windows.`);
+    void focusAfterUpdate("#sched-same");
+  }
+  // Keep the other seasons' windows equal to the first season's while the switch is on. The effect depends on
+  // the first season's shared fields and the season count only; the copy runs untracked so it can't re-trigger itself.
+  $effect(() => {
+    if (!same) return;
+    const first = schedule.seasons[0];
+    void schedule.seasons.length;
+    if (first) void JSON.stringify([first.weekday, first.weekend].map((d) => [d.baseName, d.windows.map((w) => [w.name, w.start, w.end])]));
+    untrack(() => shareWindowsAcrossSeasons(schedule));
+  });
+
+  // A time input shows 00:00 for a stored end of "24:00" (the end of the day), which it can't hold. Typing 00:00
+  // as an end means the same thing and is stored as 24:00 on save (scheduleUi.splitOvernightWindows).
+  const clockOf = (v: string) => (v === "24:00" ? "00:00" : v);
+
+  // Removing a shared window removes the same one from every season, so each other season keeps the right rates.
+  function removeSharedWindow(dayType: "weekday" | "weekend", i: number, prefix: string) {
+    for (const se of schedule.seasons) se[dayType].windows = se[dayType].windows.filter((_, j) => j !== i);
+    announce("Window removed.");
+    void focusAfterRowRemoved(schedule.seasons[0]![dayType].windows.map((_, j) => `${prefix}-${j}`), i, `${prefix}-add`);
   }
 
   // Loading the example replaces the whole schedule, so it asks first when one exists (two-step confirm).
@@ -79,31 +135,38 @@
 <div class="schedule">
   <p class="hint">
     Each print is priced by the hours it runs. It starts at the print start you enter on the quote, runs back to back for the quantity, and pays the rate of whichever window each hour falls in.
-    Times are 24-hour clock times in your time zone ({form.timezone || "UTC"}). Hours outside every window use the base rate. Saturdays, Sundays, and the holidays you list use the weekend schedule.
+    Window times are clock times in your time zone ({form.timezone || "UTC"}). Set an end of 00:00 for the end of the day. Hours outside every window use the base rate. Saturdays, Sundays, and the holidays you list use the weekend schedule.
   </p>
 
-  <div class="field-rows">
-    <label class="field">
-      <span>Default print start (24-hour time, such as 22:00)</span>
-      <input type="text" inputmode="numeric" placeholder="22:00" aria-describedby="sched-start-help" bind:value={schedule.defaultStartTime} class:warn={bad("defaultStartTime")} aria-invalid={bad("defaultStartTime")} />
-      <small id="sched-start-help" class="field-hint">Public quotes and new orders start at the next time this clock time comes round.</small>
-    </label>
-    <label class="field">
-      <span>Holidays (one date per line, YYYY-MM-DD)</span>
-      <textarea rows="3" aria-describedby="sched-holidays-help" value={holidayText} oninput={(e) => setHolidays(e.currentTarget.value)}></textarea>
-      <small id="sched-holidays-help" class="field-hint">Up to 100 dates. Each uses the weekend schedule.</small>
-    </label>
-  </div>
+  <FormGrid align="controls">
+    <Field id="sched-start" label="Default print start (24-hour time, such as 22:00)" size="s" describedby="sched-start-help">
+      {#snippet children(f)}
+        <input id={f.id} type="text" inputmode="numeric" placeholder="22:00" aria-describedby={f.describedby} bind:value={schedule.defaultStartTime} class:warn={bad("defaultStartTime")} aria-invalid={bad("defaultStartTime")} />
+        <small id="sched-start-help" class="hint-text">Public quotes and new orders start at the next time this clock time comes round.</small>
+      {/snippet}
+    </Field>
+    <Field id="sched-holidays" label="Holidays (one date per line, YYYY-MM-DD)" size="m" describedby="sched-holidays-help">
+      {#snippet children(f)}
+        <textarea id={f.id} rows="3" aria-describedby={f.describedby} value={holidayText} oninput={(e) => setHolidays(e.currentTarget.value)}></textarea>
+        <small id="sched-holidays-help" class="hint-text">Up to 100 dates. Each uses the weekend schedule.</small>
+      {/snippet}
+    </Field>
+  </FormGrid>
 
   <div class="example">
     {#if confirmingExample}
       <p id="sched-example-confirm" class="warn-text">Replace your seasons, windows, and rates with the example?</p>
-      <div class="form-actions">
-        <button type="button" class="danger" aria-describedby="sched-example-confirm" onclick={loadExample} use:confirmFocus={{ restore: keySelector("load-example"), cancel: () => (confirmingExample = false) }}>Yes, replace with example</button>
-        <button type="button" onclick={() => (confirmingExample = false)}>Cancel</button>
+      <div class="form-actions start">
+        <ConfirmInline
+          confirmLabel="Yes, replace with example"
+          danger
+          restore={keySelector("load-example")}
+          onconfirm={loadExample}
+          oncancel={() => (confirmingExample = false)}
+        />
       </div>
     {:else}
-      <div class="form-actions">
+      <div class="form-actions start">
         <button type="button" data-focus-key="load-example" onclick={askExample}>Load SCE TOU-D-4-9PM example</button>
         {#if schedule.seasons.length === 0}<button type="button" onclick={useBlank}>Start with one season</button>{/if}
       </div>
@@ -123,87 +186,193 @@
     </p>
   {/if}
 
-  {#each schedule.seasons as season, si (si)}
-    <fieldset class="season">
-      <legend>Season {si + 1}: {season.name}</legend>
-      <div class="field-rows">
-        <label class="field">
-          <span>Season name</span>
-          <input aria-label={`Season ${si + 1} name`} bind:value={season.name} class:warn={bad(`seasons[${si}].name`)} aria-invalid={bad(`seasons[${si}].name`)} />
-        </label>
-      </div>
-      <fieldset class="months" class:danger-border={bad(`seasons[${si}].months`) || bad("seasons")} aria-describedby={problems.length > 0 ? "sched-problems" : undefined}>
-        <legend>Months in season {si + 1}</legend>
-        {#each MONTHS as name, mi (mi)}
-          <label class="month"><input type="checkbox" checked={season.months.includes(mi + 1)} onchange={(e) => toggleMonth(season, mi + 1, e.currentTarget.checked)} />{name}</label>
-        {/each}
-      </fieldset>
+  {#snippet timeField(w: TouWindow, which: "start" | "end", fid: string, aria: string, path: string)}
+    <Field id={fid} label={which === "start" ? "Start" : "End"} size="s">
+      {#snippet children(f)}
+        <input
+          id={f.id}
+          type="time"
+          step="900"
+          aria-label={aria}
+          bind:value={() => clockOf(w[which]), (v) => (w[which] = v)}
+          class:warn={bad(`${path}.${which}`)}
+          aria-invalid={bad(`${path}.${which}`)}
+        />
+      {/snippet}
+    </Field>
+  {/snippet}
 
+  <div class="same">
+    <label class="same-switch">
+      <input
+        id="sched-same"
+        type="checkbox"
+        data-focus-key="same-all-year"
+        checked={same}
+        aria-describedby="sched-same-help"
+        onchange={(e) => {
+          const on = e.currentTarget.checked;
+          // Asking first leaves the switch off until the owner confirms.
+          if (on && windowsDifferAcrossSeasons(schedule)) e.currentTarget.checked = false;
+          onSameChange(on);
+        }}
+      />
+      Same schedule all year
+    </label>
+    <small id="sched-same-help" class="hint-text">One set of weekday and weekend windows for every season. Only the rates differ by season.</small>
+    {#if confirmingShare}
+      <p id="sched-same-confirm" class="warn-text">Use {firstSeasonName}'s windows for every season? The other seasons' windows are replaced. Their rates are kept.</p>
+      <div class="form-actions start">
+        <ConfirmInline confirmLabel={`Yes, use ${firstSeasonName}'s windows`} restore={keySelector("same-all-year")} onconfirm={confirmShare} oncancel={() => (confirmingShare = false)} />
+      </div>
+    {/if}
+  </div>
+
+  {#if same && schedule.seasons[0]}
+    <section class="shared" aria-label="Windows for every season">
+      <h3 class="shared-title">Windows for every season</h3>
       {#each DAY_TYPES as dt (dt.key)}
-        {@const day = season[dt.key]}
-        {@const prefix = `s${si}-${dt.key}`}
-        <div class="day" role="group" aria-label={`Season ${si + 1} ${dt.label}`}>
+        {@const day = schedule.seasons[0][dt.key]}
+        {@const prefix = `shared-${dt.key}`}
+        <div class="day" role="group" aria-label={`${dt.label} windows, every season`}>
           <h4>{dt.label}</h4>
-          <div class="field-rows">
-            <label class="field">
-              <span>Base period name</span>
-              <input aria-label={`Season ${si + 1} ${dt.label} base name`} bind:value={day.baseName} class:warn={bad(`seasons[${si}].${dt.key}.baseName`)} aria-invalid={bad(`seasons[${si}].${dt.key}.baseName`)} />
-            </label>
-            <label class="field">
-              <span>Base rate (per kWh)</span>
-              <input type="number" min="0" step="0.001" aria-label={`Season ${si + 1} ${dt.label} base rate`} bind:value={day.baseRate} class:warn={bad(`seasons[${si}].${dt.key}.baseRate`)} aria-invalid={bad(`seasons[${si}].${dt.key}.baseRate`)} />
-            </label>
-          </div>
-          {#if day.windows.length > 0}
-            <div class="table-scroll windows">
-              <table>
-                <thead><tr><th>Window name</th><th>Start</th><th>End</th><th>Rate (per kWh)</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
-                <tbody>
-                  {#each day.windows as w, wi (wi)}
-                    {@const wp = `seasons[${si}].${dt.key}.windows[${wi}]`}
-                    <tr>
-                      <td data-label="Window name"><input data-win={`${prefix}-${wi}`} aria-label={`Season ${si + 1} ${dt.label} window ${wi + 1} name`} bind:value={w.name} class:warn={bad(`${wp}.name`)} aria-invalid={bad(`${wp}.name`)} /></td>
-                      <td data-label="Start"><input class="time" inputmode="numeric" placeholder="16:00" aria-label={`Season ${si + 1} ${dt.label} window ${wi + 1} start`} bind:value={w.start} class:warn={bad(`${wp}.start`)} aria-invalid={bad(`${wp}.start`)} /></td>
-                      <td data-label="End"><input class="time" inputmode="numeric" placeholder="21:00" aria-label={`Season ${si + 1} ${dt.label} window ${wi + 1} end`} bind:value={w.end} class:warn={bad(`${wp}.end`)} aria-invalid={bad(`${wp}.end`)} /></td>
-                      <td data-label="Rate (per kWh)"><input type="number" min="0" step="0.001" aria-label={`Season ${si + 1} ${dt.label} window ${wi + 1} rate`} bind:value={w.rate} class:warn={bad(`${wp}.rate`)} aria-invalid={bad(`${wp}.rate`)} /></td>
-                      <td data-label=""><button type="button" aria-label={`Remove window ${w.name}`} data-focus-key={`${prefix}-${wi}`} onclick={() => removeWindow(day, wi, prefix)}>Remove</button></td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          {/if}
+          <FormGrid>
+            <Field id={`${prefix}-base-name`} label="Base period name" size="m">
+              {#snippet children(f)}
+                <input id={f.id} aria-label={`${dt.label} base name`} bind:value={day.baseName} class:warn={bad(`seasons[0].${dt.key}.baseName`)} aria-invalid={bad(`seasons[0].${dt.key}.baseName`)} />
+              {/snippet}
+            </Field>
+          </FormGrid>
+          {#each day.windows as w, wi (wi)}
+            {@const wp = `seasons[0].${dt.key}.windows[${wi}]`}
+            <RowEditor label={`${dt.label} window ${wi + 1}: ${w.name}`} rowKey={`${prefix}-${wi}`} onremove={() => removeSharedWindow(dt.key, wi, prefix)} removeLabel="Remove window">
+              {#snippet fields()}
+                <FormGrid>
+                  <Field id={`${prefix}-${wi}-name`} label="Window name" size="m">
+                    {#snippet children(f)}
+                      <input id={f.id} data-win={`${prefix}-${wi}`} aria-label={`${dt.label} window ${wi + 1} name`} bind:value={w.name} class:warn={bad(`${wp}.name`)} aria-invalid={bad(`${wp}.name`)} />
+                    {/snippet}
+                  </Field>
+                  {@render timeField(w, "start", `${prefix}-${wi}-start`, `${dt.label} window ${wi + 1} start`, wp)}
+                  {@render timeField(w, "end", `${prefix}-${wi}-end`, `${dt.label} window ${wi + 1} end`, wp)}
+                </FormGrid>
+              {/snippet}
+            </RowEditor>
+          {/each}
           <button type="button" data-focus-key={`${prefix}-add`} onclick={() => addWindow(day, prefix)} aria-disabled={day.windows.length >= 8}>Add window to {dt.label.toLowerCase()}</button>
         </div>
       {/each}
+    </section>
+  {/if}
 
-      <button type="button" data-focus-key={`remove-season-${si}`} onclick={() => removeSeason(si)}>Remove season {si + 1}</button>
-    </fieldset>
+  {#each schedule.seasons as season, si (si)}
+    <RowEditor
+      tone="inset"
+      label={`Season ${si + 1}: ${season.name}`}
+      rowKey={seasonKey(si)}
+      onremove={() => removeSeason(si)}
+      removeLabel={`Remove season ${si + 1}`}
+    >
+      {#snippet fields()}
+        <FormGrid>
+          <Field id={`season-${si}-name`} label="Season name" size="m">
+            {#snippet children(f)}
+              <input id={f.id} aria-label={`Season ${si + 1} name`} bind:value={season.name} class:warn={bad(`seasons[${si}].name`)} aria-invalid={bad(`seasons[${si}].name`)} />
+            {/snippet}
+          </Field>
+        </FormGrid>
+        <fieldset class="months" class:danger-border={bad(`seasons[${si}].months`) || bad("seasons")} aria-describedby={problems.length > 0 ? "sched-problems" : undefined}>
+          <legend>Months in season {si + 1}</legend>
+          <div class="month-list">
+            {#each MONTHS as name, mi (mi)}
+              <label class="month"><input type="checkbox" checked={season.months.includes(mi + 1)} onchange={(e) => toggleMonth(season, mi + 1, e.currentTarget.checked)} />{name}</label>
+            {/each}
+          </div>
+        </fieldset>
+      {/snippet}
+      {#snippet below()}
+        {#each DAY_TYPES as dt (dt.key)}
+          {@const day = season[dt.key]}
+          {@const prefix = `s${si}-${dt.key}`}
+          <div class="day" role="group" aria-label={`Season ${si + 1} ${dt.label}`}>
+            <h4>{dt.label}</h4>
+            <FormGrid>
+              {#if !same}
+                <Field id={`season-${si}-${dt.key}-base-name`} label="Base period name" size="m">
+                  {#snippet children(f)}
+                    <input id={f.id} aria-label={`Season ${si + 1} ${dt.label} base name`} bind:value={day.baseName} class:warn={bad(`seasons[${si}].${dt.key}.baseName`)} aria-invalid={bad(`seasons[${si}].${dt.key}.baseName`)} />
+                  {/snippet}
+                </Field>
+              {/if}
+              <Field id={`season-${si}-${dt.key}-base-rate`} label={same ? `${day.baseName || "Base"} rate (per kWh)` : "Base rate (per kWh)"} size="s">
+                {#snippet children(f)}
+                  <input id={f.id} type="number" min="0" step="0.001" aria-label={`Season ${si + 1} ${dt.label} base rate`} bind:value={day.baseRate} class:warn={bad(`seasons[${si}].${dt.key}.baseRate`)} aria-invalid={bad(`seasons[${si}].${dt.key}.baseRate`)} />
+                {/snippet}
+              </Field>
+              {#if same}
+                {#each day.windows as w, wi (wi)}
+                  {@const wp = `seasons[${si}].${dt.key}.windows[${wi}]`}
+                  <Field id={`${prefix}-${wi}-rate`} label={`${w.name || `Window ${wi + 1}`} rate (per kWh)`} size="s">
+                    {#snippet children(f)}
+                      <input id={f.id} type="number" min="0" step="0.001" aria-label={`Season ${si + 1} ${dt.label} window ${wi + 1} rate`} bind:value={w.rate} class:warn={bad(`${wp}.rate`)} aria-invalid={bad(`${wp}.rate`)} />
+                    {/snippet}
+                  </Field>
+                {/each}
+              {/if}
+            </FormGrid>
+            {#if !same}
+              {#each day.windows as w, wi (wi)}
+                {@const wp = `seasons[${si}].${dt.key}.windows[${wi}]`}
+                <RowEditor
+                  label={`Season ${si + 1} ${dt.label} window ${wi + 1}: ${w.name}`}
+                  rowKey={`${prefix}-${wi}`}
+                  onremove={() => removeWindow(day, wi, prefix)}
+                  removeLabel="Remove window"
+                >
+                  {#snippet fields()}
+                    <FormGrid>
+                      <Field id={`${prefix}-${wi}-name`} label="Window name" size="m">
+                        {#snippet children(f)}
+                          <input id={f.id} data-win={`${prefix}-${wi}`} aria-label={`Season ${si + 1} ${dt.label} window ${wi + 1} name`} bind:value={w.name} class:warn={bad(`${wp}.name`)} aria-invalid={bad(`${wp}.name`)} />
+                        {/snippet}
+                      </Field>
+                      {@render timeField(w, "start", `${prefix}-${wi}-start`, `Season ${si + 1} ${dt.label} window ${wi + 1} start`, wp)}
+                      {@render timeField(w, "end", `${prefix}-${wi}-end`, `Season ${si + 1} ${dt.label} window ${wi + 1} end`, wp)}
+                      <Field id={`${prefix}-${wi}-rate`} label="Rate (per kWh)" size="s">
+                        {#snippet children(f)}
+                          <input id={f.id} type="number" min="0" step="0.001" aria-label={`Season ${si + 1} ${dt.label} window ${wi + 1} rate`} bind:value={w.rate} class:warn={bad(`${wp}.rate`)} aria-invalid={bad(`${wp}.rate`)} />
+                        {/snippet}
+                      </Field>
+                    </FormGrid>
+                  {/snippet}
+                </RowEditor>
+              {/each}
+              <button type="button" data-focus-key={`${prefix}-add`} onclick={() => addWindow(day, prefix)} aria-disabled={day.windows.length >= 8}>Add window to {dt.label.toLowerCase()}</button>
+            {/if}
+          </div>
+        {/each}
+      {/snippet}
+    </RowEditor>
   {/each}
-  <button type="button" data-focus-key="add-season" onclick={addSeason} aria-disabled={schedule.seasons.length >= 6}>Add season</button>
+  <button type="button" class="add-season" data-focus-key="add-season" onclick={addSeason} aria-disabled={schedule.seasons.length >= 6}>Add season</button>
 </div>
 
 <style>
-  .schedule { display: flex; flex-direction: column; gap: 0.9rem; margin-top: 0.8rem; }
-  .season { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); padding: 0.8rem; display: flex; flex-direction: column; gap: 0.8rem; }
-  .season > legend { font-weight: 600; padding: 0 0.3rem; }
-  .months { min-width: 0; border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; }
-  .months > legend { padding: 0; font-size: var(--text-sm); color: var(--muted); }
-  .month { display: inline-flex; align-items: center; gap: 0.3rem; min-height: 24px; }
-  .day { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+  .schedule { display: flex; flex-direction: column; gap: var(--gap); }
+  .hint-text { color: var(--muted); font-size: var(--type-secondary); }
+  .same { display: flex; flex-direction: column; gap: var(--space-1); align-items: flex-start; }
+  .same-switch { display: inline-flex; align-items: center; gap: var(--space-2); font-weight: 600; min-height: var(--control-h); }
+  .shared { display: flex; flex-direction: column; gap: var(--gap); }
+  .shared-title { margin: 0; }
+  .start { justify-content: flex-start; margin-top: 0; }
+  .problems { margin: 0; padding-inline-start: var(--space-5); }
+  .months { min-width: 0; border: 0; padding: 0; margin: 0; }
+  .months > legend { padding: 0; font-size: var(--type-secondary); font-weight: 600; margin-bottom: var(--space-1); }
+  .month-list { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); }
+  .month { display: inline-flex; align-items: center; gap: var(--space-1); min-height: 24px; }
+  .months.danger-border { border-inline-start: 3px solid var(--danger); padding-inline-start: var(--space-3); }
+  .day { display: flex; flex-direction: column; align-items: stretch; gap: var(--gap); }
   .day h4 { margin: 0; }
-  .problems { margin: 0; padding-left: 1.2rem; }
-  .time { width: 6rem; }
-  .months.danger-border { border-left: 3px solid var(--danger); padding-left: 0.6rem; }
-  td, th { white-space: nowrap; }
-  /* Phones: a window's fields stack inside the card instead of scrolling sideways out of sight. */
-  @media (max-width: 600px) {
-    .windows :global(table), .windows :global(tbody), .windows :global(tr), .windows :global(td) { display: block; }
-    .windows :global(thead) { display: none; }
-    .windows :global(tr) { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.5rem; margin-bottom: 0.6rem; }
-    .windows :global(td) { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; white-space: normal; border: 0; padding: 0.2rem 0; }
-    .windows :global(td[data-label])::before { content: attr(data-label); color: var(--muted); font-size: var(--text-sm); }
-    .windows :global(td input) { max-width: 60%; }
-  }
-  .example .hint { margin-top: 0.5rem; }
+  .day > button, .add-season { align-self: flex-start; }
+  .example .hint { margin-top: var(--space-2); }
 </style>

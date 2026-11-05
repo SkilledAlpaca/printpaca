@@ -54,6 +54,8 @@ COPY --from=webbuild --chown=65532:65532 /src/web/dist embedded/dist
 # /testdata and /config.
 COPY --chown=65532:65532 testdata /testdata
 COPY --chown=65532:65532 config/config.schema.json /config/config.schema.json
+# accent_theme_test.go checks the accent backgrounds against theme.css (../web/src/theme.css from /src).
+COPY --from=webbuild --chown=65532:65532 /src/web/src/theme.css /web/src/theme.css
 # Tests run on the BUILD platform in their own layer, so a multi-arch build
 # runs them once and reuses the cached result per TARGETARCH.
 RUN go test ./...

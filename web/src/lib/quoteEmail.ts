@@ -7,7 +7,7 @@ import type { Client } from "./clientsApi";
 import { quoteHasPrice } from "./convertQuote";
 import { hasTabAccess, type ConfigUser } from "./permissions";
 
-// Disabled reason for "Email quote", from smtpHost (cfg.smtp.host) and the linked client's email in the
+// Disabled reason for "Email quote", from smtpConfigured (cfg.smtpConfigured) and the linked client's email in the
 // lazily-loaded list. A quote without a customer-facing price is excluded: emailing convertQuote.ts's
 // cost-only fallback as a price would be a real bug.
 export type QuoteEmailDisabledReason =
@@ -30,12 +30,12 @@ export function clientEmailFor(q: SavedQuote, clients: Client[] | null): string 
  * linked, client list failed to load, linked client has no email. */
 export function emailDisabledReason(
   q: SavedQuote,
-  smtpHost: string,
+  smtpConfigured: boolean,
   clientsLoaded: boolean,
   clients: Client[] | null,
   canManageClients = true,
 ): QuoteEmailDisabledReason {
-  if (smtpHost === "") return "unconfigured";
+  if (!smtpConfigured) return "unconfigured";
   if (!clientsLoaded) return "loading";
   if (!quoteHasPrice(q)) return "no-price";
   // No usable list (load failed, or a 403 without the grant): entry can't match or update clients; skip it.

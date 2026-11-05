@@ -88,3 +88,22 @@ site:
   adminUrl: ""
 shop:
   maxOrderQty: 100
+  customEstimates: true
+  gallery: true
+  acceptingOrders: true
+  pausedMessage: ""
+  defaultView: gallery
+  pageTitle: ""
+  heading: ""
+  announcement: ""
+  heroImage:
+    file: ""
+    alt: ""
+  accentColor: ""
+  showStock: true
+  showFromPrice: true
+  itemSort: manual
+  footerLinks: []
+  showContact: true
+  shippingNote: ""
+  turnaroundNote: ""

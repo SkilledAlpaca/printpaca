@@ -6,6 +6,11 @@
   import { demoLocal } from "../../lib/demoLocal.svelte";
   import { announce, focusAfterUpdate } from "../../lib/a11y.svelte";
   import { confirmFocus, focusOnMount, keySelector, neighborId } from "../../lib/a11yFocus";
+  import Card from "../ui/Card.svelte";
+  import Field from "../ui/Field.svelte";
+  import Fieldset from "../ui/Fieldset.svelte";
+  import FormGrid from "../ui/FormGrid.svelte";
+  import InlineStatus from "../ui/InlineStatus.svelte";
 
   // Admin-only card (SettingsTab mounts the settings form only for the admin identity). `original`, not
   // `form`, gates the employee list and add-user UI: `form.users.multiUser` is the still-unsaved draft, but
@@ -221,8 +226,7 @@
   }
 </script>
 
-<div id="section-users" class="card roomy" class:danger-border={hasError("users")}>
-  <h2 tabindex="-1">Users</h2>
+<Card id="section-users" tone={hasError("users") ? "danger" : "default"} heading="Users">
   <p class="hint">
     Multi-user mode lets employees sign in with their own username and password, each limited to the tabs you grant
     them. Enabling it requires ADMIN_PASSWORD to be set on the server.
@@ -236,20 +240,25 @@
     accounts and permissions return as they were if you turn it back on. Employees whose email is set also can't get in
     through Cloudflare Access while it's off; only the admin can.
   </p>
-  <div class="field">
-    <label for="access-admin-email">Your Cloudflare Access email</label>
-    <input
+  <FormGrid>
+    <Field
       id="access-admin-email"
-      type="email"
-      bind:value={form.users.accessAdminEmail}
-      autocomplete="email"
-      placeholder="owner@example.com"
-    />
-    <small class="field-hint">
-      Only used when you reach printpaca through Cloudflare Access with multi-user mode on. The address you sign in to
-      Cloudflare Access with signs in here as the admin. Leave it empty to sign in with the admin password instead.
-    </small>
-  </div>
+      label="Your Cloudflare Access email"
+      size="l"
+      hint="Only used when you reach printpaca through Cloudflare Access with multi-user mode on. The address you sign in to Cloudflare Access with signs in here as the admin. Leave it empty to sign in with the admin password instead."
+    >
+      {#snippet children(a)}
+        <input
+          id={a.id}
+          type="email"
+          bind:value={form.users.accessAdminEmail}
+          autocomplete="email"
+          placeholder="owner@example.com"
+          aria-describedby={a.describedby}
+        />
+      {/snippet}
+    </Field>
+  </FormGrid>
 
   {#if demoSingle}
     <p class="hint">Switch the demo banner's User mode to "multi" to see example employee accounts here.</p>
@@ -293,7 +302,7 @@
                   />
                 </td>
                 <td>
-                  <fieldset class="perm-grid">
+                  <fieldset class="perm-grid perm-fieldset">
                     <legend class="visually-hidden">Tabs {u.username} can open</legend>
                     {#each GRANTABLE_TAB_KEYS as key (key)}
                       <label class="toggle perm-toggle">
@@ -352,42 +361,53 @@
       </div>
     {/if}
 
-    <div class="subcard">
+    <Card tone="inset">
       <h3>Add employee</h3>
-      <form class="field-rows" onsubmit={addUser}>
-        <label class="field">
-          <span>Username</span>
-          <input bind:value={newUsername} required pattern={USERNAME_PATTERN} placeholder="For example, jordan" />
-          <small class="field-hint">Use only lowercase letters, digits, periods, underscores, and hyphens.</small>
-        </label>
-        <label class="field">
-          <span>Password</span>
-          <input type="password" bind:value={newPassword} required minlength={8} autocomplete="new-password" />
-        </label>
-        <div class="field">
-          <label for="new-user-email">Cloudflare Access email (optional)</label>
-          <input id="new-user-email" type="email" bind:value={newEmail} autocomplete="off" placeholder="jordan@example.com" />
-          <small class="field-hint">The address this person signs in to Cloudflare Access with. It lets them skip the password when they reach printpaca through Access.</small>
+      <form class="add-form" onsubmit={addUser}>
+        <FormGrid align="controls">
+          <Field id="new-user-name" label="Username" size="m" hint="Use only lowercase letters, digits, periods, underscores, and hyphens.">
+            {#snippet children(a)}
+              <input id={a.id} aria-describedby={a.describedby} bind:value={newUsername} required pattern={USERNAME_PATTERN} placeholder="For example, jordan" />
+            {/snippet}
+          </Field>
+          <Field id="new-user-password" label="Password" size="m" hint="At least 8 characters." hintVisible>
+            {#snippet children(a)}
+              <input id={a.id} aria-describedby={a.describedby} type="password" bind:value={newPassword} required minlength={8} autocomplete="new-password" />
+            {/snippet}
+          </Field>
+          <Field
+            id="new-user-email"
+            label="Cloudflare Access email (optional)"
+            size="m"
+            hint="The address this person signs in to Cloudflare Access with. It lets them skip the password when they reach printpaca through Access."
+          >
+            {#snippet children(a)}
+              <input id={a.id} aria-describedby={a.describedby} type="email" bind:value={newEmail} autocomplete="off" placeholder="jordan@example.com" />
+            {/snippet}
+          </Field>
+        </FormGrid>
+        <Fieldset legend="Tabs this employee can open">
+          <div class="perm-grid">
+            {#each GRANTABLE_TAB_KEYS as key (key)}
+              <label class="toggle perm-toggle">
+                <input
+                  type="checkbox"
+                  checked={newPermissions.has(key)}
+                  onchange={(e) => toggleNewPermission(key, e.currentTarget.checked)}
+                />
+                <span>{GRANTABLE_TAB_LABELS[key]}</span>
+              </label>
+            {/each}
+          </div>
+        </Fieldset>
+        {#if addError}<InlineStatus kind="error">{addError}</InlineStatus>{/if}
+        <div>
+          <button type="submit" class="primary" aria-disabled={adding} aria-busy={adding}>{adding ? "Adding…" : "Add employee"}</button>
         </div>
-        <fieldset class="perm-grid">
-          <legend>Tabs this employee can open</legend>
-          {#each GRANTABLE_TAB_KEYS as key (key)}
-            <label class="toggle perm-toggle">
-              <input
-                type="checkbox"
-                checked={newPermissions.has(key)}
-                onchange={(e) => toggleNewPermission(key, e.currentTarget.checked)}
-              />
-              <span>{GRANTABLE_TAB_LABELS[key]}</span>
-            </label>
-          {/each}
-        </fieldset>
-        {#if addError}<p class="warn-text" role="alert">{addError}</p>{/if}
-        <button type="submit" class="primary" aria-disabled={adding} aria-busy={adding}>{adding ? "Adding…" : "Add employee"}</button>
       </form>
-    </div>
+    </Card>
   {/if}
-</div>
+</Card>
 
 <style>
   .table-scroll { overflow-x: auto; }
@@ -395,25 +415,19 @@
   .users-table th,
   .users-table td {
     text-align: left;
-    padding: 0.4rem 0.5rem;
+    padding: var(--space-2);
     vertical-align: top;
     border-bottom: 1px solid var(--border);
   }
   .perm-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
-    gap: 0.2rem 0.6rem;
-    min-width: min(18rem, 100%);
-    border: 0;
-    padding: 0;
-    margin: 0;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--field-s)), 1fr));
+    gap: var(--space-1) var(--space-3);
   }
-  .perm-grid legend { grid-column: 1 / -1; padding: 0; font-weight: 600; margin-bottom: 0.2rem; }
-  .perm-grid legend.visually-hidden { margin: 0; }
-  .perm-toggle { min-height: 28px; font-size: var(--text-sm); }
-  .row-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
-  .reset-form { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
-  .reset-form .field-inline { margin: 0; }
-  .subcard { margin-top: 1rem; }
-  .email-input { min-width: 12rem; }
+  .perm-fieldset { border: 0; padding: 0; margin: 0; min-width: min(var(--field-m), 100%); }
+  .perm-toggle { font-size: var(--text-sm); }
+  .row-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+  .reset-form { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+  .add-form { display: flex; flex-direction: column; gap: var(--gap); }
+  .email-input { min-width: var(--field-m); }
 </style>

@@ -14,7 +14,8 @@ docs/       User and contributor documentation
 scripts/    Build and CI helper scripts (for example, the image size gate)
 config/     Tracked reference config: config.example.yaml, config.schema.json
 packaging/  Unraid CA template
-testdata/   Pricing golden vectors, the money-format fixture, and
+testdata/   Shared test vectors (pricing, accent color, light markdown,
+            TOU schedule, invoice totals, money format, PayPal link) and
             uploads/ parser fixtures (see testdata/uploads/README.md)
 ```
 
@@ -39,7 +40,19 @@ A Svelte 5 (runes) single-page app. Vite builds two entry points into one `dist/
 
 The Go binary embeds that `dist/` at build time (`//go:embed all:embedded/dist` in `server/static.go`).
 
-Accessibility helpers are shared by both entries. `web/src/lib/a11y.svelte.ts` exports `announce()` and `focusAfterUpdate()`, and `web/src/components/LiveAnnouncer.svelte` renders the hidden live regions `announce()` writes to. `App.svelte` mounts `LiveAnnouncer` for the admin app, and `public/PublicApp.svelte` mounts it for the customer pages. `web/src/lib/a11yFocus.ts` holds the focus helpers for two-step confirms and lists, and `ErrorSummary` and `DetailTitle` in `web/src/components/` give forms and detail views their shared error list and `h1`. See [Accessibility](accessibility.md#contributor-guidance).
+#### The `ui/` component layer
+
+Every admin screen and the shop build on one set of layout components in `web/src/components/ui/`: `Card`, `Field`, `Fieldset`, `FormGrid`, `PageHeader`, `DataTable`, `StatTile`, `StickySummary`, `RowEditor`, `Tabs`, `ConfirmInline`, `InlineStatus`, `HintTip`, `Combobox`, `KeyValueTable`, and `ImageLightbox`. A screen composes these instead of writing its own spacing, so labels sit above fields, cards look the same, and a layout fix lands everywhere. `DataTable` gives the long lists (Quotes, Requests, Invoices, Clients, Shop items) a scroll region with a sticky header. `StickySummary` is the New quote summary: a sticky column from 1100 px, a pinned bottom bar below. `RowEditor` is the row with a More actions menu (Move up, Move down, Remove) that option groups, categories, and Settings lists use.
+
+#### CSS tokens and lint
+
+`web/src/theme.css` owns the design tokens: colors for light and dark, the bundled Figtree font, the type scale (`--type-*`), spacing (`--space-*`, `--gap`, `--gap-section`), field widths (`--field-*`), and content widths (`--content-max`, `--measure-*`). Components use these tokens, not literals. `npm run lint:css` (`scripts/lint-css.ts`, configured by `scripts/css-lint.config.json`) fails CI on a raw spacing or width literal in a file listed under `blocking`, and warns in every other file. Each exception is an entry with a reason, and an entry that no longer matches anything fails the run. The admin theme (`printpaca-theme`) and density (`printpaca-density`) choices live in the browser's `localStorage` and apply to the admin app only.
+
+#### The shop head and theme
+
+The shop is a single page that needs the owner's settings on first paint. `server/public.go` renders `public.html` on every request: it fills `<title>` from `shop.pageTitle` (see `shopTitle` in `server/config.go`), adds a `<meta name="description">` made from the intro text with its markup stripped, and embeds the public config as a JSON block (`#shop-config`) that the page reads before it mounts. The shop's own light or dark choice is the `pp_theme` cookie. The server reads it and sets `data-theme` on `<html>` so the first paint matches, and the cookie is separate from the admin app's `localStorage` preference. The accent color is applied as CSS variables by `web/src/public/shopAccent.ts`.
+
+Accessibility helpers are shared by both entries. `web/src/lib/a11y.svelte.ts` exports `announce()` and `focusAfterUpdate()`, and `web/src/components/LiveAnnouncer.svelte` renders the hidden live regions `announce()` writes to. `App.svelte` mounts `LiveAnnouncer` for the admin app, and `public/PublicApp.svelte` mounts it for the customer pages. `web/src/lib/a11yFocus.ts` holds the focus helpers for two-step confirms and lists, and `ErrorSummary` in `web/src/components/` gives forms their shared error list, and `ui/PageHeader` gives every view its `h1` (a record's detail view also gets focus and the page title from it). See [Accessibility](accessibility.md#contributor-guidance).
 
 The admin app is an installable Progressive Web App with a hand-rolled service worker (`web/public/sw.js`, no Workbox) that precaches the app shell. `api/*` and `healthz` are never cached, and the worker's scope is `/admin/`, so it never controls the shop. Registration runs only in a secure context (HTTPS or `localhost`), so it silently no-ops on a plain-HTTP LAN deployment.
 
@@ -53,12 +66,30 @@ Storage is one SQLite file at `$CONFIG_DIR/printpaca.db`. The schema is one base
 
 - **Quotes**: server-authoritative, per-record REST (`server/quotestore.go`). The server recomputes and owns every pricing output column (totals, recommended and resolved price, margin) on every write; the client supplies only `inputs` and `options`. `inputs` is always an order, `{parts, pricing}` with 1 to 20 parts (a single-part quote is a one-part order), and `POST /api/quote/compute` answers an order breakdown for the same shape. The editor's form state (version 1) is stored as an opaque snapshot beside the inputs, so a saved quote reopens as it was left; a stored form state with any other version is reported as unusable on restore. A saved quote's `savedAt` doubles as its version: it has millisecond precision and moves strictly forward on every write. `PUT /api/quotes/{id}` with an `If-Match` header naming the `savedAt` the client loaded returns 409 when it no longer matches, and without the header it overwrites as before. The editor sends it, and reopens a quote at the energy rates stored with it until the user changes an energy field. The live preview is server-computed too, through the stateless, authenticated `POST /api/quote/compute`; nothing in the browser prices a quote.
 - **Clients** and **invoices** (with payments): standard CRUD records. An invoice converts directly from a saved quote. An invoice line can link to a gallery item (`item_id`, `option_name`, and `stock_taken` on `invoice_lines`); Top items counts those lines live while their invoice is sent or paid.
+- **Categories** (`categories` table, added by a later migration; `server/categories.go`): an item has zero or one category through `items.category_id`. Deleting a category unlinks its items. Categories use the `items` permission and a 50-category cap.
 - **Items**: the item gallery's catalog (`items` table): CRUD, image uploads, two stock modes, and a public flag gating visibility on the public listener. Options live in `items.option_groups_json`: up to 5 groups with a Required flag, each with up to 20 options that carry a price adjustment and an optional photo (`POST` and `DELETE /api/items/{id}/options/{optionId}/image`). An order sends `selections` (group and option IDs), and the server prices it and stores `option_name` as `Color: Red · Size: Large` (`server/itemoptions.go`).
 - **quote_requests**: the inbox for public quote-page submissions and anonymous item orders (`kind='item'`).
 - **item_sales**: an append-only ledger with one row per finalized item order, written in the same transaction as the finalize (`server/requests.go`). It has no foreign key to `quote_requests`, so deleting a request doesn't remove its sale. Top items (`GET /api/dashboard/top-items`) combines it with the linked invoice lines.
 - **Users** (`users` table): the admin identity plus optional employee accounts with per-tab grants (`server/users.go`, `server/identity.go`), gated by `users.multiUser`. Password hashes and grants live only in this table, never in `config.yaml`. Records carry `created_by` and `updated_by` attribution columns.
 
-Configuration is YAML merged over built-in defaults (`server/config.go`), and the Settings UI writes sparse overrides back to `config.yaml`.
+Configuration is YAML merged over built-in defaults (`server/config.go`), and the Settings UI writes sparse overrides back to `config.yaml`. The shop hero image is the one setting stored as a file: `POST /api/shop/hero-image` stores it under `uploads/items/` like an item photo and records its name and alt text in `shop.heroImage`.
+
+For employees, `/api/config` and `/api/settings` pass through `redactConfigForEmployee` (`server/main.go`), which blanks the `smtp` block, the integration URLs, and `users.accessAdminEmail`. A separate `smtpConfigured` boolean tells every role whether mail can be sent.
+
+### Shared test vectors
+
+Some logic exists twice, once in Go and once in TypeScript, because the server must enforce a rule and the browser must preview it. A JSON file in `testdata/` feeds both test suites, so the two implementations can't drift:
+
+| Vectors | Go | TypeScript |
+|---|---|---|
+| `accent-vectors.json` | `server/accent.go` | `web/src/lib/accent.ts` |
+| `light-markdown-vectors.json` | `server/lightmarkdown.go` | `web/src/lib/lightMarkdown.ts` |
+| `schedule-vectors.json` | `server/energy_schedule.go` | `web/src/lib/engine/schedule.ts` |
+| `invoice-totals.json` | `computeTotals` in `server/invoices.go` | `web/src/lib/engine/invoice.ts` |
+| `paypal-link.json` | the link builder in `server/invoices.go` | `web/src/lib/paypal.ts` |
+| `money-format.json` | the formatter in `server/mail_templates.go` | `formatMoney` in `web/src/lib/engine/money.ts` |
+
+The pricing golden vectors (`quote-vectors.json`) are separate: they pin the server's pricing, which the browser never reimplements. If you change one side of a pair, change the other and the vectors in the same commit. `server/accent_theme_test.go` also checks that the backgrounds the accent check assumes match `web/src/theme.css`.
 
 ## Listeners and routing
 
@@ -72,11 +103,11 @@ The server runs one main listener and, optionally, a second customer-only listen
   - `/api/public/*` and everything outside `/admin/` and `/api/` go to the public routes behind the same Host allowlist. Any other `/api/*` is a JSON `404`; the admin API lives under `/admin/api/`.
 - **Public** (`PUBLIC_PORT`, optional): anonymous and isolated (`server/public.go`); it never serves `/admin/`. It serves the shop (`/` and `/order`), the item gallery, a display-only config payload, three rate-limited anonymous POST endpoints across three per-IP budgets (quote preview, quote-request, and item-order submission), `GET /custom.css`, item images, and `GET /healthz`. Every price, preview or submission, is computed server-side through `server/pricing.go`; the visitor's browser never receives the cost model and never supplies a price.
 
-The shop uses hash routes (`#/item/<id>`, `#/estimate`, and two confirmation routes) so Back, reload, and shared links work without any server routing; the server only ever sees `/` or `/order`. Each accepted submission gets a short per-shop reference (`server/reference.go`): the counter lives in `app_state` under `request_ref_seq` and is bumped in the same transaction as the `quote_requests` insert, so there are no gaps and no duplicates.
+The shop uses hash routes (`#/item/<id>`, `#/category/<slug>`, `#/estimate`, and two confirmation routes) so Back, reload, and shared links work without any server routing; the server only ever sees `/` or `/order`. Each accepted submission gets a short per-shop reference (`server/reference.go`): the counter lives in `app_state` under `request_ref_seq` and is bumped in the same transaction as the `quote_requests` insert, so there are no gaps and no duplicates.
 
 Both listeners mount the same public routes over one shared set of rate limiters, one upload semaphore, and one notification queue (`publicShared`), so a visitor gets one budget whichever port they use. `site.shopOnMainPort` turns the public routes off on `PORT`.
 
-The embedded SPA is one Vite build with two entries and a relative base: `index.html` is served at `/admin/` and `public.html` at `/` and `/order`. The admin SPA calls its API with relative URLs (`api/...`), so it works under any prefix. `server/static.go` serves the admin entry; `server/public.go` serves the public entry from an allowlist (`public-manifest.json`). For the admin app's security model, see [Authentication](configuration.md#authentication), and for the routing table, see [Routing and hostnames](configuration.md#routing-and-hostnames).
+The embedded SPA is one Vite build with two entries and a relative base: `index.html` is served at `/admin/` and `public.html` at `/` and `/order`. The server renders `public.html` per request (see [The shop head and theme](#the-shop-head-and-theme)), so a hard refresh paints the owner's shop with no flash of defaults. The admin SPA calls its API with relative URLs (`api/...`), so it works under any prefix. `server/static.go` serves the admin entry; `server/public.go` serves the public entry from an allowlist (`public-manifest.json`). For the admin app's security model, see [Authentication](configuration.md#authentication), and for the routing table, see [Routing and hostnames](configuration.md#routing-and-hostnames).
 
 ## Security posture
 
@@ -84,7 +115,7 @@ printpaca is secure by default: a generated admin password on first start, a `Ho
 
 ## Build, test, deploy
 
-The two-entry Vite build is embedded into a multi-stage, multi-arch `scratch` Docker image (about 16 MiB uncompressed). GitHub Actions (`.github/workflows/ci.yml`) is the pipeline.
+The two-entry Vite build is embedded into a multi-stage, multi-arch `scratch` Docker image (about 18 MiB uncompressed). GitHub Actions (`.github/workflows/ci.yml`) is the pipeline.
 
 Test layers, fastest to slowest:
 

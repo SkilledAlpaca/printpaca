@@ -1,6 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { deflateSync, crc32 } from "node:zlib";
-import { navButton } from "./helpers";
+import { navButton, tinyPng } from "./helpers";
 
 // Admin shell: sidebar fit, item editor wording and concurrency, page shortcuts, materials, electricity
 // schedule, logo upload, and the Guide. Runs on the shared :8099 server and removes what it creates.
@@ -69,7 +68,7 @@ test("item editor: group wording, hidden-on-save notice with Show in shop, and a
 
 test("item editor: Ctrl+S saves and the list filter takes Ctrl+K", async ({ page, request }) => {
   await page.goto("/admin/#/items");
-  await expect(page.locator("footer .shortcuts-line")).toContainText("Ctrl+K filter");
+  await expect(page.locator("main .shortcuts-line")).toContainText("Ctrl+K filter");
   await page.keyboard.press("Control+k");
   await expect(page.locator("#items-filter")).toBeFocused();
   await page.locator("#items-filter").fill("shell test");
@@ -79,7 +78,7 @@ test("item editor: Ctrl+S saves and the list filter takes Ctrl+K", async ({ page
   await page.locator("#items-filter").fill("shell test");
 
   await page.locator("button.row-open", { hasText: "Shell Test Item" }).click();
-  await expect(page.locator("footer .shortcuts-line")).toContainText("Ctrl+S save");
+  await expect(page.locator("main .shortcuts-line")).toContainText("Ctrl+S save");
   await page.getByLabel("Description").fill("Saved by shortcut");
   await page.getByLabel("Description").press("Control+s");
   await expect(page.getByTestId("item-saved")).toContainText("Saved.");
@@ -121,7 +120,7 @@ test("item editor: a stale save in a second tab offers Reload or Overwrite", asy
 
 test("the list's Public toggle states what happened and offers Undo", async ({ page, request }) => {
   await page.goto("/admin/#/items");
-  const row = page.locator("li.item-row", { hasText: "Shell Test Item" });
+  const row = page.locator("tr.item-row", { hasText: "Shell Test Item" });
   await row.getByRole("checkbox", { name: /^Public/ }).uncheck();
   await expect(page.locator(".notice", { hasText: "is now hidden from the shop" })).toBeVisible();
   await page.getByRole("button", { name: "Undo" }).click();
@@ -131,7 +130,7 @@ test("the list's Public toggle states what happened and offers Undo", async ({ p
 });
 
 test("Ctrl+S and Ctrl+K are offered only where they work", async ({ page }) => {
-  const hint = page.locator("footer .shortcuts-line");
+  const hint = page.locator("main .shortcuts-line");
   await page.goto("/admin/#/dashboard");
   await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
   await expect(hint).toHaveCount(0);
@@ -146,7 +145,7 @@ test("Settings saves with Ctrl+S", async ({ page, request }) => {
   const original = (await (await request.get("/admin/api/settings")).json()).config;
   try {
     await page.goto("/admin/#/settings");
-    const phone = page.getByLabel("Phone");
+    const phone = page.getByLabel("Phone", { exact: true });
     await phone.fill("555-0100");
     await phone.press("Control+s");
     await expect(page.getByText("Settings saved.")).toBeVisible();
@@ -182,12 +181,14 @@ test.describe("electricity schedule", () => {
 
   test("problems are written in UI terms, fields are marked, and Save is blocked until fixed", async ({ page }) => {
     await page.goto("/admin/#/electricity");
-    await page.getByLabel("Mode").selectOption("schedule");
+    await page.getByLabel("Mode", { exact: true }).selectOption("schedule");
     await page.getByRole("button", { name: "Load SCE TOU-D-4-9PM example" }).click();
     const start = page.getByLabel("Season 1 Weekday window 1 start");
-    await start.fill("4pm");
+    // A time input can't hold "4pm"; an emptied one is the invalid state the editor can reach.
+    await start.fill("");
     const problems = page.getByRole("list", { name: "Schedule problems" });
     await expect(problems).toContainText("Season 1 › Weekday › Window 1");
+    await expect(problems).toContainText("enter a time like 16:00");
     await expect(problems).not.toContainText("seasons[0]");
     await expect(start).toHaveAttribute("aria-invalid", "true");
     const save = page.getByRole("button", { name: "Save changes" });
@@ -202,7 +203,7 @@ test.describe("electricity schedule", () => {
 
   test("an overnight window is accepted, explained, and split at midnight on save", async ({ page, request }) => {
     await page.goto("/admin/#/electricity");
-    await page.getByLabel("Mode").selectOption("schedule");
+    await page.getByLabel("Mode", { exact: true }).selectOption("schedule");
     await page.getByRole("button", { name: "Load SCE TOU-D-4-9PM example" }).click();
     await page.getByLabel("Season 1 Weekday window 1 start").fill("22:00");
     await page.getByLabel("Season 1 Weekday window 1 end").fill("06:00");
@@ -217,7 +218,7 @@ test.describe("electricity schedule", () => {
     expect(wins).toEqual(expect.arrayContaining(["22:00-24:00", "00:00-06:00"]));
   });
 
-  test("at 390 px a schedule window's fields stack inside the card", async ({ page }) => {
+  test("at 390 px a schedule window's fields and its Remove button stack inside the card", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/admin/#/electricity");
     const rate = page.getByLabel("Season 1 Weekday window 1 rate");
@@ -225,41 +226,19 @@ test.describe("electricity schedule", () => {
     const box = await rate.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.x + box!.width).toBeLessThanOrEqual(390);
-    const remove = page.getByRole("button", { name: /^Remove window/ }).first();
+    const remove = page.getByRole("button", { name: /^Remove Season 1 Weekday window 1/ });
     const rb = await remove.boundingBox();
     expect(rb!.x + rb!.width).toBeLessThanOrEqual(390);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 });
 
-function tinyPng(): Buffer {
-  const chunk = (type: string, data: Buffer): Buffer => {
-    const len = Buffer.alloc(4);
-    len.writeUInt32BE(data.length);
-    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-    const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(crc32(body));
-    return Buffer.concat([len, body, crc]);
-  };
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(1, 0);
-  ihdr.writeUInt32BE(1, 4);
-  ihdr[8] = 8;
-  ihdr[9] = 2;
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", ihdr),
-    chunk("IDAT", deflateSync(Buffer.from([0, 10, 120, 200]))),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
-}
-
 test("business identity: upload a logo, see the preview, save, and remove it", async ({ page, request }) => {
   const original = (await (await request.get("/admin/api/settings")).json()).config;
   try {
     await page.goto("/admin/#/settings");
     await expect(page.locator("#section-quote .hint").first()).toContainText("admin header");
-    await page.getByLabel("Upload logo").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: tinyPng() });
+    await page.getByLabel("Upload logo").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: tinyPng(10, 120, 200) });
     await expect(page.getByAltText("Your logo")).toBeVisible();
     await expect(page.getByText(/^Uploaded image, \d+ KB$/)).toBeVisible();
     await expect(page.locator("#quote-logo-url")).toHaveCount(0);
@@ -276,23 +255,17 @@ test("business identity: upload a logo, see the preview, save, and remove it", a
 });
 
 test("the Guide covers requests, shop items, Spoolman, users, and shortcuts", async ({ page }) => {
-  await page.goto("/admin/#/guide");
-  for (const name of ["Requests: Finalize or Convert", "Shop items and options", "Spoolman", "Users and permissions", "Keyboard shortcuts"]) {
-    await expect(page.getByRole("heading", { name })).toBeVisible();
+  for (const [id, name] of [
+    ["requests-finalize-vs-convert", "Requests: Finalize or Convert"],
+    ["shop-items-and-options", "Shop items and options"],
+    ["spoolman", "Spoolman"],
+    ["users-and-permissions", "Users and permissions"],
+    ["keyboard-shortcuts", "Keyboard shortcuts"],
+  ] as const) {
+    await page.goto(`/admin/#/guide#${id}`);
+    await expect(page.getByRole("heading", { name, level: 2 })).toBeVisible();
   }
   await expect(page.getByRole("table")).toContainText("Ctrl+S");
-});
-
-test("Explain this page scrolls the first note into view", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 500 });
-  await page.goto("/admin/#/quote");
-  await page.getByRole("button", { name: "Explain this page" }).click();
-  const note = page.locator(".help-note:not([hidden])").first();
-  await expect(note).toBeVisible();
-  await expect.poll(async () => note.evaluate((el) => {
-    const r = el.getBoundingClientRect();
-    return r.top >= 0 && r.bottom <= window.innerHeight;
-  })).toBe(true);
 });
 
 test("a dirty item form asks before the page unloads", async ({ page }) => {
@@ -320,7 +293,7 @@ test("Integrations Test works for a URL set by an environment variable", async (
   await page.goto("http://127.0.0.1:9199/admin/#/settings");
   const card = page.locator("#section-integrationsUrls");
   await expect(card.getByText("SPOOLMAN_URL is set on the container")).toBeVisible();
-  const test = card.locator(".subcard", { hasText: "Spoolman" }).getByRole("button", { name: "Test" });
+  const test = card.locator(".card", { hasText: "Spoolman" }).getByRole("button", { name: "Test" });
   await expect(test).not.toBeDisabled();
   await expect(test).toHaveAttribute("aria-disabled", "false");
   await test.click();

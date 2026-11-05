@@ -36,7 +36,8 @@ const maxItemOrderQty = 10000
 const itemConflictMessage = "this item was changed in another tab or by another user; reload to see the latest"
 
 const itemColumns = `id, name, description, price_cents, option_groups_json,
-  image_file, public, stock_mode, stock_qty, allow_backorder, sort_order, created_at, updated_at, created_by, updated_by, version`
+  image_file, public, stock_mode, stock_qty, allow_backorder, sort_order, created_at, updated_at, created_by, updated_by, version,
+  COALESCE(category_id, ''), featured`
 
 // Option group limits.
 const (
@@ -91,6 +92,9 @@ type Item struct {
 	// stock decrements count too). A PUT that sends the version it loaded is rejected with 409 when the
 	// row has moved on since.
 	Version int `json:"version"`
+	// CategoryID is the item's category ("" for none). Featured items sort first in the shop.
+	CategoryID string `json:"categoryId"`
+	Featured   bool   `json:"featured"`
 }
 
 // itemInput is the POST/PUT body: Item minus the server-assigned id, image file, and timestamps. Group and
@@ -105,6 +109,10 @@ type itemInput struct {
 	StockQty       int               `json:"stockQty"`
 	AllowBackorder bool              `json:"allowBackorder"`
 	SortOrder      int               `json:"sortOrder"`
+	// CategoryID and Featured are optional: absent keeps the stored values on PUT (and means none / false on
+	// POST), so a client that predates them doesn't clear them on save.
+	CategoryID *string `json:"categoryId"`
+	Featured   *bool   `json:"featured"`
 	// Version is the Item.Version the form was loaded with. Optional: a PUT without it skips the check.
 	Version *int `json:"version"`
 }
@@ -112,6 +120,17 @@ type itemInput struct {
 type items struct {
 	db        *sql.DB
 	configDir string
+	// store lets image cleanup see the shop hero image, which shares uploads/items and the content-addressed
+	// names with item photos. Nil in tests that don't touch the config.
+	store *ConfigStore
+}
+
+// removeImageIfUnshared is removeItemImageIfUnshared that also keeps a file the shop hero image uses.
+func (it *items) removeImageIfUnshared(file string) {
+	if file != "" && it.store != nil && it.store.Get().Shop.HeroImage.File == file {
+		return
+	}
+	removeItemImageIfUnshared(it.db, it.configDir, file)
 }
 
 func newItems(db *sql.DB, configDir string) *items {
@@ -193,8 +212,37 @@ func validateItemInput(in *itemInput) []string {
 	// AllowBackorder is stored as given regardless of StockMode: rejecting or clearing it for
 	// stockModeReadyToPrint would lose the setting when an item flips between modes.
 
+	if in.CategoryID != nil {
+		trimmed := strings.TrimSpace(*in.CategoryID)
+		in.CategoryID = &trimmed
+		if len(trimmed) > 64 {
+			problems = append(problems, "categoryId: unknown category")
+		}
+	}
+
 	problems = append(problems, validateOptionGroups(in.OptionGroups, in.PriceCents)...)
 	return problems
+}
+
+// categoryIDProblem returns the 422 message for a categoryId that names no category, "" when it is empty or exists.
+func categoryIDProblem(db rowQuerier, id string) (string, error) {
+	if id == "" {
+		return "", nil
+	}
+	var one int
+	err := db.QueryRow(`SELECT 1 FROM categories WHERE id = ?`, id).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "categoryId: unknown category", nil
+	}
+	return "", err
+}
+
+// nullableCategory maps "" to SQL NULL for items.category_id.
+func nullableCategory(id string) any {
+	if id == "" {
+		return nil
+	}
+	return id
 }
 
 // validateOptionGroups trims labels and names in place and returns one message per problem. price is the
@@ -337,7 +385,7 @@ func scanItem(row interface{ Scan(...any) error }) (Item, error) {
 	var groupsJSON string
 	if err := row.Scan(&it.ID, &it.Name, &it.Description, &it.PriceCents, &groupsJSON,
 		&it.ImageFile, &it.Public, &it.StockMode, &it.StockQty, &it.AllowBackorder, &it.SortOrder, &it.CreatedAt, &it.UpdatedAt,
-		&it.CreatedBy, &it.UpdatedBy, &it.Version); err != nil {
+		&it.CreatedBy, &it.UpdatedBy, &it.Version, &it.CategoryID, &it.Featured); err != nil {
 		return Item{}, err
 	}
 	if err := json.Unmarshal([]byte(groupsJSON), &it.OptionGroups); err != nil {
@@ -415,6 +463,22 @@ func (it *items) handlePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	categoryID, featured := "", false
+	if in.CategoryID != nil {
+		categoryID = *in.CategoryID
+	}
+	if in.Featured != nil {
+		featured = *in.Featured
+	}
+	if msg, err := categoryIDProblem(it.db, categoryID); err != nil {
+		log.Printf("items category check: %v", err)
+		http.Error(w, "items not writable", http.StatusInternalServerError)
+		return
+	} else if msg != "" {
+		writeAPIError(w, http.StatusUnprocessableEntity, msg)
+		return
+	}
+
 	groups := reconcileOptionGroups(nil, in.OptionGroups)
 	groupsJSON, err := json.Marshal(groups)
 	if err != nil {
@@ -437,6 +501,8 @@ func (it *items) handlePost(w http.ResponseWriter, r *http.Request) {
 		StockQty:       in.StockQty,
 		AllowBackorder: in.AllowBackorder,
 		SortOrder:      in.SortOrder,
+		CategoryID:     categoryID,
+		Featured:       featured,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 		CreatedBy:      by,
@@ -445,10 +511,12 @@ func (it *items) handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = it.db.Exec(`
 		INSERT INTO items (id, name, description, price_cents, option_groups_json,
-			image_file, public, stock_mode, stock_qty, allow_backorder, sort_order, created_at, updated_at, created_by, updated_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			image_file, public, stock_mode, stock_qty, allow_backorder, sort_order, created_at, updated_at, created_by, updated_by,
+			category_id, featured)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		i.ID, i.Name, i.Description, i.PriceCents, string(groupsJSON),
-		i.ImageFile, i.Public, i.StockMode, i.StockQty, i.AllowBackorder, i.SortOrder, i.CreatedAt, i.UpdatedAt, i.CreatedBy, i.UpdatedBy)
+		i.ImageFile, i.Public, i.StockMode, i.StockQty, i.AllowBackorder, i.SortOrder, i.CreatedAt, i.UpdatedAt, i.CreatedBy, i.UpdatedBy,
+		nullableCategory(i.CategoryID), i.Featured)
 	if err != nil {
 		log.Printf("items insert: %v", err)
 		http.Error(w, "items not writable", http.StatusInternalServerError)
@@ -485,6 +553,23 @@ func (it *items) handlePut(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusConflict, itemConflictMessage)
 		return
 	}
+	categoryID, featured := existing.CategoryID, existing.Featured
+	if in.CategoryID != nil {
+		categoryID = *in.CategoryID
+	}
+	if in.Featured != nil {
+		featured = *in.Featured
+	}
+	if categoryID != existing.CategoryID {
+		if msg, err := categoryIDProblem(it.db, categoryID); err != nil {
+			log.Printf("items category check: %v", err)
+			http.Error(w, "items not writable", http.StatusInternalServerError)
+			return
+		} else if msg != "" {
+			writeAPIError(w, http.StatusUnprocessableEntity, msg)
+			return
+		}
+	}
 	groups := reconcileOptionGroups(existing.OptionGroups, in.OptionGroups)
 	groupsJSON, err := json.Marshal(groups)
 	if err != nil {
@@ -498,10 +583,11 @@ func (it *items) handlePut(w http.ResponseWriter, r *http.Request) {
 	// still loses (0 rows affected, reported as a conflict below).
 	res, err := it.db.Exec(`
 		UPDATE items SET name = ?, description = ?, price_cents = ?, option_groups_json = ?,
-			public = ?, stock_mode = ?, stock_qty = ?, allow_backorder = ?, sort_order = ?, updated_at = ?, updated_by = ?
+			public = ?, stock_mode = ?, stock_qty = ?, allow_backorder = ?, sort_order = ?, category_id = ?, featured = ?,
+			updated_at = ?, updated_by = ?
 		WHERE id = ? AND version = ?`,
 		in.Name, in.Description, in.PriceCents, string(groupsJSON),
-		in.Public, in.StockMode, in.StockQty, in.AllowBackorder, in.SortOrder, now, identityFor(r).username, id, existing.Version)
+		in.Public, in.StockMode, in.StockQty, in.AllowBackorder, in.SortOrder, nullableCategory(categoryID), featured, now, identityFor(r).username, id, existing.Version)
 	if err != nil {
 		log.Printf("items update: %v", err)
 		http.Error(w, "items not writable", http.StatusInternalServerError)
@@ -537,7 +623,7 @@ func (it *items) handlePut(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, f := range optionImageFiles(existing.OptionGroups) {
 		if !kept[f] {
-			removeItemImageIfUnshared(it.db, it.configDir, f)
+			it.removeImageIfUnshared(f)
 		}
 	}
 
@@ -566,9 +652,9 @@ func (it *items) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 	// Best-effort, after the row is gone: an orphaned file is a smaller problem than a file removed under a
 	// row DELETE that then fails. Guarded against sharing because filenames are content-addressed.
-	removeItemImageIfUnshared(it.db, it.configDir, i.ImageFile)
+	it.removeImageIfUnshared(i.ImageFile)
 	for _, f := range optionImageFiles(i.OptionGroups) {
-		removeItemImageIfUnshared(it.db, it.configDir, f)
+		it.removeImageIfUnshared(f)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -578,7 +664,7 @@ func (it *items) handleDelete(w http.ResponseWriter, r *http.Request) {
 // not the untrusted Content-Type, and writes it to the uploads directory under its content-addressed name
 // (the body's sha256, so identical re-uploads are idempotent). On failure it has written the response and
 // returns ok false.
-func (it *items) storeUploadedImage(w http.ResponseWriter, r *http.Request) (name string, ok bool) {
+func storeUploadedImage(configDir string, w http.ResponseWriter, r *http.Request) (name string, ok bool) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, itemImageMaxBytes))
 	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
@@ -605,13 +691,13 @@ func (it *items) storeUploadedImage(w http.ResponseWriter, r *http.Request) (nam
 	sum := sha256.Sum256(body)
 	name = hex.EncodeToString(sum[:])[:16] + ext
 
-	dir := filepath.Join(it.configDir, "uploads", "items")
+	dir := filepath.Join(configDir, "uploads", "items")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		log.Printf("items image mkdir: %v", err)
 		http.Error(w, "items not writable", http.StatusInternalServerError)
 		return "", false
 	}
-	if err := os.WriteFile(itemImagePath(it.configDir, name), body, 0o644); err != nil {
+	if err := os.WriteFile(itemImagePath(configDir, name), body, 0o644); err != nil {
 		log.Printf("items image write: %v", err)
 		http.Error(w, "items not writable", http.StatusInternalServerError)
 		return "", false
@@ -634,7 +720,7 @@ func (it *items) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name, ok := it.storeUploadedImage(w, r)
+	name, ok := storeUploadedImage(it.configDir, w, r)
 	if !ok {
 		return
 	}
@@ -647,7 +733,7 @@ func (it *items) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if item.ImageFile != "" && item.ImageFile != name {
-		removeItemImageIfUnshared(it.db, it.configDir, item.ImageFile)
+		it.removeImageIfUnshared(item.ImageFile)
 	}
 
 	it.writeItem(w, id)
@@ -746,7 +832,7 @@ func (it *items) handleOptionImageUpload(w http.ResponseWriter, r *http.Request)
 		writeAPIError(w, http.StatusNotFound, "option not found")
 		return
 	}
-	name, ok := it.storeUploadedImage(w, r)
+	name, ok := storeUploadedImage(it.configDir, w, r)
 	if !ok {
 		return
 	}
@@ -758,12 +844,12 @@ func (it *items) handleOptionImageUpload(w http.ResponseWriter, r *http.Request)
 	}
 	if !found {
 		// The item or option was removed between the check above and the write: drop the new file.
-		removeItemImageIfUnshared(it.db, it.configDir, name)
+		it.removeImageIfUnshared(name)
 		writeAPIError(w, http.StatusNotFound, "option not found")
 		return
 	}
 	if old != "" && old != name {
-		removeItemImageIfUnshared(it.db, it.configDir, old)
+		it.removeImageIfUnshared(old)
 	}
 	it.writeItem(w, id)
 }
@@ -792,7 +878,7 @@ func (it *items) handleOptionImageDelete(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "items not writable", http.StatusInternalServerError)
 		return
 	}
-	removeItemImageIfUnshared(it.db, it.configDir, old)
+	it.removeImageIfUnshared(old)
 	it.writeItem(w, id)
 }
 

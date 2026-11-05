@@ -53,15 +53,21 @@
     describeStoredModelHint,
   } from "../lib/gcodeMessage";
   import { describeStorageBanner, type StorageBanner } from "../lib/storageBanner";
-  import { money, formatDate, formatDateTime, materialDisplayName } from "../lib/format";
-  import { mdiArrowLeft } from "@mdi/js";
-  import Icon from "./Icon.svelte";
+  import { money, formatDate, formatDateTime, materialDisplayName, presetDisplayName } from "../lib/format";
+  import PageHeader from "./ui/PageHeader.svelte";
+  import Card from "./ui/Card.svelte";
+  import Field from "./ui/Field.svelte";
+  import Fieldset from "./ui/Fieldset.svelte";
+  import FormGrid from "./ui/FormGrid.svelte";
+  import KeyValueTable, { type KeyValueRow } from "./ui/KeyValueTable.svelte";
+  import InlineStatus from "./ui/InlineStatus.svelte";
+  import ConfirmInline from "./ui/ConfirmInline.svelte";
   import StatusBadge from "./StatusBadge.svelte";
   import AttributionLine from "./AttributionLine.svelte";
   import SettingsEditor from "./settings/SettingsEditor.svelte";
   import PublicQuotesSettings from "./settings/PublicQuotesSettings.svelte";
-  import LoadMoreRow from "./LoadMoreRow.svelte";
-  import DetailTitle from "./DetailTitle.svelte";
+  import DataTable, { type DataColumn } from "./ui/DataTable.svelte";
+  import { canConfigureShop, canEditQuotes, hasTabAccess, type ConfigUser } from "../lib/permissions";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
   import { confirmFocus, focusOnMount, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "../lib/a11yFocus";
 
@@ -69,7 +75,19 @@
     cfg,
     onOpenInQuote,
     onOpenInvoice,
-  }: { cfg: EffectiveConfig; onOpenInQuote: () => void; onOpenInvoice: () => void } = $props();
+    user = null,
+  }: { cfg: EffectiveConfig; onOpenInQuote: () => void; onOpenInvoice: () => void; user?: ConfigUser | null } = $props();
+
+  // What the signed-in user may follow from a request (A13). The server refuses the rest with a 403, so the
+  // buttons say so up front instead of failing. Convert creates the client and the invoice, so it needs both.
+  const canQuote = $derived(canEditQuotes(user));
+  const canInvoices = $derived(hasTabAccess("invoices", user));
+  const canConvert = $derived(hasTabAccess("clients", user) && canInvoices);
+  const convertReason = $derived(
+    canConvert ? "" : `Converting a request creates the client and the invoice. It needs access to ${[hasTabAccess("clients", user) ? "" : "Clients", canInvoices ? "" : "Invoices"].filter(Boolean).join(" and ")}. Ask an admin.`,
+  );
+  const quoteReason = $derived(canQuote ? "" : "You don't have access to New quote. Ask an admin.");
+  const canConfigure = $derived(canConfigureShop(user));
 
   // List
 
@@ -575,7 +593,7 @@
       detail = await finalizeRequest(detail.id);
       announce("Request finalized.");
       // The Finalize button is gone now; keep focus in the action row.
-      void refocusIfLost(".status-actions button");
+      void refocusIfLost(".detail-actions button");
       await refresh();
       await refreshUnread();
     } catch (err) {
@@ -586,7 +604,7 @@
   }
 
   function openInQuoteTab() {
-    if (!detail) return;
+    if (!detail || !canQuote) return;
     // A request opens as a new one-part quote, never into a quote being edited: parts, order block, customer
     // and meta all reset. A request still waiting for its print time opens with the time blank.
     const part = startOnePartQuote(cfg);
@@ -637,7 +655,7 @@
   }
 
   async function convertToInvoice() {
-    if (!detail || converting) return;
+    if (!detail || converting || !canConvert) return;
     if (detail.needsPrintTime) {
       convertError = "Enter the print time first. Convert to invoice needs a price.";
       return;
@@ -688,6 +706,16 @@
     }
   }
 
+  const COLUMNS: DataColumn[] = [
+    { key: "select", label: "Select", hideLabel: true },
+    { key: "status", label: "Status" },
+    { key: "who", label: "Requester" },
+    { key: "what", label: "Item or material" },
+    { key: "qty", label: "Qty", num: true },
+    { key: "price", label: "Price", num: true },
+    { key: "date", label: "Received", num: true },
+  ];
+
   // Formatting helpers
 
   function formatDuration(seconds: number): string {
@@ -700,60 +728,39 @@
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
   }
+
+  // The read-only facts of the open request, in the order the old grid showed them.
+  const detailRows = $derived.by((): KeyValueRow[] => {
+    const d = detail;
+    if (!d) return [];
+    const rows: KeyValueRow[] = [
+      { label: "Reference", value: requestReference(d) },
+      { label: "Name", value: d.name },
+      { label: "Email", value: d.email, href: `mailto:${encodeURIComponent(d.email)}` },
+    ];
+    if (d.kind === "item") {
+      rows.push({ label: "Item", value: d.itemName });
+      if (d.optionName) rows.push({ label: "Option", value: d.optionName });
+      rows.push({ label: "Quantity", value: String(d.quantity) });
+      rows.push({ label: "Total", value: money(d.priceCents, cfg), strong: true });
+    } else {
+      rows.push({ label: "Material", value: materialDisplayName(d.material, cfg.materials) });
+      rows.push({ label: "Quantity", value: String(d.quantity) });
+      rows.push({ label: "Weight", value: `${d.weightG} g` });
+      rows.push({ label: "Print time", value: d.needsPrintTime ? "Not provided" : formatDuration(d.timeSeconds) });
+      rows.push({ label: "Price", value: d.needsPrintTime ? "To be confirmed" : money(d.priceCents, cfg), strong: true });
+      if (d.shippingCents > 0) rows.push({ label: "Shipping", value: money(d.shippingCents, cfg) });
+    }
+    rows.push({ label: "Submitted", value: formatDateTime(d.createdAt) });
+    return rows;
+  });
 </script>
 
 <svelte:window onhashchange={syncDetailFromHash} onkeydown={handleDetailKeydown} onpointerdown={handleWindowPointerDown} />
 
 <div class="page">
   {#if view === "list"}
-    <div class="head-row">
-      <h1 tabindex="-1" data-focus-key="requests-heading">Requests</h1>
-    </div>
-
-    {#if requests.length > 0}
-      <div class="toolbar">
-        <input
-          id="requests-filter"
-          class="search-input"
-          data-focus-key="requests-filter-input"
-          placeholder="Filter by name, item, or file"
-          aria-label="Filter requests by name, item, or file"
-          bind:value={filterText}
-        />
-        {#if newCount > 0}
-          <div class="more" data-more-menu onfocusout={handleMoreFocusOut}>
-            <button
-              type="button"
-              class="quiet menu-toggle"
-              bind:this={moreToggleEl}
-              data-focus-key="requests-more"
-              aria-expanded={moreOpen}
-              aria-controls="requests-more-menu"
-              aria-label="More actions for requests"
-              onclick={toggleMore}
-            >⋯</button>
-            {#if moreOpen}
-              <div class="menu-panel" id="requests-more-menu">
-                <div class="menu-group" role="group" aria-label="More actions for requests">
-                  <button type="button" class="quiet menu-item" onclick={askDeleteAllNew}>Delete all new…</button>
-                </div>
-              </div>
-            {/if}
-          </div>
-        {/if}
-      </div>
-      <div class="chips" role="group" aria-label="Filter by status">
-        {#each REQUEST_FILTER_CHIPS as chip (chip.key)}
-          <button
-            type="button"
-            class:active={filterChip === chip.key}
-            aria-pressed={filterChip === chip.key}
-            onclick={() => (filterChip = chip.key)}
-          >{chip.label}</button>
-        {/each}
-      </div>
-      <BackfillStatus backfilling={backfill.backfilling} backfillFailed={backfill.backfillFailed} verb="filter" />
-    {/if}
+    <h1 tabindex="-1" data-focus-key="requests-heading">Requests</h1>
 
     {#if confirmingDeleteAllNew}
       <div class="banner-warn confirm-delete-all" role="group" aria-label="Confirm deleting all new requests">
@@ -762,31 +769,6 @@
           <button type="button" use:focusOnMount onclick={cancelDeleteAllNew}>Cancel</button>
           <button type="button" class="danger" onclick={removeAllNew} aria-disabled={bulkDeleting}>{bulkDeleting ? "Deleting…" : deleteAllNewConfirmLabel(newCount)}</button>
         </div>
-      </div>
-    {/if}
-
-    {#if viewedRows.length > 0 || newRows.length > 0}
-      <div class="bulk-bar">
-        {#if selectedIds.length === 0}
-          {#if newRows.length > 0}<button type="button" class="quiet" onclick={selectAllNew}>Select all new ({newRows.length})</button>{/if}
-          {#if viewedRows.length > 0}<button type="button" class="quiet" onclick={selectAllViewed}>Select all viewed ({viewedRows.length})</button>{/if}
-        {:else}
-          <span class="bulk-count" role="status">{selectedIds.length} selected</span>
-          {#if confirmingBulkFinalize}
-            <button
-              type="button"
-              class="primary"
-              aria-disabled={bulkFinalizing}
-              onclick={finalizeSelected}
-              use:confirmFocus={{ restore: keySelector("finalize-selected"), cancel: () => (confirmingBulkFinalize = false) }}
-            >{bulkFinalizing ? "Finalizing…" : `Yes, finalize ${selectedIds.length} ${selectedIds.length === 1 ? "request" : "requests"}`}</button>
-            <button type="button" onclick={() => (confirmingBulkFinalize = false)}>Cancel</button>
-            <span class="advisory-text">Marks them handled (new ones are marked viewed first). It doesn't email the customers.</span>
-          {:else}
-            <button type="button" class="primary" data-focus-key="finalize-selected" onclick={() => (confirmingBulkFinalize = true)}>Finalize selected</button>
-            <button type="button" class="quiet" onclick={clearSelection}>Clear selection</button>
-          {/if}
-        {/if}
       </div>
     {/if}
 
@@ -810,130 +792,197 @@
       <p class={storageBanner.level === "full" ? "banner-error" : "banner-warn"} role="alert">{storageBanner.text}</p>
     {/if}
 
-    <div class="card">
-      <ul class="plain-list">
-        {#if loading}
-          <li class="empty-state"><span role="status">Loading…</span></li>
-        {:else}
-          {#each filteredRequests as r (r.id)}
-            <li class="req-row">
-              <span class="r-check">
-                {#if r.status === "viewed" || r.status === "new"}
-                  <label class="check-label">
-                    <input
-                      type="checkbox"
-                      aria-label={`Select request from ${r.name}`}
-                      checked={selectedIds.includes(r.id)}
-                      onchange={() => toggleSelected(r.id)}
-                    />
-                  </label>
-                {/if}
-              </span>
-              <button type="button" class="row-link" data-row-id={r.id} onclick={() => openDetail(r.id)}>
-                <StatusBadge status={requestDisplayStatus(r)} />
-                <!-- Name and its optional pills share one grid cell (.r-who): as siblings of the metadata
-                     spans they were extra tracks and pushed later columns out of line with rows that
-                     lacked them. -->
-                <span class="r-who">
-                  <span class="r-name">{r.name}</span>
-                  {#if r.reference}<span class="pill ref-pill">{r.reference}</span>{/if}
-                  {#if r.kind === "item"}<span class="pill item-pill">item order</span>{/if}
-                  {#if r.needsPrintTime}<span class="pill time-pill">Needs print time</span>{/if}
-                  {#if isInvoiced(r)}<span class="pill item-pill">{r.invoiceNumber}</span>{/if}
-                  {#if duplicateRequestIds.has(r.id)}<span class="pill dup-pill">possible duplicate</span>{/if}
-                </span>
-                <span class="r-material">{r.kind === "item" ? r.itemName : materialDisplayName(r.material, cfg.materials)}</span>
-                <span class="r-qty">×{r.quantity}</span>
-                <span class="r-price">{r.needsPrintTime ? "To be confirmed" : money(r.priceCents, cfg)}</span>
-                <span class="r-date">{formatDate(r.createdAt)}</span>
-              </button>
-            </li>
-          {:else}
-            <li class="empty-state">{requests.length === 0 ? "No estimate requests yet. They arrive here when a visitor submits your public estimate page. Set that page up below." : "No requests match the filter. Clear it, or choose All, to see every request."}</li>
+    <DataTable
+      label="Requests"
+      columns={COLUMNS}
+      loadMore={!loading && !filterActive ? { shown: requests.length, total, loadingMore, onLoadMore: loadMore } : null}
+    >
+      {#snippet filters()}
+    {#if requests.length > 0}
+        <div class="toolbar">
+          <Field id="requests-filter" label="Filter requests by name, item, or file" size="l">
+            {#snippet children(f)}
+              <input
+                id={f.id}
+                type="search"
+                data-focus-key="requests-filter-input"
+                placeholder="Name, item, or file"
+                bind:value={filterText}
+              />
+            {/snippet}
+          </Field>
+          {#if newCount > 0}
+            <div class="more" data-more-menu onfocusout={handleMoreFocusOut}>
+              <button
+                type="button"
+                class="quiet menu-toggle"
+                bind:this={moreToggleEl}
+                data-focus-key="requests-more"
+                aria-expanded={moreOpen}
+                aria-controls="requests-more-menu"
+                aria-label="More actions for requests"
+                onclick={toggleMore}
+              >⋯</button>
+              {#if moreOpen}
+                <div class="menu-panel" id="requests-more-menu">
+                  <div class="menu-group" role="group" aria-label="More actions for requests">
+                    <button type="button" class="quiet menu-item" onclick={askDeleteAllNew}>Delete all new…</button>
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+        <div class="chips" role="group" aria-label="Filter by status">
+          {#each REQUEST_FILTER_CHIPS as chip (chip.key)}
+            <button
+              type="button"
+              class:active={filterChip === chip.key}
+              aria-pressed={filterChip === chip.key}
+              onclick={() => (filterChip = chip.key)}
+            >{chip.label}</button>
           {/each}
-        {/if}
-      </ul>
-      {#if !loading && !filterActive}
-        <LoadMoreRow shown={requests.length} {total} {loadingMore} onLoadMore={loadMore} />
+        </div>
+        <BackfillStatus backfilling={backfill.backfilling} backfillFailed={backfill.backfillFailed} verb="filter" />
       {/if}
-    </div>
+      {#if viewedRows.length > 0 || newRows.length > 0}
+          <div class="bulk-bar">
+            {#if selectedIds.length === 0}
+              {#if newRows.length > 0}<button type="button" class="quiet" onclick={selectAllNew}>Select all new ({newRows.length})</button>{/if}
+              {#if viewedRows.length > 0}<button type="button" class="quiet" onclick={selectAllViewed}>Select all viewed ({viewedRows.length})</button>{/if}
+            {:else}
+              <span class="bulk-count" role="status">{selectedIds.length} selected</span>
+              {#if confirmingBulkFinalize}
+                <button
+                  type="button"
+                  class="primary"
+                  aria-disabled={bulkFinalizing}
+                  onclick={finalizeSelected}
+                  use:confirmFocus={{ restore: keySelector("finalize-selected"), cancel: () => (confirmingBulkFinalize = false) }}
+                >{bulkFinalizing ? "Finalizing…" : `Yes, finalize ${selectedIds.length} ${selectedIds.length === 1 ? "request" : "requests"}`}</button>
+                <button type="button" onclick={() => (confirmingBulkFinalize = false)}>Cancel</button>
+                <span class="advisory-text">Marks them handled (new ones are marked viewed first). It doesn't email the customers.</span>
+              {:else}
+                <button type="button" class="primary" data-focus-key="finalize-selected" onclick={() => (confirmingBulkFinalize = true)}>Finalize selected</button>
+                <button type="button" class="quiet" onclick={clearSelection}>Clear selection</button>
+              {/if}
+            {/if}
+          </div>
+        {/if}
 
-    <SettingsEditor>
-      {#snippet children({ form, hasError })}
-        <PublicQuotesSettings {form} {hasError} />
       {/snippet}
-    </SettingsEditor>
+      {#if loading}
+        <tr><td colspan="7" class="empty-state"><span role="status">Loading…</span></td></tr>
+      {:else}
+        {#each filteredRequests as r (r.id)}
+          <tr class="req-row clickable-row" onclick={() => openDetail(r.id)}>
+            <td class="c-check" onclick={(e) => e.stopPropagation()}>
+              {#if r.status === "viewed" || r.status === "new"}
+                <label class="check-label">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select request from ${r.name}`}
+                    checked={selectedIds.includes(r.id)}
+                    onchange={() => toggleSelected(r.id)}
+                  />
+                </label>
+              {/if}
+            </td>
+            <td class="c-status"><StatusBadge status={requestDisplayStatus(r)} /></td>
+            <td class="c-who">
+              <span class="r-who">
+                <button type="button" class="row-link" data-row-id={r.id} onclick={(e) => { e.stopPropagation(); openDetail(r.id); }}>{r.name}</button>
+                {#if r.reference}<span class="pill ref-pill">{r.reference}</span>{/if}
+                {#if r.kind === "item"}<span class="pill item-pill">item order</span>{/if}
+                {#if r.needsPrintTime}<span class="pill time-pill">Needs print time</span>{/if}
+                {#if isInvoiced(r)}<span class="pill item-pill">{r.invoiceNumber}</span>{/if}
+                {#if duplicateRequestIds.has(r.id)}<span class="pill dup-pill">possible duplicate</span>{/if}
+              </span>
+            </td>
+            <td class="c-material">{r.kind === "item" ? r.itemName : materialDisplayName(r.material, cfg.materials)}</td>
+            <td class="num c-qty">×{r.quantity}</td>
+            <td class="num c-price">{r.needsPrintTime ? "To be confirmed" : money(r.priceCents, cfg)}</td>
+            <td class="num c-date">{formatDate(r.createdAt)}</td>
+          </tr>
+        {:else}
+          <tr><td colspan="7" class="empty-state">{requests.length === 0 ? "No estimate requests yet. They arrive here when a visitor submits your public estimate page. Set that page up below." : "No requests match the filter. Clear it, or choose All, to see every request."}</td></tr>
+        {/each}
+      {/if}
+    </DataTable>
+
+    {#if canConfigure}
+      <SettingsEditor>
+        {#snippet children({ form, hasError })}
+          <PublicQuotesSettings {form} {hasError} />
+        {/snippet}
+      </SettingsEditor>
+    {:else}
+      <!-- Only an admin can save these (the server refuses the rest), so everyone else gets the values to read. -->
+      <Card heading="Public estimates">
+        <p class="hint">Visitor estimates are priced with the {cfg.printers.find((p) => p.id === cfg.publicQuotes.printer)?.name ?? cfg.publicQuotes.printer} printer and the {presetDisplayName(cfg.publicQuotes.preset)} preset. Only an admin can change this.</p>
+      </Card>
+    {/if}
   {:else}
-    <div class="head-row">
-      <button type="button" class="quiet back-link" onclick={() => backToList()}><Icon path={mdiArrowLeft} /> Back to list</button>
-      {#if detail}<StatusBadge status={requestDisplayStatus(detail)} />{/if}
-    </div>
+    <PageHeader
+      record
+      title={detail ? (detail.kind === "item" ? `Order from ${detail.name}` : `Estimate request from ${detail.name}`) : undefined}
+      onback={() => backToList()}
+    >
+      {#snippet status()}{#if detail}<StatusBadge status={requestDisplayStatus(detail)} />{/if}{/snippet}
+      {#snippet subtitle()}{#if detail}<AttributionLine updatedBy={detail.updatedBy} />{/if}{/snippet}
+    </PageHeader>
 
     {#if detailLoading}
-      <p role="status">Loading…</p>
+      <InlineStatus kind="saving">Loading…</InlineStatus>
     {:else if detailError}
-      <p class="banner-warn" role="alert">{detailError}</p>
+      <InlineStatus kind="error">{detailError}</InlineStatus>
     {:else if detail}
-      <div class="card">
-        <DetailTitle>{detail.kind === "item" ? `Order from ${detail.name}` : `Estimate request from ${detail.name}`}</DetailTitle>
-        <AttributionLine updatedBy={detail.updatedBy} />
-
-        <div class="readonly-grid">
-          <div><span class="lbl">Reference</span><span>{requestReference(detail)}</span></div>
-          <div><span class="lbl">Name</span><span>{detail.name}</span></div>
-          <div><span class="lbl">Email</span><span><a href={`mailto:${encodeURIComponent(detail.email)}`}>{detail.email}</a></span></div>
-          {#if detail.kind === "item"}
-            <div><span class="lbl">Item</span><span>{detail.itemName}</span></div>
-            {#if detail.optionName}<div><span class="lbl">Option</span><span>{detail.optionName}</span></div>{/if}
-            <div><span class="lbl">Quantity</span><span>{detail.quantity}</span></div>
-            <div><span class="lbl">Total</span><span>{money(detail.priceCents, cfg)}</span></div>
-          {:else}
-            <div><span class="lbl">Material</span><span>{materialDisplayName(detail.material, cfg.materials)}</span></div>
-            <div><span class="lbl">Quantity</span><span>{detail.quantity}</span></div>
-            <div><span class="lbl">Weight</span><span>{detail.weightG} g</span></div>
-            <div><span class="lbl">Print time</span><span>{detail.needsPrintTime ? "Not provided" : formatDuration(detail.timeSeconds)}</span></div>
-            <div><span class="lbl">Price</span><span>{detail.needsPrintTime ? "To be confirmed" : money(detail.priceCents, cfg)}</span></div>
-            {#if detail.shippingCents > 0}<div><span class="lbl">Shipping</span><span>{money(detail.shippingCents, cfg)}</span></div>{/if}
-          {/if}
-          <div><span class="lbl">Submitted</span><span>{formatDateTime(detail.createdAt)}</span></div>
-        </div>
+      <Card>
+        <KeyValueTable rows={detailRows} label="Request details" />
 
         {#if detail.note}<p class="notes"><span class="lbl">Note</span> {detail.note}</p>{/if}
 
         {#if isInvoiced(detail)}
-          <p class="banner-muted invoiced-note">
+          <p class="invoiced-note">
             Invoiced as {detail.invoiceNumber} (request {requestReference(detail)}).
-            <button type="button" class="quiet linkish" onclick={() => openLinkedInvoice(detail!.invoiceId)}>Open invoice</button>
+            {#if canInvoices}
+              <button type="button" class="quiet linkish" onclick={() => openLinkedInvoice(detail!.invoiceId)}>Open invoice</button>
+            {:else}
+              <span class="hint">You don't have access to Invoices, so it can't be opened here.</span>
+            {/if}
           </p>
         {/if}
 
         {#if detail.needsPrintTime}
-          <div class="subcard time-card" role="group" aria-labelledby="print-time-heading">
+          <!-- One compact notice: a heading line, one sentence that also says why Finalize and Convert to
+               invoice are off, and the print time form in one row. -->
+          <Card tone="inset" class="time-notice" role="group" aria-labelledby="print-time-heading">
             <h3 id="print-time-heading">This estimate needs a print time</h3>
-            <p class="hint">
-              The customer's file had no print time, so there's no price yet. Enter the print time from your slicer and
-              printpaca prices the request from your current settings. You need it before you can convert the request
-              to an invoice.
+            <p id="print-time-note" class="hint">
+              The customer's file had no print time, so there's no price yet; enter it from your slicer, because Finalize and Convert to invoice need it.
             </p>
             <form
               class="time-form"
+              aria-label="Print time"
               onsubmit={(e) => {
                 e.preventDefault();
                 void savePrintTime();
               }}
             >
-              <label class="field">
-                <span>Hours</span>
-                <input type="number" min="0" step="1" bind:value={timeHours} />
-              </label>
-              <label class="field">
-                <span>Minutes</span>
-                <input type="number" min="0" max="59" step="1" bind:value={timeMinutes} />
-              </label>
+              <Field id="print-time-hours" label="Hours" size="xs">
+                {#snippet children(f)}
+                  <input id={f.id} type="number" min="0" step="1" bind:value={timeHours} aria-describedby={f.describedby} />
+                {/snippet}
+              </Field>
+              <Field id="print-time-minutes" label="Minutes" size="xs">
+                {#snippet children(f)}
+                  <input id={f.id} type="number" min="0" max="59" step="1" bind:value={timeMinutes} aria-describedby={f.describedby} />
+                {/snippet}
+              </Field>
               <button type="submit" class="primary" aria-disabled={savingTime} aria-busy={savingTime}>{savingTime ? "Saving…" : "Save print time"}</button>
             </form>
-            {#if timeError}<p class="banner-warn" role="alert">{timeError}</p>{/if}
-          </div>
+            {#if timeError}<InlineStatus kind="error">{timeError}</InlineStatus>{/if}
+          </Card>
         {/if}
 
         {#if detail.kind === "item"}
@@ -1006,40 +1055,49 @@
               printer, or preset). It isn't necessarily an error.
             </p>
           {:else if verifyOutcome.status === "error"}
-            <p class="banner-warn" role="alert">{verifyOutcome.message}</p>
+            <InlineStatus kind="error">{verifyOutcome.message}</InlineStatus>
             <button type="button" onclick={verifyRequest}>Retry verification</button>
           {/if}
         </div>
         {/if}
         {/if}
 
-        {#if actionError}<p class="banner-warn" role="alert">{actionError}</p>{/if}
-        {#if convertError}<p class="banner-warn" role="alert">{convertError}</p>{/if}
+        {#if actionError}<InlineStatus kind="error">{actionError}</InlineStatus>{/if}
+        {#if convertError}<InlineStatus kind="error">{convertError}</InlineStatus>{/if}
 
         {#if detail.status === "viewed" || !isInvoiced(detail)}
           <p class="hint">
             {#if detail.status === "viewed"}Finalize marks this request as handled in your list. It doesn't email the customer; use Reply by email to tell them. Finalized shop item orders count toward Top items.{" "}{/if}{#if !isInvoiced(detail)}Convert to invoice creates the client if this email isn't on file, then marks the request invoiced.{/if}
           </p>
         {/if}
-        <div class="status-actions">
+        <div class="detail-actions">
           {#if detail.status === "viewed"}
             {#if confirmingFinalize}
-              <button type="button" class="primary" onclick={finalize} use:confirmFocus={{ restore: keySelector("finalize-request"), cancel: cancelFinalize }}>Yes, finalize this request</button>
-              <button type="button" onclick={cancelFinalize}>Cancel</button>
+              <ConfirmInline
+                confirmLabel="Yes, finalize this request"
+                restore={keySelector("finalize-request")}
+                onconfirm={finalize}
+                oncancel={cancelFinalize}
+              >Finalizing can't be undone.</ConfirmInline>
             {:else}
               <button
                 type="button"
                 class="primary"
                 data-focus-key="finalize-request"
                 aria-disabled={finalizing || detail.needsPrintTime}
-                aria-describedby={detail.needsPrintTime ? "finalize-needs-time" : undefined}
+                aria-describedby={detail.needsPrintTime ? "print-time-note" : undefined}
                 onclick={askFinalize}
               >Finalize</button>
             {/if}
           {/if}
           <a class="reply-link" href={replyMailto(detail)} aria-label={`Reply by email to ${detail.name}, reference ${requestReference(detail)}`}>Reply by email</a>
           {#if detail.kind !== "item"}
-            <button type="button" onclick={openInQuoteTab}>Open in new quote</button>
+            <button
+              type="button"
+              onclick={openInQuoteTab}
+              aria-disabled={!canQuote}
+              aria-describedby={canQuote ? undefined : "open-quote-reason"}
+            >Open in new quote</button>
           {/if}
           {#if !isInvoiced(detail)}
             <button
@@ -1047,39 +1105,34 @@
               class={detail.status === "viewed" ? "" : "primary"}
               data-focus-key="convert-request"
               onclick={convertToInvoice}
-              aria-disabled={converting || detail.needsPrintTime}
-              aria-describedby={detail.needsPrintTime ? "convert-needs-time" : undefined}
+              aria-disabled={converting || detail.needsPrintTime || !canConvert}
+              aria-describedby={!canConvert ? "convert-no-access" : detail.needsPrintTime ? "print-time-note" : undefined}
             >
               {converting ? "Converting…" : "Convert to invoice"}
             </button>
           {/if}
           {#if confirmingDelete}
-            <button
-              type="button"
-              class="danger"
-              onclick={remove}
-              use:confirmFocus={{ restore: keySelector("delete-request"), cancel: cancelDelete }}
-            >Yes, delete this request</button>
-            <button type="button" onclick={cancelDelete}>Cancel</button>
-            <span class="advisory-text">Also deletes the stored file.</span>
+            <ConfirmInline
+              danger
+              confirmLabel="Yes, delete this request"
+              restore={keySelector("delete-request")}
+              onconfirm={remove}
+              oncancel={cancelDelete}
+            >Also deletes the stored file. This can't be undone.</ConfirmInline>
           {:else}
             <button type="button" data-focus-key="delete-request" onclick={askDelete} aria-label="Delete this request">Delete</button>
           {/if}
         </div>
-        {#if detail.needsPrintTime}
-          <p id="finalize-needs-time" class="hint">{finalizeBlockedReason(detail)}.</p>
-          <p id="convert-needs-time" class="hint">Enter the print time above before converting this request to an invoice.</p>
-        {/if}
-      </div>
+        {#if !canQuote && detail.kind !== "item"}<p id="open-quote-reason" class="hint">{quoteReason}</p>{/if}
+        {#if !canConvert && !isInvoiced(detail)}<p id="convert-no-access" class="hint">{convertReason}</p>{/if}
+      </Card>
     {/if}
   {/if}
 </div>
 
 <style>
-  .back-link { display: inline-flex; align-items: center; gap: 0.35rem; }
-
-  .toolbar { display: flex; gap: 0.5rem; align-items: center; }
-  .search-input { flex: 1; min-width: 0; }
+  .toolbar { display: flex; gap: var(--space-2); align-items: end; }
+  .toolbar > :global(.ui-field) { flex: 1; }
   .more { position: relative; flex-shrink: 0; }
   .menu-toggle { min-width: var(--tap-sm); font-weight: 700; letter-spacing: 1px; }
   /* Not position: fixed like QuotesTab's row menu: this one sits beside the filter, outside any scroll
@@ -1089,14 +1142,14 @@
     z-index: 5;
     right: 0;
     top: calc(100% + 4px);
-    min-width: 11rem;
-    padding: 0.3rem;
+    min-width: var(--field-s);
+    padding: var(--space-1);
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: calc(var(--radius) / 2);
     box-shadow: var(--shadow);
   }
-  .menu-group { display: flex; flex-direction: column; gap: 0.1rem; }
+  .menu-group { display: flex; flex-direction: column; gap: var(--space-1); }
   .menu-item { display: block; width: 100%; text-align: left; white-space: nowrap; }
 
   .confirm-delete-all p { margin: 0 0 var(--space-2); }
@@ -1104,24 +1157,37 @@
   .bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
   .bulk-count { font-size: var(--text-sm); font-weight: 600; }
 
-  .req-row { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr); align-items: center; }
-  .r-check { display: flex; justify-content: center; }
   .check-label { display: flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; cursor: pointer; }
-  .check-label input { width: 1.25rem; height: 1.25rem; margin: 0; }
+  .check-label input { width: var(--space-5); height: var(--space-5); margin: 0; }
   .time-pill { color: var(--warn); }
 
-  .invoiced-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .invoiced-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--gap) 0 0;
+    padding: var(--space-2) var(--space-3);
+    border-radius: calc(var(--radius) / 2);
+    background: var(--inset-bg);
+    color: var(--muted);
+    font-size: var(--text-sm);
+  }
   .invoiced-note .linkish { border: none; background: none; color: var(--accent-text); font-weight: 600; text-decoration: underline; }
-  .time-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
-  .time-form .field { margin: 0; }
-  .time-form input { width: 6rem; }
-  .time-card h3 { margin-top: 0; }
+  /* The compact print-time notice: hours, minutes and Save in one row, wrapping on a phone. */
+  .time-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2) var(--gap); }
+  :global(.time-notice > .hint) { margin: 0 0 var(--space-2); }
+  :global(.time-notice > h3) { margin: 0 0 var(--space-1); }
+  h3 { margin-top: 0; }
+
+  /* The record's actions sit under the facts with spacing only (dividers belong to tables and lists). */
+  .detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--gap); }
 
   /* "Reply by email" is a mailto: link, so it is an <a>; styled like the neighboring buttons. */
   .reply-link {
     display: inline-flex;
     align-items: center;
-    min-height: 44px;
+    min-height: var(--control-h);
     padding: 0 var(--space-3);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -1132,39 +1198,40 @@
 
   /* .action-status.collapsed mirrors QuotesTab's rule (component-scoped styles don't cascade): collapse the
    * live region while it is empty. */
-  .action-status.collapsed { min-height: 0; margin-top: calc(var(--space-6) * -1); margin-bottom: calc(var(--space-6) * -1); }
+  .action-status.collapsed { min-height: 0; margin-top: calc(var(--gap-section) * -1); margin-bottom: calc(var(--gap-section) * -1); }
 
-  li { border-top: 1px solid var(--border); }
-  li:first-child { border-top: none; }
-
-  /* Grid, not flex: min-width on a flex item is a floor, not a track, so rows sized their metadata cells to
-   * their own content and the columns zig-zagged. Fixed tracks align them; the name (minmax(0, 1fr)) is the
-   * only part that truncates. Collapses to stacked flow below 700px. */
-  .row-link {
-    width: 100%;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) 8rem 3rem 5.5rem 6rem;
-    align-items: center;
-    gap: 0.75rem;
-    background: none;
-    border: none;
-    padding: 0.5rem 0;
-    text-align: left;
-    min-height: 32px;
-  }
-  .row-link:hover { background: var(--surface-2); }
-  .r-who { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+  .clickable-row { cursor: pointer; }
+  td.empty-state { text-align: center; }
+  .c-check { width: 1%; padding-block: 0; }
+  .c-status, .c-material { white-space: nowrap; }
+  .r-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
   .r-who .pill { flex-shrink: 0; white-space: nowrap; }
-  .r-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-  .r-material { color: var(--muted); font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .r-qty { color: var(--muted); font-size: var(--text-sm); text-align: right; }
-  .r-price { font-variant-numeric: tabular-nums; text-align: right; }
-  .r-date { color: var(--muted); font-size: var(--text-sm); text-align: right; font-variant-numeric: tabular-nums; }
-  @media (max-width: 700px) {
-    .row-link {
-      display: flex;
-      flex-wrap: wrap;
+  /* The requester's name is the row's primary link. min-height: 0 keeps the button from inflating the row. */
+  .row-link { background: none; border: none; padding: 0; min-height: 0; font-weight: 600; color: var(--accent-text); text-align: left; overflow-wrap: anywhere; }
+  .row-link:hover { text-decoration: underline; }
+  .c-material, .c-qty, .c-date { color: var(--muted); font-size: var(--text-sm); }
+  .c-material { max-width: var(--field-s); overflow: hidden; text-overflow: ellipsis; }
+
+  /* Phones: each request becomes a card: select, requester and price on top, then status and date, then what
+   * was asked for and the quantity. DataTable hides the header row and makes the table a block list. */
+  @media (max-width: 600px) {
+    tr.req-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-areas: "check who price" "check status date" "check material qty";
+      align-items: center;
+      gap: var(--space-1) var(--space-3);
+      padding: var(--space-2) 0;
+      border-bottom: 1px solid var(--border);
     }
+    .c-check { grid-area: check; width: auto; }
+    .c-who { grid-area: who; }
+    td.c-price { grid-area: price; text-align: right; font-weight: 600; }
+    td.c-status { grid-area: status; }
+    td.c-date { grid-area: date; text-align: right; }
+    .c-material { grid-area: material; max-width: none; white-space: normal; }
+    .c-qty { grid-area: qty; text-align: right; }
+    .empty-state { grid-column: 1 / -1; }
   }
   /* .pill (theme) covers border, radius, font-size and padding; the muted color is local, like QuotesTab's
    * .invoiced-badge notes. */
@@ -1172,11 +1239,11 @@
   .item-pill { color: var(--muted); }
   .ref-pill { color: var(--muted); font-variant-numeric: tabular-nums; }
 
-  .notes, .gcode-line { font-size: var(--text-sm); margin: 0.3rem 0; }
-  .gcode-line a { margin-left: 0.5rem; }
+  .notes, .gcode-line { font-size: var(--text-sm); margin: var(--space-2) 0; }
+  .gcode-line a { margin-left: var(--space-2); }
 
   /* The verification subcard's hint keeps its own margin: the one outlier left local when theme.css's .hint
    * was promoted. */
-  .hint { color: var(--muted); font-size: var(--text-sm); margin: 0.4rem 0 0; }
+  .hint { color: var(--muted); font-size: var(--text-sm); margin: var(--space-3) 0 0; }
 </style>
 

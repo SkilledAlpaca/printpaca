@@ -87,10 +87,35 @@ interface SiteConfig {
   adminUrl: string;
 }
 
-// Mirrors server/config.go's Shop: customer-facing shop limits. Applies without a restart.
-interface ShopConfig {
+// Mirrors server/config.go's Shop: the customer-facing storefront settings. Every default keeps v1.1
+// behavior (lib/shop.ts's DEFAULT_SHOP_CONFIG). Applies without a restart. Text fields are plain text.
+export interface ShopConfig {
   /** The largest quantity one public estimate request or gallery order may carry (1 to 10000). */
   maxOrderQty: number;
+  /** Off: the shop hides the custom estimate flow and the server rejects estimate previews and submissions. */
+  customEstimates: boolean;
+  /** Off: the shop shows only the custom estimate and the server rejects item orders. Not both off. */
+  gallery: boolean;
+  /** Off (vacation mode): the shop stays visible, pausedMessage replaces the submit buttons, and the server
+   * rejects new submissions. */
+  acceptingOrders: boolean;
+  pausedMessage: string;
+  defaultView: "gallery" | "estimate";
+  /** Browser tab title, plain text up to 70 characters. Empty falls back to the business name, then "Shop". */
+  pageTitle: string;
+  heading: string;
+  announcement: string;
+  /** Set only by the hero image upload endpoint; a settings save keeps the stored file and takes only alt. */
+  heroImage: { file: string; alt: string };
+  /** "" for the theme accent, else #rrggbb passing lib/accent.ts's check. */
+  accentColor: string;
+  showStock: boolean;
+  showFromPrice: boolean;
+  itemSort: "manual" | "name" | "price";
+  footerLinks: { label: string; url: string }[];
+  showContact: boolean;
+  shippingNote: string;
+  turnaroundNote: string;
 }
 
 // Mirrors server/config.go's Smtp. The password never travels here; it comes only from SMTP_PASSWORD.
@@ -172,8 +197,11 @@ export interface EffectiveConfig {
   authEnabled: boolean;
   /** Whether MOONRAKER_URL is configured (server/main.go), so /api/moonraker/* is proxied. */
   moonraker: boolean;
-  /** FLUIDD_URL when configured, link-only (never proxied); "" when unset. */
+  /** FLUIDD_URL when configured, link-only (never proxied); "" when unset, and "" for employees. */
   fluiddUrl: string;
+  /** Whether outgoing mail has an SMTP host. Every role gets it: employees' `smtp` block is blank, so the
+   * Email buttons read this instead of smtp.host. */
+  smtpConfigured: boolean;
   /** Whether DEMO_MODE=1 (server/main.go): a read-only demo. The server rejects admin writes regardless;
    * this only sets expectations in the UI. */
   demoMode: boolean;

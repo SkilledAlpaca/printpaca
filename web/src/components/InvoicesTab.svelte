@@ -34,6 +34,7 @@
     buildInput,
     defaultPaymentForm,
     invoiceFormProblems,
+    SAVE_BEFORE_PAYMENT,
     paymentFormProblems,
     followBalanceAmount,
     type InvoiceForm,
@@ -598,7 +599,7 @@
     // Recording a payment on a draft sends it first, and the response replaces the editor's form, so unsaved
     // edits would be lost: make the user save them before the payment.
     if (detail.status === "draft" && dirty) {
-      paymentErrors = ["Save your changes to the invoice before recording a payment."];
+      paymentErrors = [SAVE_BEFORE_PAYMENT];
       return;
     }
     const amountCents = toCents(paymentForm.amount);
@@ -620,6 +621,9 @@
       form = formFromInvoice(updated);
       paymentForm = defaultPaymentForm(updated.balanceCents, cfg.invoicing.paymentMethods[0] ?? "", todayInTimezone(cfg.timezone));
       announce(`Payment of ${money(amountCents, cfg)} recorded. Balance ${money(updated.balanceCents, cfg)}.`);
+      // The form was rebuilt from the saved invoice, so focus fell to <body> (A11): back on Record payment, or on
+      // the Payments heading once the invoice is settled and the form is gone.
+      void focusAfterUpdate(() => document.querySelector<HTMLElement>(keySelector("record-payment")) ?? document.querySelector<HTMLElement>(".payments-card h3"));
       // The list view's paidCents/balanceCents/status are now stale; the next list load refetches (same
       // tolerance as save()).
       await refresh();

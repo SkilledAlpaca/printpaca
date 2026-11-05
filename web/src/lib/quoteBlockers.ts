@@ -9,8 +9,12 @@ export interface QuoteBlocker {
   label: string;
   /** The engine field id the warning named (the first one, for a merged pair such as print time). */
   field: string;
-  /** Index into the order's parts, or null for an order-level field (margin, tax, shipping). */
+  /** Index into the order's parts, or null for an order-level field (margin, tax, shipping). It indexes the
+   * (possibly stale) answer, not the live editor: resolve the part through `partId`. */
   partIndex: number | null;
+  /** The id of the editor part the warning belongs to (null for an order-level field, or when unknown). Stable
+   * across inserts, removals and edits made while the price answer was still in flight. */
+  partId: string | null;
   /** True when the field is blank ("add"), false when it holds a value the server rejected ("fix"). */
   missing: boolean;
   /** The visible label text of the input, for locating it in the page. */
@@ -21,7 +25,7 @@ export interface QuoteBlocker {
 const ORDER_FIELD_LABELS: Record<string, string> = {
   marginPct: "Margin",
   markupMultiplier: "Markup",
-  taxRatePct: "Tax (included in price)",
+  taxRatePct: "Tax",
   shippingCharge: "Shipping charged",
   shippingCost: "Shipping cost",
 };
@@ -38,7 +42,7 @@ function isMissing(w: FieldWarning): boolean {
  * block's own input warnings. Empty when nothing specific is known (the caller then falls back to a generic
  * message). Warnings below "error" severity never block, so they are skipped.
  */
-export function quoteBlockers(order: OrderBreakdown, partLabels: readonly string[]): QuoteBlocker[] {
+export function quoteBlockers(order: OrderBreakdown, partLabels: readonly string[], partIds: readonly string[] = []): QuoteBlocker[] {
   const multi = order.parts.length > 1;
   const out: QuoteBlocker[] = [];
   const seen = new Set<string>();
@@ -56,6 +60,7 @@ export function quoteBlockers(order: OrderBreakdown, partLabels: readonly string
         label: multi ? `${base} (${partLabels[i] ?? `Part ${i + 1}`})` : base,
         field: w.field,
         partIndex: i,
+        partId: partIds[i] ?? null,
         missing: isMissing(w),
         inputLabel: isTime ? "Print time" : base,
       });
@@ -68,7 +73,7 @@ export function quoteBlockers(order: OrderBreakdown, partLabels: readonly string
     const key = `order:${w.field}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ key, label: inputLabel, field: w.field, partIndex: null, missing: isMissing(w), inputLabel });
+    out.push({ key, label: inputLabel, field: w.field, partIndex: null, partId: null, missing: isMissing(w), inputLabel });
   }
   return out;
 }

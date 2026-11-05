@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { historyRow, quotesRow, openMorePricing } from "./helpers";
+import { historyRow, quotesRow, openMorePricing, openBreakdown, expandSummary } from "./helpers";
 
 // Multi-part quote: drop three small synthetic G-code files at once (one part
 // each, no real personal data), price them with per-part quantities and one
@@ -35,28 +35,29 @@ test("a three-part order: drop, price, save, restore, print, convert", async ({ 
 
   await page.locator('.drop input[type="file"]').setInputFiles(FILES);
   for (const name of ["bracket", "lid", "spacers"]) {
-    await expect(page.getByRole("button", { name: new RegExp(`^Edit ${name} ×`) })).toBeVisible();
+    await expect(page.getByRole("tab", { name: new RegExp(`^${name} ×`) })).toBeVisible();
   }
-  await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(3);
+  await expect(page.getByRole("tab")).toHaveCount(3);
 
   const weight = page.getByLabel(/Model weight/);
-  await page.getByRole("button", { name: /^Edit bracket ×/ }).click();
+  await page.getByRole("tab", { name: /^bracket ×/ }).click();
   await expect(weight).toHaveValue("10");
-  await page.getByRole("button", { name: /^Edit lid ×/ }).click();
+  await page.getByRole("tab", { name: /^lid ×/ }).click();
   await expect(weight).toHaveValue("20");
-  await page.getByRole("button", { name: /^Edit spacers ×/ }).click();
+  await page.getByRole("tab", { name: /^spacers ×/ }).click();
   await expect(weight).toHaveValue("5");
 
   await page.getByLabel("Set a selling price").check();
   await openMorePricing(page);
-  await page.getByLabel(/^Tax \(included in price\)/).fill("10");
+  await page.getByLabel("Tax (%)", { exact: true }).fill("10");
   await page.getByLabel(/Shipping charged/).fill("5");
 
   await page.getByLabel(/^Quantity/).fill("20");
   await page.getByLabel(/Sale price override/).fill("0.75");
-  await page.getByRole("button", { name: /^Edit bracket ×/ }).click();
+  await page.getByRole("tab", { name: /^bracket ×/ }).click();
   await page.getByLabel(/^Quantity/).fill("4");
 
+  await openBreakdown(page);
   const orderTable = page.locator(".parts-table tbody tr");
   await expect(orderTable).toHaveCount(3);
   await expect(page.locator(".parts-table")).toContainText("$15.00"); // spacers: 20 x $0.75
@@ -86,9 +87,9 @@ test("a three-part order: drop, price, save, restore, print, convert", async ({ 
   // Opening over unsaved edits asks first; accept it.
   page.once("dialog", (d) => void d.accept());
   await historyRow(page, label).getByRole("button", { name: /^Open "/ }).click();
-  await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(3);
+  await expect(page.getByRole("tab")).toHaveCount(3);
   await expect(page.getByLabel(/^Quantity/)).toHaveValue("4");
-  await page.getByRole("button", { name: /^Edit spacers ×/ }).click();
+  await page.getByRole("tab", { name: /^spacers ×/ }).click();
   await expect(page.getByLabel(/^Quantity/)).toHaveValue("20");
   await expect(page.getByLabel(/Sale price override/)).toHaveValue("0.75");
 
@@ -151,11 +152,11 @@ test("a single-part quote keeps the compact editor and an Add part action", asyn
   await expect(page.getByRole("button", { name: "Add part" })).toBeVisible();
   await expect(page.getByLabel("Part name")).toHaveCount(0);
   await page.getByRole("button", { name: "Add part" }).click();
-  await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(2);
+  await expect(page.getByRole("tab")).toHaveCount(2);
   await page.getByRole("button", { name: "Remove Part 2" }).click();
-  await page.getByRole("button", { name: "Remove? Part 2" }).click();
+  await page.getByRole("button", { name: "Remove Part 2?" }).click();
   await expect(page.getByRole("button", { name: "Add part" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(0);
+  await expect(page.getByRole("tab")).toHaveCount(0);
 });
 
 test("a three-part order and the Quotes page fit a phone without sideways page scroll", async ({ page, request }) => {
@@ -164,6 +165,9 @@ test("a three-part order and the Quotes page fit a phone without sideways page s
   await page.goto("/admin/");
   await page.locator('.drop input[type="file"]').setInputFiles(FILES);
   await page.getByLabel("Set a selling price").check();
+  // Below 1100px the summary sits behind its pinned bar's Expand button.
+  await expandSummary(page);
+  await openBreakdown(page);
   await expect(page.locator(".parts-table tbody tr")).toHaveCount(3);
   const fits = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
   expect(await fits()).toBe(true);
@@ -180,4 +184,75 @@ test("a three-part order and the Quotes page fit a phone without sideways page s
 
   const list = await (await request.get("/admin/api/quotes")).json();
   await request.delete(`/admin/api/quotes/${list.quotes.find((q: { label: string }) => q.label === label).id}`);
+});
+
+test("four part tabs scroll inside their strip on a phone: arrow keys reach each one fully visible", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/admin/");
+  await page.getByRole("button", { name: "Add part" }).click();
+  for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "+ Add part" }).click();
+  const tabs = page.getByRole("tab");
+  await expect(tabs).toHaveCount(4);
+  const strip = page.getByRole("tablist");
+  const add = page.getByRole("button", { name: "+ Add part" });
+
+  // The strip scrolls (its content is wider than its box) and the Add part button stays outside it, on screen.
+  expect(await strip.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  await expect(add).toBeInViewport({ ratio: 1 });
+
+  const fullyInStrip = async (i: number) => {
+    await expect
+      .poll(async () => {
+        const s = (await strip.boundingBox())!;
+        const t = (await tabs.nth(i).boundingBox())!;
+        const a = (await add.boundingBox())!;
+        return t.x >= s.x - 1 && t.x + t.width <= s.x + s.width + 1 && t.x + t.width <= a.x + 1;
+      }, { message: `tab ${i} fully inside the strip, left of Add part` })
+      .toBe(true);
+  };
+
+  await tabs.nth(0).focus();
+  await page.keyboard.press("Home");
+  await expect(tabs.nth(0)).toHaveAttribute("aria-selected", "true");
+  await fullyInStrip(0);
+  for (let i = 1; i < 4; i++) {
+    await page.keyboard.press("ArrowRight");
+    await expect(tabs.nth(i)).toHaveAttribute("aria-selected", "true");
+    await expect(tabs.nth(i)).toBeFocused();
+    await fullyInStrip(i);
+  }
+  await page.keyboard.press("Home");
+  await expect(tabs.nth(0)).toBeFocused();
+  await fullyInStrip(0);
+  await page.keyboard.press("End");
+  await expect(tabs.nth(3)).toBeFocused();
+  await fullyInStrip(3);
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("the collapsed summary bar stays short with four unpriced parts, and Show focuses Part 1's print time", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/admin/");
+  await page.getByRole("button", { name: "Add part" }).click();
+  for (let i = 0; i < 2; i++) await page.getByRole("button", { name: "+ Add part" }).click();
+  await expect(page.getByRole("tab")).toHaveCount(4);
+  await page.getByRole("tab").last().click();
+
+  const bar = page.getByRole("group", { name: "Quote summary" }).locator(".bar");
+  await expect(bar).toContainText("Needs 8 more values");
+  const controlH = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.style.height = "var(--control-h)";
+    document.body.appendChild(probe);
+    const h = probe.getBoundingClientRect().height;
+    probe.remove();
+    return h;
+  });
+  const box = (await bar.boundingBox())!;
+  expect(box.height, "collapsed bar height").toBeLessThanOrEqual(3 * controlH);
+
+  await bar.getByRole("link", { name: /^Show/ }).click();
+  await expect(page.getByRole("tab").first()).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByLabel(/^Print time \(h/)).toBeFocused();
 });

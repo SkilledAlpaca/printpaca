@@ -2,6 +2,9 @@ import { test, expect } from "@playwright/test";
 import { navButton, gotoSettings } from "./helpers";
 import { geometryOnly3mf } from "./geometry3mf";
 
+/** The theme button names the theme it switches to. */
+const THEME_BTN = /^(Dark|Light) mode$/;
+
 test("a wheel over the right gutter scrolls main at 1920 px", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto("/admin/");
@@ -9,47 +12,70 @@ test("a wheel over the right gutter scrolls main at 1920 px", async ({ page }) =
   const main = page.locator("main#main");
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
 
-  // main spans its grid cell to the window edge; the 1280 px column sits inside it.
+  // main spans its grid cell to the window edge; the 1440 px column sits inside it.
   const box = await main.boundingBox();
   expect(box).not.toBeNull();
   expect(Math.round(box!.x + box!.width)).toBe(1920);
   const inner = await page.locator(".main-inner").boundingBox();
-  expect(inner!.width).toBeLessThanOrEqual(1280);
+  expect(inner!.width).toBeLessThanOrEqual(1440);
 
   expect(await main.evaluate((el) => el.scrollTop)).toBe(0);
-  await page.mouse.move(1900, 500); // inside the right gutter, outside the 1280 px column
+  await page.mouse.move(1900, 500); // inside the right gutter, outside the 1440 px column
   await page.mouse.wheel(0, 600);
   await expect.poll(() => main.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
 });
 
-test("the Settings jump nav is flush with the top, wraps, and never scrolls sideways", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+test("the Settings section rail stays in view at 1366x768, scrolls on its own, and reaches every card", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
   await page.goto("/admin/");
   await gotoSettings(page, { load: false });
   const nav = page.getByRole("navigation", { name: "Settings sections" });
   await expect(nav).toBeVisible();
-  await page.locator("main#main").evaluate((el) => (el.scrollTop = 900));
-  await expect.poll(async () => (await nav.boundingBox())!.y).toBe(0);
+  // A rail beside the cards, not a bar across the top: a narrow share of the width, so the cards keep the rest.
+  const first = (await nav.boundingBox())!;
+  expect(first.width / 1366).toBeLessThan(0.2);
+  await page.locator("main#main").evaluate((el) => (el.scrollTop = 1200));
+  // Sticky: still on screen after scrolling, and never taller than the screen.
+  await expect.poll(async () => (await nav.boundingBox())!.y).toBeLessThan(40);
+  const box = (await nav.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(768);
   expect(await nav.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
 
-  // Anchor jump: the heading lands fully visible below the sticky nav.
-  await nav.getByRole("button", { name: "Hardware" }).click();
-  await expect
-    .poll(async () => {
-      const navBottom = (await nav.boundingBox())!.y + (await nav.boundingBox())!.height;
-      const heading = await page.locator("#section-hardware h2").boundingBox();
-      return heading!.y >= navBottom;
-    })
-    .toBe(true);
+  // Every section is reachable from the rail, the last one included, and its heading lands in view.
+  for (const name of ["Storefront", "Hardware", "Diagnostics"]) {
+    const link = nav.getByRole("button", { name });
+    await link.scrollIntoViewIfNeeded();
+    await link.click();
+    const id = { Storefront: "#section-storefront", Hardware: "#section-hardware", Diagnostics: "#section-diagnostics" }[name]!;
+    await expect
+      .poll(async () => {
+        const heading = (await page.locator(`${id} h2`).first().boundingBox())!;
+        return heading.y >= 0 && heading.y + heading.height <= 768;
+      })
+      .toBe(true);
+  }
 });
 
-test("the Settings jump nav is not sticky below 600 px", async ({ page }) => {
+test("on a phone the Settings sections are a collapsed list that closes after a jump", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/admin/#/settings");
   const nav = page.getByRole("navigation", { name: "Settings sections" });
   await expect(nav).toBeVisible();
   expect(await nav.evaluate((el) => getComputedStyle(el).position)).toBe("static");
-  expect(await nav.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  const toggle = nav.getByRole("button", { name: "Jump to a section" });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(nav.getByRole("button", { name: "Hardware" })).toHaveCount(0);
+  // The collapsed control is a full-size tap target.
+  expect((await toggle.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await nav.getByRole("button", { name: "Hardware" }).click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#section-hardware h2")).toBeFocused();
+  // No sideways scrolling anywhere.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
 test("stepping Solidity never moves the field", async ({ page }) => {
@@ -132,15 +158,15 @@ test("the admin brand shows the business name and logo, links home, and updates 
   // No reload: the brand, the title, and the logo fallback (the URL 404s) all follow the saved settings.
   const brand = sidebar.getByRole("link", { name: "Alpaca Prints home" });
   await expect(brand).toBeVisible();
-  await expect(brand).toHaveAttribute("href", "#/quote");
+  await expect(brand).toHaveAttribute("href", "#/dashboard");
   await expect(page).toHaveTitle("Settings · Alpaca Prints");
   await expect.poll(() => brand.locator("img.logo").getAttribute("src")).not.toContain("no-such-logo");
 
-  // Activating it selects the first nav tab and focuses that view's h1.
+  // Activating it opens the Dashboard and focuses that view's h1.
   await brand.click();
-  await expect(page).toHaveURL(/#\/quote$/);
-  await expect(page.getByRole("heading", { level: 1, name: "New quote" })).toBeFocused();
-  await expect(page).toHaveTitle("New quote · Alpaca Prints");
+  await expect(page).toHaveURL(/#\/dashboard$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeFocused();
+  await expect(page).toHaveTitle("Dashboard · Alpaca Prints");
 
   // Mobile: the header copy of the link closes nothing when the drawer is shut, and the drawer copy closes it.
   await page.setViewportSize({ width: 390, height: 844 });
@@ -148,7 +174,7 @@ test("the admin brand shows the business name and logo, links home, and updates 
   await page.getByRole("button", { name: /open menu/i }).click();
   await page.getByRole("complementary").getByRole("link", { name: "Alpaca Prints home" }).click();
   await expect(page.getByRole("button", { name: /open menu/i })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 1, name: "New quote" })).toBeFocused();
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeFocused();
 
   // Restore the defaults for the specs that follow.
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -158,4 +184,35 @@ test("the admin brand shows the business name and logo, links home, and updates 
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Settings saved.")).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "printpaca home" })).toBeVisible();
+});
+
+test("the Sell group lists New quote, Dashboard, Quotes, Requests, Invoices, Shop items, Clients in that order", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/admin/");
+  const names = await page.getByRole("navigation", { name: "Sections" }).getByRole("group", { name: "Sell" }).getByRole("button").evaluateAll(
+    (els) => els.map((el) => (el.querySelector(".label")?.textContent ?? "").trim()),
+  );
+  expect(names).toEqual(["New quote", "Dashboard", "Quotes", "Requests", "Invoices", "Shop items", "Clients"]);
+});
+
+test("at 1366x768 every nav item can be reached, and the footer controls stay inside the sidebar", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto("/admin/#/dashboard");
+  const nav = page.getByRole("navigation", { name: "Sections" });
+  const labels = ["New quote", "Dashboard", "Quotes", "Requests", "Invoices", "Shop items", "Clients", "Filament", "Electricity", "Printers", "Settings"];
+  for (const name of labels) {
+    const item = nav.getByRole("button", { name, exact: true });
+    await item.scrollIntoViewIfNeeded();
+    const hit = await item.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return el === top || el.contains(top);
+    });
+    expect(hit, `${name} is clickable`).toBe(true);
+  }
+  const aside = (await page.getByRole("complementary").boundingBox())!;
+  for (const name of ["Guide", "Compact density", THEME_BTN, "Collapse sidebar"]) {
+    const b = (await page.getByRole("complementary").getByRole("button", { name }).boundingBox())!;
+    expect(b.y + b.height, `${name} bottom edge`).toBeLessThanOrEqual(aside.y + aside.height + 0.5);
+  }
 });

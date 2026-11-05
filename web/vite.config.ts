@@ -110,7 +110,8 @@ function adminPrecachePlugin(): Plugin {
         "icons/icon-512.png",
         "icons/icon-maskable-512.png",
         "alpaca-logo.svg",
-        ...files,
+        // Guide screenshots are large and only viewed on demand; sw.js caches each one at runtime on first view.
+        ...[...files].filter((f) => !f.endsWith(".webp")),
       ].sort();
     },
     writeBundle(options) {
@@ -129,6 +130,9 @@ function adminPrecachePlugin(): Plugin {
   };
 }
 
+// Formats that are already compressed; gzip gains nothing, so no sibling is written and static.go serves the plain file.
+const ALREADY_COMPRESSED = /\.(webp|woff2|png|jpe?g|gif|avif)$/i;
+
 // Emits foo.js.gz next to every output file; server/static.go prefers the sibling when the client accepts
 // gzip. Runs in closeBundle by walking outDir. gzip only, no brotli.
 function precompressPlugin(): Plugin {
@@ -138,7 +142,7 @@ function precompressPlugin(): Plugin {
     closeBundle() {
       const outDir = new URL("dist", import.meta.url).pathname;
       for (const file of listFiles(outDir)) {
-        if (file.endsWith(".gz")) continue;
+        if (file.endsWith(".gz") || ALREADY_COMPRESSED.test(file)) continue;
         const original = readFileSync(file);
         const compressed = gzipSync(original, { level: 9 });
         // Skip the sibling when gzip doesn't shrink the file; the static handler falls back to the original.
@@ -181,6 +185,8 @@ export default defineConfig({
     target: ["chrome116", "firefox124", "safari17.4", "edge116"],
     outDir: "dist",
     emptyOutDir: true,
+    // Never inline assets as base64: guide screenshots would otherwise bloat the admin JS and defeat caching.
+    assetsInlineLimit: 0,
     rollupOptions: {
       // Two entries in one dist: admin SPA (index.html, server/static.go) and public quote page (public.html,
       // server/public.go). Named so publicManifestPlugin can find the "public" chunk.

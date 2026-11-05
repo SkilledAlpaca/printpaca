@@ -7,28 +7,34 @@
 //
 // State lives in memory for the life of the process, so specs that write must not assume a fresh stub.
 
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.PORT ?? process.argv[2] ?? 9127);
 
-const VENDORS = [
+// SPOOLMAN_FIXTURE=<json file> replaces the built-in data below with {vendors, filaments, spools}, with the
+// same shapes. scripts/guide-shots.ts uses it to serve the demo shop's own spools (server/demo.go), so the
+// Guide images show the filament the demo's prices come from. The e2e specs use the built-in data.
+const fixture = process.env.SPOOLMAN_FIXTURE ? JSON.parse(readFileSync(process.env.SPOOLMAN_FIXTURE, "utf8")) : null;
+
+const VENDORS = fixture?.vendors ?? [
   { id: 1, name: "Prusament" },
   { id: 2, name: "Overture" },
   { id: 3, name: "Polymaker" },
 ];
 
-const FILAMENTS = [
+const FILAMENTS = fixture?.filaments ?? [
   { id: 1, name: "Galaxy Black", material: "PLA", density: 1.24, diameter: 1.75, weight: 1000, price: 29.99, color_hex: "1A1A1A", vendor: VENDORS[0] },
   { id: 2, name: "Blue", material: "PETG", density: 1.27, diameter: 1.75, weight: 1000, price: 22.5, color_hex: "1E50DC", vendor: VENDORS[1] },
   { id: 3, name: "Lava Red", material: "PLA", density: 1.24, diameter: 1.75, weight: 750, price: 19.99, color_hex: "DC1E1E", vendor: VENDORS[2] },
 ];
 
-const spools = [
+const spools = fixture?.spools ?? [
   { id: 1, filament: FILAMENTS[0], initial_weight: 1000, remaining_weight: 850, price: 24.99, location: "Shelf A", archived: false },
   { id: 2, filament: FILAMENTS[1], initial_weight: 1000, remaining_weight: 400, price: 22.5, location: "Dry box", archived: false },
   { id: 3, filament: FILAMENTS[2], initial_weight: 750, remaining_weight: 0, price: 19.99, location: "", archived: true },
 ];
-let nextId = 4;
+let nextId = Math.max(0, ...spools.map((x) => x.id)) + 1;
 
 function sendJson(res, status, body, headers = {}) {
   const payload = JSON.stringify(body);

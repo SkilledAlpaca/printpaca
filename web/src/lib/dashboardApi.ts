@@ -21,6 +21,8 @@ export interface Dashboard {
   quotesInvoicedSharePct: number | null;
   /** Mean achieved margin percent over every invoiced quote, any month; null when there are none. */
   quotesAvgMarginPct: number | null;
+  /** Mean achieved margin percent over quotes whose invoice was created this month; null when there are none. */
+  quotesAvgMarginPctMonth: number | null;
   /** The "Needs attention" rows (server/dashboard.go): up to 3 per kind, money items first, requests only for callers who may
    * open Requests and invoices only for those who may open Invoices. */
   needsAttention: AttentionItem[];
@@ -144,4 +146,27 @@ export function attentionGroups(c: AttentionCounts): { kind: AttentionKind; coun
     { kind: "new-request", count: c.newRequests, noun: "new requests" },
     { kind: "sent-quote", count: c.sentQuotes, noun: "quotes awaiting a reply" },
   ];
+}
+
+/** One Dashboard action tile: the kind it filters the to-do list to, its label, and the tab its records live on. */
+export interface AttentionTile {
+  kind: AttentionKind;
+  label: string;
+  tab: string;
+  value: number;
+  /** Says what the count covers when it differs from the Requests badge (A8). */
+  caption?: string;
+}
+
+/** The five action tiles in a fixed order, each with its count. A tile whose tab `canOpen` rejects (disabled in
+ * Settings, or not granted to this user) is left out, so nobody sees a permanent "0" for a page they can't use. */
+export function attentionTiles(c: AttentionCounts, canOpen: (tab: string) => boolean): AttentionTile[] {
+  const all: AttentionTile[] = [
+    { kind: "new-request", label: "New requests", tab: "requests", value: c.newRequests, caption: "Not counting those that need a print time" },
+    { kind: "overdue-invoice", label: "Overdue invoices", tab: "invoices", value: c.overdueInvoices },
+    { kind: "draft-invoice", label: "Draft invoices", tab: "invoices", value: c.draftInvoices },
+    { kind: "print-time-request", label: "Needs print time", tab: "requests", value: c.printTimeRequests, caption: "Open requests with no print time" },
+    { kind: "sent-quote", label: "Quotes awaiting reply", tab: "quotes", value: c.sentQuotes },
+  ];
+  return all.filter((t) => canOpen(t.tab));
 }

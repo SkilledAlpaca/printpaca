@@ -39,6 +39,9 @@ const PUBLIC_PORT = 8198;
 const ADMIN_URL = `http://127.0.0.1:${ADMIN_PORT}`;
 const PUBLIC_URL = `http://127.0.0.1:${PUBLIC_PORT}`;
 const ADMIN_PASSWORD = "demo";
+// DEMO_MODE blocks every write, so the v1.2 storefront captures restart the server on the same (already
+// demo-seeded) CONFIG_DIR with DEMO_MODE off. A real password needs the usual length floor.
+const SEED_PASSWORD = "demo-password-1";
 
 const VIEWPORT = { width: 1680, height: 1100 };
 
@@ -53,6 +56,7 @@ const CAPTURE_HEIGHTS: Record<string, number> = {
   printers: 1060, // Printer list and Presets cards
   settings: 1040, // Account, Currency, and Pricing cards
   "public-quote": 1300, // the form through the estimate card and submit button
+  "business-identity": 1000, // Settings > Business identity: name, contact details, and logo
 };
 const heightFor = (name: string): number => CAPTURE_HEIGHTS[name] ?? VIEWPORT.height;
 
@@ -68,6 +72,17 @@ const HERO_VIEWPORT = { width: 1280, height: 900 };
 async function hideDemoBanner(page: Page): Promise<void> {
   await page.evaluate(() => {
     document.querySelectorAll(".demo-banner").forEach((el) => el.remove());
+  });
+}
+
+// Typing into fields can scroll the window, <main>, or the app shell (focus scrolls whichever ancestor
+// scrolls). Put every scrolled element back at the top so the capture starts at the page top.
+async function resetScroll(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+    document.querySelectorAll("*").forEach((el) => {
+      if (el.scrollTop > 0) el.scrollTop = 0;
+    });
   });
 }
 
@@ -203,6 +218,8 @@ async function main(): Promise<void> {
     // Admin tabs
     // ---------------------------------------------------------------
     const admin = await context.newPage();
+    // Leaving New quote with unsaved edits asks "discard?"; accept it so the next tab opens.
+    admin.on("dialog", (d) => void d.accept());
     await admin.goto(`${ADMIN_URL}/admin/`);
     await admin.getByLabel("Password").fill(ADMIN_PASSWORD);
     await admin.getByRole("button", { name: "Sign in" }).click();
@@ -223,6 +240,10 @@ async function main(): Promise<void> {
       await admin.setViewportSize({ width: VIEWPORT.width, height: heightFor(name) });
       await nav.getByRole("button", { name: tabLabel }).click();
       await verify();
+      // Filling fields can scroll the window as well as <main>; start every capture at the top of both.
+      await resetScroll(admin);
+      await admin.evaluate(() => document.fonts.ready);
+      await admin.waitForTimeout(300);
       const file = path.join(OUT_DIR, `${name}.png`);
       await admin.screenshot({ path: file });
       await admin.setViewportSize(VIEWPORT);
@@ -251,13 +272,14 @@ async function main(): Promise<void> {
           await admin.getByLabel("Model weight (g)").fill("180");
           await admin.getByLabel("Print time (hours)").fill("4");
           await admin.getByLabel("Print time (minutes)").fill("0");
-          await requireVisible(admin, 'h2:has-text("Cost breakdown")', "Cost breakdown heading");
-          // Show the client price and profit, not the "Set a price" button.
-          await admin.getByRole("button", { name: "Set a price" }).click();
-          await admin.locator(".card.summary .group.sell .stat-value").filter({ hasText: /\d/ }).first().waitFor({ state: "visible", timeout: 15_000 });
+          await requireVisible(admin, '[role="group"][aria-label="Quote summary"]', "Quote summary");
+          // Show the client price and profit, not the "Set a client price" button.
+          await admin.getByRole("button", { name: "Set a client price" }).click();
+          await admin.locator(".summary-stats .stat-value.headline").filter({ hasText: /\d/ }).first().waitFor({ state: "visible", timeout: 15_000 });
+          await admin.locator(".summary-stats .stat:has(.stat-label:text-is(\"Profit\")) .stat-value").filter({ hasText: /\d/ }).first().waitFor({ state: "visible", timeout: 15_000 });
           // Pricing is server-side and debounced: wait for an amount, not the
           // "-" placeholder, then scroll <main> back to the top.
-          await admin.locator(".card.summary .stat.cost .stat-value").filter({ hasText: /\d/ }).first().waitFor({ state: "visible", timeout: 15_000 });
+          await admin.locator(".summary-stats .stat.cost .stat-value").filter({ hasText: /\d/ }).first().waitFor({ state: "visible", timeout: 15_000 });
           await admin.evaluate(() => document.querySelector("main")?.scrollTo(0, 0));
         },
       },
@@ -277,12 +299,13 @@ async function main(): Promise<void> {
         tabLabel: "Filament",
         verify: async () => {
           await requireVisible(admin, 'h1:has-text("Filament")', "Filament heading");
-          await requireVisible(admin, 'input[aria-label="Material 1 name"]', "material row");
-          const materialName = await admin.getByLabel("Material 1 name").inputValue();
-          if (materialName !== "PLA") throw new Error(`expected material row 1 to be PLA, got ${JSON.stringify(materialName)}`);
+          // Materials are read-only rows until Edit is pressed, so check the table cells instead of inputs.
+          await requireVisible(admin, 'button[aria-label="Edit PLA"]', "PLA material row");
+          const firstRow = admin.locator("tbody tr").filter({ has: admin.locator('button[aria-label="Edit PLA"]') });
+          const rowText = (await firstRow.innerText()).replace(/\s+/g, " ");
+          if (!/^PLA\b/.test(rowText)) throw new Error(`expected material row 1 to be PLA, got ${JSON.stringify(rowText)}`);
           // Confirms PLA is public; the public-quote capture depends on it.
-          const publicChecked = await admin.getByLabel("Material 1 public").isChecked();
-          if (!publicChecked) throw new Error("expected demo-seeded config.yaml to mark Material 1 (PLA) public");
+          if (!/\bYes\b/.test(rowText)) throw new Error(`expected demo-seeded config.yaml to mark PLA public, row: ${JSON.stringify(rowText)}`);
         },
       },
       {
@@ -324,7 +347,7 @@ async function main(): Promise<void> {
         tabLabel: "Requests",
         verify: async () => {
           await requireVisible(admin, 'h1:has-text("Requests")', "Requests heading");
-          await requireVisible(admin, "span.r-name", "seeded request row");
+          await requireVisible(admin, "tr.req-row", "seeded request row");
         },
       },
       {
@@ -356,16 +379,17 @@ async function main(): Promise<void> {
     await hero.getByLabel("Print time (hours)").fill("7");
     await hero.getByLabel("Print time (minutes)").fill("30");
     await hero.getByLabel("Quantity (units)").fill("3");
-    await requireVisible(hero, 'h2:has-text("Cost breakdown")', "hero cost breakdown");
-    // Show the client price and profit, not the "Set a price" button.
-    await hero.getByRole("button", { name: "Set a price" }).click();
-    await hero.locator(".card.summary .group.sell .stat-value").filter({ hasText: /\d/ }).first().waitFor({ state: "visible", timeout: 15_000 });
+    await requireVisible(hero, '[role="group"][aria-label="Quote summary"]', "hero quote summary");
+    // Show the client price and profit, not the "Set a client price" button.
+    await hero.getByRole("button", { name: "Set a client price" }).click();
+    await hero.locator(".summary-stats .stat-value.headline").filter({ hasText: /\d/ }).first().waitFor({ state: "visible", timeout: 15_000 });
     // Pricing is server-side and debounced: wait for an amount, not the "-"
     // placeholder.
-    const heroPrice = hero.locator(".card.summary .stat.cost .stat-value");
+    const heroPrice = hero.locator(".summary-stats .stat.cost .stat-value");
     await heroPrice.filter({ hasText: /\d/ }).first().waitFor({ state: "visible", timeout: 15_000 });
     // Filling fields scrolled <main>; scroll back to the top before capture.
-    await hero.evaluate(() => document.querySelector("main")?.scrollTo(0, 0));
+    await resetScroll(hero);
+    await hero.waitForTimeout(300);
     await hero.screenshot({ path: HERO_FILE });
     const heroDims = pngDims(HERO_FILE);
     results.push({ name: "hero", file: HERO_FILE, route: "#/ (New quote)", ...heroDims });
@@ -388,18 +412,144 @@ async function main(): Promise<void> {
     await pub.getByLabel("Model weight (g)").fill("120");
     await pub.getByLabel("Print time (hours)").fill("3");
     await pub.getByLabel("Print time (minutes)").fill("30");
-    const priceLocator = pub.locator(".card.estimate .price");
-    await requireVisible(pub, ".card.estimate .price", "server-priced estimate");
+    const priceLocator = pub.locator(".estimate .price");
+    await requireVisible(pub, ".estimate .price", "server-priced estimate");
     const priceText = await priceLocator.first().innerText();
     if (!/[$0-9]/.test(priceText)) {
       throw new Error(`expected a formatted price in the estimate card, got: ${JSON.stringify(priceText)}`);
     }
     await pub.setViewportSize({ width: VIEWPORT.width, height: heightFor("public-quote") });
+    // Drop the focus ring and number spinner left on the last field typed into.
+    await pub.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     const publicQuoteFile = path.join(OUT_DIR, "public-quote.png");
     await pub.screenshot({ path: publicQuoteFile });
     const pqDims = pngDims(publicQuoteFile);
     results.push({ name: "public-quote", file: publicQuoteFile, route: "/ (Custom estimate view)", ...pqDims });
     console.log(`[screenshot-docs] captured public-quote.png (${pqDims.width}x${pqDims.height}, ${pqDims.bytes} bytes)`);
+
+    // ---------------------------------------------------------------
+    // Phase 2: v1.2 storefront captures. Restart the server with DEMO_MODE off on the same seeded
+    // CONFIG_DIR so the script can write the shop settings, logo, categories, and hero image.
+    // ---------------------------------------------------------------
+    await pub.close();
+    await admin.close();
+    serverProc.kill();
+    await new Promise((r) => serverProc!.once("exit", r));
+    const env2: NodeJS.ProcessEnv = { ...process.env, PORT: String(ADMIN_PORT), PUBLIC_PORT: String(PUBLIC_PORT), CONFIG_DIR: configDir, ADMIN_PASSWORD: SEED_PASSWORD };
+    delete env2.DEMO_MODE;
+    serverProc = spawn(bin, [], { cwd: REPO_ROOT, env: env2, stdio: ["ignore", "inherit", "inherit"] });
+    await waitForHealthz(`${ADMIN_URL}/healthz`);
+
+    const seeder = await context.newPage();
+    await seeder.goto(`${ADMIN_URL}/admin/`);
+    await seeder.getByLabel("Password").fill(SEED_PASSWORD);
+    await seeder.getByRole("button", { name: "Sign in" }).click();
+    await requireVisible(seeder, "nav.side-nav", "seeder sidebar nav after login");
+    const api = async (method: string, url: string, body?: unknown, raw?: Buffer, ct = "application/json") => {
+      const r = await seeder.request.fetch(ADMIN_URL + "/admin" + url, {
+        method,
+        headers: { "Content-Type": ct },
+        data: raw ?? (body ? JSON.stringify(body) : undefined),
+      });
+      if (!r.ok()) throw new Error(`${method} ${url} -> ${r.status()} ${await r.text()}`);
+      return r.json().catch(() => null);
+    };
+    // A fictional square logo mark (an SVG data URI) and a hero banner rendered by Chromium.
+    const logoSvg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="10" fill="#0f766e"/>' +
+      '<path d="M12 34 L24 12 L36 34 Z" fill="#fef3c7"/></svg>';
+    const logoUrl = "data:image/svg+xml;base64," + Buffer.from(logoSvg).toString("base64");
+    const heroPage = await (await browser.newContext({ viewport: { width: 1600, height: 420 } })).newPage();
+    await heroPage.setContent(
+      '<body style="margin:0;height:420px;background:linear-gradient(120deg,#0f766e,#f59e0b 60%,#be185d);display:flex;align-items:center;justify-content:center;font:700 84px sans-serif;color:#fff">Made to order</body>',
+    );
+    const heroBuf = await heroPage.screenshot({ type: "png" });
+    await heroPage.context().close();
+
+    const cats: { id: string }[] = [];
+    for (const name of ["Desk and organizers", "Gifts and games"]) cats.push(await api("POST", "/api/categories", { name }));
+    const itemsResp = await api("GET", "/api/items");
+    const itemList = (Array.isArray(itemsResp) ? itemsResp : itemsResp.items) as Record<string, any>[];
+    const pubItems = itemList.filter((i) => i.public !== false);
+    const itemKeys = ["name", "description", "priceCents", "optionGroups", "public", "stockMode", "stockQty", "allowBackorder", "sortOrder"];
+    const updateItem = async (it: Record<string, any>, patch: Record<string, unknown>) => {
+      const body = Object.fromEntries(itemKeys.map((k) => [k, it[k]]));
+      await api("PUT", `/api/items/${it.id}`, { ...body, ...patch });
+    };
+    await updateItem(pubItems[0], { categoryId: cats[0].id, featured: true });
+    for (let i = 1; i < pubItems.length; i++) await updateItem(pubItems[i], { categoryId: cats[i % 2 === 0 ? 0 : 1].id });
+    await api("POST", "/api/shop/hero-image?alt=" + encodeURIComponent("Colorful banner reading Made to order"), undefined, heroBuf, "image/png");
+
+    const cfg = (await api("GET", "/api/settings")).config as Record<string, any>;
+    cfg.quote = {
+      ...cfg.quote,
+      businessName: "Lantern Print Works",
+      email: "hello@lantern.example",
+      phone: "(555) 010-0142",
+      taxId: "EIN 00-0000000",
+      address: "214 Foundry Lane\nSpringfield, OR 97477",
+      logoUrl,
+      referencePrefix: "LPW",
+      paymentInstructions: "Pay by bank transfer or card link within 14 days of the invoice date. Include the invoice number as the reference.",
+      termsText: "Prices are valid for the number of days shown on the quote. Custom work starts after approval, and finished prints are refundable only if they arrive damaged.",
+    };
+    cfg.shop = {
+      ...cfg.shop,
+      heading: "Lantern Print Works shop",
+      announcement: "**Holiday cutoff:** order by *December 15* for delivery before the 24th. [Shipping details](https://lanternprint.example/shipping)",
+      shippingNote: "Free local pickup on Saturdays.",
+      turnaroundNote: "Most orders ship within a week.",
+      accentColor: "#0f746c",
+      footerLinks: [
+        { label: "Shipping and returns", url: "https://lanternprint.example/shipping" },
+        { label: "About us", url: "https://lanternprint.example/about" },
+      ],
+    };
+    cfg.publicQuotes = { ...cfg.publicQuotes, introText: "Hand-finished 3D prints, made to order." };
+    await api("PUT", "/api/settings", { config: cfg });
+    await seeder.close();
+
+    const shot = async (name: string, page: Page, opts?: { full?: boolean }): Promise<void> => {
+      await page.evaluate(() => document.fonts.ready);
+      await page.waitForTimeout(500);
+      const file = path.join(OUT_DIR, `${name}.png`);
+      await page.screenshot({ path: file, fullPage: opts?.full ?? false });
+      const dims = pngDims(file);
+      results.push({ name, file, route: name, ...dims });
+      console.log(`[screenshot-docs] captured ${name}.png (${dims.width}x${dims.height}, ${dims.bytes} bytes)`);
+    };
+
+    const settingsContext = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1, reducedMotion: "reduce" });
+    const sp = await settingsContext.newPage();
+    await sp.goto(`${ADMIN_URL}/admin/`);
+    await sp.getByLabel("Password").fill(SEED_PASSWORD);
+    await sp.getByRole("button", { name: "Sign in" }).click();
+    await requireVisible(sp, "nav.side-nav", "settings sidebar nav after login");
+    await sp.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: "Settings" }).click();
+    await requireVisible(sp, "#section-storefront", "Storefront card");
+    // The Storefront card is taller than any fixed height: size the viewport to the whole card so one frame shows
+    // the toggles, hero, accent swatches, and Closed preview with the sidebar and section rail beside it.
+    const cardHeight = await sp.locator("#section-storefront").evaluate((e) => Math.ceil(e.getBoundingClientRect().height));
+    await sp.setViewportSize({ width: VIEWPORT.width, height: cardHeight + 60 });
+    await sp.locator("#section-storefront").evaluate((e) => e.scrollIntoView({ block: "start" }));
+    await sp.evaluate(() => document.querySelector("main")?.scrollBy(0, -16));
+    await requireVisible(sp, '[role="region"][aria-label="Closed page preview"]', "Closed page preview");
+    await shot("storefront", sp);
+
+    await sp.setViewportSize({ width: VIEWPORT.width, height: heightFor("business-identity") });
+    await sp.locator("#section-quote").evaluate((e) => e.scrollIntoView({ block: "start" }));
+    await sp.evaluate(() => document.querySelector("main")?.scrollBy(0, -16));
+    await requireVisible(sp, "img.logo-preview", "logo preview");
+    await shot("business-identity", sp);
+    await settingsContext.close();
+
+    const shopContext = await browser.newContext({ viewport: { width: VIEWPORT.width, height: VIEWPORT.height }, deviceScaleFactor: 1, reducedMotion: "reduce" });
+    const shopPage = await shopContext.newPage();
+    await shopPage.goto(`${PUBLIC_URL}/order`);
+    await requireVisible(shopPage, "h1", "shop heading");
+    await requireVisible(shopPage, "footer.shop-footer", "shop footer");
+    await shot("shop", shopPage, { full: true });
+    await shopContext.close();
 
     await context.close();
   } finally {
@@ -423,11 +573,15 @@ async function main(): Promise<void> {
     "quote",
     "requests",
     "settings",
+    "storefront",
+    "business-identity",
+    "shop",
   ];
   for (const name of expectedNames) {
     const r = results.find((x) => x.name === name);
     if (!r) throw new Error(`missing capture for ${name}.png`);
-    const wantHeight = heightFor(name);
+    // The shop capture is full-page and the storefront capture fits the whole card, so their heights follow the content.
+    const wantHeight = name === "shop" || name === "storefront" ? r.height : heightFor(name);
     if (r.width !== VIEWPORT.width || r.height !== wantHeight) {
       throw new Error(`${name}.png is ${r.width}x${r.height}, expected ${VIEWPORT.width}x${wantHeight}`);
     }

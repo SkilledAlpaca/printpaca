@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { hasErrors } from "./engine/index";
 import type { ServerConfig } from "./settings";
 import { settingsWarnings, CUSTOM_CSS_MAX_BYTES } from "./settingsRules";
+import { DEFAULT_SHOP_CONFIG } from "./shop";
 
 // Mirrors settings.test.ts's baseConfig: satisfies every rule, so each test breaks only one field.
 function baseConfig(): ServerConfig {
@@ -40,7 +41,7 @@ function baseConfig(): ServerConfig {
     integrationsUrls: { spoolmanUrl: "", moonrakerUrl: "", fluiddUrl: "" },
     ui: { disabledTabs: [] },
     site: { shopOnMainPort: true, staffLink: true, adminUrl: "" },
-    shop: { maxOrderQty: 100 },
+    shop: structuredClone(DEFAULT_SHOP_CONFIG),
     users: { multiUser: false, accessAdminEmail: "" },
   };
 }
@@ -472,5 +473,84 @@ describe("invoicing.paypalMe and currency.code", () => {
       c.currency.code = bad;
       expect(hasErrors(warningsFor(c, "currency.code"))).toBe(true);
     }
+  });
+});
+
+describe("shop storefront rules", () => {
+  const shopWarningsOf = (c: ServerConfig) => settingsWarnings(c).filter((w) => w.field.startsWith("shop."));
+
+  it("the defaults raise nothing", () => {
+    expect(shopWarningsOf(baseConfig())).toEqual([]);
+  });
+
+  it("a settings response from an older config file, with no shop.pageTitle, raises nothing", () => {
+    const c = baseConfig();
+    delete (c.shop as Partial<typeof c.shop>).pageTitle;
+    expect(shopWarningsOf(c)).toEqual([]);
+    c.shop.pageTitle = "x".repeat(71);
+    expect(shopWarningsOf(c).map((w) => w.field)).toEqual(["shop.pageTitle"]);
+  });
+
+  it("rejects the gallery and custom estimates both off, and allows either alone", () => {
+    const c = baseConfig();
+    c.shop.gallery = false;
+    expect(shopWarningsOf(c)).toEqual([]);
+    c.shop.customEstimates = false;
+    const w = shopWarningsOf(c);
+    expect(w).toHaveLength(1);
+    expect(w[0]!.field).toBe("shop.gallery");
+    expect(w[0]!.message).toContain("accepting orders");
+  });
+
+  it("counts characters, not bytes, and rejects control characters", () => {
+    const c = baseConfig();
+    c.shop.heading = "é".repeat(120);
+    expect(shopWarningsOf(c)).toEqual([]);
+    c.shop.heading = "a".repeat(121);
+    expect(warningsFor(c, "shop.heading")).toHaveLength(1);
+    c.shop.heading = "two\nlines";
+    expect(warningsFor(c, "shop.heading")).toHaveLength(1);
+    c.shop.heading = "";
+    c.shop.announcement = "a".repeat(301);
+    expect(warningsFor(c, "shop.announcement")).toHaveLength(1);
+  });
+
+  it("requires alt text when a hero image is set", () => {
+    const c = baseConfig();
+    c.shop.heroImage = { file: "0123456789abcdef.png", alt: "  " };
+    expect(warningsFor(c, "shop.heroImage.alt")[0]!.code).toBe("required");
+    c.shop.heroImage.alt = "Shelves of prints";
+    expect(warningsFor(c, "shop.heroImage.alt")).toEqual([]);
+  });
+
+  it("rejects a low-contrast accent with the measured ratios and a suggestion", () => {
+    const c = baseConfig();
+    c.shop.accentColor = "#ffd700";
+    const w = warningsFor(c, "shop.accentColor");
+    expect(w).toHaveLength(1);
+    expect(w[0]!.message).toMatch(/links measure \d\.\d\d:1/);
+    expect(w[0]!.message).toMatch(/try #[0-9a-f]{6}/);
+    c.shop.accentColor = "#9c4212";
+    expect(warningsFor(c, "shop.accentColor")).toEqual([]);
+  });
+
+  it("accepts https footer links only, up to six", () => {
+    const c = baseConfig();
+    c.shop.footerLinks = [{ label: "Etsy", url: "https://example.com/shop" }];
+    expect(shopWarningsOf(c)).toEqual([]);
+    for (const bad of ["http://example.com", "javascript:alert(1)", "https://u:p@example.com", "https://", "https://a b.com", "example.com"]) {
+      c.shop.footerLinks = [{ label: "x", url: bad }];
+      expect(warningsFor(c, "shop.footerLinks[0].url"), bad).toHaveLength(1);
+    }
+    c.shop.footerLinks = [{ label: " ", url: "https://example.com" }];
+    expect(warningsFor(c, "shop.footerLinks[0].label")[0]!.code).toBe("required");
+    c.shop.footerLinks = Array.from({ length: 7 }, () => ({ label: "L", url: "https://example.com" }));
+    expect(warningsFor(c, "shop.footerLinks")).toHaveLength(1);
+  });
+
+  it("checks maxOrderQty", () => {
+    const c = baseConfig();
+    c.shop.maxOrderQty = 0;
+    expect(warningsFor(c, "shop.maxOrderQty").length).toBeGreaterThan(0);
   });
 });

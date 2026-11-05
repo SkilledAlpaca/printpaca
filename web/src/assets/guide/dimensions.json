@@ -1,0 +1,278 @@
+{
+  "dash-chart": {
+    "width": 594,
+    "height": 325
+  },
+  "dash-month": {
+    "width": 996,
+    "height": 230
+  },
+  "dash-tiles": {
+    "width": 1002,
+    "height": 222
+  },
+  "dash-todo": {
+    "width": 976,
+    "height": 748
+  },
+  "dash-top": {
+    "width": 976,
+    "height": 402
+  },
+  "inv-client": {
+    "width": 1184,
+    "height": 109
+  },
+  "inv-convert": {
+    "width": 1164,
+    "height": 175
+  },
+  "inv-draft": {
+    "width": 1190,
+    "height": 815
+  },
+  "inv-paid": {
+    "width": 1156,
+    "height": 188
+  },
+  "inv-payment": {
+    "width": 1130,
+    "height": 315
+  },
+  "inv-send": {
+    "width": 433,
+    "height": 108
+  },
+  "item-add": {
+    "width": 1190,
+    "height": 181
+  },
+  "item-category": {
+    "width": 1196,
+    "height": 406
+  },
+  "item-details": {
+    "width": 1200,
+    "height": 269
+  },
+  "item-options": {
+    "width": 1180,
+    "height": 522
+  },
+  "item-save": {
+    "width": 1200,
+    "height": 193
+  },
+  "item-stock": {
+    "width": 804,
+    "height": 167
+  },
+  "item-visibility": {
+    "width": 1192,
+    "height": 239
+  },
+  "multi-add-part": {
+    "width": 688,
+    "height": 131
+  },
+  "multi-part-fields": {
+    "width": 808,
+    "height": 471
+  },
+  "multi-summary": {
+    "width": 428,
+    "height": 621
+  },
+  "multi-tabs": {
+    "width": 808,
+    "height": 501
+  },
+  "power-calc": {
+    "width": 1200,
+    "height": 501
+  },
+  "power-example": {
+    "width": 1196,
+    "height": 173
+  },
+  "power-mode": {
+    "width": 1196,
+    "height": 191
+  },
+  "power-quote": {
+    "width": 788,
+    "height": 732
+  },
+  "power-start": {
+    "width": 1196,
+    "height": 197
+  },
+  "printer-add": {
+    "width": 1050,
+    "height": 222
+  },
+  "printer-moonraker": {
+    "width": 940,
+    "height": 306
+  },
+  "printer-recent": {
+    "width": 794,
+    "height": 599
+  },
+  "quote-client-price": {
+    "width": 428,
+    "height": 633
+  },
+  "quote-cost": {
+    "width": 428,
+    "height": 621
+  },
+  "quote-material": {
+    "width": 788,
+    "height": 589
+  },
+  "quote-overview": {
+    "width": 788,
+    "height": 443
+  },
+  "quote-time": {
+    "width": 756,
+    "height": 306
+  },
+  "quote-weight": {
+    "width": 788,
+    "height": 306
+  },
+  "req-convert": {
+    "width": 1164,
+    "height": 136
+  },
+  "req-detail": {
+    "width": 1200,
+    "height": 565
+  },
+  "req-finalize": {
+    "width": 1196,
+    "height": 136
+  },
+  "req-list": {
+    "width": 1164,
+    "height": 416
+  },
+  "req-reply": {
+    "width": 1164,
+    "height": 136
+  },
+  "save-button": {
+    "width": 408,
+    "height": 329
+  },
+  "save-client": {
+    "width": 414,
+    "height": 323
+  },
+  "save-label": {
+    "width": 414,
+    "height": 323
+  },
+  "save-print": {
+    "width": 808,
+    "height": 331
+  },
+  "save-quotes-row": {
+    "width": 1164,
+    "height": 175
+  },
+  "save-recent": {
+    "width": 762,
+    "height": 101
+  },
+  "save-update": {
+    "width": 408,
+    "height": 347
+  },
+  "setup-business-card": {
+    "width": 980,
+    "height": 183
+  },
+  "setup-business-fields": {
+    "width": 980,
+    "height": 255
+  },
+  "setup-material-price": {
+    "width": 1164,
+    "height": 311
+  },
+  "setup-printer": {
+    "width": 1050,
+    "height": 222
+  },
+  "setup-save-bar": {
+    "width": 1178,
+    "height": 98
+  },
+  "shop-accent": {
+    "width": 980,
+    "height": 260
+  },
+  "shop-announcement": {
+    "width": 980,
+    "height": 134
+  },
+  "shop-hero": {
+    "width": 986,
+    "height": 173
+  },
+  "shop-offers": {
+    "width": 976,
+    "height": 206
+  },
+  "shop-pause": {
+    "width": 980,
+    "height": 243
+  },
+  "shop-result": {
+    "width": 776,
+    "height": 484
+  },
+  "shop-wording": {
+    "width": 986,
+    "height": 134
+  },
+  "spool-inventory": {
+    "width": 1200,
+    "height": 609
+  },
+  "spool-materials": {
+    "width": 1164,
+    "height": 419
+  },
+  "spool-picker": {
+    "width": 794,
+    "height": 690
+  },
+  "spool-test": {
+    "width": 940,
+    "height": 180
+  },
+  "spool-url": {
+    "width": 940,
+    "height": 131
+  },
+  "users-add": {
+    "width": 940,
+    "height": 159
+  },
+  "users-table": {
+    "width": 948,
+    "height": 560
+  },
+  "users-tabs": {
+    "width": 936,
+    "height": 137
+  },
+  "users-toggle": {
+    "width": 976,
+    "height": 70
+  }
+}

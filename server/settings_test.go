@@ -408,6 +408,34 @@ func TestSettingsGetLoadError(t *testing.T) {
 	}
 }
 
+func TestSettingsGetLoadErrorGenericForNonAdmin(t *testing.T) {
+	dir := t.TempDir()
+	running := loadTestConfig(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("not: [valid"), 0o644); err != nil {
+		t.Fatalf("write garbage config.yaml: %v", err)
+	}
+	mux := newSettingsMux(dir, NewConfigStore(running))
+
+	get := func(id identity) settingsGetResponse {
+		req := httptest.NewRequest("GET", "/api/settings", nil)
+		req = req.WithContext(withIdentity(req.Context(), id))
+		rec := serveReq(mux, req)
+		var resp settingsGetResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return resp
+	}
+	admin := get(adminIdentity())
+	emp := get(identity{username: "flo"})
+	if admin.LoadError == "" || !strings.Contains(admin.LoadError, "yaml") {
+		t.Errorf("admin loadError = %q, want the full parser text", admin.LoadError)
+	}
+	if emp.LoadError == "" || strings.Contains(emp.LoadError, "yaml") || emp.LoadError == admin.LoadError {
+		t.Errorf("employee loadError = %q, want a generic message", emp.LoadError)
+	}
+}
+
 func TestSettingsPutUnknownFieldRejected(t *testing.T) {
 	dir := t.TempDir()
 	running := loadTestConfig(t, dir)

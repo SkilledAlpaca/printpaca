@@ -133,7 +133,7 @@ test.describe("invoices", () => {
     const id = await seedRequest(request, name);
     await page.goto("/admin/");
     await navButton(page, "Requests").click();
-    await page.locator(".plain-list li", { hasText: name }).getByRole("button", { name: new RegExp(name) }).click();
+    await page.locator("tr.req-row", { hasText: name }).getByRole("button", { name: new RegExp(name) }).click();
     await expect(page.getByText(/Convert to invoice creates the client/)).toBeVisible();
     await page.getByRole("button", { name: "Convert to invoice" }).click();
     await expect(page.getByRole("heading", { name: /^Invoice INV-/ })).toBeVisible();
@@ -170,8 +170,55 @@ test.describe("dashboard", () => {
 
     const outstanding = page.getByRole("link", { name: /Outstanding/ });
     await expect(outstanding).toHaveAttribute("href", "#/invoices");
-    await page.getByRole("link", { name: /Quotes this month/ }).click();
+    await expect(page.getByRole("link", { name: /^Average margin/ })).toContainText("This month");
+    await expect(page.getByRole("link", { name: /^Average margin/ })).not.toContainText("Invoiced quotes");
+    await page.getByRole("link", { name: /Quotes saved/ }).click();
     await expect(page).toHaveURL(/#\/quotes$/);
+  });
+
+  test("action tiles are toggles that filter the to-do list, with All as the default", async ({ page, request }) => {
+    for (let i = 1; i <= 2; i++) {
+      await seedInvoice(request, { clientName: `Tile Draft ${i}`, lines: [{ description: "Widget", quantity: 1, unitPriceCents: 500 }] });
+    }
+    await seedRequest(request, `Tile Req ${Date.now() % 100000}`);
+    await page.goto("/admin/#/dashboard");
+    const group = page.getByRole("group", { name: "Filter the to-do list" });
+    const labels = ["New requests", "Overdue invoices", "Draft invoices", "Needs print time", "Quotes awaiting reply"];
+    await expect(group.getByRole("button")).toHaveCount(5);
+    const names = await group.getByRole("button").evaluateAll((els) => els.map((el) => el.querySelector(".label")?.textContent));
+    expect(names).toEqual(labels);
+
+    const section = page.getByRole("region", { name: "Needs attention" });
+    const all = section.getByRole("button", { name: /^All \(\d+\)$/ });
+    await expect(all).toHaveAttribute("aria-pressed", "true");
+
+    const draft = group.getByRole("button", { name: /Draft invoices/ });
+    await expect(draft).toHaveAttribute("aria-pressed", "false");
+    await draft.click();
+    await expect(draft).toHaveAttribute("aria-pressed", "true");
+    await expect(all).toHaveAttribute("aria-pressed", "false");
+    const kinds = await section.locator(".attention-kind").allTextContents();
+    expect(kinds.length).toBeGreaterThan(0);
+    expect(new Set(kinds)).toEqual(new Set(["Draft invoice"]));
+
+    // Pressing the pressed tile again, or All, returns to the full list.
+    await draft.click();
+    await expect(draft).toHaveAttribute("aria-pressed", "false");
+    await expect(all).toHaveAttribute("aria-pressed", "true");
+    await draft.click();
+    await all.click();
+    await expect(all).toHaveAttribute("aria-pressed", "true");
+    await expect(draft).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("each to-do row is a link to its record at the existing hash route", async ({ page, request }) => {
+    const draft = await seedInvoice(request, { clientName: "Row Link Client", lines: [{ description: "Widget", quantity: 1, unitPriceCents: 500 }] });
+    await page.goto("/admin/#/dashboard");
+    const row = page.getByRole("region", { name: "Needs attention" }).getByRole("link", { name: new RegExp(draft.number) });
+    await expect(row).toHaveAttribute("href", `#/invoices/${draft.id}`);
+    await row.click();
+    await expect(page).toHaveURL(new RegExp(`#/invoices/${draft.id}$`));
+    await expect(page.getByRole("heading", { name: `Invoice ${draft.number}` })).toBeVisible();
   });
 });
 
@@ -192,7 +239,7 @@ test.describe("quotes list", () => {
     await page.goto("/admin/#/quotes");
     const rows = page.locator("tbody tr.quote-row");
     await expect(rows.first()).toBeVisible();
-    const wrapper = (await page.locator(".table-scroll").first().boundingBox())!;
+    const wrapper = (await page.locator(".dt-scroll").first().boundingBox())!;
     const count = await rows.count();
     for (let i = 0; i < count; i++) {
       const row = rows.nth(i);
@@ -230,7 +277,7 @@ test.describe("requests", () => {
     const name = `Polish Bulk ${Date.now() % 100000}`;
     const id = await seedRequest(request, name);
     await page.goto("/admin/#/requests");
-    const row = page.locator(".plain-list li", { hasText: name });
+    const row = page.locator("tr.req-row", { hasText: name });
     await expect(row).toBeVisible();
     await expect(row.getByRole("checkbox", { name: `Select request from ${name}` })).toBeVisible();
     await page.getByLabel("Filter requests by name, item, or file").fill(name);
@@ -286,7 +333,7 @@ test.describe("sidebar and quote page", () => {
     const more = page.locator("details.more-pricing");
     await expect(more).not.toHaveAttribute("open", /.*/);
     await more.locator("summary").click();
-    await page.getByLabel(/^Tax \(included in price\)/).fill("7");
+    await page.getByLabel("Tax (%)", { exact: true }).fill("7");
     await expect(more).toHaveAttribute("open", "");
   });
 
@@ -294,8 +341,8 @@ test.describe("sidebar and quote page", () => {
     await page.goto("/admin/#/quote");
     await expect(page.getByRole("group", { name: "Quote summary" })).toBeVisible();
     // The breakdown comes back from the server preview, so wait for the rows.
-    await expect.poll(() => page.locator("table.measure-cap code").count(), { timeout: 10_000 }).toBeGreaterThan(0);
-    const formulas = (await page.locator("table.measure-cap code").allTextContents()).join(" ");
+    await expect.poll(() => page.locator(".breakdown table code").count(), { timeout: 10_000 }).toBeGreaterThan(0);
+    const formulas = (await page.locator(".breakdown table code").allTextContents()).join(" ");
     expect(formulas).not.toContain("NaN");
     expect(formulas).toContain("– g");
   });
@@ -356,7 +403,7 @@ test.describe("staff", () => {
     expect(login.ok()).toBe(true);
     const cfgRes = await api.get("api/config");
     const cfg = (await cfgRes.json()) as Record<string, unknown> & { users: Record<string, unknown> };
-    for (const k of ["integrations", "version", "authEnabled", "moonraker", "fluiddUrl", "demoMode", "integrationSources", "user"]) delete cfg[k];
+    for (const k of ["integrations", "version", "authEnabled", "moonraker", "fluiddUrl", "smtpConfigured", "demoMode", "integrationSources", "user"]) delete cfg[k];
     cfg.users = { ...cfg.users, multiUser: true };
     expect((await api.put("api/settings", { data: { config: cfg } })).ok()).toBe(true);
     const user = await api.post("api/users", { data: { username: "polish_staff", password: "polish-staff-secret", permissions: ["invoices"] } });
@@ -382,4 +429,18 @@ test.describe("staff", () => {
     await staff.close();
     await admin.close();
   });
+});
+
+test("header actions keep their natural width on a phone; a single main action fills the row", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const widthOf = async (name: string) => (await page.getByRole("button", { name, exact: true }).boundingBox())!.width;
+  await page.goto("/admin/");
+  await expect(page.getByRole("heading", { level: 1, name: "New quote" })).toBeVisible();
+  const row = (await page.locator(".title-row").first().boundingBox())!.width;
+  await page.goto("/admin/#/quotes");
+  await expect(page.getByRole("heading", { level: 1, name: "Quotes" })).toBeVisible();
+  expect(await widthOf("Export"), "Export is not stretched").toBeLessThan(row * 0.5);
+  await page.goto("/admin/#/items");
+  await expect(page.getByRole("heading", { level: 1, name: "Shop items" })).toBeVisible();
+  expect(await widthOf("Add shop item"), "Add shop item fills the row").toBeGreaterThan(row * 0.9);
 });

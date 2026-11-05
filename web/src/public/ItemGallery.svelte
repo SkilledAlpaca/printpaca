@@ -7,6 +7,8 @@
     currency,
     onselect,
     oncustomestimate,
+    showStock = true,
+    showFromPrice = true,
   }: {
     items: PublicItem[];
     currency: CurrencyConfig;
@@ -14,6 +16,10 @@
     /** Switches to the custom-estimate view. Omitted when that flow isn't available (PublicQuotePage's
      * cfg.materials.length > 0 gate); the trailing CTA card renders only when set. */
     oncustomestimate?: () => void;
+    /** shop.showStock: show stock counts. A sold-out item always says so, because the card is also disabled. */
+    showStock?: boolean;
+    /** shop.showFromPrice: put "from" before the price of an item whose options can raise it. */
+    showFromPrice?: boolean;
   } = $props();
 
   function outOfStock(item: PublicItem): boolean {
@@ -51,14 +57,17 @@
       {:else}
         <div class="thumb thumb-empty" aria-hidden="true"></div>
       {/if}
+      {#if item.featured}<span class="pill featured-badge">Featured</span>{/if}
       <p class="i-name">{item.name}</p>
       {#if item.description}<p class="i-desc">{item.description}</p>{/if}
       <p class="i-price">
         <!-- &nbsp;, not a trailing space: Svelte trims whitespace at the end of an element, which
              rendered "from$9.00". -->
-        {#if hasPositiveDelta(item)}<span class="from">from&nbsp;</span>{/if}{formatMoney(item.priceCents, currency)}
+        {#if showFromPrice && hasPositiveDelta(item)}<span class="from">from&nbsp;</span>{/if}{formatMoney(item.priceCents, currency)}
       </p>
-      <span class="pill stock-badge" class:sold-out-badge={outOfStock(item)}>{stockLabel(item)}</span>
+      {#if showStock || outOfStock(item)}
+        <span class="pill stock-badge" class:sold-out-badge={outOfStock(item)}>{stockLabel(item)}</span>
+      {/if}
     </button>
   {/each}
   {#if oncustomestimate}
@@ -73,7 +82,7 @@
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-    gap: var(--space-3);
+    gap: var(--gap);
   }
 
   /* Overrides the plain <button> rule's layout (theme.css) so the card is a vertical stack; button:disabled
@@ -86,9 +95,13 @@
     text-align: left;
     width: 100%;
     min-height: 0;
+    /* Soft tint, no outline: the global button border doesn't apply to a card. */
+    border: 0;
+    /* A focused card scrolls clear of the viewport edge, so its ring isn't clipped. */
+    scroll-margin: var(--space-4);
   }
 
-  /* A ring well clear of the card's 1px border, so keyboard focus is obvious against it. */
+  /* The cards have no outline, so the ring sits clear of the tint to stay obvious. */
   .item-card:focus-visible {
     outline: 3px solid var(--focus-ring);
     outline-offset: 3px;
@@ -122,6 +135,7 @@
   .from { font-weight: 400; color: var(--muted); }
 
   .stock-badge { align-self: flex-start; color: var(--muted); }
+  .featured-badge { align-self: flex-start; color: var(--accent-text); border-color: var(--accent-text); font-weight: 600; }
   /* Sold out: muted card with a full-contrast "Out of stock" badge instead of opacity (opacity would drop text
    * below 4.5:1). */
   .sold-out { cursor: default; background: var(--surface-2); }
@@ -133,7 +147,7 @@
     justify-content: center;
     align-items: flex-start;
     border: 1px dashed var(--accent-text);
-    background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+    background: color-mix(in srgb, var(--accent) 10%, var(--card-bg));
   }
   .cta-heading { margin: 0; font-weight: 600; color: var(--accent-text); }
   .cta-desc { margin: 0; color: var(--muted); font-size: var(--text-sm); }

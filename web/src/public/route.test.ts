@@ -14,12 +14,18 @@ describe("parseRoute", () => {
     expect(parseRoute("#/order/received")).toEqual({ name: "order-received" });
   });
 
+  it("parses a category route and decodes its slug", () => {
+    expect(parseRoute("#/category/toys")).toEqual({ name: "category", slug: "toys" });
+    expect(parseRoute("#/category/toys/")).toEqual({ name: "category", slug: "toys" });
+    expect(parseRoute("#/category/a%2Db")).toEqual({ name: "category", slug: "a-b" });
+  });
+
   it("decodes an escaped item id", () => {
     expect(parseRoute("#/item/a%20b")).toEqual({ name: "item", id: "a b" });
   });
 
   it("falls back to the gallery for unknown, empty-id and malformed routes", () => {
-    for (const h of ["#/nope", "#/item/", "#/item/%E0%A4%A", "#/estimate/other"]) {
+    for (const h of ["#/nope", "#/item/", "#/item/%E0%A4%A", "#/estimate/other", "#/category/", "#/category/%E0%A4%A"]) {
       expect(parseRoute(h)).toEqual({ name: "gallery" });
     }
   });
@@ -30,6 +36,7 @@ describe("routeHash", () => {
     const routes: Route[] = [
       { name: "gallery" },
       { name: "item", id: "a b/c" },
+      { name: "category", slug: "toys-2" },
       { name: "estimate" },
       { name: "estimate-received" },
       { name: "order-received" },

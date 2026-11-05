@@ -226,7 +226,7 @@ test.describe("public pages", () => {
     await page.getByLabel("Name").fill("Focus Visitor");
     await page.getByLabel("Email").fill("focus@example.com");
     await page.getByRole("button", { name: "Place order" }).click();
-    const heading = page.getByRole("heading", { name: "Order received" });
+    const heading = page.getByRole("region", { name: "Order received" });
     await expect(heading).toBeFocused();
     const ref = (await page.locator(".confirmation .ref").textContent())?.replace("Reference: ", "").trim() ?? "";
     if (ref) created.requests.push(await requestIdByReference(request, ref));
@@ -246,7 +246,7 @@ test.describe("public pages", () => {
     await page.getByLabel("Email").fill("focus@example.com");
     await expect(page.locator(".estimate .price")).toBeVisible();
     await page.getByRole("button", { name: "Request an estimate" }).click();
-    await expect(page.getByRole("heading", { name: "Request received" })).toBeFocused();
+    await expect(page.getByRole("region", { name: "Request received" })).toBeFocused();
     const ref = (await page.locator(".confirmation .ref").textContent())?.replace("Reference: ", "").trim() ?? "";
     if (ref) created.requests.push(await requestIdByReference(request, ref));
     await scanAll(page, "shop estimate confirmation");
@@ -340,7 +340,7 @@ test.describe("sticky bars (2.4.11)", () => {
   const rect = (page: Page, sel: string) =>
     page.evaluate((s) => { const r = document.querySelector(s)!.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; }, sel);
 
-  test("Settings: the field Tab reaches above the save bar stays clear of it, and Shift+Tab clears the jump nav", async ({ page }) => {
+  test("Settings: the field Tab reaches above the save bar stays clear of it, and the section rail ends above the bar", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 700 });
     await page.goto("/admin/#/settings");
     await expect(page.locator(".jump-nav")).toBeVisible();
@@ -364,18 +364,10 @@ test.describe("sticky bars (2.4.11)", () => {
     const bar = await rect(page, ".save-bar");
     expect(last.bottom, "the last field above the save bar is not under it").toBeLessThanOrEqual(bar.top + 0.5);
 
-    // Top edge: scroll a control above the viewport, focus the next one, and Shift+Tab back to it.
-    const mid = Math.floor(count / 2);
-    await page.evaluate((i) => {
-      const main = document.querySelector("#main") as HTMLElement;
-      const el = document.querySelector(`[data-walk="${i}"]`) as HTMLElement;
-      main.scrollTop += el.getBoundingClientRect().top - main.getBoundingClientRect().top + 300;
-      (document.querySelector(`[data-walk="${i + 1}"]`) as HTMLElement).focus({ preventScroll: true });
-    }, mid);
-    await page.keyboard.press("Shift+Tab");
-    const field = await rect(page, `[data-walk="${mid}"]`);
+    // The section rail is a column beside the cards (no bar across the top), so it covers nothing a field
+    // scrolls under; it must stop above the save bar, whose height the rail's max-height subtracts.
     const nav = await rect(page, ".jump-nav");
-    expect(field.top, "the field Shift+Tab reaches is not under the jump nav").toBeGreaterThanOrEqual(nav.bottom - 0.5);
+    expect(nav.bottom, "the section rail ends above the save bar").toBeLessThanOrEqual(bar.top + 0.5);
   });
 });
 

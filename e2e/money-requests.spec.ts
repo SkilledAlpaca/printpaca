@@ -238,7 +238,7 @@ test.describe("requests and the dashboard", () => {
     await page.keyboard.press("Control+k");
     await expect(page.getByLabel("Filter requests by name, item, or file")).toBeFocused();
     await page.keyboard.type(name);
-    const row = page.locator(".plain-list li", { hasText: name });
+    const row = page.locator("tr.req-row", { hasText: name });
     await expect(row).toHaveCount(1);
     await page.getByLabel("Filter requests by name, item, or file").fill("no such requester");
     await expect(page.getByText("No requests match the filter.")).toBeVisible();
@@ -270,7 +270,7 @@ test.describe("requests and the dashboard", () => {
 
     // Back in Requests the row and the detail say Invoiced, and Convert is gone.
     await navButton(page, "Requests").click();
-    const again = page.locator(".plain-list li", { hasText: name });
+    const again = page.locator("tr.req-row", { hasText: name });
     await expect(again).toContainText("invoiced");
     await expect(again).toContainText(number);
     await again.getByRole("button", { name: new RegExp(name) }).click();
@@ -296,7 +296,7 @@ test.describe("requests and the dashboard", () => {
 
     await page.goto("/admin/");
     await navButton(page, "Requests").click();
-    const row = page.locator(".plain-list li", { hasText: name });
+    const row = page.locator("tr.req-row", { hasText: name });
     await expect(row).toContainText("Needs print time");
     await expect(row).toContainText(before.reference);
     await row.getByRole("button", { name: new RegExp(name) }).click();
@@ -304,7 +304,7 @@ test.describe("requests and the dashboard", () => {
 
     // Convert is blocked until the time is set.
     await expect(page.getByRole("button", { name: "Convert to invoice" })).toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByText("Enter the print time above before converting this request to an invoice.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Convert to invoice" })).toHaveAccessibleDescription(/there's no price yet/);
 
     await page.getByLabel("Hours").fill("1");
     await page.getByLabel("Minutes").fill("30");
@@ -332,7 +332,7 @@ test.describe("requests and the dashboard", () => {
     await navButton(page, "Requests").click();
     // Opening a request marks it viewed; only viewed rows have a checkbox.
     for (const n of [nameA, nameB]) {
-      await page.locator(".plain-list li", { hasText: n }).getByRole("button", { name: new RegExp(n) }).click();
+      await page.locator("tr.req-row", { hasText: n }).getByRole("button", { name: new RegExp(n) }).click();
       await expect(page.getByRole("heading", { name: `Estimate request from ${n}` })).toBeVisible();
       await page.getByRole("button", { name: /Back to list/ }).click();
     }
@@ -342,8 +342,8 @@ test.describe("requests and the dashboard", () => {
     await page.getByRole("button", { name: "Finalize selected" }).click();
     await page.getByRole("button", { name: "Yes, finalize 2 requests" }).click();
     await expect(page.getByText("Finalized 2 requests.")).toBeVisible();
-    await expect(page.locator(".plain-list li", { hasText: nameA })).toContainText("finalized");
-    await expect(page.locator(".plain-list li", { hasText: nameB })).toContainText("finalized");
+    await expect(page.locator("tr.req-row", { hasText: nameA })).toContainText("finalized");
+    await expect(page.locator("tr.req-row", { hasText: nameB })).toContainText("finalized");
   });
 
   test("Delete all new lives in the More menu and confirms the count and permanence", async ({ page, request }) => {
@@ -370,7 +370,59 @@ test.describe("requests and the dashboard", () => {
     await page.keyboard.press("Escape");
     await expect(group).toHaveCount(0);
     await expect(page.getByRole("button", { name: "More actions for requests" })).toBeFocused();
-    await expect(page.locator(".plain-list li", { hasText: name })).toHaveCount(1); // nothing was deleted
+    await expect(page.locator("tr.req-row", { hasText: name })).toHaveCount(1); // nothing was deleted
+  });
+
+  test("request detail: facts are a list, header Back keeps the filter and row focus, a confirm closes on Escape", async ({ page, request }) => {
+    const name = `Detail Buyer ${Date.now() % 100000}`;
+    await seedRequest(request, name);
+    await page.goto("/admin/");
+    await navButton(page, "Requests").click();
+    const filter = page.getByLabel("Filter requests by name, item, or file");
+    await filter.fill(name);
+    const open = page.getByRole("button", { name: new RegExp(name) });
+    await open.click();
+
+    const heading = page.getByRole("heading", { level: 1, name: `Estimate request from ${name}` });
+    await expect(heading).toBeFocused();
+    await expect(page).toHaveTitle(new RegExp(name));
+    // The facts are one description list; the email is a link and the price is the emphasized value.
+    const facts = page.getByRole("list", { name: "Request details" }).or(page.locator("dl[aria-label='Request details']"));
+    await expect(facts.getByText("Material", { exact: true })).toBeVisible();
+    await expect(facts.getByRole("link", { name: /@example\.com$/ })).toBeVisible();
+    // The table fills its card, labels share one column, and the values start at one x beside them.
+    const card = facts.locator("xpath=..");
+    const cardBox = (await card.boundingBox())!;
+    const factsBox = (await facts.boundingBox())!;
+    expect(factsBox.width / cardBox.width, "facts span the full card width").toBeGreaterThan(0.98);
+    const valueXs = await facts.locator("dd").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)));
+    expect(new Set(valueXs).size, "values share one column").toBe(1);
+    const label = (await facts.locator("dt").first().boundingBox())!;
+    const value = (await facts.locator("dd").first().boundingBox())!;
+    expect(value.x, "the value sits beside its label").toBeGreaterThan(label.x + label.width * 0.5);
+    // Reading order: Back, then the single h1, then the facts.
+    const order = await page.evaluate(() => {
+      const back = [...document.querySelectorAll("button")].find((b) => /Back to list/.test(b.textContent ?? ""));
+      const h1 = document.querySelector("h1");
+      const dl = document.querySelector("dl[aria-label='Request details']");
+      const before = (a: Node | null | undefined, b: Node | null | undefined) => !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      return { backBeforeTitle: before(back, h1), titleBeforeFacts: before(h1, dl), h1Count: document.querySelectorAll("h1").length };
+    });
+    expect(order).toEqual({ backBeforeTitle: true, titleBeforeFacts: true, h1Count: 1 });
+
+    // Escape closes only a confirmation, and focus returns to the control that opened it.
+    await page.getByRole("button", { name: "Delete this request" }).click();
+    await expect(page.getByRole("button", { name: "Yes, delete this request" })).toBeFocused();
+    await expect(page.getByText("This can't be undone.")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: "Yes, delete this request" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Delete this request" })).toBeFocused();
+    await expect(heading).toBeVisible();
+
+    // The header Back returns to the same filtered list with focus on the row that opened the record.
+    await page.getByRole("button", { name: /Back to list/ }).click();
+    await expect(filter).toHaveValue(name);
+    await expect(page.getByRole("button", { name: new RegExp(name) })).toBeFocused();
   });
 
   test("the Dashboard lists what needs attention and links to it", async ({ page, request }) => {
@@ -399,10 +451,10 @@ test.describe("requests and the dashboard", () => {
       expect(b.x + b.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 0.5);
     }
 
-    await list.getByRole("button", { name: new RegExp(draft.number) }).click();
+    await list.getByRole("link", { name: new RegExp(draft.number) }).click();
     await expect(page.getByRole("heading", { name: `Invoice ${draft.number}` })).toBeVisible();
     await navButton(page, "Dashboard").click();
-    await list.getByRole("button", { name: new RegExp(name) }).click();
+    await list.getByRole("link", { name: new RegExp(name) }).click();
     await expect(page.getByRole("heading", { name: `Estimate request from ${name}` })).toBeVisible();
   });
 
@@ -478,11 +530,11 @@ test.describe("quotes list", () => {
     await page.keyboard.press("End");
     await expect(items.last()).toBeFocused();
     await page.keyboard.press("ArrowDown");
-    await expect(items.first()).toBeFocused(); // wraps
-    await page.keyboard.press("ArrowUp");
-    await expect(items.last()).toBeFocused();
+    await expect(items.last()).toBeFocused(); // stops at the end: wrapping onto the first action is a mis-press waiting to happen
     await page.keyboard.press("Home");
     await expect(items.first()).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(items.first()).toBeFocused(); // and at the start
 
     await page.keyboard.press("Tab");
     await expect(page.locator(".menu-panel")).toHaveCount(0);

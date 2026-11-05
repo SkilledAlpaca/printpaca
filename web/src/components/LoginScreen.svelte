@@ -3,6 +3,8 @@
   import { announce } from "../lib/a11y.svelte";
   import logoUrl from "../assets/alpaca-logo.svg";
   import { DEFAULT_FETCH_TIMEOUT_MS } from "../lib/fetchTimeouts";
+  import Card from "./ui/Card.svelte";
+  import Field from "./ui/Field.svelte";
 
   // Rendered by App.svelte in place of the app shell when GET /api/config 401s (ADMIN_PASSWORD set, no valid
   // session) or a mid-session request 401s (accessWatch.sessionExpired). onLoggedIn re-runs App.svelte's boot
@@ -113,61 +115,73 @@
 </script>
 
 <main class="login-shell">
-  <form class="card login-card" onsubmit={submit}>
-    <img class="logo" src={logoSrc} alt="" onerror={onLogoError} />
-    <h1>{businessName}</h1>
-    <p class="staff-line">For {businessName} staff</p>
-    {#if notice}
-      <!-- Set only for the mid-session-401 case (App passes accessWatch.sessionExpired). A plain
-           informational note, not `.warn-text`, which is reserved for the submit-time error that can show
-           at the same time and must read as more urgent. -->
-      <p class="banner-muted session-notice">{notice}</p>
-    {/if}
-    {#if demoMode}
-      <p class="banner-muted demo-notice">
-        This is a read-only demo. Sign in with the password <strong>demo</strong> to look around. Nothing you do is saved.
-      </p>
-      {#if publicUrl}
-        <p class="banner-muted demo-notice">
-          You can also try the customer-facing estimate page:
-          <a href={publicUrl} target="_blank" rel="noopener noreferrer">{publicUrl}</a>.
-        </p>
-      {/if}
-    {/if}
-    {#if multiUser}
-      <div class="field">
-        <label for="login-username">Username</label>
-        <input
-          id="login-username"
-          bind:value={username}
-          autocomplete="username"
-          aria-describedby={error ? "username-hint login-error" : "username-hint"}
-          aria-invalid={error ? "true" : undefined}
-          bind:this={usernameInput}
-        />
-        <small class="field-hint" id="username-hint">Enter the username you were given. Only the shop admin can leave this empty.</small>
+  <div class="login-wrap">
+    <Card as="form" onsubmit={submit}>
+      <div class="login-body">
+        <img class="logo" src={logoSrc} alt="" onerror={onLogoError} />
+        <h1>{businessName}</h1>
+        <p class="staff-line">For {businessName} staff</p>
+        {#if notice}
+          <!-- Set only for the mid-session-401 case (App passes accessWatch.sessionExpired). A plain
+               informational note, not `.warn-text`, which is reserved for the submit-time error that can show
+               at the same time and must read as more urgent. -->
+          <p class="banner-muted session-notice">{notice}</p>
+        {/if}
+        {#if demoMode}
+          <p class="banner-muted demo-notice">
+            This is a read-only demo. Sign in with the password <strong>demo</strong> to look around. Nothing you do is saved.
+          </p>
+          {#if publicUrl}
+            <p class="banner-muted demo-notice">
+              You can also try the customer-facing estimate page:
+              <a href={publicUrl} target="_blank" rel="noopener noreferrer">{publicUrl}</a>.
+            </p>
+          {/if}
+        {/if}
+        {#if multiUser}
+          <Field
+            id="login-username"
+            label="Username"
+            hintVisible
+            hint="Enter the username you were given. Only the shop admin can leave this empty."
+            describedby={error ? "login-error" : undefined}
+          >
+            {#snippet children(a)}
+              <input
+                id={a.id}
+                bind:value={username}
+                autocomplete="username"
+                aria-describedby={a.describedby}
+                aria-invalid={error ? "true" : undefined}
+                bind:this={usernameInput}
+              />
+            {/snippet}
+          </Field>
+        {/if}
+        <Field id="login-password" label="Password" describedby={error ? "login-error" : undefined}>
+          {#snippet children(a)}
+            <input
+              id={a.id}
+              type="password"
+              bind:value={password}
+              autocomplete="current-password"
+              aria-describedby={a.describedby}
+              aria-invalid={error ? "true" : undefined}
+              bind:this={passwordInput}
+            />
+          {/snippet}
+        </Field>
+        <!-- Persistent container: an alert inserted already populated is announced unreliably. -->
+        <div role="alert">
+          {#if error}<p class="warn-text" id="login-error">{error}</p>{/if}
+        </div>
+        <button type="submit" class="primary" aria-disabled={submitting ? "true" : undefined}>
+          {submitting ? "Signing in…" : "Sign in"}
+        </button>
+        {#if shopUrl}<a class="back-to-shop" href={shopUrl}>&larr; Back to shop</a>{/if}
       </div>
-    {/if}
-    <label class="field">
-      <span>Password</span>
-      <input
-        type="password"
-        bind:value={password}
-        autocomplete="current-password"
-        aria-describedby={error ? "login-error" : undefined}
-        aria-invalid={error ? "true" : undefined}
-        bind:this={passwordInput}
-      />
-    </label>
-    <!-- Persistent container: an alert inserted already populated is announced unreliably. -->
-    <div role="alert">
-      {#if error}<p class="warn-text" id="login-error">{error}</p>{/if}
-    </div>
-    <button type="submit" class="primary" aria-disabled={submitting ? "true" : undefined}>
-      {submitting ? "Signing in…" : "Sign in"}
-    </button>
-    {#if shopUrl}<a class="back-to-shop" href={shopUrl}>&larr; Back to shop</a>{/if}
-  </form>
+    </Card>
+  </div>
 </main>
 
 <style>
@@ -176,42 +190,41 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: var(--space-4, 1rem);
+    padding: var(--space-4);
     /* #app's desktop layout is a sidebar+main grid applied unconditionally; as its only child this shell
      * would be auto-placed into the sidebar column. Spanning every column lets the flex centering center
      * the card. */
     grid-column: 1 / -1;
   }
-  .login-card {
+  .login-wrap { width: 100%; max-width: var(--field-m); }
+  .login-body {
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: var(--space-3, 0.75rem);
-    width: 100%;
-    max-width: 320px;
+    gap: var(--space-3);
   }
   .logo {
-    height: 40px;
+    height: 2.5rem;
     width: auto;
     display: block;
     margin: 0 auto;
   }
-  .login-card h1 {
+  .login-body h1 {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: var(--type-title);
     text-align: center;
   }
   .staff-line {
-    margin: 0 0 var(--space-2, 0.5rem);
+    margin: 0 0 var(--space-2);
     text-align: center;
     color: var(--muted);
-    font-size: var(--text-sm, 0.875rem);
+    font-size: var(--text-sm);
   }
   .back-to-shop {
     align-self: center;
     display: inline-flex;
     align-items: center;
     min-height: 44px;
-    padding: 0 var(--space-2, 0.5rem);
+    padding: 0 var(--space-2);
   }
 </style>

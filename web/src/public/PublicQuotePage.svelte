@@ -20,6 +20,12 @@
   /** The intro shown when the shop wrote none. "Estimate", not "instant estimate": an unsliced file gets no
    * number until the shop has its print time. */
   export const DEFAULT_INTRO_TEXT = "Order a ready-made 3D print, or upload your own 3D model for a price estimate.";
+  /** The built-in intro when custom estimates aren't offered: it can't promise an upload the shop doesn't take. */
+  export const DEFAULT_INTRO_NO_ESTIMATES = "Order a ready-made 3D print.";
+  /** The owner's own intro text always wins; the built-in default depends on whether estimates are offered. */
+  export function introTextFor(owned: string | undefined, estimatesOffered: boolean): string {
+    return owned ? owned : estimatesOffered ? DEFAULT_INTRO_TEXT : DEFAULT_INTRO_NO_ESTIMATES;
+  }
 
   export function describeGcode(result: GcodeResult, fname: string): string {
     if (result.status === "not-found") {
@@ -41,7 +47,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from "svelte";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
-  import { clearVisitor, visitor } from "./visitor.svelte";
+  import { visitor } from "./visitor.svelte";
   import {
     estimateWeightFromVolume,
     formatMoney,
@@ -73,12 +79,23 @@
     isPlausibleEmail,
     EMAIL_FORMAT_ERROR,
   } from "../lib/publicFormLimits";
+  import Card from "../components/ui/Card.svelte";
+  import Field from "../components/ui/Field.svelte";
+  import Fieldset from "../components/ui/Fieldset.svelte";
+  import CategoryChips from "./CategoryChips.svelte";
+  import ClosedPage from "./ClosedPage.svelte";
+  import ShopThemeToggle from "./ShopThemeToggle.svelte";
+  import ContactDetails from "./ContactDetails.svelte";
   import ItemGallery from "./ItemGallery.svelte";
   import PublicFooter from "./PublicFooter.svelte";
+  import ShopHero from "./ShopHero.svelte";
+  import RichText from "./RichText.svelte";
+  import { applyShopAccent } from "./shopAccent";
   import projectLogoUrl from "../assets/alpaca-logo.svg";
   import ItemOrderPanel, { type ItemOrderConfirmation } from "./ItemOrderPanel.svelte";
   import ModelPreview from "./ModelPreview.svelte";
   import { clearConfirmation, loadConfirmation, saveConfirmation } from "./confirmationStorage";
+  import { composeTitle, readEmbeddedConfig, shopTitleOf } from "./shopConfig";
   import { BoundsCollector, boundsWarning, formatBounds, type ModelBounds } from "./modelBounds";
   import { materialDescription } from "./materialInfo";
   import {
@@ -88,14 +105,19 @@
     overCapMessage,
     perUnitCents,
   } from "./publicPricing";
+  import { clearDraft, loadDraft, refusedNotice, saveDraft, type Draft } from "./orderDraft";
+  import { createTapGuard, focusConfirmation } from "./confirmationFocus";
+  import VisitorReset from "./VisitorReset.svelte";
   import FormErrorSummary from "./FormErrorSummary.svelte";
   import RateLimitNotice from "./RateLimitNotice.svelte";
   import { parseRoute, routeHash, type Route } from "./route";
   import {
     fetchQuotePreview,
+    loadPublicCatalog,
     loadPublicConfig,
-    loadPublicItems,
+    shopOf,
     submitQuoteRequest,
+    type PublicCategory,
     type PublicConfig,
     type PublicItem,
     type QuotePreviewResult,
@@ -124,16 +146,26 @@
 
   // Config load
 
-  let phase = $state<"loading" | "failed" | "ready">("loading");
-  let cfg = $state.raw<PublicConfig | null>(null);
+  // The server embeds the public config in the HTML, so a hard refresh renders the owner's shop on the
+  // first paint. Without it (an older server, an unparseable block) the page shows a neutral loading state,
+  // never built-in defaults, until the fetch returns. Either way the fetch below refreshes the config.
+  const embeddedConfig = readEmbeddedConfig();
+  let phase = $state<"loading" | "failed" | "ready">(embeddedConfig ? "ready" : "loading");
+  let cfg = $state.raw<PublicConfig | null>(embeddedConfig);
 
   // Public items load alongside config. A failed or empty items fetch is not an error: it just means no
   // gallery. Only a failed config fetch (phase "failed") is a real failure.
   let items = $state.raw<PublicItem[] | null>(null);
+  // False until the items fetch settles (even when it fails). The embedded config doesn't carry items, so
+  // until then the gallery area shows a loading line instead of guessing between the gallery and the form.
+  let catalogLoaded = $state(false);
+  // Visible categories that have public items, for the category links. Empty from a server without categories.
+  let categories = $state.raw<PublicCategory[]>([]);
   // Restored from sessionStorage on mount: a self-contained summary of the last gallery order, independent of
   // the live `items` (reset on load). Shown on the #/order/received route; dismissed via
   // dismissItemOrderConfirmation.
-  let itemOrderConfirmation = $state<ItemOrderConfirmation | null>(null);
+  // Restored synchronously (not in onMount): the route check below runs as soon as the config is ready.
+  let itemOrderConfirmation = $state<ItemOrderConfirmation | null>(loadConfirmation<ItemOrderConfirmation>(ITEM_ORDER_CONFIRMATION_KEY));
 
   // Routing. The location hash is the source of truth for which view shows (see route.ts), so Back, reload and
   // a shared link all work. Navigation pushes a history entry; a redirect replaces the current one.
@@ -152,36 +184,87 @@
     route = next;
   }
 
-  const hasGallery = $derived(items !== null && items.length > 0);
+  // Storefront settings (shop.*). The server enforces customEstimates, gallery and acceptingOrders on every
+  // submission; the page hides what it can't offer.
+  const shop = $derived(shopOf(cfg));
+  const paused = $derived(!shop.acceptingOrders);
+  const materials = $derived(cfg?.materials ?? []);
+  // The shop can close while this page is open. A submit or preview the server refuses with 503 and
+  // `paused: true` flips the page to the Closed page right away, without a reload.
+  function markPaused(message: string) {
+    if (!cfg) return;
+    cfg = { ...cfg, shop: { ...shopOf(cfg), acceptingOrders: false, pausedMessage: message } };
+  }
+  // A submit the server refused because the shop closed mid-form: the Closed page says the order wasn't placed,
+  // and the typed details wait in sessionStorage for when the shop reopens (orderDraft.ts).
+  let refusedNoticeText = $state("");
+  function submitRefused(message: string, draft: Draft) {
+    saveDraft(draft);
+    refusedNoticeText = refusedNotice(draft.kind);
+    markPaused(message);
+    void focusAfterUpdate("#closed-notice");
+  }
+  // Details saved by a refused submit come back after the shop reopens and the page reloads.
+  const restoredDraft = loadDraft();
+  if (restoredDraft) {
+    visitor.name = restoredDraft.name;
+    visitor.email = restoredDraft.email;
+  }
+  // The owner's accent color, public-only: set on <html> while this page is mounted.
+  $effect(() => applyShopAccent(shop.accent));
+  const hasGallery = $derived(shop.gallery && items !== null && items.length > 0);
   const orderItem = $derived.by(() => {
     const r = route;
-    return r.name === "item" && items ? (items.find((i) => i.id === r.id) ?? null) : null;
+    return r.name === "item" && shop.gallery && items ? (items.find((i) => i.id === r.id) ?? null) : null;
+  });
+  const activeCategory = $derived.by(() => {
+    const r = route;
+    return r.name === "category" ? (categories.find((c) => c.slug === r.slug) ?? null) : null;
+  });
+  const shownItems = $derived.by(() => {
+    const c = activeCategory;
+    return c && items ? items.filter((i) => i.category?.slug === c.slug) : (items ?? []);
   });
   // "gallery" is the item grid, an item panel or the order confirmation; "quote" is the estimate form or its
-  // confirmation. A shop with no items has only the estimate form, whatever the hash says.
+  // confirmation. A shop with no items has only the estimate form, whatever the hash says. With custom
+  // estimates off the form never shows (a saved confirmation excepted); with the gallery off only the form does.
   const view = $derived.by<"gallery" | "quote">(() => {
+    if (route.name === "estimate-received" && submitted) return "quote";
+    if (!shop.customEstimates) return "gallery";
+    if (!shop.gallery) return "quote";
     if (route.name === "estimate" || route.name === "estimate-received") return "quote";
     if (route.name === "order-received" && itemOrderConfirmation) return "gallery";
-    return hasGallery ? "gallery" : "quote";
+    if (!hasGallery) return "quote";
+    // No hash at all opens on shop.defaultView; "#/" is an explicit request for the gallery.
+    if (route.name === "gallery" && location.hash === "" && shop.defaultView === "estimate") return "quote";
+    return "gallery";
   });
+  // An old #/estimate link opens the gallery with this note and the business contact details when custom
+  // estimates are off.
+  const ESTIMATES_OFF_NOTE = "Custom estimates aren't offered right now.";
 
   onMount(async () => {
-    itemOrderConfirmation = loadConfirmation<ItemOrderConfirmation>(ITEM_ORDER_CONFIRMATION_KEY);
-    const restoredQuote = loadConfirmation<QuoteConfirmation>(QUOTE_CONFIRMATION_KEY);
-    if (restoredQuote) {
-      submitted = restoredQuote;
-      fileStoredCaveat = restoredQuote.fileStoredCaveat;
-    }
-
-    const [cfgResult, itemsResult] = await Promise.all([loadPublicConfig(), loadPublicItems()]);
+    const [cfgResult, catalogResult] = await Promise.all([loadPublicConfig(), loadPublicCatalog()]);
     if (cfgResult) {
       cfg = cfgResult;
       phase = "ready";
-    } else {
+    } else if (!cfg) {
+      // A failed refresh keeps the embedded config; only a page with nothing to show is a failure.
       phase = "failed";
     }
-    items = itemsResult;
+    items = catalogResult?.items ?? null;
+    categories = catalogResult?.categories ?? [];
+    catalogLoaded = true;
   });
+  // Routes whose view depends on whether the shop has items. An estimate route, or a saved order confirmation,
+  // doesn't, so those render at once.
+  const catalogPending = $derived(
+    !catalogLoaded &&
+      shop.gallery &&
+      route.name !== "estimate" &&
+      route.name !== "estimate-received" &&
+      !(route.name === "order-received" && itemOrderConfirmation),
+  );
 
   // A route whose data is gone returns to the gallery with a note, replacing the entry so Back doesn't land on
   // the dead route again.
@@ -192,6 +275,8 @@
     if (r.name === "order-received" && !itemOrderConfirmation) note = "That order confirmation is no longer available.";
     else if (r.name === "estimate-received" && !submitted) note = "That estimate confirmation is no longer available.";
     else if (r.name === "item" && items !== null && !items.some((i) => i.id === r.id)) note = "That item is no longer available.";
+    else if (r.name === "category" && shop.gallery && items !== null && !categories.some((c) => c.slug === r.slug)) note = "That category is no longer available.";
+    else if (r.name === "estimate" && !shop.customEstimates) note = ESTIMATES_OFF_NOTE;
     if (note) {
       routeNote = note;
       navigate({ name: "gallery" }, { replace: true, keepNote: true });
@@ -199,14 +284,30 @@
   });
 
   /** Dismisses a gallery item-order confirmation and returns to the item grid. */
-  function dismissItemOrderConfirmation() {
+  function dismissItemOrderConfirmation(focusItemId?: string) {
     itemOrderConfirmation = null;
     clearConfirmation(ITEM_ORDER_CONFIRMATION_KEY);
     // Replace, so Back doesn't return to a confirmation that no longer exists.
     navigate({ name: "gallery" }, { replace: true });
-    // The Back button that held focus is about to unmount (WCAG 2.4.3).
-    void focusAfterUpdate("#gallery-heading");
+    // The Back button that held focus is about to unmount (WCAG 2.4.3). "Back to <item>" lands on that item's
+    // card; the gallery heading takes over when the card isn't shown.
+    void focusAfterUpdate(() => {
+      const card = focusItemId ? document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(focusItemId)}"]`) : null;
+      return card ?? document.getElementById("gallery-heading");
+    });
   }
+
+  /** Copies the order or request reference so the customer keeps it past the page. */
+  async function copyReference(reference: string) {
+    try {
+      await navigator.clipboard.writeText(reference);
+      announce("Reference copied.");
+    } catch {
+      announce("Couldn't copy the reference. Select it and copy it by hand.");
+    }
+  }
+  // Taps in the first moments after a confirmation appears are ignored (see confirmationFocus.ts).
+  const confirmationTap = createTapGuard();
 
   // Focus management for the gallery <-> item panel swap (WCAG 2.4.3): opening a card focuses the panel's
   // heading (ItemOrderPanel does that itself on mount); going back refocuses the card that was opened, or the
@@ -226,6 +327,19 @@
     } else {
       navigate({ name: "gallery" }, { replace: true });
     }
+  }
+  // The header logo and name link to the storefront home. Followed from an item or a confirmation it acts
+  // like Back to gallery, with focus on the gallery heading (the estimate form's heading when the gallery is
+  // off). An order form holding choices, a quantity or a note asks first, so a click never discards it silently.
+  let itemDirty = $state(false);
+  function goHome(e: MouseEvent) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    if (route.name === "item" && orderItem && itemDirty && !confirm("Leave this order? What you entered on this form will be lost.")) return;
+    lastSelectedId = null;
+    itemOpenedInApp = false;
+    navigate({ name: "gallery" });
+    void focusAfterUpdate(() => document.getElementById("gallery-heading") ?? estimateFormHeading);
   }
   // Returning from an item to the gallery by any means (Back to gallery, Escape, the browser's Back button)
   // refocuses the card that was open.
@@ -262,11 +376,11 @@
 
   // Form state
 
-  let materialName = $state("");
+  let materialName = $state(restoredDraft?.kind === "estimate" ? restoredDraft.materialName : "");
   // Falls back to PLA's density while no material is chosen, so an early file drop still shows an estimate.
   const density = $derived(densityOrFallback(cfg?.materials.find((m) => m.name === materialName)?.density));
-  let quantity = $state<number | null>(1);
-  let note = $state("");
+  let quantity = $state<number | null>(restoredDraft?.kind === "estimate" ? restoredDraft.quantity : 1);
+  let note = $state(restoredDraft?.kind === "estimate" ? restoredDraft.note : "");
   // Name and email live in the shared visitor store (see visitor.svelte.ts) so they carry over to an item order.
   const name = $derived(visitor.name);
   const email = $derived(visitor.email);
@@ -360,7 +474,15 @@
   let submitting = $state(false);
   // The submit is waiting for the price preview that was still updating when the visitor pressed the button.
   let waitingForPrice = $state(false);
-  let submitted = $state<QuoteConfirmation | null>(null);
+  const restoredQuote = loadConfirmation<QuoteConfirmation>(QUOTE_CONFIRMATION_KEY);
+  let submitted = $state<QuoteConfirmation | null>(restoredQuote);
+
+  // A saved confirmation for the route being shown. While the shop is paused it stays visible, with a note
+  // above it; any other public route shows the Closed page, and so does a confirmation route with nothing saved.
+  const savedConfirmationShown = $derived(
+    (route.name === "order-received" && itemOrderConfirmation !== null) || (route.name === "estimate-received" && submitted !== null),
+  );
+  const closedPageShown = $derived(paused && !savedConfirmationShown);
   let rateLimited = $state(false);
   // Errors from the server describe the form as it was sent, so they go away as soon as the visitor changes
   // anything: they show only while serverErrorsFor still matches the current form.
@@ -368,7 +490,7 @@
   let serverErrorsFor = $state("");
   // Set on a successful submit whose response had fileStored: false (storage-full path): the request went
   // through but the file wasn't stored. null otherwise, including manual entries.
-  let fileStoredCaveat = $state<string | null>(null);
+  let fileStoredCaveat = $state<string | null>(restoredQuote?.fileStoredCaveat ?? null);
 
   // Server-side price preview: the price and shipping come from POST /api/public/quote/preview; the cost
   // model never ships to the visitor's browser. lib/quotePreview.ts owns the debounce (~350ms) and staleness
@@ -382,6 +504,7 @@
   function previewToState(
     result: QuotePreviewResult,
   ): ({ status: "resolved" } & PreviewResolved) | { status: "error"; errors: string[] } {
+    if (result.paused) markPaused(result.paused);
     if (result.ok && typeof result.priceCents === "number" && typeof result.shippingCents === "number") {
       return { status: "resolved", priceCents: result.priceCents, shippingCents: result.shippingCents };
     }
@@ -861,10 +984,16 @@
       // reload empty them.
       resetEstimateForm();
       navigate({ name: "estimate-received" });
-      await focusAfterUpdate(() => quoteConfirmationHeading);
+      clearDraft();
+      confirmationTap.arm();
+      await focusConfirmation(() => quoteConfirmationHeading);
       return;
     }
     serverErrorsFor = formSnapshot;
+    if (result.paused) {
+      submitRefused(result.paused, { kind: "estimate", materialName, quantity, note, name: visitor.name, email: visitor.email });
+      return;
+    }
     if (result.status === 429) {
       rateLimited = true;
       return;
@@ -874,12 +1003,19 @@
 
   // Page title (WCAG 2.4.2): tracks the state the visitor is in, so a title list or history entry says whether
   // this is the form or the confirmation.
+  // The shop title alone on the gallery, "<page> · <shop title>" on every inner page. null (nothing
+  // loaded yet) leaves the title the server rendered.
   const pageTitle = $derived.by(() => {
-    const biz = cfg?.branding.businessName;
-    if (route.name === "estimate-received" && submitted) return biz ? `Request received · ${biz}` : "Request received";
-    if (route.name === "order-received" && itemOrderConfirmation) return biz ? `Order received · ${biz}` : "Order received";
-    if (orderItem) return biz ? `${orderItem.name} · ${biz}` : orderItem.name;
-    return biz ? `${biz} — get an estimate` : "Get an estimate";
+    if (!cfg) return null;
+    const title = shopTitleOf(cfg);
+    if (closedPageShown) return composeTitle(title, "Closed");
+    if (route.name === "estimate-received" && submitted) return composeTitle(title, "Request received");
+    if (route.name === "order-received" && itemOrderConfirmation) return composeTitle(title, "Order received");
+    if (orderItem) return composeTitle(title, orderItem.name);
+    if (catalogPending) return composeTitle(title, null);
+    if (view === "quote") return composeTitle(title, "Custom estimate");
+    if (activeCategory) return composeTitle(title, activeCategory.name);
+    return composeTitle(title, null);
   });
 
   /** Clears every estimate-form field. Does not touch the confirmation. */
@@ -889,6 +1025,13 @@
     note = "";
     showErrors = false;
     clearFile();
+  }
+
+  /** The "Need something custom?" card: the card unmounts with the gallery, so focus moves to the estimate heading
+   * instead of dropping to <body> (WCAG 2.4.3). */
+  function openEstimateFromCard() {
+    navigate({ name: "estimate" });
+    void focusAfterUpdate(() => estimateFormHeading);
   }
 
   /** Dismisses the custom-estimate confirmation and shows an empty form for a new request; `submitted` survives
@@ -916,25 +1059,28 @@
   );
 
   const introText = $derived(
-    cfg?.introText ? cfg.introText : DEFAULT_INTRO_TEXT,
+    introTextFor(cfg?.introText, shop.customEstimates && (cfg?.materials.length ?? 0) > 0),
   );
 </script>
 
 <svelte:window ondragover={preventWindowDrop} ondrop={preventWindowDrop} onhashchange={syncRoute} />
 
 <svelte:head>
-  <title>{pageTitle}</title>
+  {#if pageTitle}<title>{pageTitle}</title>{/if}
 </svelte:head>
 
+{#snippet pausedNote()}
+  <!-- Exemption: a saved confirmation outlives a pause, with the closure said plainly above it. -->
+  <div class="paused-note" role="status">
+    <p><strong>We're closed right now. We still have your request.</strong></p>
+    {#if shop.pausedMessage}<p>{shop.pausedMessage}</p>{/if}
+  </div>
+{/snippet}
+
 {#snippet timeFields(describedBy: string)}
-  <div class="field">
-    <span id="quote-time-label">Print time</span>
-    <div
-      class="time-pair"
-      role="group"
-      aria-labelledby="quote-time-label"
-      aria-describedby={[describedBy, timeIssueMessage ? "quote-time-err" : ""].filter(Boolean).join(" ") || undefined}
-    >
+  {@const described = [describedBy, timeIssueMessage ? "quote-time-err" : ""].filter(Boolean).join(" ") || undefined}
+  <Fieldset legend="Print time">
+    <div class="time-pair">
       <span class="time-input">
         <input
           id="quote-hours"
@@ -943,6 +1089,7 @@
           aria-label="Print time (hours)"
           bind:value={manualHours}
           aria-invalid={marked("hours") ? "true" : undefined}
+          aria-describedby={described}
         />
         <span class="suffix">h</span>
       </span>
@@ -955,12 +1102,13 @@
           aria-label="Print time (minutes)"
           bind:value={manualMinutes}
           aria-invalid={marked("minutes") ? "true" : undefined}
+          aria-describedby={described}
         />
         <span class="suffix">min</span>
       </span>
     </div>
     {#if timeIssueMessage}<small class="warn-text" id="quote-time-err">{timeIssueMessage}</small>{/if}
-  </div>
+  </Fieldset>
 {/snippet}
 
 <main class="page">
@@ -969,24 +1117,52 @@
   {:else if phase === "failed"}
     <p class="muted center">Estimates are temporarily unavailable.</p>
     <p class="center"><button type="button" onclick={() => location.reload()}>Try again</button></p>
+  {:else if cfg && closedPageShown}
+    <!-- While the shop isn't accepting orders, every route (gallery, item, category, estimate, a saved
+         confirmation) shows the Closed page. The footer keeps Staff sign-in and the owner's links. -->
+    <ClosedPage
+      businessName={cfg.branding.businessName}
+      logoUrl={cfg.branding.logoUrl}
+      message={shop.pausedMessage}
+      branding={cfg.branding}
+      notice={refusedNoticeText}
+      homeHref={location.pathname + location.search}
+    >
+      {#snippet actions()}<ShopThemeToggle />{/snippet}
+    </ClosedPage>
   {:else if cfg}
     <header class="brand">
       <!-- Custom logo (quote.logoUrl) when set, else the project mark. Decorative next to the <h1>
            business name, so alt is empty. -->
-      <img class="logo" src={cfg.branding.logoUrl || projectLogoUrl} alt="" />
-      <h1>{cfg.branding.businessName || "printpaca"}</h1>
+      <h1>
+        <a class="brand-link" href="#/" aria-label="{cfg.branding.businessName || 'printpaca'}, shop home" onclick={goHome}>
+          <img class="logo" src={cfg.branding.logoUrl || projectLogoUrl} alt="" />
+          <span class="brand-name">{cfg.branding.businessName || "printpaca"}</span>
+        </a>
+      </h1>
+      <ShopThemeToggle />
     </header>
     {#if cfg.demoMode}
       <p class="banner-muted demo-banner">
         Demo mode: this walks through the real customer flow, but your request isn't submitted.
       </p>
     {/if}
-    <!-- The shop's own intro when it wrote one; otherwise a default that says what this page is. -->
-    <p class="intro">{introText}</p>
+    {#if shop.announcement}<div class="shop-announcement" role="note"><RichText text={shop.announcement} /></div>{/if}
+    <!-- An item page drops the hero, heading and intro: the visitor chose an item, and the options belong on the
+         first screen, not below the shop's pitch. The announcement stays. -->
+    {#if !orderItem}
+      {#if shop.heroImage}<ShopHero hero={shop.heroImage} />{/if}
+      {#if shop.heading}<h2 class="shop-heading">{shop.heading}</h2>{/if}
+      <!-- The shop's own intro when it wrote one; otherwise a default that says what this page is. -->
+      <div class="intro"><RichText text={introText} /></div>
+    {/if}
     <!-- Persistent status region (text swapped in) for "That item is no longer available." and similar. -->
-    <p class="banner-muted route-note" role="status">{routeNote}</p>
+    <div class="route-note" role="status">
+      {#if routeNote}<p>{routeNote}</p>{/if}
+      {#if routeNote === ESTIMATES_OFF_NOTE}<ContactDetails branding={cfg.branding} />{/if}
+    </div>
 
-    {#if items && items.length > 0 && cfg.materials.length > 0}
+    {#if hasGallery && shop.customEstimates && cfg.materials.length > 0}
       <div class="view-toggle" role="group" aria-label="View">
         <button
           type="button"
@@ -1007,20 +1183,38 @@
       </div>
     {/if}
 
-    {#if view === "gallery"}
+    {#if catalogPending}
+      <p class="muted center" role="status">Loading…</p>
+    {:else if view === "gallery"}
       {#if route.name === "order-received" && itemOrderConfirmation}
         <div class="panel">
-          <button type="button" class="quiet back" onclick={dismissItemOrderConfirmation}>&larr; Back to gallery</button>
-          <div class="card confirmation">
-            <h2 class="section-label" tabindex="-1" bind:this={itemConfirmationHeading}>Order received</h2>
-            <p class="price">{formatMoney(itemOrderConfirmation.priceCents, cfg.currency)}</p>
-            <p class="ref">Reference: <strong>{itemOrderConfirmation.reference || itemOrderConfirmation.id}</strong></p>
-            <p class="ref-hint">Save this reference. Quote it if you contact us about your order.</p>
-            <p class="order-summary">{orderSummaryLine}</p>
-            <p>We'll follow up at {itemOrderConfirmation.email}.</p>
-            <p class="next-steps">{WHAT_HAPPENS_NEXT}</p>
-            <button type="button" class="primary" onclick={dismissItemOrderConfirmation}>Order another item</button>
-          </div>
+          {#if paused}{@render pausedNote()}{/if}
+          <Card class="confirmation-card">
+            <div class="confirmation">
+              <!-- The focused region holds the heading, the amount and the reference, so they are what a screen
+                   reader and a magnifier land on. -->
+              <div class="conf-region" role="region" aria-labelledby="item-conf-heading" tabindex="-1" bind:this={itemConfirmationHeading}>
+                <h2 class="section-label" id="item-conf-heading">Order received</h2>
+                <p class="price">{formatMoney(itemOrderConfirmation.priceCents, cfg.currency)}</p>
+                <p class="ref">Reference: <strong>{itemOrderConfirmation.reference || itemOrderConfirmation.id}</strong></p>
+                <button type="button" class="quiet copy-ref" onclick={() => void copyReference(itemOrderConfirmation?.reference || itemOrderConfirmation?.id || "")}>Copy reference</button>
+              </div>
+              <!-- Quiet links, not a primary button: nothing here is where Place order was, and a tap in the
+                   first moments is ignored. -->
+              <div class="conf-nav">
+                <button type="button" class="quiet back" onclick={confirmationTap.guarded(() => dismissItemOrderConfirmation())}>&larr; Back to gallery</button>
+                {#if itemOrderConfirmation.itemId}
+                  {@const backId = itemOrderConfirmation.itemId}
+                  <button type="button" class="quiet back" onclick={confirmationTap.guarded(() => dismissItemOrderConfirmation(backId))}>Back to {itemOrderConfirmation.itemName}</button>
+                {/if}
+              </div>
+              <p class="ref-hint">Save this reference. Quote it if you contact us about your order.</p>
+              <p class="order-summary">{orderSummaryLine}</p>
+              <p>We'll follow up at {itemOrderConfirmation.email}.</p>
+              <p class="next-steps">{WHAT_HAPPENS_NEXT}</p>
+              {#if shop.turnaroundNote}<p class="next-steps turnaround-note">{shop.turnaroundNote}</p>{/if}
+            </div>
+          </Card>
         </div>
       {:else if orderItem}
         {#key orderItem.id}
@@ -1030,200 +1224,232 @@
               currency={cfg.currency}
               branding={cfg.branding}
               maxOrderQty={maxQty}
+              shippingNote={shop.shippingNote}
+              turnaroundNote={shop.turnaroundNote}
               onback={closeItem}
+              bind:dirty={itemDirty}
+              onpaused={submitRefused}
+              draft={restoredDraft?.kind === "order" && restoredDraft.itemId === orderItem.id ? restoredDraft : undefined}
               onordered={(confirmation) => {
                 itemOrderConfirmation = confirmation;
                 saveConfirmation(ITEM_ORDER_CONFIRMATION_KEY, confirmation);
+                clearDraft();
+                confirmationTap.arm();
                 navigate({ name: "order-received" });
-                void focusAfterUpdate(() => itemConfirmationHeading);
+                void focusConfirmation(() => itemConfirmationHeading);
               }}
             />
           </div>
         {/key}
       {:else}
-        <h2 id="gallery-heading" tabindex="-1" class="view-heading">Items</h2>
+        <h2 id="gallery-heading" tabindex="-1" class="view-heading">{activeCategory ? activeCategory.name : "Items"}</h2>
+        <CategoryChips {categories} active={activeCategory?.slug ?? null} />
         <ItemGallery
-          items={items ?? []}
+          items={shownItems}
           currency={cfg.currency}
           onselect={openItem}
-          oncustomestimate={cfg.materials.length > 0 ? () => navigate({ name: "estimate" }) : undefined}
+          showStock={shop.showStock}
+          showFromPrice={shop.showFromPrice}
+          oncustomestimate={cfg.materials.length > 0 && shop.customEstimates ? openEstimateFromCard : undefined}
         />
       {/if}
     {:else if cfg.materials.length === 0}
       <p class="muted center">No materials are currently offered.</p>
     {:else if route.name === "estimate-received" && submitted}
-      <div class="card confirmation">
-        <h2 class="section-label" tabindex="-1" bind:this={quoteConfirmationHeading}>Request received</h2>
-        {#if submitted.needsPrintTime}
-          <p class="price">Price to be confirmed</p>
-          <p class="meta">We'll confirm the price after we prepare your file for printing.</p>
-        {:else}
-          <p class="meta">Estimated price</p>
-          <p class="price">{formatMoney(submitted.priceCents, cfg.currency)}</p>
-        {/if}
-        <p class="ref">Reference: <strong>{submitted.reference || submitted.id}</strong></p>
-        <p class="ref-hint">Save this reference. Quote it if you contact us about your request.</p>
-        <p class="order-summary">{submitted.quantity} &times; {submitted.material}</p>
-        {#if submitted.fileName}<p class="meta">File: {submitted.fileName}</p>{/if}
-        {#if submitted.printTimeLabel}<p class="meta">Print time used: {submitted.printTimeLabel}</p>{/if}
-        <p>We'll follow up at {submitted.email}.</p>
-        <p class="next-steps">
-          {submitted.needsPrintTime
-            ? "We'll prepare your file, then email you the price to approve. You won't be charged until you agree to it."
-            : "We'll review your request and email you to confirm the price. You won't be charged until you agree to it."}
-        </p>
-        {#if fileStoredCaveat}<p class="advisory-text">{fileStoredCaveat}</p>{/if}
-        <button type="button" class="quiet" onclick={dismissQuoteConfirmation}>Request another estimate</button>
-      </div>
+      {#if paused}{@render pausedNote()}{/if}
+      <Card class="confirmation-card">
+        <div class="confirmation">
+          <div class="conf-region" role="region" aria-labelledby="quote-conf-heading" tabindex="-1" bind:this={quoteConfirmationHeading}>
+            <h2 class="section-label" id="quote-conf-heading">Request received</h2>
+            {#if submitted.needsPrintTime}
+              <p class="price">Price to be confirmed</p>
+              <p class="meta">We'll confirm the price after we prepare your file for printing.</p>
+            {:else}
+              <p class="meta">Estimated price</p>
+              <p class="price">{formatMoney(submitted.priceCents, cfg.currency)}</p>
+            {/if}
+            <p class="ref">Reference: <strong>{submitted.reference || submitted.id}</strong></p>
+            <button type="button" class="quiet copy-ref" onclick={() => void copyReference(submitted?.reference || submitted?.id || "")}>Copy reference</button>
+          </div>
+          <p class="ref-hint">Save this reference. Quote it if you contact us about your request.</p>
+          <p class="order-summary">{submitted.quantity} &times; {submitted.material}</p>
+          {#if submitted.fileName}<p class="meta">File: {submitted.fileName}</p>{/if}
+          {#if submitted.printTimeLabel}<p class="meta">Print time used: {submitted.printTimeLabel}</p>{/if}
+          <p>We'll follow up at {submitted.email}.</p>
+          <p class="next-steps">
+            {submitted.needsPrintTime
+              ? "We'll prepare your file, then email you the price to approve. You won't be charged until you agree to it."
+              : "We'll review your request and email you to confirm the price. You won't be charged until you agree to it."}
+          </p>
+          {#if shop.turnaroundNote}<p class="next-steps turnaround-note">{shop.turnaroundNote}</p>{/if}
+          {#if fileStoredCaveat}<p class="advisory-text">{fileStoredCaveat}</p>{/if}
+          <button type="button" class="quiet" onclick={confirmationTap.guarded(dismissQuoteConfirmation)}>Request another estimate</button>
+        </div>
+      </Card>
     {:else}
       <!-- novalidate: the page validates itself and shows the messages inline, instead of the browser's
            transient bubble, which is announced inconsistently and disappears (WCAG 3.3.1). -->
-      <form
-        bind:this={formEl}
-        class="card"
+      <Card
+        as="form"
+        bind:el={formEl}
         novalidate
-        onsubmit={(e) => {
+        onsubmit={(e: SubmitEvent) => {
           e.preventDefault();
           void submit();
         }}
       >
-        <h2 class="view-heading" tabindex="-1" bind:this={estimateFormHeading}>Custom estimate</h2>
-        <div class="field">
-          <label for="quote-material">Material</label>
-          <select
-            id="quote-material"
-            bind:value={materialName}
-            required
-            aria-invalid={marked("material") ? "true" : undefined}
-            aria-describedby={marked("material") ? "quote-material-desc quote-material-err" : "quote-material-desc"}
-          >
-            <option value="" disabled>Choose a material</option>
-            {#each cfg.materials as m (m.name)}<option value={m.name}>{m.name}</option>{/each}
-          </select>
-          <small class="field-hint" id="quote-material-desc">{materialName ? materialDescription(materialName) : ""}</small>
-          {#if marked("material")}<small class="warn-text" id="quote-material-err">{issueMessage("material")}</small>{/if}
-        </div>
-
-        <div class="field">
-          <label for="quote-qty">Quantity</label>
-          <input
-            id="quote-qty"
-            type="number"
-            min="1"
-            max={maxQty}
-            step="1"
-            bind:value={quantity}
-            onchange={(e) => {
-              // "1e3" stays on screen as typed; show the number it prices.
-              const plain = normalizedQuantityText(e.currentTarget.value);
-              if (plain !== null) e.currentTarget.value = plain;
+        <div class="fields">
+          <h2 class="view-heading" tabindex="-1" bind:this={estimateFormHeading}>Custom estimate</h2>
+          <div
+            class="drop"
+            class:dragging
+            role="group"
+            aria-label="Model file"
+            ondragover={(e) => {
+              e.preventDefault();
+              dragging = true;
             }}
-            required
-            aria-invalid={quantityMessage !== "" ? "true" : undefined}
-            aria-describedby="quote-qty-notice"
-          />
-        </div>
-        <!-- Outside the field so the message isn't part of its name, and always mounted so the live region
-             announces its text changes (WCAG 1.3.1, 4.1.3). The only place the quantity message appears. -->
-        <p class="clamp-notice" id="quote-qty-notice" role="status">{quantityMessage}</p>
-
-        <div
-          class="card drop"
-          class:dragging
-          role="group"
-          aria-label="Model file"
-          ondragover={(e) => {
-            e.preventDefault();
-            dragging = true;
-          }}
-          ondragleave={onDragLeave}
-          ondrop={onDrop}
-        >
-          <label for="public-gcode-file">
-            <strong id="drop-lead">Upload your 3D file (STL, 3MF, or G-code)</strong>
-            <span id="drop-help">
-              Optional. Drag a file here or choose one. We'll estimate the weight from its shape. A file from your slicer (the
-              program that prepares a model for printing, such as Cura or PrusaSlicer) also gives the print time.
-              No file? Enter the weight and print time below.
-            </span>
-          </label>
-          <!-- The visible control is the button; the real input stays in the DOM (visually hidden, out of the
-               tab order) so a drop, a label click and tests all reach the same handler. -->
-          <div class="choose-row">
-            <button
-              type="button"
-              id="choose-file"
-              class="choose-file"
-              class:invalid={marked("file")}
-              aria-describedby={marked("file") ? "drop-help file-err" : "drop-help"}
-              onclick={() => fileInputEl?.click()}
-            >
-              Choose file
-            </button>
-            <span class="chosen-name">{fileName || "No file chosen"}</span>
-          </div>
-          <input
-            id="public-gcode-file"
-            bind:this={fileInputEl}
-            type="file"
-            accept=".gcode,.gco,.g,.nc,text/*,.stl,.3mf"
-            onchange={onPick}
-            class="visually-hidden"
-            tabindex="-1"
-            aria-labelledby="drop-lead"
-            aria-describedby="drop-help"
-          />
-          <!-- Two persistent regions, text swapped in: a live region whose role changes (or that is inserted
-               already populated) is announced unreliably (WCAG 4.1.3). Progress and success are polite;
-               problems are assertive. -->
-          <p class="status {gcodeStatus}" aria-live="polite">{gcodeIsProblem && !busy ? "" : busy ? `Parsing ${fileName}…` : gcodeMessage}</p>
-          <p class="status {gcodeStatus}" role="alert">{gcodeIsProblem && !busy ? gcodeMessage : ""}</p>
-          <p class="advisory-text" role="status">{modelAttachmentAdvisory}</p>
-          {#if marked("file")}<small class="warn-text" id="file-err">{issueMessage("file")}</small>{/if}
-        </div>
-
-        {#if previewTriangles.length > 0}
-          <ModelPreview triangles={previewTriangles} {fileName} />
-        {/if}
-        {#if modelBounds}
-          <p class="model-size">Size: {formatBounds(modelBounds)}</p>
-        {/if}
-        {#if modelBoundsWarning}
-          <p class="warn-text" role="status">{modelBoundsWarning}</p>
-        {/if}
-
-        {#if hasExactParse}
-          {#if weightG !== null && timeSeconds !== null}
-            <p class="parsed-meta">Weight: {weightG} g · Print time: {printTimeLabel}</p>
-          {:else if weightG !== null}
-            <p class="parsed-meta">Weight: {weightG} g</p>
-          {/if}
-          {#if parsedTimeSeconds === null}
-            <!-- Weight came from the parse but no print-time comment was found (gcodeStatus
-                 "incomplete"): the visitor can add the time here, or leave it for the shop. -->
-            <div class="manual-entry">
-              {@render timeFields("quote-time-hint")}
-              <small class="field-hint" id="quote-time-hint">
-                Optional. If this file didn't include a print time, leave this blank and we'll confirm the price by email.
-              </small>
+            ondragleave={onDragLeave}
+            ondrop={onDrop}
+          >
+            <label for="public-gcode-file">
+              <strong id="drop-lead">Upload your 3D file (STL, 3MF, or G-code)</strong>
+              <span id="drop-help">
+                Optional. Drag a file here or choose one. We'll estimate the weight from its shape. A file from your slicer (the
+                program that prepares a model for printing, such as Cura or PrusaSlicer) also gives the print time.
+                No file? Enter the weight and print time below.
+              </span>
+            </label>
+            <!-- The visible control is the button; the real input stays in the DOM (visually hidden, out of the
+                 tab order) so a drop, a label click and tests all reach the same handler. -->
+            <div class="choose-row">
+              <button
+                type="button"
+                id="choose-file"
+                class="choose-file"
+                class:invalid={marked("file")}
+                aria-describedby={marked("file") ? "drop-help file-err" : "drop-help"}
+                onclick={() => fileInputEl?.click()}
+              >
+                Choose file
+              </button>
+              <span class="chosen-name">{fileName || "No file chosen"}</span>
             </div>
+            <input
+              id="public-gcode-file"
+              bind:this={fileInputEl}
+              type="file"
+              accept=".gcode,.gco,.g,.nc,text/*,.stl,.3mf"
+              onchange={onPick}
+              class="visually-hidden"
+              tabindex="-1"
+              aria-labelledby="drop-lead"
+              aria-describedby="drop-help"
+            />
+            <!-- Two persistent regions, text swapped in: a live region whose role changes (or that is inserted
+                 already populated) is announced unreliably (WCAG 4.1.3). Progress and success are polite;
+                 problems are assertive. -->
+            <p class="status {gcodeStatus}" aria-live="polite">{gcodeIsProblem && !busy ? "" : busy ? `Parsing ${fileName}…` : gcodeMessage}</p>
+            <p class="status {gcodeStatus}" role="alert">{gcodeIsProblem && !busy ? gcodeMessage : ""}</p>
+            <p class="advisory-text" role="status">{modelAttachmentAdvisory}</p>
+            {#if marked("file")}<small class="warn-text" id="file-err">{issueMessage("file")}</small>{/if}
+          </div>
+
+          {#if previewTriangles.length > 0}
+            <ModelPreview triangles={previewTriangles} {fileName} />
           {/if}
-          <button type="button" class="quiet remove-file" onclick={clearFile}>Remove file and enter values manually</button>
-        {:else if modelSource?.kind === "estimate"}
-          <div class="manual-entry">
-            <div class="field">
-              <label for="quote-weight">Model weight (g)</label>
+          {#if modelBounds}
+            <p class="model-size">Size: {formatBounds(modelBounds)}</p>
+          {/if}
+          {#if modelBoundsWarning}
+            <p class="warn-text" role="status">{modelBoundsWarning}</p>
+          {/if}
+
+          <Field
+            id="quote-material"
+            label="Material"
+            hint={materialName ? materialDescription(materialName) : undefined}
+            error={marked("material") ? issueMessage("material") : undefined}
+          >
+            {#snippet children(f)}
+              <select
+                id={f.id}
+                bind:value={materialName}
+                required
+                aria-invalid={f.invalid}
+                aria-describedby={f.describedby}
+              >
+                <option value="" disabled>Choose a material</option>
+                {#each materials as m (m.name)}<option value={m.name}>{m.name}</option>{/each}
+              </select>
+            {/snippet}
+          </Field>
+
+          <Field id="quote-qty" label="Quantity" size="s" describedby="quote-qty-notice">
+            {#snippet children(f)}
               <input
-                id="quote-weight"
+                id={f.id}
                 type="number"
-                min="0"
-                max={MAX_WEIGHT_G}
-                step="0.01"
-                bind:value={weightG}
-                oninput={() => (weightEdited = true)}
-                aria-invalid={marked("weight") ? "true" : undefined}
-                aria-describedby={marked("weight") ? "quote-weight-hint quote-weight-err" : "quote-weight-hint"}
+                min="1"
+                max={maxQty}
+                step="1"
+                bind:value={quantity}
+                onchange={(e) => {
+                  // "1e3" stays on screen as typed; show the number it prices.
+                  const plain = normalizedQuantityText(e.currentTarget.value);
+                  if (plain !== null) e.currentTarget.value = plain;
+                }}
+                required
+                aria-invalid={quantityMessage !== "" ? "true" : undefined}
+                aria-describedby={f.describedby}
               />
+            {/snippet}
+          </Field>
+          <!-- Outside the field so the message isn't part of its name, and always mounted so the live region
+               announces its text changes (WCAG 1.3.1, 4.1.3). The only place the quantity message appears. -->
+          <p class="clamp-notice" id="quote-qty-notice" role="status">{quantityMessage}</p>
+
+
+          {#if hasExactParse}
+            {#if weightG !== null && timeSeconds !== null}
+              <p class="parsed-meta">Weight: {weightG} g · Print time: {printTimeLabel}</p>
+            {:else if weightG !== null}
+              <p class="parsed-meta">Weight: {weightG} g</p>
+            {/if}
+            {#if parsedTimeSeconds === null}
+              <!-- Weight came from the parse but no print-time comment was found (gcodeStatus
+                   "incomplete"): the visitor can add the time here, or leave it for the shop. -->
+              <div class="manual-entry">
+                {@render timeFields("quote-time-hint")}
+                <small class="field-hint" id="quote-time-hint">
+                  Optional. If this file didn't include a print time, leave this blank and we'll confirm the price by email.
+                </small>
+              </div>
+            {/if}
+            <button type="button" class="quiet remove-file" onclick={clearFile}>Remove file and enter values manually</button>
+          {:else if modelSource?.kind === "estimate"}
+            <div class="manual-entry">
+              <Field
+                id="quote-weight"
+                label="Model weight (g)"
+                size="s"
+                describedby="quote-weight-hint"
+                error={marked("weight") ? issueMessage("weight") : undefined}
+              >
+                {#snippet children(f)}
+                  <input
+                    id={f.id}
+                    type="number"
+                    min="0"
+                    max={MAX_WEIGHT_G}
+                    step="0.01"
+                    bind:value={weightG}
+                    oninput={() => (weightEdited = true)}
+                    aria-invalid={f.invalid}
+                    aria-describedby={f.describedby}
+                  />
+                {/snippet}
+              </Field>
               <small class="field-hint" id="quote-weight-hint">
                 {#if weightEdited}
                   Using your weight.
@@ -1232,178 +1458,192 @@
                   Estimated from the model's shape. If you already know the weight, type it here.
                 {/if}
               </small>
-              {#if marked("weight")}<small class="warn-text" id="quote-weight-err">{issueMessage("weight")}</small>{/if}
-            </div>
-            <details class="how-estimated" bind:open={howOpen}>
-              <summary>How we estimated this</summary>
-              <p>
-                Weight = model volume × material density × solidity.
-                {#if modelSource.kind === "estimate"}
-                  For your file that is {modelSource.volumeCm3.toFixed(2)} cm³ × {density.toFixed(2)} g/cm³ × {solidityPct}% =
-                  {Math.round(estimateWeightFromVolume(modelSource.volumeCm3, density, solidityPct) * 100) / 100} g.
-                {/if}
-              </p>
-              <p>Solidity is how solid the print is inside: 100% is fully solid, and most prints are 15 to 25%.</p>
-              <div class="field">
-                <label for="quote-solidity">Solidity (%)</label>
-                <input
-                  id="quote-solidity"
-                  type="number"
-                  min="5"
-                  max="100"
-                  step="1"
-                  bind:value={solidityInput}
-                  aria-invalid={marked("solidity") ? "true" : undefined}
-                  aria-describedby={marked("solidity") ? "quote-solidity-err" : undefined}
-                />
-                {#if marked("solidity")}<small class="warn-text" id="quote-solidity-err">{issueMessage("solidity")}</small>{/if}
-              </div>
-            </details>
-            {@render timeFields("quote-time-hint")}
-            <small class="field-hint" id="quote-time-hint">
-              Optional. If you don't know the print time, leave this blank and we'll confirm the price by email.
-            </small>
-          </div>
-          <button type="button" class="quiet remove-file" onclick={clearFile}>Remove file and enter values manually</button>
-        {:else}
-          <div class="manual-entry">
-            <div class="field">
-              <label for="quote-weight">Model weight (g)</label>
-              <input
-                id="quote-weight"
-                type="number"
-                min="0"
-                max={MAX_WEIGHT_G}
-                step="0.01"
-                bind:value={weightG}
-                aria-invalid={marked("weight") ? "true" : undefined}
-                aria-describedby={marked("weight") ? "quote-weight-err" : undefined}
-              />
-              {#if marked("weight")}<small class="warn-text" id="quote-weight-err">{issueMessage("weight")}</small>{/if}
-            </div>
-            {@render timeFields("")}
-          </div>
-        {/if}
-
-        <div class="field">
-          <label for="quote-name">Name</label>
-          <input
-            id="quote-name"
-            type="text"
-            autocomplete="name"
-            bind:value={visitor.name}
-            maxlength={NAME_MAX_BYTES}
-            required
-            aria-invalid={nameError ? "true" : undefined}
-            aria-describedby={nameError ? "quote-name-err" : undefined}
-          />
-          {#if nameError}<small class="warn-text" id="quote-name-err">{nameError}</small>{/if}
-        </div>
-        <div class="field">
-          <label for="quote-email">Email</label>
-          <input
-            id="quote-email"
-            type="email"
-            autocomplete="email"
-            inputmode="email"
-            bind:value={visitor.email}
-            maxlength={EMAIL_MAX_BYTES}
-            required
-            aria-invalid={emailError ? "true" : undefined}
-            aria-describedby={emailError ? "quote-email-err" : undefined}
-          />
-          {#if emailError}<small class="warn-text" id="quote-email-err">{emailError}</small>{/if}
-        </div>
-        {#if visitor.name !== "" || visitor.email !== ""}
-          <button type="button" class="quiet inline-link not-you" onclick={clearVisitor}>Not you? Clear name and email</button>
-        {/if}
-        <div class="field">
-          <label for="quote-note">Note (optional)</label>
-          <textarea
-            id="quote-note"
-            bind:value={note}
-            maxlength={NOTE_MAX_BYTES}
-            rows="3"
-            aria-invalid={noteError ? "true" : undefined}
-            aria-describedby={noteError ? "quote-note-err" : undefined}
-          ></textarea>
-          {#if noteError}<small class="warn-text" id="quote-note-err">{noteError}</small>{/if}
-        </div>
-
-        <div class="card estimate" role="group" aria-labelledby="estimate-label">
-          <h2 class="section-label" id="estimate-label">{priceHeading}</h2>
-          <!-- One persistent live region whose content changes, announced as a whole, so the settled price
-               is spoken (WCAG 4.1.3). "Updating" is aria-hidden: it would chatter on every keystroke. -->
-          <div aria-live="polite" aria-atomic="true">
-            {#if previewState.status === "resolved"}
-              <p class="price">
-                {formatMoney(previewState.priceCents, cfg.currency)}
-                {#if quantity !== null && quantity > 1}
-                  {@const unitCents = perUnitCents(previewState.priceCents, quantity)}
-                  {#if unitCents !== null}
-                    <span class="per-unit"> &middot; {formatMoney(unitCents, cfg.currency)} each</span>
+              <details class="how-estimated" bind:open={howOpen}>
+                <summary>How we estimated this</summary>
+                <p>
+                  Weight = model volume × material density × solidity.
+                  {#if modelSource.kind === "estimate"}
+                    For your file that is {modelSource.volumeCm3.toFixed(2)} cm³ × {density.toFixed(2)} g/cm³ × {solidityPct}% =
+                    {Math.round(estimateWeightFromVolume(modelSource.volumeCm3, density, solidityPct) * 100) / 100} g.
                   {/if}
-                {/if}
-              </p>
-              <p class="meta">
-                {printTimeLabel} print time{#if previewState.shippingCents > 0}
-                  · + {formatMoney(previewState.shippingCents, cfg.currency)} shipping{/if}
-              </p>
-            {:else if previewState.status === "pending"}
-              <!-- Quiet, not alarming: covers both the ~350ms debounce wait and the round trip, so it shows
-                   for most of a keystroke's lifetime (one state in quotePreview.ts). -->
-              <p class="muted" aria-hidden="true">Updating estimate…</p>
-            {:else if previewState.status === "error"}
-              {#each previewState.errors as e (e)}<p class="warn-text">{e}</p>{/each}
-            {:else if priceWaitingOnShop}
-              <p class="price-later">We'll confirm the price after we prepare your file for printing.</p>
-              <p class="muted">Add a print time above if you'd like an estimate now.</p>
-            {:else if issues.length > 0}
-              <!-- Before the first submit attempt this names the blocker; after it, the message sits under the
-                   field, so the panel does not repeat it. -->
-              <p class="muted">{showErrors ? "Fix the fields marked above to see a price." : issues[0]?.message}</p>
-            {:else}
-              <p class="muted">Choose a material and add a weight and print time to see a price.</p>
-            {/if}
+                </p>
+                <p>Solidity is how solid the print is inside: 100% is fully solid, and most prints are 15 to 25%.</p>
+                <Field id="quote-solidity" label="Solidity (%)" size="xs" error={marked("solidity") ? issueMessage("solidity") : undefined}>
+                  {#snippet children(f)}
+                    <input
+                      id={f.id}
+                      type="number"
+                      min="5"
+                      max="100"
+                      step="1"
+                      bind:value={solidityInput}
+                      aria-invalid={f.invalid}
+                      aria-describedby={f.describedby}
+                    />
+                  {/snippet}
+                </Field>
+              </details>
+              {@render timeFields("quote-time-hint")}
+              <small class="field-hint" id="quote-time-hint">
+                Optional. If you don't know the print time, leave this blank and we'll confirm the price by email.
+              </small>
+            </div>
+            <button type="button" class="quiet remove-file" onclick={clearFile}>Remove file and enter values manually</button>
+          {:else}
+            <div class="manual-entry">
+              <Field
+                id="quote-weight"
+                label="Model weight (g)"
+                size="s"
+                hint="Optional if you upload a 3D file above."
+                error={marked("weight") ? issueMessage("weight") : undefined}
+              >
+                {#snippet children(f)}
+                  <input
+                    id={f.id}
+                    type="number"
+                    min="0"
+                    max={MAX_WEIGHT_G}
+                    step="0.01"
+                    bind:value={weightG}
+                    aria-invalid={f.invalid}
+                    aria-describedby={f.describedby}
+                  />
+                {/snippet}
+              </Field>
+              {@render timeFields("quote-time-hint")}
+              <small class="field-hint" id="quote-time-hint">
+                Optional if you upload a 3D file above: we'll confirm the print time and price by email.
+              </small>
+            </div>
+          {/if}
+
+          <VisitorReset nameId="quote-name" />
+          <Field id="quote-name" label="Name" error={nameError}>
+            {#snippet children(f)}
+              <input
+                id={f.id}
+                type="text"
+                autocomplete="name"
+                bind:value={visitor.name}
+                maxlength={NAME_MAX_BYTES}
+                required
+                aria-invalid={f.invalid}
+                aria-describedby={f.describedby}
+              />
+            {/snippet}
+          </Field>
+          <Field id="quote-email" label="Email" error={emailError}>
+            {#snippet children(f)}
+              <input
+                id={f.id}
+                type="email"
+                autocomplete="email"
+                inputmode="email"
+                bind:value={visitor.email}
+                maxlength={EMAIL_MAX_BYTES}
+                required
+                aria-invalid={f.invalid}
+                aria-describedby={f.describedby}
+              />
+            {/snippet}
+          </Field>
+          <Field id="quote-note" label="Note (optional)" error={noteError}>
+            {#snippet children(f)}
+              <textarea
+                id={f.id}
+                bind:value={note}
+                maxlength={NOTE_MAX_BYTES}
+                rows="3"
+                aria-invalid={f.invalid}
+                aria-describedby={f.describedby}
+              ></textarea>
+            {/snippet}
+          </Field>
+        </div>
+
+        <!-- The submission block: the price, the shipping note, any errors, the follow-up note and the action
+             stay together, so what the customer agrees to sits next to the button that sends it. -->
+        <Card tone="inset">
+          <div class="estimate submit-block" role="group" aria-labelledby="estimate-label">
+            <h2 class="section-label" id="estimate-label">{priceHeading}</h2>
+            <!-- One persistent live region whose content changes, announced as a whole, so the settled price
+                 is spoken (WCAG 4.1.3). "Updating" is aria-hidden: it would chatter on every keystroke. -->
+            <div aria-live="polite" aria-atomic="true">
+              {#if previewState.status === "resolved"}
+                <p class="price">
+                  {formatMoney(previewState.priceCents, cfg.currency)}
+                  {#if quantity !== null && quantity > 1}
+                    {@const unitCents = perUnitCents(previewState.priceCents, quantity)}
+                    {#if unitCents !== null}
+                      <span class="per-unit"> &middot; {formatMoney(unitCents, cfg.currency)} each</span>
+                    {/if}
+                  {/if}
+                </p>
+                <p class="meta">
+                  {printTimeLabel} print time{#if previewState.shippingCents > 0}
+                    · + {formatMoney(previewState.shippingCents, cfg.currency)} shipping{/if}
+                </p>
+              {:else if previewState.status === "pending"}
+                <!-- Quiet, not alarming: covers both the ~350ms debounce wait and the round trip, so it shows
+                     for most of a keystroke's lifetime (one state in quotePreview.ts). -->
+                <p class="muted" aria-hidden="true">Updating estimate…</p>
+              {:else if previewState.status === "error"}
+                {#each previewState.errors as e (e)}<p class="warn-text">{e}</p>{/each}
+              {:else if priceWaitingOnShop}
+                <p class="price-later">We'll confirm the price after we prepare your file for printing.</p>
+                <p class="muted">Add a print time above if you'd like an estimate now.</p>
+              {:else if issues.length > 0}
+                <!-- Before the first submit attempt this names the blocker; after it, the message sits under the
+                     field, so the panel does not repeat it. -->
+                <p class="muted">{showErrors ? "Fix the fields marked above to see a price." : issues[0]?.message}</p>
+              {:else}
+                <p class="muted">Choose a material and add a weight and print time to see a price.</p>
+              {/if}
+            </div>
+            <p class="muted shipping-note">{shop.shippingNote || "Shipping, if any, is confirmed by email."}</p>
+            {#if shop.turnaroundNote}<p class="muted turnaround-note">{shop.turnaroundNote}</p>{/if}
+
+            <!-- Persistent alert container (text swapped in), with a plain list inside: role="alert" on a <ul>
+                 would remove its list semantics (WCAG 1.3.1, 4.1.3). -->
+            <div role="alert">
+              {#if visibleRateLimited}
+                <RateLimitNotice branding={cfg.branding} />
+              {/if}
+              <FormErrorSummary problems={summaryProblems} />
+              {#if visibleServerErrors.length > 0}
+                <ul class="error-list">
+                  {#each new Set(visibleServerErrors) as e (e)}<li class="warn-text">{e}</li>{/each}
+                </ul>
+              {/if}
+            </div>
+
+            <p id="estimate-submit-note" class="submit-note">You won't be charged now. We'll review your request and follow up by email.</p>
+            <button type="submit" class="primary" class:busy={submitting} aria-disabled={submitting ? "true" : undefined} aria-describedby="estimate-submit-note">
+              {waitingForPrice ? "Updating price…" : submitting ? "Submitting…" : "Request an estimate"}
+            </button>
           </div>
-          <p class="muted shipping-note">Shipping, if any, is confirmed by email.</p>
-        </div>
-
-        <!-- Persistent alert container (text swapped in), with a plain list inside: role="alert" on a <ul>
-             would remove its list semantics (WCAG 1.3.1, 4.1.3). -->
-        <div role="alert">
-          {#if visibleRateLimited}
-            <RateLimitNotice branding={cfg.branding} />
-          {/if}
-          <FormErrorSummary problems={summaryProblems} />
-          {#if visibleServerErrors.length > 0}
-            <ul class="error-list">
-              {#each new Set(visibleServerErrors) as e (e)}<li class="warn-text">{e}</li>{/each}
-            </ul>
-          {/if}
-        </div>
-
-        <p id="estimate-submit-note" class="submit-note">You won't be charged now. We'll review your request and follow up by email.</p>
-        <button type="submit" class="primary" class:busy={submitting} aria-disabled={submitting ? "true" : undefined} aria-describedby="estimate-submit-note">
-          {waitingForPrice ? "Updating price…" : submitting ? "Submitting…" : "Request an estimate"}
-        </button>
-      </form>
+        </Card>
+      </Card>
     {/if}
 
-    <PublicFooter branding={cfg.branding} staffUrl={cfg.staffUrl} />
   {/if}
 </main>
+{#if cfg && phase === "ready"}
+  <PublicFooter branding={cfg.branding} staffUrl={cfg.staffUrl} footerLinks={shop.footerLinks} showContact={!closedPageShown} />
+{/if}
 
 <style>
+  .copy-ref { align-self: center; }
   .page {
-    /* 760px, centered: 40rem read as wasted space on desktop with the gallery grid above the form.
-     * Narrower than 1440px, and at 390px the padding constrains it (no horizontal scroll). */
-    max-width: 760px;
+    /* The narrow reading column: the record measure plus the card padding, so a card's text keeps the
+     * same line length as a record view. Narrower than the viewport on a phone, where the padding constrains it. */
+    max-width: calc(var(--measure-record) + 2 * var(--card-pad));
     margin: 0 auto;
     padding: var(--space-4);
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: var(--gap);
   }
   .center { text-align: center; margin-top: var(--space-8); }
   .muted { color: var(--muted); }
@@ -1414,9 +1654,26 @@
     gap: var(--space-3);
   }
   .brand .logo { height: 2.5rem; width: auto; }
-  .brand h1 { margin: 0; }
+  .brand h1 { margin: 0; overflow-wrap: anywhere; min-width: 0; }
+  /* Logo and name are one link; the look is unchanged apart from a hover underline and a focus ring. */
+  .brand-link { display: inline-flex; align-items: center; gap: var(--space-3); color: inherit; text-decoration: none; min-height: 44px; border-radius: var(--radius); }
+  .brand-link:hover .brand-name { text-decoration: underline; text-underline-offset: 0.15em; }
+  .brand-link:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 3px; }
 
   .intro { color: var(--muted); margin: 0; }
+  .shop-heading { margin: 0; overflow-wrap: anywhere; }
+  .shop-announcement {
+    margin: 0;
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius);
+    background: var(--card-bg);
+    border-inline-start: 4px solid var(--accent);
+    overflow-wrap: anywhere;
+  }
+  /* The note and its contact details; nothing renders (and no gap) while it is empty. */
+  .route-note { color: var(--muted); font-size: var(--type-secondary); }
+  .route-note:empty { display: none; }
+  .route-note p { margin: 0 0 var(--space-2); }
 
   /* Segmented Gallery/Custom estimate toggle. Rendered only when items is non-empty and at least one
    * material is public, so a server with no public items gets no extra layout and no Custom tab that
@@ -1435,19 +1692,23 @@
     border-radius: calc(var(--radius) / 2);
   }
   .view-toggle button.active {
-    background: var(--surface);
+    background: var(--card-bg);
     box-shadow: var(--shadow);
     font-weight: 600;
   }
 
-  form.card, .confirmation {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
+  /* The form card stacks its fields, then the submission block, on the density gap. */
+  .fields { display: flex; flex-direction: column; gap: var(--gap); margin-bottom: var(--gap); }
+  /* Focused fields and buttons scroll clear of the viewport edge, so the ring isn't clipped at the bottom. */
+  .fields :global(:is(input, select, textarea, button, summary, canvas)), .drop { scroll-margin: var(--space-4); }
+  .confirmation { display: flex; flex-direction: column; gap: var(--space-3); text-align: center; }
+  .submit-block { display: flex; flex-direction: column; gap: var(--space-2); text-align: center; }
+  .submit-block h2 { margin: 0; }
 
   .drop {
     border: 2px dashed var(--control-border);
+    border-radius: var(--radius);
+    background: var(--inset-bg);
     text-align: center;
     min-height: 44px;
     padding: var(--space-3);
@@ -1467,17 +1728,17 @@
     display: block;
     cursor: pointer;
     text-align: left;
-    font-size: var(--text-sm);
+    font-size: var(--type-secondary);
     color: var(--muted);
     line-height: 1.45;
   }
   .drop label strong {
     color: var(--text);
-    font-size: var(--text-base);
+    font-size: var(--type-body);
   }
   .status {
     margin: var(--space-2) 0 0;
-    font-size: var(--text-sm);
+    font-size: var(--type-secondary);
     min-height: 1.2em;
   }
   .status.ok { color: var(--ok); }
@@ -1485,7 +1746,7 @@
   .status.invalid-profile, .status.incomplete { color: var(--warn); }
 
   .parsed-meta {
-    font-size: var(--text-sm);
+    font-size: var(--type-secondary);
     color: var(--muted);
     font-variant-numeric: tabular-nums;
     margin: 0;
@@ -1495,28 +1756,40 @@
   .manual-entry {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
+    gap: var(--gap);
   }
-  .time-pair { display: flex; align-items: center; gap: 0.6rem; }
-  .time-input { display: inline-flex; align-items: center; gap: 0.3rem; }
-  .time-pair input { width: 4.5rem; }
+  .time-pair { display: flex; align-items: center; gap: var(--space-3); }
+  .time-input { display: inline-flex; align-items: center; gap: var(--space-1); }
+  .time-pair input { width: var(--field-xs); }
 
   textarea { resize: vertical; }
 
-  .estimate { text-align: center; }
   .estimate .price, .confirmation .price {
-    font-size: var(--text-xl);
+    font-size: var(--type-title);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     margin: var(--space-1) 0;
   }
-  .estimate .meta { color: var(--muted); font-size: var(--text-sm); margin: 0; }
-  .confirmation { text-align: center; }
+  .estimate .meta { color: var(--muted); font-size: var(--type-secondary); margin: 0; }
+  .conf-region { display: flex; flex-direction: column; gap: var(--space-3); scroll-margin-top: var(--space-3); }
+  /* A script focus target that moves the reading position, not a control: no ring (as for tabindex="-1" headings). */
+  .conf-region:focus-visible { outline: none; }
+  .conf-region > * { margin: 0; }
+  .conf-nav { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
   .confirmation .ref { margin: 0; font-variant-numeric: tabular-nums; }
-  .confirmation .ref strong { display: block; font-size: var(--text-xl); letter-spacing: 0.04em; }
-  .confirmation .ref-hint { color: var(--muted); font-size: var(--text-sm); margin: 0; }
-  .not-you { align-self: flex-start; }
+  .confirmation .ref strong { display: block; font-size: var(--type-title); letter-spacing: 0.04em; }
+  .confirmation .ref-hint { color: var(--muted); font-size: var(--type-secondary); margin: 0; }
   .confirmation .order-summary { font-weight: 600; margin: 0; }
+  .paused-note {
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius);
+    background: var(--card-bg);
+    border-inline-start: 4px solid var(--warn);
+    overflow-wrap: anywhere;
+  }
+  .paused-note p { margin: 0; }
+  .paused-note p + p { margin-top: var(--space-1); }
+  .confirmation > * { margin-top: 0; margin-bottom: 0; }
 
   /* Wraps the restored (post-reload) gallery item-order confirmation; same "back" affordance as
    * ItemOrderPanel's .panel/.back, scoped here because a restored confirmation has no live PublicItem to
@@ -1528,40 +1801,44 @@
   }
   .panel .back { align-self: flex-start; }
 
-  /* Shop-identity footer, shown only when config carries email, phone or address (all optional, see
-   * api.ts's PublicConfig.branding). Quiet: a courtesy footer, not another call to action. */
-
-  .clamp-notice { color: var(--warn); font-size: var(--text-sm); margin: 0.3rem 0 0; }
+  .clamp-notice { color: var(--warn); font-size: var(--type-secondary); margin: 0; }
   /* The persistent live regions render empty most of the time; drop their margins then so they take no room. */
-  .clamp-notice:empty, .status:empty, .advisory-text:empty { margin: 0; min-height: 0; }
-  .error-list { list-style: none; margin: 0; padding: 0; }
-  .error-list li { margin: 0.2rem 0; }
+  .clamp-notice:empty { margin-block-start: calc(-1 * var(--gap)); }
+  .status:empty, .advisory-text:empty { margin: 0; min-height: 0; }
+  .error-list { list-style: none; margin: 0; padding: 0; text-align: left; }
+  .error-list li { margin: var(--space-1) 0; }
   .view-heading { margin: 0; }
   /* Long unbroken strings (an email in "We'll follow up at ...", a reference id) must wrap at 320px. */
   .confirmation p { overflow-wrap: anywhere; }
   /* In flight: aria-disabled keeps focus on the button, so the busy look is visual only. */
   button.busy { opacity: 0.6; cursor: progress; }
-  .submit-note { color: var(--muted); font-size: var(--text-sm); margin: 0; }
+  .submit-note { color: var(--muted); font-size: var(--type-secondary); margin: 0; }
   .per-unit { color: var(--muted); font-weight: 400; }
-  .route-note:empty { display: none; }
-  .meta { color: var(--muted); font-size: var(--text-sm); margin: 0; }
-  .next-steps { color: var(--muted); font-size: var(--text-sm); margin: 0; }
+  .meta { color: var(--muted); font-size: var(--type-secondary); margin: 0; }
+  .next-steps { color: var(--muted); font-size: var(--type-secondary); margin: 0; }
   .price-later { margin: var(--space-1) 0; font-weight: 600; }
-  .shipping-note { margin: var(--space-1) 0 0; font-size: var(--text-sm); }
-  .field-hint { color: var(--muted); font-size: var(--text-sm); }
+  .shipping-note, .turnaround-note { margin: 0; font-size: var(--type-secondary); }
+  .field-hint { color: var(--muted); font-size: var(--type-secondary); }
   .field-hint:empty { display: none; }
-  .model-size { color: var(--muted); font-size: var(--text-sm); margin: 0; font-variant-numeric: tabular-nums; }
+  .model-size { color: var(--muted); font-size: var(--type-secondary); margin: 0; font-variant-numeric: tabular-nums; }
   .choose-file.invalid { border-color: var(--danger); }
   .choose-row { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2); flex-wrap: wrap; text-align: left; }
-  .chosen-name { color: var(--muted); font-size: var(--text-sm); overflow-wrap: anywhere; min-width: 0; }
-  .inline-link { min-height: 0; padding: 0 0.25rem; display: inline; }
-  .how-estimated { font-size: var(--text-sm); }
-  .how-estimated summary { cursor: pointer; padding: 0.4rem 0; min-height: 24px; }
+  .chosen-name { color: var(--muted); font-size: var(--type-secondary); overflow-wrap: anywhere; min-width: 0; }
+  .inline-link { min-height: 0; padding: 0 var(--space-1); display: inline; }
+  .how-estimated { font-size: var(--type-secondary); }
+  .how-estimated summary { cursor: pointer; padding: var(--space-1) 0; min-height: 24px; }
   .how-estimated p { margin: var(--space-1) 0; color: var(--muted); }
-  .how-estimated .field { margin-top: var(--space-2); }
+  .how-estimated :global(.ui-field) { margin-top: var(--space-2); }
   @media (max-width: 600px) {
+    /* The shop header takes less of a phone's first screen, so at least one item shows without scrolling. */
+    .page { padding: var(--space-3); }
+    .brand .logo { height: 2rem; }
+    .brand h1 { font-size: var(--type-title); }
+    .shop-heading { font-size: var(--type-heading); }
+    .intro { font-size: var(--type-secondary); }
+    .shop-announcement { padding: var(--space-2) var(--space-3); font-size: var(--type-secondary); }
     /* 44 px tap targets on phones (the app-wide quiet button is 32 px). */
-    .back, .remove-file, .inline-link, .confirmation .quiet, .not-you { min-height: 44px; }
+    .back, .remove-file, .inline-link, .confirmation .quiet { min-height: 44px; }
     .how-estimated summary { min-height: 44px; display: flex; align-items: center; }
   }
 </style>

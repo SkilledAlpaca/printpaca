@@ -1,19 +1,20 @@
 <script lang="ts">
   import { tick } from "svelte";
   import type { EffectiveConfig, OrderBreakdown } from "../lib/engine/index";
-  import { quote, partLabel } from "../lib/state.svelte";
+  import { quote } from "../lib/state.svelte";
   import { money } from "../lib/format";
   import { quoteSummaryStats } from "../lib/quoteSummary";
-  import { quoteBlockers, needSentence } from "../lib/quoteBlockers";
+  import { needSentence } from "../lib/quoteBlockers";
   import { goToBlocker } from "../lib/goToBlocker";
-  import { stickyInset } from "../lib/stickyInset";
-  import SlicerHelp from "./SlicerHelp.svelte";
+  import { currentBlockers } from "../lib/currentBlockers";
+  import { findFieldByLabel } from "../lib/fieldErrors";
 
   let {
     cfg,
     order,
     previewStatus = "idle",
     previewError = "",
+    variant = "full",
   }: {
     cfg: EffectiveConfig;
     order: OrderBreakdown;
@@ -21,22 +22,15 @@
     previewStatus?: string;
     /** The full message to show while previewStatus is "error". */
     previewError?: string;
+    /** "full" is the summary column; "compact" is the headline numbers for the pinned bottom bar. */
+    variant?: "full" | "compact";
   } = $props();
-
-  // Whether the bar is pinned (the media query in the style block): it then reserves its height for focus.
-  let sticky = $state(false);
-  $effect(() => {
-    const mq = matchMedia("(min-width: 700px) and (min-height: 600px)");
-    const sync = () => (sticky = mq.matches);
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  });
 
   // "Updating price…" appears only once the preview has been pending for PENDING_DELAY_MS, so a fast round trip
   // (the usual case while stepping a field) never flashes text. The slot below is always rendered, so showing
   // or hiding the text never changes the page height.
   const PENDING_DELAY_MS = 300;
+  const PRICE_FIELD_WAIT_MS = 3000;
   let pendingVisible = $state(false);
   $effect(() => {
     if (previewStatus !== "pending") {
@@ -53,59 +47,93 @@
   // Why the cost shows "-": the first blank field, named here so the reason sits next to the number instead of
   // in a message further down. Print time wins because it is what a model file never supplies.
   const missing = $derived(
-    quoteBlockers(order, quote.parts.map((p, i) => partLabel(p, i))).filter((b) => b.missing),
+    currentBlockers(order).filter((b) => b.missing),
   );
   const need = $derived(missing.find((b) => b.field === "timeHours" || b.field === "timeMinutes") ?? missing[0]);
-  const needsTime = $derived(need !== undefined && (need.field === "timeHours" || need.field === "timeMinutes"));
   const needText = $derived(needSentence(missing));
+  // The pinned bar is one short line, not the whole list: the count, or the one thing missing. The full list
+  // stays in the expanded summary.
+  const compactNeed = $derived(
+    missing.length === 1 ? `Needs ${needText.replace(/^Price needs /, "")}.` : `Needs ${missing.length} more values.`,
+  );
 
-  // Opens the pricing panel and scrolls to it: the panel can be several tiles down, so a click that only
-  // flips the toggle leaves the bar visibly unchanged.
+  // Turns selling on, scrolls to the Price section, and focuses its price target (the Margin or Markup value,
+  // whichever the strategy uses): the section can be several tiles down, so a click that only flipped the
+  // switch would leave the summary visibly unchanged.
   async function setPrice() {
     quote.order.sellingEnabled = true;
     await tick();
     const card = document.getElementById("pricing-card");
     card?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
     // preventScroll: a plain .focus() jumps instantly and cancels the smooth scroll started above.
-    card?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.focus({ preventScroll: true });
+    // The strategy fields render once the price preview has answered, so wait for them briefly; the switch itself
+    // takes focus when they don't come.
+    const find = () => (card ? (findFieldByLabel("Margin", card) ?? findFieldByLabel("Markup", card)) : null);
+    let target = find();
+    for (let waited = 0; !target && waited < PRICE_FIELD_WAIT_MS; waited += 50) {
+      await new Promise((r) => setTimeout(r, 50));
+      target = find();
+    }
+    (target ?? card?.querySelector<HTMLInputElement>('input[type="checkbox"]'))?.focus({ preventScroll: true });
   }
 </script>
 
-<div class="card summary" role="group" aria-label="Quote summary" use:stickyInset={{ edge: "top", active: sticky }}>
-  <div class="group">
-    <span class="section-label">Your cost</span>
-    <div class="cost-stats">
-      <div class="stat cost">
-        <span class="stat-label">{order.parts.length > 1 ? `Order of ${order.parts.length} parts` : s.quantity > 1 ? `Batch of ${s.quantity}` : "This print"}</span>
-        <span class="stat-value">{s.costCents !== null ? money(s.costCents, cfg) : "-"}</span>
-      </div>
-      {#if s.quantity > 1}
-        <div class="stat per-unit">
-          <span class="stat-label">Per unit</span>
-          <span class="stat-value">{s.costCents !== null ? money(order.parts[0]?.breakdown.perUnitTotal ?? 0, cfg) : "-"}</span>
-        </div>
-      {/if}
-    </div>
-    <!-- The line is always reserved, so a field filling in doesn't pull the cards below it upward. -->
-    <div class="cost-need">
-      {#if need}
+{#snippet needLink()}
+  {#if need}
+    <a
+      href="#main"
+      onclick={(e) => {
+        e.preventDefault();
+        if (need) void goToBlocker(need);
+      }}>{needText}</a>
+  {/if}
+{/snippet}
+
+{#if variant === "compact"}
+  <div class="compact">
+    {#if s.pricingEnabled}
+      <span class="compact-stat"><span class="stat-label">Price</span> <strong>{s.priceCents !== null ? money(s.priceCents, cfg) : "-"}</strong></span>
+      <span class="compact-stat" class:loss><span class="stat-label">Profit</span> <strong>{s.profitCents !== null ? money(s.profitCents, cfg) : "-"}</strong></span>
+    {:else}
+      <span class="compact-stat"><span class="stat-label">Cost</span> <strong>{s.costCents !== null ? money(s.costCents, cfg) : "-"}</strong></span>
+    {/if}
+    {#if need}
+      <span class="compact-need">
+        {compactNeed}
         <a
           href="#main"
+          aria-label={`Show ${need.label}`}
           onclick={(e) => {
             e.preventDefault();
-            void goToBlocker(need);
-          }}>{needText}</a>
-        {#if needsTime}<SlicerHelp />{/if}
-      {/if}
-    </div>
+            if (need) void goToBlocker(need);
+          }}>Show</a>
+      </span>
+    {/if}
   </div>
-  <div class="group sell">
-    <span class="section-label">Client price</span>
+{:else}
+  <div class="summary-stats">
+    <div class="group">
+      <span class="section-label">{s.pricingEnabled ? "Client price" : "Your cost"}</span>
+      {#if s.pricingEnabled}
+        <span class="stat-value headline">{s.priceCents !== null ? money(s.priceCents, cfg) : "-"}</span>
+      {:else}
+        <div class="cost-stats"><div class="stat cost"><span class="stat-value headline">{s.costCents !== null ? money(s.costCents, cfg) : "-"}</span></div></div>
+      {/if}
+      <span class="context">{order.parts.length > 1 ? `Order of ${order.parts.length} parts` : s.quantity > 1 ? `Batch of ${s.quantity}` : "This print"}</span>
+    </div>
     {#if s.pricingEnabled}
       <div class="stats">
-        <div class="stat">
-          <span class="stat-label">Price</span>
-          <span class="stat-value">{s.priceCents !== null ? money(s.priceCents, cfg) : "-"}</span>
+        <div class="cost-stats">
+          <div class="stat cost">
+            <span class="stat-label">Your cost</span>
+            <span class="stat-value">{s.costCents !== null ? money(s.costCents, cfg) : "-"}</span>
+          </div>
+          {#if s.quantity > 1}
+            <div class="stat per-unit">
+              <span class="stat-label">Per unit</span>
+              <span class="stat-value">{s.costCents !== null ? money(order.parts[0]?.breakdown.perUnitTotal ?? 0, cfg) : "-"}</span>
+            </div>
+          {/if}
         </div>
         <div class="stat" class:loss>
           <span class="stat-label">Profit</span>
@@ -117,66 +145,60 @@
         </div>
       </div>
     {:else}
-      <button type="button" class="set-price" onclick={setPrice}>
-        Set a price
-      </button>
+      {#if s.quantity > 1}
+        <div class="stat per-unit">
+          <span class="stat-label">Per unit</span>
+          <span class="stat-value">{s.costCents !== null ? money(order.parts[0]?.breakdown.perUnitTotal ?? 0, cfg) : "-"}</span>
+        </div>
+      {/if}
+      <button type="button" class="set-price" onclick={setPrice}>Set a client price</button>
     {/if}
+    <!-- One reserved line for the missing-field notice and the "Updating price…" status, so neither shifts what is
+         below it. The status region stays in the DOM so screen readers announce its text changes; the error is
+         a separate alert. -->
+    <div class="notice">
+      {#if need}
+        <div class="cost-need">{@render needLink()}</div>
+      {/if}
+      <p class="status-text" role="status">{pendingVisible ? "Updating price…" : ""}</p>
+      {#if previewStatus === "error" && previewError}
+        <p class="status-text status-error" role="alert">{previewError}</p>
+      {/if}
+    </div>
   </div>
-  <!-- Fixed-height status slot (always rendered, text swaps, height doesn't): a status line that came and went
-       above the cards shifted everything below on every keystroke. The status region stays in the DOM so
-       screen readers announce its text changes; the error is a separate alert. -->
-  <div class="status-slot">
-    <p class="status-text" role="status">{pendingVisible ? "Updating price…" : ""}</p>
-    {#if previewStatus === "error" && previewError}
-      <p class="status-text status-error" role="alert">{previewError}</p>
-    {/if}
-  </div>
-</div>
+{/if}
 
 <style>
-  .summary {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: stretch;
-    gap: 1rem 2rem;
-    margin-bottom: 0.75rem;
-    /* Stays in view while the Print and Costs fields scroll under it, so the missing-field message and the
-     * running total are always next to the field being filled in. Sticks to the scrollport's top. */
-    z-index: 3;
+  .summary-stats { display: flex; flex-direction: column; gap: var(--gap); }
+  .compact { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-4); font-variant-numeric: tabular-nums; }
+  .compact-stat strong { font-size: var(--type-heading); }
+  /* Never more than two lines of text, however much is missing. */
+  .compact-need {
+    font-size: var(--type-secondary);
+    flex: 1 1 100%;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
   }
-  /* Only where there is room: on a short or narrow window a tall pinned bar would cover the fields. */
-  @media (min-width: 700px) and (min-height: 600px) {
-    .summary { position: sticky; top: 0; }
-  }
-  /* One line tall at all times (the --text-sm line box), spanning the card's full width. An error message may
-   * wrap onto more lines on a narrow screen; that is the one case the slot grows. */
-  .status-slot { flex: 0 0 100%; min-height: calc(var(--text-sm) * 1.5); margin-top: -0.4rem; }
-  .status-text { margin: 0; font-size: var(--text-sm); line-height: 1.5; color: var(--muted); }
-  .status-text.status-error { color: var(--danger); }
-  .group { display: flex; flex-direction: column; gap: 0.3rem; }
-  .cost-need { min-height: calc(var(--text-sm) * 1.5); font-size: var(--text-sm); }
-  .group.sell {
-    border-left: 1px solid var(--border);
-    padding-left: 2rem;
-    flex: 1;
-  }
-  /* The left border is a column divider while the groups share a row; when the bar wraps it is a top rule. */
-  @media (max-width: 640px) {
-    .group.sell { border-left: none; border-top: 1px solid var(--border); padding-left: 0; padding-top: 0.6rem; }
-  }
-  .stats { display: flex; flex-wrap: wrap; gap: 1rem 2rem; }
-  .cost-stats { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 1.5rem; }
-  .stat { display: flex; flex-direction: column; gap: 0.15rem; min-width: 90px; }
-  .stat-label { font-size: var(--text-sm); color: var(--muted); }
-  .stat-value { font-size: var(--text-xl); font-weight: 700; font-variant-numeric: tabular-nums; }
-  .stat.cost .stat-value { font-size: var(--text-2xl); }
-  .stat.per-unit { min-width: 0; color: var(--muted); }
-  .stat.per-unit .stat-value { font-size: var(--text-sm); font-weight: 600; }
+  .stat-label { font-size: var(--type-secondary); color: var(--muted); }
+  .compact-stat.loss strong { color: var(--danger); }
+  .group { display: flex; flex-direction: column; gap: var(--space-1); }
+  .stat-value.headline { font-size: var(--text-2xl); font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .context { font-size: var(--type-secondary); color: var(--muted); }
+  /* Your cost, profit and margin under the headline: smaller, in tabular figures so they line up. */
+  .stats { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-2) var(--space-6); font-variant-numeric: tabular-nums; }
+  .cost-stats { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-6); }
+  .stats > .cost-stats { display: contents; }
+  .stat { display: flex; flex-direction: column; gap: var(--space-1); }
+  .stat-value { font-size: var(--type-heading); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat.per-unit { color: var(--muted); }
+  .stat.per-unit .stat-value { font-size: var(--type-body); font-weight: 600; }
   .stat.loss .stat-value { color: var(--danger); }
-  .group.sell button { align-self: flex-start; }
-  .set-price {
-    background: transparent;
-    border-color: var(--accent);
-    color: var(--accent-text);
-  }
+  .notice { display: flex; flex-direction: column; gap: var(--space-1); }
+  .cost-need { font-size: var(--type-secondary); }
+  .status-text { margin: 0; font-size: var(--type-secondary); line-height: 1.5; color: var(--muted); }
+  .status-text.status-error { color: var(--danger); }
+  .set-price { align-self: flex-start; }
 </style>

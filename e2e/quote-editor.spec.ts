@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { fillCanonicalQuote, historyRow, navButton } from "./helpers";
+import { fillCanonicalQuote, historyRow, navButton, openBreakdown } from "./helpers";
 import AxeBuilder from "@axe-core/playwright";
 import { geometryOnly3mf } from "./geometry3mf";
 
@@ -42,14 +42,13 @@ test("New quote opens blank after a save and a hand-typed print time doesn't sur
   await expect(page.getByLabel("Solidity")).toBeVisible();
   await expect(page.getByLabel(/^Print time \(h/)).toHaveValue("");
 
-  // The cost bar says why the cost is missing, links to the field, and explains "slicer" on demand.
+  // The cost bar says why the cost is missing and links to the field.
   const need = page.getByRole("group", { name: "Quote summary" }).getByRole("link", { name: /Price needs a print time/ });
   await expect(need).toBeVisible();
   await need.click();
   await expect(page.getByLabel(/^Print time \(h/)).toBeFocused();
-  const help = page.getByRole("group", { name: "Quote summary" }).getByText("What is a slicer?");
-  await help.click();
-  await expect(page.getByRole("group", { name: "Quote summary" }).getByText(/turns a 3D model into instructions/)).toBeVisible();
+  // The slicer box is gone; the Guide explains the word.
+  await expect(page.getByText("What is a slicer?")).toHaveCount(0);
 });
 
 test("a saved quote is edited under its own heading, stays bound after a save, and loads from its URL", async ({ page }) => {
@@ -57,10 +56,10 @@ test("a saved quote is edited under its own heading, stays bound after a save, a
   await page.goto("/admin/");
   const id = await saveCanonical(page, label);
 
-  // Saving bound the form: heading, label and sidebar follow the saved quote.
+  // Saving bound the form: heading and label follow the saved quote; the sidebar stays on the route's own tab (A4).
   await expect(page.getByRole("heading", { level: 1, name: `Edit quote: ${label}` })).toBeVisible();
-  await expect(navButton(page, "Quotes")).toHaveAttribute("aria-current", "page");
-  await expect(navButton(page, "New quote")).not.toHaveAttribute("aria-current", "page");
+  await expect(navButton(page, "New quote")).toHaveAttribute("aria-current", "page");
+  await expect(navButton(page, "Quotes")).not.toHaveAttribute("aria-current", "page");
 
   // A second Ctrl+S updates the same quote; it must not create another row.
   await page.getByLabel(/Model weight/).fill("55");
@@ -205,6 +204,7 @@ test("the print fields are one skip link away, and every Costs input has a name"
 
 test("the cost lines explain themselves and a batch total says how it relates to the unit cost", async ({ page }) => {
   await page.goto("/admin/");
+  await openBreakdown(page);
   await fillCanonicalQuote(page);
   await page.getByLabel(/Quantity/).fill("3");
   await expect(page.getByText("Printer wear: its price spread over its lifespan")).toBeVisible();

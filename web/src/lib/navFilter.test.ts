@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab, type NavSection } from "./navFilter";
+import { brandTab, fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab, type NavSection } from "./navFilter";
 
-type Tab = "quote" | "quotes" | "requests" | "filament" | "settings" | "guide";
+type Tab = "quote" | "dashboard" | "quotes" | "requests" | "filament" | "settings" | "guide";
 
 const SECTIONS: NavSection<Tab>[] = [
   { label: "Sell", items: ["quote", "quotes", "requests"] },
@@ -79,5 +79,27 @@ describe("firstNavTab", () => {
 
   it("returns null once every section has emptied out", () => {
     expect(firstNavTab([])).toBeNull();
+  });
+});
+
+describe("brandTab", () => {
+  const WITH_DASHBOARD: NavSection<Tab>[] = [
+    { label: "Sell", items: ["quote", "dashboard", "quotes", "requests"] },
+    { label: "Shop", items: ["filament"] },
+    { label: null, items: ["settings"] },
+  ];
+  it("prefers the Dashboard when the nav has it, wherever it sits", () => {
+    expect(brandTab(WITH_DASHBOARD, "dashboard")).toBe("dashboard");
+  });
+
+  it("falls back to the first nav tab when the Dashboard is hidden or not granted", () => {
+    const filtered = filterNavSections(WITH_DASHBOARD, new Set(["dashboard"]));
+    expect(brandTab(filtered, "dashboard")).toBe("quote");
+    const quotesOnly = filterNavSections(WITH_DASHBOARD, new Set(["dashboard", "quote", "requests", "filament", "settings"]));
+    expect(brandTab(quotesOnly, "dashboard")).toBe("quotes");
+  });
+
+  it("returns null once every section has emptied out", () => {
+    expect(brandTab([], "dashboard")).toBeNull();
   });
 });

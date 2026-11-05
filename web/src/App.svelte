@@ -16,6 +16,12 @@
     mdiInboxOutline,
     mdiFileDocumentMultipleOutline,
     mdiLogout,
+    mdiFormatLineSpacing,
+    mdiWeatherNight,
+mdiWhiteBalanceSunny,
+    mdiCheck,
+    mdiInformationOutline,
+    mdiClose,
     mdiOpenInNew,
     mdiStorefrontOutline,
     mdiMenu,
@@ -31,6 +37,8 @@
   import { loadRequests } from "./lib/requestsApi";
   import { listInvoices } from "./lib/invoicesApi";
   import { signOutAction } from "./lib/accessSignIn";
+  import { density, toggleDensity } from "./lib/density.svelte";
+  import { theme, toggleTheme, syncThemeFromDocument } from "./lib/theme.svelte";
   import { applyConfig, appConfig, effectiveConfig, printJob, invoicePrintJob, quoteActions, pendingOpen, quoteSession, startNewQuote, quoteIsDirty } from "./lib/state.svelte";
   import {
     demoLocal,
@@ -48,10 +56,10 @@
   import { pageSave, runPageSave } from "./lib/pageShortcuts.svelte";
   import { unsavedForm } from "./lib/unsavedForm.svelte";
   import { unreadRequests, refreshUnread } from "./lib/requestsBadge.svelte";
-  import { fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab } from "./lib/navFilter";
+  import { brandTab, fallbackIfDisabled, filterNavSections, firstNavTab, resolveHashTab } from "./lib/navFilter";
   import { loadPublicConfig } from "./public/api";
-  import { splitHash, quoteRouteBase, quoteIdFromHash } from "./lib/hashRoute";
-  import { focusAfterUpdate } from "./lib/a11y.svelte";
+  import { splitHash, routeBase, quoteIdFromHash } from "./lib/hashRoute";
+  import { focusAfterUpdate, announce } from "./lib/a11y.svelte";
   import { pageTitle as pageTitleState } from "./lib/pageTitle.svelte";
   import LiveAnnouncer from "./components/LiveAnnouncer.svelte";
   import Icon from "./components/Icon.svelte";
@@ -134,7 +142,7 @@
     const { base } = splitHash(hash);
     // A hash naming a disabled tab resolves to null like an unrecognized one; every caller already falls back
     // from null (Quote on initial load, no-op on hashchange).
-    return resolveHashTab(quoteRouteBase(base), HASH_TABS, disabledTabs);
+    return resolveHashTab(routeBase(base), HASH_TABS, disabledTabs);
   }
 
   // Hands a deep-linked invoice/request/client id to the tab about to mount via pendingOpen (state.svelte.ts)
@@ -452,6 +460,85 @@
     else void logout();
   }
 
+  // Sign out confirms in place. The first click swaps the button for a split control (cancel, confirm).
+  // It reverts on Escape, a click elsewhere, or 5 seconds without activity; the timer restarts whenever focus or
+  // a key press lands inside the control, so a keyboard user is not rushed. Focus goes to the confirm button on
+  // the first click and back to Sign out on a revert.
+  const SIGN_OUT_CONFIRM_MS = 5000;
+  let confirmingSignOut = $state(false);
+  let signOutTimer: ReturnType<typeof setTimeout> | undefined;
+  let signOutBtnEl = $state<HTMLButtonElement | undefined>();
+  let signOutGroupEl = $state<HTMLElement | undefined>();
+  let signOutConfirmEl = $state<HTMLButtonElement | undefined>();
+
+  function armSignOutTimer() {
+    clearTimeout(signOutTimer);
+    signOutTimer = setTimeout(() => cancelSignOut(), SIGN_OUT_CONFIRM_MS);
+  }
+
+  function startSignOutConfirm() {
+    confirmingSignOut = true;
+    armSignOutTimer();
+    void focusAfterUpdate(() => signOutConfirmEl);
+  }
+
+  function cancelSignOut() {
+    if (!confirmingSignOut) return;
+    clearTimeout(signOutTimer);
+    // Move focus back only when it is inside the control (or lost because the control is about to unmount);
+    // a user who already moved on elsewhere keeps their place.
+    const active = document.activeElement;
+    const refocus = !active || active === document.body || (signOutGroupEl?.contains(active) ?? false);
+    confirmingSignOut = false;
+    announce("Sign out cancelled");
+    if (refocus) void focusAfterUpdate(() => signOutBtnEl);
+  }
+
+  $effect(() => {
+    if (!confirmingSignOut) return;
+    function onPointerDown(e: PointerEvent) {
+      if (!signOutGroupEl?.contains(e.target as Node)) cancelSignOut();
+    }
+    function onKeydown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      // Escape belongs to the confirmation first; it must not also close the phone drawer behind it.
+      e.stopPropagation();
+      cancelSignOut();
+    }
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeydown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeydown, true);
+      clearTimeout(signOutTimer);
+    };
+  });
+
+  // The control belongs to one footer layout at a time; a collapse or resize remounts it, so reset.
+  $effect(() => {
+    void navCollapsed;
+    untrack(() => {
+      if (confirmingSignOut) {
+        confirmingSignOut = false;
+        clearTimeout(signOutTimer);
+      }
+    });
+  });
+
+  // The sidebar Theme toggle. In the demo the banner's Theme select persists its own copy, so the toggle
+  // writes through to it and the sidebar re-reads <html> when the select changes.
+  // The button names the theme it switches to.
+  const themeLabel = $derived(theme.current === "dark" ? "Light mode" : "Dark mode");
+  function onToggleTheme() {
+    const next = toggleTheme();
+    if (demoMode) setDemoTheme(next);
+    announce(next === "dark" ? "Dark mode on" : "Light mode on");
+  }
+  $effect(() => {
+    void demoLocal.theme;
+    void tick().then(syncThemeFromDocument);
+  });
+
   async function logout() {
     try {
       await fetch("api/logout", { method: "POST", signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS) });
@@ -488,6 +575,7 @@
     requests: "requests-filter",
     items: "items-filter",
     filament: "spool-filter",
+    guide: "guide-search",
   };
   let filterPresent = $state(false);
   $effect(() => {
@@ -544,7 +632,7 @@
   // drawer, the same markup. "guide" is absent on purpose: it is reached from the sidebar footer link (in the
   // drawer too), so it stays reachable at every width; #/guide remains a valid Tab and deep link.
   const NAV_SECTIONS: { label: string | null; items: Tab[] }[] = [
-    { label: "Sell", items: ["quote", "quotes", "requests", "invoices", "items", "clients", "dashboard"] },
+    { label: "Sell", items: ["quote", "dashboard", "quotes", "requests", "invoices", "items", "clients"] },
     { label: "Costs", items: ["filament", "electricity", "printers"] },
     { label: null, items: ["settings"] },
   ];
@@ -556,9 +644,9 @@
   const navHidden = $derived(new Set([...disabledTabs, ...ungrantedTabs(Object.keys(TABS) as Tab[], configUser)]));
   const navSections = $derived(filterNavSections(NAV_SECTIONS, navHidden));
 
-  // The sidebar item that is "you are here". A saved quote open in the editor belongs to Quotes, not to New
-  // quote, so the highlight (and aria-current) follows the quote's home when that item is in the nav.
-  const navCurrent = $derived<Tab>(tab === "quote" && quoteSession.loadedId !== null && !navHidden.has("quotes") ? "quotes" : tab);
+  // The sidebar item that is "you are here": the tab the address is on. A saved quote open in the editor is
+  // still at #/quote/<id>, so the highlight stays on New quote after a save instead of jumping to Quotes (A4).
+  const navCurrent = $derived<Tab>(tab);
 
   // The sidebar's New quote starts a blank quote (asking first when the open one has unsaved edits), then goes
   // to the editor. Other ways into the editor (Back, the Requests tab's Open in quote, a saved quote's link)
@@ -613,13 +701,6 @@
     })();
   });
 
-  const spoolmanEnabled = $derived(appConfig.current?.integrations.spoolman === true);
-  const moonrakerConfigured = $derived(appConfig.current?.moonraker === true);
-  // Integration status is for people who can use or change the integration: an admin, or a user holding a
-  // grant for a page that depends on it (Spoolman: the spool picker on New quote, the Filament page;
-  // Moonraker: Recent prints on New quote). Anyone else would see status they can't act on.
-  const showSpoolmanLine = $derived(hasTabAccess("quote", configUser) || hasTabAccess("filament", configUser));
-  const showMoonrakerLine = $derived(hasTabAccess("quote", configUser));
   const versionLabel = $derived(appConfig.current?.version ? `printpaca ${appConfig.current.version}` : "printpaca dev");
   // DEMO_MODE=1 server-side (server/main.go), a plain field on the loaded config like authEnabled.
   const demoMode = $derived(config?.demoMode === true);
@@ -692,8 +773,9 @@
   let failedLogoUrl = $state("");
   const brandLogoSrc = $derived(brandSource?.logoUrl && brandSource.logoUrl !== failedLogoUrl ? brandSource.logoUrl : logoUrl);
 
-  // The brand link goes to the first tab in the nav (New quote for most people), like the Home link on a site.
-  const homeTab = $derived(firstNavTab(navSections) ?? "quote");
+  // The brand link goes to the Dashboard for anyone whose nav has it, else to the first tab in their nav
+  // (New quote for most people), like the Home link on a site.
+  const homeTab = $derived(brandTab(navSections, "dashboard") ?? "quote");
   // Moves focus to the view's h1 (tabindex -1 so it can take script focus), the same landing spot a screen
   // reader user gets from the skip link's neighbours. activate() has already closed the drawer and queued its
   // own focus on <main>; this runs after the new tab has rendered and refines it.
@@ -743,7 +825,7 @@
          visible text plus the unread count below (WCAG 1.3.1, 2.5.3). -->
     <span class="label" class:visually-hidden={collapsed}>{TABS[id].label}</span>
     {#if id === "requests" && unreadRequests.count > 0}
-      <span class="unread-pill">{unreadRequests.count}<span class="visually-hidden"> unread requests</span></span>
+      <span class="unread-pill" title="All new requests, including those that need a print time">{unreadRequests.count}<span class="visually-hidden"> unread requests</span></span>
     {/if}
   </button>
 {/snippet}
@@ -877,46 +959,83 @@
     {/if}
   </nav>
   <div class="sidebar-footer">
-    <!-- Only configured integrations get a line; an unconfigured one is status the owner already knows
-         and never acts on here. Renders nothing when neither is configured. -->
-    {#if spoolmanEnabled && showSpoolmanLine}
-      <div class="integration-line" title={navCollapsed ? "Spoolman configured" : undefined}>
-        <span class="dot ok" aria-hidden="true"></span>
-        {#if !navCollapsed}<span>Spoolman configured</span>{:else}<span class="visually-hidden">Spoolman configured</span>{/if}
-      </div>
-    {/if}
-    {#if moonrakerConfigured && showMoonrakerLine}
-      <div class="integration-line" title={navCollapsed ? "Moonraker configured" : undefined}>
-        <span class="dot ok" aria-hidden="true"></span>
-        {#if !navCollapsed}<span>Moonraker configured</span>{:else}<span class="visually-hidden">Moonraker configured</span>{/if}
-      </div>
-    {/if}
-    {#if !navCollapsed}
+    <div class="footer-actions" class:rail={navCollapsed}>
       {#if !disabledTabs.has("guide")}
         <button
           type="button"
-          class="guide-footer-link"
+          class="footer-btn"
           class:active={tab === "guide"}
           aria-current={tab === "guide" ? "page" : undefined}
+          aria-label={navCollapsed ? "Guide" : undefined}
+          title={navCollapsed ? "Guide" : undefined}
           onclick={() => activate("guide")}
-        >Guide</button>
-      {/if}
-      {#if signOut}
-        <button type="button" class="guide-footer-link" onclick={signOutNow}>{signOut.label}</button>
-      {/if}
-      <div class="version-line">{versionLabel}</div>
-    {:else}
-      {#if !disabledTabs.has("guide")}
-        <button type="button" class="guide-footer-icon" aria-label="Guide" onclick={() => activate("guide")}>
+        >
           <Icon path={mdiBookOpenVariant} size={16} />
+          {#if !navCollapsed}<span>Guide</span>{/if}
         </button>
       {/if}
       {#if signOut}
-        <button type="button" class="guide-footer-icon" aria-label={signOut.label} onclick={signOutNow}>
-          <Icon path={mdiLogout} size={16} />
-        </button>
+        {#if !confirmingSignOut}
+          <button
+            type="button"
+            class="footer-btn"
+            bind:this={signOutBtnEl}
+            aria-label={navCollapsed ? signOut.label : undefined}
+            title={navCollapsed ? signOut.label : undefined}
+            onclick={startSignOutConfirm}
+          >
+            <Icon path={mdiLogout} size={16} />
+            {#if !navCollapsed}<span>{signOut.label}</span>{/if}
+          </button>
+        {:else}
+          <!-- Split control: cancel (red, left) and confirm (green, right). Each has an icon, a name, and a
+               color, so color is never the only cue. -->
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <div
+            class="signout-split"
+            class:rail={navCollapsed}
+            role="group"
+            aria-label="Confirm sign out"
+            bind:this={signOutGroupEl}
+            onfocusin={armSignOutTimer}
+            onkeydown={armSignOutTimer}
+          >
+            <button type="button" class="footer-btn cancel" aria-label="Cancel sign out" title="Cancel sign out" onclick={cancelSignOut}>
+              <Icon path={mdiClose} size={16} />
+              {#if !navCollapsed}<span>Cancel</span>{/if}
+            </button>
+            <button type="button" class="footer-btn confirm" bind:this={signOutConfirmEl} aria-label="Confirm sign out" title="Confirm sign out" onclick={signOutNow}>
+              <Icon path={mdiCheck} size={16} />
+              {#if !navCollapsed}<span>Confirm</span>{/if}
+            </button>
+          </div>
+        {/if}
       {/if}
-    {/if}
+    </div>
+    <!-- Admin-only, per browser (localStorage). The public pages never read either. -->
+    <div class="footer-prefs" class:rail={navCollapsed} role="group" aria-label="Display preferences">
+      <button
+        type="button"
+        class="footer-btn"
+        aria-label="Compact density"
+        aria-pressed={density.current === "compact"}
+        title={navCollapsed ? "Compact density" : undefined}
+        onclick={toggleDensity}
+      >
+        <Icon path={mdiFormatLineSpacing} size={16} />
+        {#if !navCollapsed}<span>Compact</span>{/if}
+      </button>
+      <button
+        type="button"
+        class="footer-btn"
+        aria-label={themeLabel}
+        title={navCollapsed ? themeLabel : undefined}
+        onclick={onToggleTheme}
+      >
+        <Icon path={theme.current === "dark" ? mdiWhiteBalanceSunny : mdiWeatherNight} size={16} />
+        {#if !navCollapsed}<span>{themeLabel}</span>{/if}
+      </button>
+    </div>
     {#if isDesktop}
       <!-- Icon-only collapsing is a desktop concept: below 900px the drawer is near full width (see
            navCollapsed), where icons would save no space and the toggle would be one more control to
@@ -930,6 +1049,18 @@
         <Icon path={sidebarCollapsed ? mdiChevronRight : mdiChevronLeft} size={16} />
         {#if !sidebarCollapsed}<span>Collapse sidebar</span>{/if}
       </button>
+    {/if}
+    <!-- The page footer's line lives here, next to the version. The rail hides the line and keeps the
+         version as a tooltip. -->
+    {#if !navCollapsed}
+      <div class="about">
+        <span class="version-line">{versionLabel} · open source</span>
+      </div>
+    {:else}
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <span class="version-rail" role="img" tabindex="0" aria-label={versionLabel} title={versionLabel}>
+        <Icon path={mdiInformationOutline} size={16} />
+      </span>
     {/if}
   </div>
 </aside>
@@ -984,22 +1115,19 @@
   {:else if tab === "items"}
     <ItemsTab cfg={config} />
   {:else if tab === "requests"}
-    <RequestsTab cfg={config} onOpenInQuote={() => activate("quote")} onOpenInvoice={() => activate("invoices")} />
+    <RequestsTab cfg={config} user={configUser} onOpenInQuote={() => activate("quote")} onOpenInvoice={() => activate("invoices")} />
   {:else if tab === "dashboard"}
     <DashboardTab cfg={config} />
   {:else}
     <SettingsTab />
   {/if}
 
-  <footer>
-    <span>printpaca, an open-source 3D print cost and quote calculator.</span>
-    <!-- Lists only the shortcuts that work on the current page: {shortcutMod}+S where an editor registered a
-         save, {shortcutMod}+K where the page has a filter input (see FILTER_IDS). Lives in the page footer,
-         not the sidebar's, so the sidebar keeps room for every destination on short windows. -->
-    {#if shortcutHints.length > 0}
-      <div class="shortcuts-line">Shortcuts: {shortcutHints.join(", ")}</div>
-    {/if}
-  </footer>
+  <!-- Lists only the shortcuts that work on the current page: {shortcutMod}+S where an editor registered a
+       save, {shortcutMod}+K where the page has a filter input (see FILTER_IDS). The admin has no page footer
+      ; the hint is a line at the end of the content. -->
+  {#if shortcutHints.length > 0}
+    <p class="shortcuts-line">Shortcuts: {shortcutHints.join(", ")}</p>
+  {/if}
   </div>
 </main>
 
@@ -1030,16 +1158,16 @@
   .skip-link {
     position: absolute;
     top: -3rem;
-    left: 0.5rem;
+    left: var(--space-2);
     z-index: 200;
-    padding: 0.5rem 1rem;
+    padding: var(--space-2) var(--space-4);
     background: var(--accent);
     color: var(--accent-contrast);
     border-radius: var(--radius);
     transition: top 0.15s ease;
   }
   .skip-link:focus {
-    top: 0.5rem;
+    top: var(--space-2);
   }
 
   /* Edge-to-edge strip, not an inset card like .banner-muted's other callers: no radius, centered text,
@@ -1050,7 +1178,7 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 0.3rem var(--space-2);
+    gap: var(--space-1) var(--space-2);
     border-radius: 0;
     border-width: 0 0 1px;
     text-align: center;
@@ -1064,7 +1192,7 @@
     display: inline-flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 0.4rem;
+    gap: var(--space-2);
   }
   /* Overrides the app-wide select { min-height: 44px } (a class beats a type selector): the banner is a
    * thin strip, so its controls read as compact inline pickers (like button.quiet's --tap-sm). */
@@ -1074,14 +1202,14 @@
     font-size: var(--text-xs);
   }
 
+  /* The phone top bar and the sidebar share one tint: --surface on the --bg page, no outline. */
   header {
-    display: flex; align-items: center; gap: 0.75rem;
-    padding: 0.6rem 1rem;
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
     background: var(--surface);
-    border-bottom: 1px solid var(--border);
   }
-  .brand { display: flex; align-items: center; gap: 0.5rem; color: inherit; text-decoration: none; min-width: 0; border-radius: var(--radius); }
-  .brand .brand-name { font-size: 1.25rem; font-weight: 700; margin: 0; overflow-wrap: anywhere; }
+  .brand { display: flex; align-items: center; gap: var(--space-2); color: inherit; text-decoration: none; min-width: 0; border-radius: var(--radius); }
+  .brand .brand-name { font-size: var(--type-heading); font-weight: 700; margin: 0; overflow-wrap: anywhere; }
   .brand:hover .brand-name { text-decoration: underline; }
   .logo { height: 40px; width: auto; display: block; }
 
@@ -1093,8 +1221,8 @@
     align-items: center;
     justify-content: center;
     min-width: 44px;
-    gap: 0.35rem;
-    padding: 0 0.6rem;
+    gap: var(--space-1);
+    padding: 0 var(--space-3);
     border: none;
     background: none;
     border-radius: var(--radius);
@@ -1109,10 +1237,10 @@
    * drawer it opens (see the hamburger markup for why it is a dot). */
   .hamburger-badge {
     position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 8px;
-    height: 8px;
+    top: var(--space-2);
+    right: var(--space-2);
+    width: var(--space-2);
+    height: var(--space-2);
     border-radius: 50%;
     background: var(--accent);
   }
@@ -1134,8 +1262,8 @@
   .side-nav {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
-    margin-top: 0.5rem;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
     overflow-y: auto;
     min-height: 0;
     background:
@@ -1144,7 +1272,7 @@
       radial-gradient(farthest-side at 50% 0, rgb(0 0 0 / 28%), transparent) top / 100% 0.6rem no-repeat scroll,
       radial-gradient(farthest-side at 50% 100%, rgb(0 0 0 / 28%), transparent) bottom / 100% 0.6rem no-repeat scroll;
   }
-  .nav-group { display: flex; flex-direction: column; gap: 0.15rem; }
+  .nav-group { display: flex; flex-direction: column; gap: var(--space-1); }
   .side-nav button, .side-nav a.nav-external { width: 100%; }
   /* Fluidd's external link: same box model and spacing as the nav buttons (shares their
    * border-left/padding/gap rules), plus a text-decoration reset since it is an <a>. */
@@ -1157,11 +1285,12 @@
     /* A transparent 3px border-left reserves the active indicator's space on every button, so activating
      * one doesn't shift the icon and label. */
     border: none; border-left: 3px solid transparent;
-    background: none; padding: 0.4rem 0.8rem 0.4rem calc(0.8rem - 3px); border-radius: var(--radius);
+    background: none; padding: var(--space-1) var(--space-3); border-radius: var(--radius);
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--space-2);
   }
+  .side-nav button:hover, .side-nav a.nav-external:hover { background: var(--surface-2); }
   .side-nav button.active {
     background: var(--surface-2);
     font-weight: 600;
@@ -1172,8 +1301,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 1.1rem;
-    padding: 0 0.3rem;
+    min-width: var(--space-5);
+    padding: 0 var(--space-1);
     border-radius: 999px;
     background: var(--accent);
     color: var(--accent-contrast);
@@ -1190,7 +1319,7 @@
   }
   .nav-section-label:first-child { padding-top: 0; }
 
-  /* 1280px, not the viewport: past roughly this width a card becomes a band with its contents stranded at
+  /* --content-max (1440px), not the viewport: past roughly this width a card becomes a band with its contents stranded at
    * one end (summary stats, list names, a drop zone's one line). The Guide already capped its measure for
    * this reason; this applies the cap to every tab. Below ~1500px viewports nothing changes. */
   /* Sticky bars can cover a focused field in the scroll container (WCAG 2.4.11). The Settings jump nav (top),
@@ -1202,22 +1331,26 @@
     scroll-padding-top: calc(var(--demo-banner-h, 0px) + var(--sticky-top-h, 0px) + 1rem);
     scroll-padding-bottom: calc(var(--sticky-bottom-h, 0px) + 1rem);
   }
-  /* <main> spans its whole grid cell so a wheel or a scrollbar works anywhere across the width; the 1280px cap,
+  /* <main> spans its whole grid cell so a wheel or a scrollbar works anywhere across the width; the 1440px cap,
    * centring and padding live on this inner wrapper. <main> has no padding of its own, so a sticky bar at
    * top: 0 sits flush with the scrollport edge instead of 1rem below it. */
-  .main-inner { max-width: 1280px; margin: 0 auto; padding: 1rem clamp(1rem, 2vw, 2rem); }
+  .main-inner { max-width: var(--content-max); margin: 0 auto; padding: var(--space-4); }
+  @media (min-width: 900px) {
+    .main-inner { padding-inline: var(--space-6); }
+  }
   /* theme.css's global :focus-visible outline draws outside the element (outline-offset: 2px); #app clips
    * overflow, so on <main> (the skip-link target and scroll container) it gets cut into a stray partial
    * line. Pull the ring inward. */
   #main:focus-visible { outline-offset: -2px; }
-  /* Lives inside <main> as its last child, not a separate grid row: content ends where it ends and the
-   * footer follows, instead of a fixed row pinning it to the viewport bottom with a void above on short
-   * pages. The top border/margin separate it. No max-width or horizontal margin of its own: it's already
-   * inside <main>'s, and adding them would double the indent versus every card. */
-  footer {
-    margin-top: 1.5rem;
-    padding: 1rem 0;
-    border-top: 1px solid var(--border);
+  /* Script focus (skip link, nav activation, the brand link) lands on <main> and on view headings, all
+   * tabindex="-1": targets for moving the reading position, not controls. Chromium still matches
+   * :focus-visible for them when the trigger was the keyboard, which framed the whole content area in a ring.
+   * They take no ring; real controls (and Guide's tabindex="0" scroll region) keep theme.css's. */
+  #main[tabindex="-1"]:focus-visible { outline: none; }
+  /* The shortcut hint is the last line of <main>'s content (the admin has no page footer). */
+  .shortcuts-line {
+    margin: var(--space-6) 0 0;
+    padding: var(--space-4) 0;
     color: var(--muted);
     font-size: var(--text-xs);
   }
@@ -1233,12 +1366,11 @@
       position: fixed;
       inset-block: 0;
       left: 0;
-      width: min(280px, 85vw);
+      width: var(--drawer-w);
       z-index: 200;
-      padding: 1rem 0.75rem;
-      gap: 0.5rem;
+      padding: var(--space-4) var(--space-3);
+      gap: var(--space-2);
       background: var(--surface);
-      border-right: 1px solid var(--border);
       overflow: hidden;
       transform: translateX(-100%);
       transition: transform 0.2s ease;
@@ -1259,89 +1391,72 @@
   .sidebar-footer {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin-top: auto;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--border);
+    padding-top: var(--space-3);
   }
-  /* Named .integration-line, not .status-line: theme.css's .status-line is the shared live-region class
-   * (verifying…, saving…), and this static Spoolman dot + text isn't a live region, so reusing the name
-   * would be a collision. */
-  .integration-line {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--muted);
-    font-size: var(--text-xs);
-  }
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--border);
-    flex-shrink: 0;
-  }
-  .dot.ok { background: var(--ok); }
-  /* Accent-colored and underlined, unlike the muted status lines around it, so it reads as an actionable
-   * link. align-self: flex-start sizes the click target to its text (sidebar-footer is a column flex
-   * container, where buttons stretch); min-height brings the target nearer a reasonable tap size. */
-  .guide-footer-link {
-    align-self: flex-start;
+  /* Footer buttons (Guide, Sign out, Density, Theme): small tinted buttons, each with an icon and a name. The
+   * rail keeps the icon alone, with the name as its aria-label and tooltip. */
+  .footer-actions, .footer-prefs { display: flex; flex-direction: column; gap: var(--space-1); }
+  .footer-prefs { flex-direction: row; }
+  .footer-prefs.rail { flex-direction: column; }
+  /* Content-sized then shared, and never wrapping: "Light mode" is wider than "Compact". */
+  .footer-prefs > .footer-btn { flex: 1 1 auto; min-width: 0; white-space: nowrap; padding-inline: var(--space-2); }
+  .footer-btn {
     display: inline-flex;
     align-items: center;
-    min-height: 24px;
+    justify-content: flex-start;
+    gap: var(--space-2);
+    min-height: var(--tap-sm);
+    padding: 0 var(--space-3);
     border: none;
-    background: none;
-    padding: 0;
-    text-align: left;
-    color: var(--accent-text);
-    text-decoration: underline;
-    font-size: var(--text-xs);
-    cursor: pointer;
-  }
-  .guide-footer-link:hover { color: var(--text); }
-  /* The same "this is where you are" affordance as the nav buttons (.side-nav button.active), adapted for a
-   * text link: bold weight and solid --text color instead of a background fill, which would look out of
-   * place on this thin footer link. */
-  .guide-footer-link.active {
-    font-weight: 700;
+    border-radius: var(--radius);
+    background: var(--surface-2);
     color: var(--text);
-  }
-  /* Collapsed-sidebar counterpart: same destination, icon-only like the nav buttons' collapsed treatment,
-   * since there is no room for a text link. */
-  .guide-footer-icon {
-    align-self: flex-start;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border: none;
-    background: none;
-    padding: 0;
-    color: var(--muted);
+    font-size: var(--text-xs);
     cursor: pointer;
   }
-  .guide-footer-icon:hover { color: var(--text); }
-  .version-line { color: var(--muted); font-size: var(--text-xs); }
+  .footer-btn:hover { outline: 1px solid var(--control-border); }
+  .footer-btn.active,
+  .footer-btn[aria-pressed="true"] {
+    font-weight: 700;
+    box-shadow: inset 3px 0 0 var(--accent-text);
+  }
+  .footer-actions.rail .footer-btn,
+  .footer-prefs.rail .footer-btn { justify-content: center; padding: 0; width: 100%; }
+  /* Sign out confirmation. Status colors are the --danger and --ok tokens, which pass contrast as text on
+   * --surface-2 in both themes (axe checks both); the icon and the word carry the meaning as well as the color. */
+  .signout-split { display: flex; gap: var(--space-1); }
+  .signout-split.rail { flex-direction: column; }
+  .signout-split .footer-btn { flex: 1 1 0; min-width: 0; justify-content: center; font-weight: 600; border: 1px solid currentColor; }
+  .signout-split .cancel { color: var(--danger); }
+  .signout-split .confirm { color: var(--ok); }
+  /* One muted line below caption size, never wrapping. */
+  .about { color: var(--muted); font-size: var(--type-micro); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .version-rail { align-self: center; color: var(--muted); display: inline-flex; padding: var(--space-1); }
+  .version-line { font-variant-numeric: tabular-nums; }
+  /* Phone drawer: every footer control is a 44px touch target. */
+  @media (max-width: 600px) {
+    .footer-btn { min-height: 44px; }
+    .collapse-toggle { min-height: 44px; }
+  }
   /* Short windows (1366x768 and 1366x860 laptops): tighter nav rows and footer so every destination, Settings included,
    * fits without scrolling. The nav still scrolls, with its shadow, below this. */
   @media (min-width: 900px) and (max-height: 900px) {
     .side-nav { gap: 0; }
-    .side-nav button, .side-nav a.nav-external { padding-block: 0.2rem; min-height: 32px; }
-    .nav-section-label { padding-block: 0.4rem 0.15rem; }
-    .sidebar { padding-block: 0.6rem; gap: 0.25rem; }
-    .sidebar-footer { gap: 0.25rem; padding-top: 0.4rem; }
+    .side-nav button, .side-nav a.nav-external { padding-block: 0; min-height: var(--tap-sm); }
+    .nav-section-label { padding-block: var(--space-2) 0; }
+    .sidebar { padding-block: var(--space-3); gap: var(--space-1); }
+    .sidebar-footer { gap: var(--space-1); padding-top: var(--space-2); }
   }
-  .shortcuts-line { color: var(--muted); font-size: var(--text-xs); }
   .collapse-toggle {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-2);
     align-self: flex-start;
     border: none;
     background: none;
-    padding: 0.3rem 0.4rem;
+    padding: var(--space-1) var(--space-2);
     border-radius: var(--radius);
     color: var(--muted);
     font-size: var(--text-xs);
@@ -1383,11 +1498,10 @@
       display: flex;
       flex-direction: column;
       grid-area: side;
-      width: 220px;
-      padding: 1rem 0.75rem;
-      gap: 0.5rem;
+      width: var(--sidebar-w);
+      padding: var(--space-4) var(--space-3);
+      gap: var(--space-2);
       background: var(--surface);
-      border-right: 1px solid var(--border);
       /* 100% of the grid row, NOT 100vh: with the demo banner rendered the "side main" row is viewport
        * height minus the banner, so a 100vh sidebar overflows it. #app's overflow:hidden clips that
        * visually but leaves programmatic scroll range, so scrollIntoView (guide anchor jumps) scrolled #app
@@ -1395,12 +1509,12 @@
       height: 100%;
       overflow: hidden;
     }
-    .sidebar.collapsed { width: 64px; padding: 1rem 0.5rem; }
+    .sidebar.collapsed { width: var(--sidebar-w-collapsed); padding: var(--space-4) var(--space-2); }
     .sidebar.collapsed .brand { justify-content: center; }
     /* .side-nav's base rule (shared with the drawer) already has overflow-y: auto, so the nav list scrolls
      * internally when it outgrows the viewport, keeping the footer below it reachable; nothing is added
      * here. */
-    .sidebar.collapsed .side-nav button, .sidebar.collapsed .side-nav a.nav-external { justify-content: center; padding: 0.4rem; }
+    .sidebar.collapsed .side-nav button, .sidebar.collapsed .side-nav a.nav-external { justify-content: center; padding: var(--space-1); }
     /* The scrolling region: everything taller than the viewport (the tab's content, then the page footer)
      * scrolls inside <main> instead of the page, which keeps the sidebar pinned. <main> fills its grid
      * cell (the scrollbar sits at the window edge); .main-inner caps and centres the content. min-width: 0

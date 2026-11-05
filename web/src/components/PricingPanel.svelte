@@ -1,13 +1,15 @@
 <script lang="ts">
   import type { EffectiveConfig, OrderBreakdown } from "../lib/engine/index";
-  import { quote, partLabel, type PartForm } from "../lib/state.svelte";
-  import { quoteBlockers, type QuoteBlocker } from "../lib/quoteBlockers";
+  import { quote, type PartForm } from "../lib/state.svelte";
+  import { type QuoteBlocker } from "../lib/quoteBlockers";
   import { goToBlocker } from "../lib/goToBlocker";
+  import { currentBlockers } from "../lib/currentBlockers";
   import { money, warnFor, friendlyMessage, feeScheduleDisplayName } from "../lib/format";
   import { otherPricingWarnings, partPricingWarning } from "../lib/orderView";
   import LabeledNumber from "./LabeledNumber.svelte";
-  import CardHelp from "./CardHelp.svelte";
-  import { TILE_HELP } from "../lib/guideContent";
+  import Fieldset from "./ui/Fieldset.svelte";
+  import Field from "./ui/Field.svelte";
+  import FormGrid from "./ui/FormGrid.svelte";
 
   // `part` is the part whose sale price override the field edits (the active part); the rest is order-level.
   let { cfg, order, part, partIndex }: { cfg: EffectiveConfig; order: OrderBreakdown; part: PartForm; partIndex: number } = $props();
@@ -20,9 +22,6 @@
   const pw = $derived(p?.warnings ?? []);
   const multi = $derived(order.parts.length > 1);
   const shippingDelta = $derived(p ? p.shippingCharge - p.shippingCost : 0);
-  // Guide is a Tab like any other: when disabled, App.svelte's hashchange fallback rewrites the link off the
-  // guide, so don't render it as if it went somewhere.
-  const guideEnabled = $derived(!cfg.ui.disabledTabs.includes("guide"));
 
   // Warnings whose field has no visible input (e.g. a zero-cost basis flags "perUnitTotal"; a bad
   // fee-schedule entry flags "feeSchedule") would be dropped; surface them here.
@@ -41,7 +40,7 @@
   // totals with 2+, so they are never read here.
   // What blocks pricing, by name. Each entry links to its input; "add" is for blank fields, "fix" for values
   // the server rejected. Empty only when nothing specific is known, which is when the generic line shows.
-  const blockers = $derived(quoteBlockers(order, quote.parts.map((x, i) => partLabel(x, i))));
+  const blockers = $derived(currentBlockers(order));
   const missingBlockers = $derived(blockers.filter((b) => b.missing));
   const invalidBlockers = $derived(blockers.filter((b) => !b.missing));
 
@@ -79,129 +78,124 @@
 {/snippet}
 
 <div class="card" id="pricing-card">
-  <div class="head-row with-help">
-    <h2>Price and profit</h2>
-    <CardHelp id="pricing" title="Price and profit" text={TILE_HELP.pricing} guideAnchor="margin-vs-markup" {guideEnabled} />
-  </div>
-  <label class="toggle">
-    <input type="checkbox" bind:checked={form.sellingEnabled} />
-    <span>Set a selling price</span>
-  </label>
+  <Fieldset legend="Price" step={3}>
+    <p class="hint">Turn your cost into a price.</p>
+    <label class="toggle">
+      <input type="checkbox" bind:checked={form.sellingEnabled} />
+      <span>Set a selling price</span>
+    </label>
 
-  {#if form.sellingEnabled && p}
-    <div class="field-rows">
-      <div class="field">
-        <label for={strategyId}>Pricing strategy</label>
-        <select id={strategyId} bind:value={form.strategy} aria-describedby="{strategyId}-help">
-          <option value="margin">Margin on price</option>
-          <option value="markup">Markup on cost</option>
-        </select>
-        <small id="{strategyId}-help" class="field-hint">
-          {form.strategy === "margin"
-            ? "Margin: the share of the selling price you keep as profit."
-            : "Markup: the selling price is your cost times a number."}
-        </small>
-      </div>
-      {#if form.strategy === "margin"}
-        <LabeledNumber label="Margin" suffix="%" bind:value={form.marginPct} warn={warnFor(pw, "marginPct")} help="30% means you keep 30 cents of every dollar charged, before fees." />
-      {:else}
-        <LabeledNumber label="Markup" suffix="×" step={0.1} bind:value={form.markupMultiplier} warn={warnFor(pw, "markupMultiplier")} help="2.5 means you charge 2.5 times what the print costs you." />
-      {/if}
-      <div class="field">
-        <label for={feeId}>Fee schedule</label>
-        <select id={feeId} bind:value={form.feeScheduleName} aria-describedby="{feeId}-help">
-          <option value="none">None (direct sale)</option>
-          {#each Object.keys(cfg.feeSchedules) as name (name)}<option value={name}>{feeScheduleDisplayName(name)}</option>{/each}
-        </select>
-        <small id="{feeId}-help" class="field-hint">Marketplace or payment fees, taken out of what the customer pays.</small>
-      </div>
+    {#if form.sellingEnabled && p}
+      <FormGrid align="controls">
+        <Field id={strategyId} label="Pricing strategy" hint={form.strategy === "margin" ? "Margin: the share of the selling price you keep as profit." : "Markup: the selling price is your cost times a number."} size="m">
+          {#snippet children(a)}
+            <select id={a.id} bind:value={form.strategy} aria-describedby={a.describedby}>
+              <option value="margin">Margin on price</option>
+              <option value="markup">Markup on cost</option>
+            </select>
+          {/snippet}
+        </Field>
+        {#if form.strategy === "margin"}
+          <LabeledNumber label="Margin" suffix="%" bind:value={form.marginPct} warn={warnFor(pw, "marginPct")} help="30% means you keep 30 cents of every dollar charged, before fees." />
+        {:else}
+          <LabeledNumber label="Markup" suffix="×" step={0.1} bind:value={form.markupMultiplier} warn={warnFor(pw, "markupMultiplier")} help="2.5 means you charge 2.5 times what the print costs you." />
+        {/if}
+        <LabeledNumber
+          label="Sale price override"
+          suffix={multi ? `per unit for ${part.label.trim() || `Part ${partIndex + 1}`}, blank = recommended` : "per unit, blank = recommended"}
+          bind:value={part.salePriceOverride}
+          warn={overrideWarn}
+        />
+      </FormGrid>
+
       <details class="more-pricing" bind:open={moreOpen}>
         <summary>More pricing options</summary>
-        <p class="field-hint">Tax and shipping. Leave them at zero if you don't charge them.</p>
-        <div class="field-rows">
-        <LabeledNumber label="Tax (included in price)" suffix="%" bind:value={form.taxRatePct} warn={warnFor(pw, "taxRatePct")} help="Sales tax added to the price. It is set aside, not counted as profit." />
-        <LabeledNumber label="Shipping charged" suffix="customer pays" bind:value={form.shippingCharge} warn={warnFor(pw, "shippingCharge")} help="What you charge the customer for shipping." />
-        <LabeledNumber label="Shipping cost" suffix="you pay" bind:value={form.shippingCost} warn={warnFor(pw, "shippingCost")} help="What the carrier charges you. The difference from the charge comes out of profit." />
-        </div>
+        <p class="hint">Fees, tax, and shipping. Leave tax and shipping at zero if you don't charge them.</p>
+        <FormGrid align="controls">
+          <Field id={feeId} label="Fee schedule" hint="Marketplace or payment fees, taken out of what the customer pays." size="m">
+            {#snippet children(a)}
+              <select id={a.id} bind:value={form.feeScheduleName} aria-describedby={a.describedby}>
+                <option value="none">None (direct sale)</option>
+                {#each Object.keys(cfg.feeSchedules) as name (name)}<option value={name}>{feeScheduleDisplayName(name)}</option>{/each}
+              </select>
+            {/snippet}
+          </Field>
+          <LabeledNumber label="Tax" suffix="%" bind:value={form.taxRatePct} warn={warnFor(pw, "taxRatePct")} help="Sales tax, included in the price. It is set aside, not counted as profit." />
+          <LabeledNumber label="Shipping charged" bind:value={form.shippingCharge} warn={warnFor(pw, "shippingCharge")} help="What you charge the customer for shipping." />
+          <LabeledNumber label="Shipping cost" bind:value={form.shippingCost} warn={warnFor(pw, "shippingCost")} help="What you pay the carrier. The difference from the charge comes out of profit." />
+        </FormGrid>
       </details>
-      <LabeledNumber
-        label="Sale price override"
-        suffix={multi ? `per unit for ${part.label.trim() || `Part ${partIndex + 1}`}, blank = recommended` : "per unit, blank = recommended"}
-        bind:value={part.salePriceOverride}
-        warn={overrideWarn}
-      />
-    </div>
 
-    {#if otherWarnings.length > 0}
-      <div class="pricing-warnings" role="alert">
-        {#each otherWarnings as w, i (`${w.field}-${w.code}-${i}`)}
-          <p class={w.severity === "warning" ? "advisory-text" : "warn-text"}>{friendlyMessage(w)}</p>
-        {/each}
-      </div>
-    {/if}
-
-    {#if shippingDelta < 0}
-      <p class="advisory-text">Shipping is undercharged by {money(-shippingDelta, cfg)}. The difference comes out of profit.</p>
-    {/if}
-
-    <p class="pricing-basis">
-      Priced by {p.strategy === "margin" ? "margin on price" : "markup on cost"}{overridden ? ", price overridden" : ""}
-    </p>
-
-    {#if !p.valid}
-      {#if blockers.length === 0}
-        <p class="warn-text">Pricing is incomplete. Fix the flagged fields above.</p>
-      {:else}
-        <div class="blockers warn-text">
-          {#if missingBlockers.length > 0}
-            <p>To price this quote, add: {@render blockerLinks(missingBlockers)}.</p>
-          {/if}
-          {#if invalidBlockers.length > 0}
-            <p>{missingBlockers.length > 0 ? "Also fix" : "To price this quote, fix"}: {@render blockerLinks(invalidBlockers)}.</p>
-          {/if}
+      {#if otherWarnings.length > 0}
+        <div class="pricing-warnings" role="alert">
+          {#each otherWarnings as w, i (`${w.field}-${w.code}-${i}`)}
+            <p class={w.severity === "warning" ? "advisory-text" : "warn-text"}>{friendlyMessage(w)}</p>
+          {/each}
         </div>
       {/if}
-    {/if}
-    <dl class="pricing-out measure-cap" class:invalid={!p.valid}>
-      {#if multi}
-        <div><dt>Recommended items total</dt><dd>{p.valid ? money(recommendedItems, cfg) : "-"}</dd></div>
-        {#if overridden}
-          <div><dt>Your items total</dt><dd>{p.valid ? money(order.itemRevenue, cfg) : "-"}</dd></div>
-        {/if}
-      {:else}
-        <div><dt>Recommended price (per unit)</dt><dd>{p.valid && first ? money(first.recommendedPrice, cfg) : "-"}</dd></div>
-        {#if overridden}
-          <div><dt>Your price</dt><dd>{p.valid && first ? money(first.resolvedPrice, cfg) : "-"}</dd></div>
+
+      {#if shippingDelta < 0}
+        <p class="advisory-text">Shipping is undercharged by {money(-shippingDelta, cfg)}. The difference comes out of profit.</p>
+      {/if}
+
+      <p class="pricing-basis">
+        Priced by {p.strategy === "margin" ? "margin on price" : "markup on cost"}{overridden ? ", price overridden" : ""}
+      </p>
+
+      {#if !p.valid}
+        {#if blockers.length === 0}
+          <p class="warn-text">Pricing is incomplete. Fix the flagged fields above.</p>
+        {:else}
+          <div class="blockers warn-text">
+            {#if missingBlockers.length > 0}
+              <p>To price this quote, add: {@render blockerLinks(missingBlockers)}.</p>
+            {/if}
+            {#if invalidBlockers.length > 0}
+              <p>{missingBlockers.length > 0 ? "Also fix" : "To price this quote, fix"}: {@render blockerLinks(invalidBlockers)}.</p>
+            {/if}
+          </div>
         {/if}
       {/if}
-      <div><dt>Revenue (including shipping)</dt><dd>{p.valid ? money(p.revenue, cfg) : "-"}</dd></div>
-      <div class="sub"><dt>Product cost</dt><dd>{p.valid ? minus(order.batchTotal) : "-"}</dd></div>
-      <div class="sub"><dt>Shipping cost</dt><dd>{p.valid ? minus(p.shippingCost) : "-"}</dd></div>
-      {#each p.feeLines as f, i (i)}
-        <div class="sub"><dt>Fee: {f.label}</dt><dd>{p.valid ? minus(f.amount) : "-"}</dd></div>
-      {/each}
-      {#if p.tax > 0}<div class="sub"><dt>Tax (included in price)</dt><dd>{p.valid ? minus(p.tax) : "-"}</dd></div>{/if}
-      <div class="net" class:loss={p.netProfit < 0}>
-        <dt>Net profit</dt>
-        <dd>{p.valid ? `${money(p.netProfit, cfg)} (${p.revenue > 0 ? `${p.achievedMarginPct.toFixed(1)}%` : "n/a"})` : "-"}</dd>
-      </div>
-    </dl>
-  {/if}
+      <dl class="pricing-out" class:invalid={!p.valid}>
+        {#if multi}
+          <div><dt>Recommended items total</dt><dd>{p.valid ? money(recommendedItems, cfg) : "-"}</dd></div>
+          {#if overridden}
+            <div><dt>Your items total</dt><dd>{p.valid ? money(order.itemRevenue, cfg) : "-"}</dd></div>
+          {/if}
+        {:else}
+          <div><dt>Recommended price (per unit)</dt><dd>{p.valid && first ? money(first.recommendedPrice, cfg) : "-"}</dd></div>
+          {#if overridden}
+            <div><dt>Your price</dt><dd>{p.valid && first ? money(first.resolvedPrice, cfg) : "-"}</dd></div>
+          {/if}
+        {/if}
+        <div><dt>Revenue (including shipping)</dt><dd>{p.valid ? money(p.revenue, cfg) : "-"}</dd></div>
+        <div class="sub"><dt>Product cost</dt><dd>{p.valid ? minus(order.batchTotal) : "-"}</dd></div>
+        <div class="sub"><dt>Shipping cost</dt><dd>{p.valid ? minus(p.shippingCost) : "-"}</dd></div>
+        {#each p.feeLines as f, i (i)}
+          <div class="sub"><dt>Fee: {f.label}</dt><dd>{p.valid ? minus(f.amount) : "-"}</dd></div>
+        {/each}
+        {#if p.tax > 0}<div class="sub"><dt>Tax (included in price)</dt><dd>{p.valid ? minus(p.tax) : "-"}</dd></div>{/if}
+        <div class="net" class:loss={p.netProfit < 0}>
+          <dt>Net profit</dt>
+          <dd>{p.valid ? `${money(p.netProfit, cfg)} (${p.revenue > 0 ? `${p.achievedMarginPct.toFixed(1)}%` : "n/a"})` : "-"}</dd>
+        </div>
+      </dl>
+    {/if}
+  </Fieldset>
 </div>
 
 <style>
-  .pricing-warnings { margin-top: 0.6rem; }
-  .pricing-warnings .warn-text { margin: 0.2rem 0; }
-  .blockers { margin-top: 0.6rem; }
-  .blockers p { margin: 0.2rem 0; }
-  .pricing-basis { margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--muted); }
-  .pricing-out { margin: 0.8rem 0 0; }
-  .pricing-out div { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0; border-top: 1px solid var(--border); }
-  .pricing-out .sub dt { color: var(--muted); padding-left: 0.8rem; }
-  .pricing-out .net { font-weight: 700; font-size: 1.05rem; }
+  .toggle { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--control-h); width: fit-content; }
+  .pricing-warnings .warn-text, .blockers p { margin: var(--space-1) 0; }
+  .pricing-basis { margin: 0; font-size: var(--type-secondary); color: var(--muted); }
+  .pricing-out { margin: 0; max-width: var(--measure-record); }
+  .pricing-out div { display: flex; justify-content: space-between; gap: var(--space-2); padding: var(--space-1) 0; border-top: 1px solid var(--border); }
+  .pricing-out .sub dt { color: var(--muted); padding-inline-start: var(--space-3); }
+  .pricing-out .net { font-weight: 700; font-size: var(--type-heading); }
   .pricing-out .net.loss dd { color: var(--danger); }
-  .pricing-out.invalid .net { border-left: 2px solid var(--danger); padding-left: 0.5rem; }
+  .pricing-out.invalid .net { border-inline-start: 2px solid var(--danger); padding-inline-start: var(--space-2); }
   dl div dt { margin: 0; } dl div dd { margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .more-pricing { grid-column: 1 / -1; }
-  .more-pricing summary { cursor: pointer; margin: 0.2rem 0 0.4rem; }
+  .more-pricing { display: flex; flex-direction: column; gap: var(--space-2); }
+  .more-pricing summary { cursor: pointer; display: list-item; list-style-position: inside; padding-block: var(--space-2); font-weight: 600; }
+  .more-pricing > :global(.form-grid) { margin-block-start: var(--space-2); }
 </style>

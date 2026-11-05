@@ -30,7 +30,7 @@
   import { buildQuoteSendPayload, sendQuoteEmail } from "../lib/sendApi";
   import { sendWithEnteredEmail, type CreatedClients } from "../lib/walkInSend";
   import { clientEmailFor, emailDisabledReason, needsEmailEntry, validEntryEmail, canManageClientsFor } from "../lib/quoteEmail";
-  import { canConfigureShop, canEditQuotes, type ConfigUser } from "../lib/permissions";
+  import { canConfigureShop, canEditQuotes, hasTabAccess, type ConfigUser } from "../lib/permissions";
   import { computeMenuAnchor } from "../lib/menuAnchor";
   import { handleMenuKeydown } from "../lib/menuNav";
   import { matchesQuoteFilter, QUOTE_STATUS_CHIPS, type QuoteStatusFilter } from "../lib/quoteFilter";
@@ -39,7 +39,10 @@
   import { createBackfillController } from "../lib/backfillController.svelte";
   import StatusBadge from "./StatusBadge.svelte";
   import AttributionLine from "./AttributionLine.svelte";
-  import LoadMoreRow from "./LoadMoreRow.svelte";
+  import DataTable, { type DataColumn } from "./ui/DataTable.svelte";
+  import PageHeader from "./ui/PageHeader.svelte";
+import Field from "./ui/Field.svelte";
+import FormGrid from "./ui/FormGrid.svelte";
   import BackfillStatus from "./BackfillStatus.svelte";
   import { focusAfterUpdate } from "../lib/a11y.svelte";
   import { confirmFocus, focusOnMount, focusRowOrHeading, keySelector, neighborId, refocusIfLost, rowSelector } from "../lib/a11yFocus";
@@ -49,6 +52,8 @@
   // Staff without the quote grant can list and read saved quotes but not edit or create them (permissions.ts).
   const canEdit = $derived(canEditQuotes(user));
   const canConfigure = $derived(canConfigureShop(user));
+  // Converting creates an invoice, and the Invoices page is where the result opens (A13).
+  const canInvoice = $derived(hasTabAccess("invoices", user));
 
   // The full quote list with filter, sort, export/import, convert, duplicate and delete. `quotes` holds the
   // raw server shape because status-only mutations re-PUT the quote with inputs/options/formState echoed back
@@ -763,16 +768,23 @@
       input.value = "";
     }
   }
+const COLUMNS: DataColumn[] = [
+  { key: "label", label: "Label" },
+  { key: "client", label: "Client" },
+  { key: "price", label: "Price", num: true },
+  { key: "status", label: "Status" },
+  { key: "saved", label: "Saved" },
+  { key: "actions", label: "Actions", hideLabel: true },
+];
 </script>
 
-<!-- onscrollcapture: a scroll on .table-scroll itself (a nested container) must be caught; scroll events don't
+<!-- onscrollcapture: a scroll on the DataTable scroll region (a nested container) must be caught; scroll events don't
      bubble, only the capture phase reaches an ancestor listener. -->
 <svelte:window onpointerdown={handleWindowPointerDown} onkeydown={handleWindowKeydown} onscrollcapture={handleWindowScroll} />
 
 <div class="page">
-  <div class="head-row">
-    <h1 tabindex="-1">Quotes</h1>
-    <div class="head-actions">
+  <PageHeader title="Quotes">
+    {#snippet actions()}
       {#if canEdit}
         <button type="button" class="primary" onclick={() => { if (startNewQuote(cfg)) location.hash = "#/quote"; }}>New quote</button>
       {/if}
@@ -789,8 +801,8 @@
         aria-label="Import quotes"
         onchange={handleImportFile}
       />
-    </div>
-  </div>
+    {/snippet}
+  </PageHeader>
 
   <p class="lede">
     Track each saved quote from draft to sent to accepted, convert quotes to invoices,
@@ -813,62 +825,59 @@
     {actionStatus}
   </p>
 
-  {#if showFilter}
-    <div class="filter-row">
-      <input
-        id="quotes-filter"
-        class="filter-input"
-        placeholder="Filter by label or client"
-        aria-label="Filter by label or client"
-        bind:value={filterText}
-      />
-      <select class="sort-select" aria-label="Sort saved quotes" bind:value={sortOrder}>
-        <option value="newest">Newest first</option>
-        <option value="oldest">Oldest first</option>
-        <option value="price-desc">Price high to low</option>
-        <option value="price-asc">Price low to high</option>
-        <option value="label">Label A to Z</option>
-        <option value="status">Status</option>
-      </select>
-    </div>
-  {/if}
-
-  {#if quotes.length > 0}
-    <div class="chips" role="group" aria-label="Filter by status">
-      {#each QUOTE_STATUS_CHIPS as chip (chip.key)}
-        <button
-          type="button"
-          class:active={statusFilter === chip.key}
-          aria-pressed={statusFilter === chip.key}
-          onclick={() => (statusFilter = chip.key)}
-        >{chip.label}</button>
-      {/each}
-    </div>
-  {/if}
-
   <BackfillStatus backfilling={backfill.backfilling} backfillFailed={backfill.backfillFailed} verb="filter" />
 
-  {#if cfg.smtp.host === ""}
+  {#if !cfg.smtpConfigured}
     <p class="banner-muted">
       Email isn't configured, so quotes can't be emailed from here.
       {#if canConfigure}<a href="#/settings">Set it up in Settings.</a>{:else}Ask an admin to set up email.{/if}
     </p>
   {/if}
 
-  <div class="card">
-    <div class="table-scroll stack">
-      <table>
-        <thead>
-          <tr>
-            <th>Label</th>
-            <th>Client</th>
-            <th class="num">Price</th>
-            <th>Status</th>
-            <th>Saved</th>
-            <th><span class="visually-hidden">Actions</span></th>
-          </tr>
-        </thead>
-        <tbody>
+  {#if !canInvoice}
+    <p id="convert-no-access" class="banner-muted">Converting a quote creates an invoice. You don't have access to Invoices, so ask an admin to convert it.</p>
+  {/if}
+
+  <DataTable
+    label="Saved quotes"
+    columns={COLUMNS}
+    loadMore={!loading && !filterActive ? { shown: quotes.length, total, loadingMore, onLoadMore: loadMore } : null}
+  >
+    {#snippet filters()}
+      {#if showFilter}
+        <FormGrid>
+          <Field id="quotes-filter" label="Filter by label or client" size="l">
+            {#snippet children(f)}
+              <input id={f.id} type="search" placeholder="Label or client" bind:value={filterText} />
+            {/snippet}
+          </Field>
+          <Field id="quotes-sort" label="Sort saved quotes" size="m">
+            {#snippet children(f)}
+              <select id={f.id} bind:value={sortOrder}>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="price-desc">Price high to low</option>
+                <option value="price-asc">Price low to high</option>
+                <option value="label">Label A to Z</option>
+                <option value="status">Status</option>
+              </select>
+            {/snippet}
+          </Field>
+        </FormGrid>
+      {/if}
+      {#if quotes.length > 0}
+        <div class="chips" role="group" aria-label="Filter by status">
+          {#each QUOTE_STATUS_CHIPS as chip (chip.key)}
+            <button
+              type="button"
+              class:active={statusFilter === chip.key}
+              aria-pressed={statusFilter === chip.key}
+              onclick={() => (statusFilter = chip.key)}
+            >{chip.label}</button>
+          {/each}
+        </div>
+      {/if}
+    {/snippet}
           {#if loading}
             <tr><td colspan="6" class="empty-state"><span role="status">Loading…</span></td></tr>
           {:else}
@@ -876,7 +885,7 @@
               {@const stats = quoteRowStats(q)}
               {@const qty = extractQuantity(q.inputs)}
               {@const status = displayStatus(q, cfg.quote.validDays, Date.now())}
-              {@const emailReason = emailDisabledReason(q, cfg.smtp.host, clientsLoaded, clients, canManageClients)}
+              {@const emailReason = emailDisabledReason(q, cfg.smtpConfigured, clientsLoaded, clients, canManageClients)}
               {@const primaryT = primaryTransition(q)}
               <tr class="quote-row">
                 <td class="c-label">
@@ -904,29 +913,48 @@
                   {#if q.invoicedAs}
                     <!-- In the status cell, not the action cluster: the long "Invoiced INV-…" label made the
                          cluster wider than its column and clipped the ⋯ menu. -->
-                    <button type="button" class="pill invoiced-badge" onclick={() => openInvoiced(q)}>
-                      {invoicedLabel(q.invoicedAs)}
-                    </button>
+                    {#if canInvoice}
+                      <button type="button" class="pill invoiced-badge" onclick={() => openInvoiced(q)}>
+                        {invoicedLabel(q.invoicedAs)}
+                      </button>
+                    {:else}
+                      <span class="pill invoiced-badge">{invoicedLabel(q.invoicedAs)}</span>
+                    {/if}
                   {/if}
                 </td>
                 <td class="nowrap c-saved" data-label="Saved">{formatSavedAt(q.savedAt)}</td>
                 <td class="c-actions">
                   <div class="row-actions">
+                    <!-- Two fixed slots, the same on every row, so nothing shifts between rows or after a status
+                         change: slot 1 is the status action, slot 2 converts. A slot that does not apply is a
+                         disabled N/A button, never a gap. -->
                     {#if primaryT}
                       <button
                         type="button"
-                        class="quiet"
+                        class="quiet slot"
                         data-focus-key={`transition-${q.id}`}
                         onclick={() => askAction(q, primaryT, `transition-${q.id}`)}
                       >{TRANSITION_LABELS[primaryT]}</button>
+                    {:else}
+                      <button
+                        type="button"
+                        class="quiet slot slot-na"
+                        disabled
+                        aria-label="N/A, Change status: not available"
+                        aria-describedby={`status-na-${q.id}`}
+                      >N/A</button>
+                      <span id={`status-na-${q.id}`} class="visually-hidden">
+                        {q.status === "accepted" ? "An accepted quote can't change status." : "A declined quote can't change status."}
+                      </span>
                     {/if}
                     <button
                       type="button"
-                      class="quiet"
+                      class="quiet slot"
                       data-focus-key={`convert-${q.id}`}
-                      onclick={() => openConvert(q)}
+                      onclick={() => { if (canInvoice) void openConvert(q); }}
                       aria-label={q.invoicedAs ? `Invoice again: "${q.label}"` : `Convert to invoice: "${q.label}"`}
-                      aria-disabled={convertFor === q.id}
+                      aria-disabled={convertFor === q.id || !canInvoice}
+                      aria-describedby={canInvoice ? undefined : "convert-no-access"}
                     >
                       {q.invoicedAs ? "Invoice again" : "Convert to invoice"}
                     </button>
@@ -1103,37 +1131,20 @@
               </tr>
             {/each}
           {/if}
-        </tbody>
-      </table>
-    </div>
-    {#if !loading && !filterActive}
-      <LoadMoreRow shown={quotes.length} {total} {loadingMore} onLoadMore={loadMore} />
-    {/if}
-  </div>
+  </DataTable>
 </div>
 
 <style>
-  .parts-badge { margin-left: 0.4rem; color: var(--muted); font-size: var(--text-sm); }
-  .head-row h1 { margin: 0; }
-  /* Wraps at 320 CSS px (WCAG 1.4.10): New quote, Export, and Import no longer fit beside the heading. */
-  .head-row { flex-wrap: wrap; }
-  .head-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .parts-badge { margin-left: var(--space-2); color: var(--muted); font-size: var(--text-sm); }
   .lede { color: var(--muted); font-size: var(--text-sm); margin: 0; }
 
   /* .status-line's app-wide min-height reserves room against layout shift, but before any action sets
    * actionStatus that plus .page's flex gap left a dead band above the table. Collapsed only while
    * actionStatus is empty (the live region stays mounted, so its role/aria-live never toggle); once a
-   * message is set it reverts to the reserved layout. */
-  .action-status.collapsed { min-height: 0; margin-top: calc(var(--space-6) * -1); margin-bottom: calc(var(--space-6) * -1); }
-
-  .filter-row { display: flex; gap: 0.5rem; }
-  .filter-input { flex: 1; min-width: 0; }
-  .sort-select { min-width: 0; max-width: 100%; }
-  @media (max-width: 420px) {
-    .filter-row { flex-wrap: wrap; }
-    .filter-input { flex: 1 1 100%; }
-    .sort-select { flex: 1 1 100%; }
-  }
+   * message is set it reverts to the reserved layout. The margins cancel the two flex gaps around the empty line,
+   * so they must be the gap token itself: a hard-coded space-6 overshot in Compact density (gap space-3) and
+   * pulled the email notice up over the line above it. */
+  .action-status.collapsed { min-height: 0; margin-top: calc(var(--gap-section) * -1); margin-bottom: calc(var(--gap-section) * -1); }
 
   .linkish {
     border: none; background: none; color: var(--accent-text); padding: 0; text-align: left;
@@ -1153,8 +1164,11 @@
    * wide, so auto table layout gave it barely more and the overflow toggle dropped to a second line on
    * nearly every row. Holding the cluster on one line makes the cell ask for its real width; the wrapping
    * label/client columns give up the difference. .table-scroll is the escape hatch. */
-  .row-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 0.4rem; }
+  .row-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-2); }
   .row-actions > button, .row-actions .menu-toggle { white-space: nowrap; }
+  /* The action slots are one fixed width on every row, sized from the field tokens to fit the longest label, "Convert to
+   * invoice", plus the button padding. Disabled N/A slots keep the same box. */
+  .row-actions > .slot { flex: none; inline-size: calc(var(--field-s) + var(--space-4)); box-sizing: border-box; overflow: hidden; text-overflow: clip; }
   .confirm-delete { white-space: nowrap; }
   .cancel-delete { white-space: nowrap; }
 
@@ -1169,18 +1183,18 @@
   .menu-panel {
     position: fixed;
     z-index: 5;
-    min-width: 11rem;
+    min-width: var(--field-s);
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
-    padding: 0.3rem;
+    gap: var(--space-1);
+    padding: var(--space-1);
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: calc(var(--radius) / 2);
     box-shadow: var(--shadow);
   }
   /* The labeled button group only; the email-reason note (a sibling) stacks below via .menu-panel's gap. */
-  .menu-group { display: flex; flex-direction: column; gap: 0.1rem; }
+  .menu-group { display: flex; flex-direction: column; gap: var(--space-1); }
   .menu-item { display: block; width: 100%; text-align: left; white-space: nowrap; }
 
   /* .pill (theme) covers border, radius, font-size and padding; kept locally (like HistoryPanel's former
@@ -1193,49 +1207,41 @@
     white-space: nowrap;
   }
   .invoiced-badge:hover { color: var(--text); }
-  .c-status .invoiced-badge { display: block; margin-top: 0.25rem; }
+  .c-status .invoiced-badge { display: block; margin-top: var(--space-1); }
 
   /* Phones: each quote becomes a stacked card (label and price on top, client and status, saved date, then the
-   * actions) instead of a table that clips its status, price and actions behind a horizontal scroll. The
-   * header row stays in the DOM, hidden with the visually-hidden clip, and the elements keep their table
-   * semantics. */
+   * actions) instead of a table that clips its status, price and actions behind a horizontal scroll. DataTable
+   * hides the header row and makes the table a block list; the row layout is this screen's. */
   @media (max-width: 600px) {
-    .stack { overflow-x: visible; }
-    .stack table, .stack tbody { display: block; }
-    .stack thead {
-      position: absolute;
-      width: 1px; height: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
-    }
-    .stack tr.quote-row {
+    tr.quote-row {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       grid-template-areas: "label price" "client status" "saved saved" "actions actions";
-      gap: 0.2rem 0.75rem;
-      padding: 0.7rem 0;
+      gap: var(--space-1) var(--space-3);
+      padding: var(--space-3) 0;
       border-top: 1px solid var(--border);
     }
-    .stack td { display: block; padding: 0; border: none; min-width: 0; }
     .c-label { grid-area: label; overflow-wrap: anywhere; }
     .c-price { grid-area: price; text-align: right; font-weight: 600; }
     .c-client { grid-area: client; overflow-wrap: anywhere; color: var(--muted); }
     .c-status { grid-area: status; text-align: right; }
     .c-saved { grid-area: saved; color: var(--muted); font-size: var(--text-sm); }
     .c-saved::before { content: attr(data-label) " "; }
-    .c-actions { grid-area: actions; margin-top: 0.3rem; }
-    .row-actions { flex-wrap: wrap; }
-    .stack td.empty-state, .stack .convert-tr td { display: block; }
+    .c-actions { grid-area: actions; margin-top: var(--space-1); }
+    /* The same two slots on a card, as equal columns beside the ⋯ button. */
+    .row-actions { display: grid; grid-template-columns: 1fr 1fr auto; }
+    .row-actions > .slot { inline-size: auto; min-width: 0; }
+    .row-actions > button { min-height: 44px; }
+    .convert-tr td { display: block; }
   }
 
   .convert-row {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    padding: 0.3rem 0;
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
   }
-  .convert-row select { flex: 1; min-width: 140px; }
+  .convert-row select { flex: 1; min-width: var(--field-s); }
   .convert-note-plain { font-size: var(--text-sm); color: var(--muted); }
 </style>

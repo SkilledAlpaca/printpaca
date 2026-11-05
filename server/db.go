@@ -306,6 +306,26 @@ var migrations = []string{
 	ALTER TABLE invoices ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
 	ALTER TABLE quote_requests ADD COLUMN invoice_id TEXT NOT NULL DEFAULT '';
 	`,
+
+	// 5 -> 6: shop categories and featured items (v1.2.0). An item has zero or one category; deleting a
+	// category unlinks its items (items.category_id goes NULL; the handler does it explicitly so each item's
+	// version moves, and ON DELETE SET NULL covers any other delete path). slug is the URL part of
+	// #/category/<slug>. hidden keeps a category out of the shop without unlinking its items. featured items
+	// sort first within the selected shop view.
+	`
+	CREATE TABLE categories (
+	  id         TEXT PRIMARY KEY,
+	  name       TEXT NOT NULL,
+	  slug       TEXT NOT NULL UNIQUE,
+	  sort_order INTEGER NOT NULL DEFAULT 0,
+	  hidden     INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
+	  created_at TEXT NOT NULL,
+	  updated_at TEXT NOT NULL
+	);
+	ALTER TABLE items ADD COLUMN category_id TEXT REFERENCES categories(id) ON DELETE SET NULL;
+	ALTER TABLE items ADD COLUMN featured INTEGER NOT NULL DEFAULT 0 CHECK (featured IN (0, 1));
+	CREATE INDEX items_category_id ON items(category_id);
+	`,
 }
 
 // openDB opens the SQLite database in configDir, creating it on first run, and runs pending migrations.

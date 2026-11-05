@@ -4,6 +4,8 @@
    * item may since be deleted). */
   export interface ItemOrderConfirmation {
     id: string;
+    /** The ordered item's id, so the confirmation can lead back to its card; absent in a confirmation saved by an older build. */
+    itemId?: string;
     /** The short reference the customer quotes ("HL-1001"); absent in a confirmation saved by an older build. */
     reference?: string;
     priceCents: number;
@@ -18,7 +20,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { announce } from "../lib/a11y.svelte";
-  import { clearVisitor, visitor } from "./visitor.svelte";
+  import { visitor } from "./visitor.svelte";
   import { formatMoney, type CurrencyConfig } from "../lib/engine/index";
   import { itemTotalCents } from "../lib/itemMath";
   import {
@@ -30,8 +32,12 @@
     type Selected,
   } from "../lib/itemOptions";
   import { NAME_MAX_BYTES, NOTE_MAX_BYTES, ITEM_ORDER_EMAIL_MAX_BYTES, utf8ByteLength, isPlausibleEmail, EMAIL_FORMAT_ERROR } from "../lib/publicFormLimits";
-  import { DEFAULT_MAX_ORDER_QTY, isValidQuantity, normalizedQuantityText, overCapMessage } from "./publicPricing";
+  import { DEFAULT_MAX_ORDER_QTY, fromUnitCents, isValidQuantity, normalizedQuantityText, overCapMessage, unitBreakdown } from "./publicPricing";
+  import type { OrderDraft } from "./orderDraft";
+  import VisitorReset from "./VisitorReset.svelte";
   import FormErrorSummary from "./FormErrorSummary.svelte";
+  import Card from "../components/ui/Card.svelte";
+  import Field from "../components/ui/Field.svelte";
   import RateLimitNotice from "./RateLimitNotice.svelte";
   import { submitItemOrder, type PublicConfig, type PublicItem } from "./api";
 
@@ -42,6 +48,11 @@
     maxOrderQty = DEFAULT_MAX_ORDER_QTY,
     onback,
     onordered,
+    onpaused,
+    draft,
+    shippingNote = "",
+    turnaroundNote = "",
+    dirty: dirtyOut = $bindable(false),
   }: {
     item: PublicItem;
     currency: CurrencyConfig;
@@ -53,12 +64,24 @@
     /** Fired instead of showing a confirmation locally: the parent owns display and persistence so it
      * survives a reload, even though this component is torn down right after. */
     onordered: (confirmation: ItemOrderConfirmation) => void;
+    /** Fired when the server refuses the order because the shop closed after this page loaded (503 with
+     * paused: true); the parent then shows the Closed page. */
+    onpaused?: (message: string, draft: OrderDraft) => void;
+    /** What the visitor had typed when an earlier submit was refused because the shop closed; restores the form. */
+    draft?: OrderDraft;
+    /** shop.shippingNote; the fixed wording shows when blank. */
+    shippingNote?: string;
+    /** shop.turnaroundNote: shown with the total when the owner wrote one. */
+    turnaroundNote?: string;
+    /** True while the form holds choices, a quantity or a note (the same rule Escape uses); the shop header link asks before leaving. */
+    dirty?: boolean;
   } = $props();
 
   // groupId -> optionId. Starts empty: a required group shows its "Choose ..." placeholder and an optional one
   // shows "None" (an empty choice adds no price). item is a remount-on-change prop (PublicQuotePage.svelte
   // wraps this component in {#key orderItem.id}), so nothing here needs to reset when it changes.
-  let selected = $state<Selected>({});
+  // svelte-ignore state_referenced_locally -- the draft only seeds the form once, on mount
+  let selected = $state<Selected>({ ...(draft?.selected ?? {}) });
   function choose(groupId: string, optionId: string) {
     selected[groupId] = optionId;
   }
@@ -67,12 +90,14 @@
   const heroImage = $derived(displayImage ?? (item.imageUrl ? { url: item.imageUrl, alt: item.name } : null));
   let lightbox: HTMLDialogElement | undefined = $state();
   // number | null like PublicQuotePage's quantity: a cleared number input binds null, not 0 or NaN.
-  let quantity = $state<number | null>(1);
+  // svelte-ignore state_referenced_locally -- see above
+  let quantity = $state<number | null>(draft ? draft.quantity : 1);
   // Name and email are shared with the custom-estimate form (visitor.svelte.ts), so a visitor who already
   // typed them isn't asked again (WCAG 3.3.7).
   const name = $derived(visitor.name);
   const email = $derived(visitor.email);
-  let note = $state("");
+  // svelte-ignore state_referenced_locally -- see above
+  let note = $state(draft?.note ?? "");
   // Focus target on open (WCAG 2.4.3): the card that opened this panel unmounts, so focus would otherwise drop
   // to <body>.
   let headingEl: HTMLElement | undefined = $state();
@@ -86,6 +111,11 @@
   const formSnapshot = $derived(
     JSON.stringify([selected, quantity, visitor.name, visitor.email, note]),
   );
+  // True once the visitor has chosen an option, changed the quantity or written a note.
+  const dirty = $derived(Object.values(selected).some((v) => v !== "") || quantity !== 1 || note !== "");
+  $effect(() => {
+    dirtyOut = dirty;
+  });
   const visibleServerErrors = $derived(serverErrorsFor === formSnapshot ? serverErrors : []);
   const visibleRateLimited = $derived(rateLimited && serverErrorsFor === formSnapshot);
 
@@ -114,6 +144,13 @@
   const totalCents = $derived(
     isValidQuantity(quantity, maxQuantity) ? itemTotalCents(item.priceCents, selectedDeltaCents, quantity) : null,
   );
+  // "$22.00 + Large $4.00" under the total, and the lowest price still open while a required choice that changes
+  // the price is unanswered, so the panel never shows a plain base price that the next choice would raise.
+  const breakdown = $derived(unitBreakdown(item.priceCents, item.optionGroups, selected, (c) => formatMoney(c, currency)));
+  const fromCents = $derived.by(() => {
+    const unit = fromUnitCents(item.priceCents, item.optionGroups, selected);
+    return unit === null || !isValidQuantity(quantity, maxQuantity) ? null : unit * quantity;
+  });
   const stockLine = $derived.by(() => {
     if (item.stock.mode !== "in_stock") return "Made to order.";
     const qty = item.stock.qty ?? 0;
@@ -142,7 +179,7 @@
     (fieldErrors.name ? 1 : 0) + (fieldErrors.email ? 1 : 0) + (fieldErrors.note ? 1 : 0) + fieldErrors.other.length,
   );
   let showErrors = $state(false);
-  let formEl: HTMLFormElement | undefined = $state();
+  let formEl: HTMLElement | undefined = $state();
   const nameError = $derived(showErrors ? fieldErrors.name : undefined);
   const emailError = $derived(showErrors ? fieldErrors.email : undefined);
   const noteError = $derived(showErrors ? fieldErrors.note : undefined);
@@ -195,6 +232,7 @@
       const sentEmail = email.trim();
       onordered({
         id: result.id,
+        itemId: item.id,
         reference: result.reference,
         priceCents: result.priceCents,
         itemName: item.name,
@@ -207,6 +245,18 @@
     serverErrorsFor = formSnapshot;
     if (result.status === 429) {
       rateLimited = true;
+      return;
+    }
+    if (result.paused) {
+      onpaused?.(result.paused, {
+        kind: "order",
+        itemId: item.id,
+        selected: { ...selected },
+        quantity,
+        note,
+        name: visitor.name,
+        email: visitor.email,
+      });
       return;
     }
     if (result.status === 503) {
@@ -222,6 +272,9 @@
   // themselves) and while the photo is enlarged (the dialog closes itself).
   function onKeydown(e: KeyboardEvent) {
     if (e.key !== "Escape" || e.defaultPrevented || lightbox?.open) return;
+    // A form with choices, a quantity or a note in it is never discarded by a stray Escape (WCAG 3.2.2); Back
+    // still leaves it. Name and email survive in the visitor store, so they don't count.
+    if (dirty) return;
     const t = e.target as HTMLElement | null;
     if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
     onback();
@@ -231,29 +284,31 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="panel">
-  <div class="card item-summary">
-    {#if heroImage}
-      <!-- Tap to enlarge. The alt names the option, so the swap is announced; the box is fixed, so swapping
-           never shifts the layout. -->
-      <button type="button" class="photo-btn" aria-label="Enlarge photo" onclick={() => lightbox?.showModal()}>
-        {#if displayImage}
-          <img class="hero" src={displayImage.url} alt={displayImage.alt} data-option-photo />
-        {:else}
-          <img class="hero" src={heroImage.url} alt="" />
-        {/if}
-      </button>
-    {:else}
-      <div class="hero thumb-empty" aria-hidden="true"></div>
-    {/if}
-    <div class="item-summary-text">
-      <h2 tabindex="-1" bind:this={headingEl}>{item.name}</h2>
-      {#if item.description}<p class="i-desc">{item.description}</p>{/if}
-      <p class="stock-line">{stockLine}</p>
-      <!-- After the heading in the DOM, so the first Tab from the heading reaches it. -->
-      <button type="button" class="quiet back" onclick={onback}>&larr; Back to gallery</button>
-      <small class="esc-hint">Press Esc to go back.</small>
+  <Card>
+    <div class="item-summary">
+      {#if heroImage}
+        <!-- Tap to enlarge. The alt names the option, so the swap is announced; the box is fixed, so swapping
+             never shifts the layout. -->
+        <button type="button" class="photo-btn" aria-label="Enlarge photo" onclick={() => lightbox?.showModal()}>
+          {#if displayImage}
+            <img class="hero" src={displayImage.url} alt={displayImage.alt} data-option-photo />
+          {:else}
+            <img class="hero" src={heroImage.url} alt="" />
+          {/if}
+        </button>
+      {:else}
+        <div class="hero thumb-empty" aria-hidden="true"></div>
+      {/if}
+      <div class="item-summary-text">
+        <h2 tabindex="-1" bind:this={headingEl}>{item.name}</h2>
+        {#if item.description}<p class="i-desc">{item.description}</p>{/if}
+        <p class="stock-line">{stockLine}</p>
+        <!-- After the heading in the DOM, so the first Tab from the heading reaches it. -->
+        <button type="button" class="quiet back" onclick={onback}>&larr; Back to gallery</button>
+        {#if !dirty}<small class="esc-hint">Press Esc to go back.</small>{/if}
+      </div>
     </div>
-  </div>
+  </Card>
 
   <dialog
     class="lightbox"
@@ -268,179 +323,195 @@
   </dialog>
 
   <!-- novalidate: the panel validates itself and shows the messages inline (WCAG 3.3.1). -->
-  <form
-    bind:this={formEl}
-    class="card"
+  <Card
+    as="form"
+    bind:el={formEl}
     novalidate
-    onsubmit={(e) => {
+    onsubmit={(e: SubmitEvent) => {
       e.preventDefault();
       void submit();
     }}
   >
-    {#each item.optionGroups as g (g.id)}
-      {@const invalid = showErrors && g.required && missingIds.has(g.id)}
-      <div class="field">
-        <label for="item-group-{g.id}">{g.label}{g.required ? " (required)" : " (optional)"}</label>
-        <select
+    <div class="fields">
+      {#each item.optionGroups as g (g.id)}
+        {@const invalid = showErrors && g.required && missingIds.has(g.id)}
+        <Field
           id="item-group-{g.id}"
-          required={g.required}
-          value={selected[g.id] ?? ""}
-          onchange={(e) => choose(g.id, e.currentTarget.value)}
-          aria-invalid={invalid ? "true" : undefined}
-          aria-describedby={invalid ? `item-group-err-${g.id}` : undefined}
-          data-group-id={g.id}
+          label="{g.label}{g.required ? ' (required)' : ' (optional)'}"
+          error={invalid ? `Choose ${g.label}.` : undefined}
+          size="m"
         >
-          <option value="">{g.required ? `Choose ${g.label}` : "None"}</option>
-          {#each g.options as o (o.id)}
-            <option value={o.id}
-              >{o.name}{o.deltaCents !== 0
-                ? ` (${o.deltaCents > 0 ? "+" : ""}${formatMoney(o.deltaCents, currency)})`
-                : ""}</option
+          {#snippet children(f)}
+            <select
+              id={f.id}
+              required={g.required}
+              value={selected[g.id] ?? ""}
+              onchange={(e) => choose(g.id, e.currentTarget.value)}
+              aria-invalid={f.invalid}
+              aria-describedby={f.describedby}
+              data-group-id={g.id}
             >
-          {/each}
-        </select>
-        {#if invalid}<small class="warn-text" id="item-group-err-{g.id}">Choose {g.label}.</small>{/if}
-      </div>
-    {/each}
+              <option value="">{g.required ? `Choose ${g.label}` : "None"}</option>
+              {#each g.options as o (o.id)}
+                <option value={o.id}
+                  >{o.name}{o.deltaCents !== 0
+                    ? ` (${o.deltaCents > 0 ? "+" : ""}${formatMoney(o.deltaCents, currency)})`
+                    : ""}</option
+                >
+              {/each}
+            </select>
+          {/snippet}
+        </Field>
+      {/each}
 
-    <div class="field">
-      <label for="item-qty">Quantity</label>
-      <input
-        id="item-qty"
-        type="number"
-        min="1"
-        max={maxQuantity}
-        step="1"
-        bind:value={quantity}
-        onchange={(e) => {
-          // "1e3" stays on screen as typed; show the number it prices.
-          const plain = normalizedQuantityText(e.currentTarget.value);
-          if (plain !== null) e.currentTarget.value = plain;
-        }}
-        required
-        aria-invalid={quantityInvalid ? "true" : undefined}
-        aria-describedby="item-qty-notice"
-      />
-    </div>
-    <!-- Outside the field so the notices aren't part of its name, and always mounted so the live region
-         announces text changes (WCAG 1.3.1, 4.1.3). The quantity message shows here and nowhere else. -->
-    <div id="item-qty-notice" role="status">
-      {#if quantityError}<p class="warn-text qty-error">{quantityError}</p>{/if}
-      {#if showMadeToOrderNotice}
-        <p class="advisory-text">Made to order. Larger quantities may take longer.</p>
-      {/if}
-    </div>
-
-    <div class="field">
-      <label for="item-name">Name</label>
-      <input
-        id="item-name"
-        type="text"
-        autocomplete="name"
-        bind:value={visitor.name}
-        maxlength={NAME_MAX_BYTES}
-        required
-        aria-invalid={nameError ? "true" : undefined}
-        aria-describedby={nameError ? "item-name-err" : undefined}
-      />
-      {#if nameError}<small class="warn-text" id="item-name-err">{nameError}</small>{/if}
-    </div>
-    <div class="field">
-      <label for="item-email">Email</label>
-      <input
-        id="item-email"
-        type="email"
-        autocomplete="email"
-        inputmode="email"
-        bind:value={visitor.email}
-        maxlength={ITEM_ORDER_EMAIL_MAX_BYTES}
-        required
-        aria-invalid={emailError ? "true" : undefined}
-        aria-describedby={emailError ? "item-email-err" : undefined}
-      />
-      {#if emailError}<small class="warn-text" id="item-email-err">{emailError}</small>{/if}
-    </div>
-    {#if visitor.name !== "" || visitor.email !== ""}
-      <button type="button" class="quiet inline-link not-you" onclick={clearVisitor}>Not you? Clear name and email</button>
-    {/if}
-    <div class="field">
-      <label for="item-note">Note (optional)</label>
-      <textarea
-        id="item-note"
-        bind:value={note}
-        maxlength={NOTE_MAX_BYTES}
-        rows="3"
-        aria-invalid={noteError ? "true" : undefined}
-        aria-describedby={noteError ? "item-note-err" : undefined}
-      ></textarea>
-      {#if noteError}<small class="warn-text" id="item-note-err">{noteError}</small>{/if}
-    </div>
-
-    <div class="card estimate" role="group" aria-labelledby="item-total-label">
-      <h2 class="section-label" id="item-total-label">Total</h2>
-      <!-- Persistent live region: the settled total is spoken when option or quantity changes (WCAG 4.1.3). -->
-      <div aria-live="polite" aria-atomic="true">
-        {#if totalCents !== null}
-          <p class="price">
-            {formatMoney(totalCents, currency)}
-            {#if quantity !== null && quantity > 1}
-              <span class="per-unit"> &middot; {formatMoney(unitPriceCents, currency)} each</span>
-            {/if}
-          </p>
-        {:else}
-          <p class="muted">Enter a whole number from 1 to {maxQuantity.toLocaleString("en-US")} to see a total.</p>
+      <Field id="item-qty" label="Quantity" size="s" describedby="item-qty-notice">
+        {#snippet children(f)}
+          <input
+            id={f.id}
+            type="number"
+            min="1"
+            max={maxQuantity}
+            step="1"
+            bind:value={quantity}
+            onchange={(e) => {
+              // "1e3" stays on screen as typed; show the number it prices.
+              const plain = normalizedQuantityText(e.currentTarget.value);
+              if (plain !== null) e.currentTarget.value = plain;
+            }}
+            required
+            aria-invalid={quantityInvalid ? "true" : undefined}
+            aria-describedby={f.describedby}
+          />
+        {/snippet}
+      </Field>
+      <!-- Outside the field so the notices aren't part of its name, and always mounted so the live region
+           announces text changes (WCAG 1.3.1, 4.1.3). The quantity message shows here and nowhere else. -->
+      <div id="item-qty-notice" role="status">
+        {#if quantityError}<p class="warn-text qty-error">{quantityError}</p>{/if}
+        {#if showMadeToOrderNotice}
+          <p class="advisory-text">Made to order. Larger quantities may take longer.</p>
         {/if}
       </div>
-      <p class="muted shipping-note">Shipping, if any, is confirmed by email.</p>
+
+      <VisitorReset nameId="item-name" />
+      <Field id="item-name" label="Name" error={nameError}>
+        {#snippet children(f)}
+          <input
+            id={f.id}
+            type="text"
+            autocomplete="name"
+            bind:value={visitor.name}
+            maxlength={NAME_MAX_BYTES}
+            required
+            aria-invalid={f.invalid}
+            aria-describedby={f.describedby}
+          />
+        {/snippet}
+      </Field>
+      <Field id="item-email" label="Email" error={emailError}>
+        {#snippet children(f)}
+          <input
+            id={f.id}
+            type="email"
+            autocomplete="email"
+            inputmode="email"
+            bind:value={visitor.email}
+            maxlength={ITEM_ORDER_EMAIL_MAX_BYTES}
+            required
+            aria-invalid={f.invalid}
+            aria-describedby={f.describedby}
+          />
+        {/snippet}
+      </Field>
+      <Field id="item-note" label="Note (optional)" error={noteError}>
+        {#snippet children(f)}
+          <textarea
+            id={f.id}
+            bind:value={note}
+            maxlength={NOTE_MAX_BYTES}
+            rows="3"
+            aria-invalid={f.invalid}
+            aria-describedby={f.describedby}
+          ></textarea>
+        {/snippet}
+      </Field>
     </div>
 
-    <!-- Persistent alert container with a plain list inside (WCAG 1.3.1, 4.1.3). -->
-    <div role="alert">
-      {#if visibleRateLimited}
-        <RateLimitNotice {branding} />
-      {/if}
-      <FormErrorSummary problems={summaryProblems} />
-      {#if visibleServerErrors.length > 0}
-        <ul class="error-list">
-          {#each new Set(visibleServerErrors) as e (e)}<li class="warn-text">{e}</li>{/each}
-        </ul>
-      {/if}
-    </div>
+    <!-- The customer's submission block: the amount, the shipping note, any errors, the follow-up note and the
+         action stay together, so what the customer is agreeing to sits next to the button that sends it. -->
+    <Card tone="inset" role="group" aria-labelledby="item-total-label">
+      <div class="submit-block">
+        <h2 class="section-label" id="item-total-label">Total</h2>
+        <!-- Persistent live region: the settled total is spoken when option or quantity changes (WCAG 4.1.3). -->
+        <div aria-live="polite" aria-atomic="true">
+          {#if totalCents !== null}
+            <p class="price">
+              {#if fromCents !== null}<span class="from">from&nbsp;</span>{formatMoney(fromCents, currency)}{:else}{formatMoney(totalCents, currency)}{/if}
+              {#if quantity !== null && quantity > 1}
+                <span class="per-unit"> &middot; {formatMoney(unitPriceCents, currency)} each</span>
+              {/if}
+            </p>
+            {#if fromCents !== null}
+              <p class="muted breakdown">Choose {missingGroups.map((g) => g.label).join(" and ")} to see the exact total.</p>
+            {:else if breakdown}
+              <p class="muted breakdown">{breakdown}{quantity !== null && quantity > 1 ? ` each, \u00d7 ${quantity}` : ""}</p>
+            {/if}
+          {:else}
+            <p class="muted">Enter a whole number from 1 to {maxQuantity.toLocaleString("en-US")} to see a total.</p>
+          {/if}
+        </div>
+        <p class="muted shipping-note">{shippingNote || "Shipping, if any, is confirmed by email."}</p>
+        {#if turnaroundNote}<p class="muted turnaround-note">{turnaroundNote}</p>{/if}
 
-    <p id="order-submit-note" class="submit-note">You won't be charged now. We'll review your order and follow up by email.</p>
-    <button type="submit" class="primary" class:busy={submitting} aria-disabled={submitting ? "true" : undefined} aria-describedby="order-submit-note">
-      {submitting ? "Submitting…" : "Place order"}
-    </button>
-  </form>
+        <!-- Persistent alert container with a plain list inside (WCAG 1.3.1, 4.1.3). -->
+        <div role="alert">
+          {#if visibleRateLimited}
+            <RateLimitNotice {branding} />
+          {/if}
+          <FormErrorSummary problems={summaryProblems} />
+          {#if visibleServerErrors.length > 0}
+            <ul class="error-list">
+              {#each new Set(visibleServerErrors) as e (e)}<li class="warn-text">{e}</li>{/each}
+            </ul>
+          {/if}
+        </div>
+
+        <p id="order-submit-note" class="submit-note">You won't be charged now. We'll review your order and follow up by email.</p>
+        <button type="submit" class="primary" class:busy={submitting} aria-disabled={submitting ? "true" : undefined} aria-describedby="order-submit-note">
+          {submitting ? "Submitting…" : "Place order"}
+        </button>
+      </div>
+    </Card>
+  </Card>
 </div>
 
 <style>
   .panel {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
+    gap: var(--gap);
   }
 
   .item-summary {
     display: flex;
     align-items: flex-start;
-    gap: var(--space-3);
+    gap: var(--gap);
   }
   .item-summary-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: var(--space-1); align-items: flex-start; }
   .item-summary-text h2 { margin: 0; }
-  .item-summary .i-desc { margin: 0; color: var(--muted); font-size: var(--text-sm); }
+  .i-desc { margin: 0; color: var(--muted); font-size: var(--text-sm); }
   .stock-line { margin: 0; font-size: var(--text-sm); color: var(--muted); }
   .back { margin-top: var(--space-1); }
-  .esc-hint { color: var(--muted); font-size: var(--text-sm); }
-  /* No keyboard on a touch screen, so the hint is noise there. */
-  @media (hover: none), (pointer: coarse) {
-    .esc-hint { display: none; }
+  /* Only where there is a keyboard to press it on: a mouse or trackpad, not a touch screen. */
+  .esc-hint { display: none; color: var(--muted); font-size: var(--text-sm); }
+  @media (hover: hover) and (pointer: fine) {
+    .esc-hint { display: inline; }
   }
 
   /* A real photo size, not a thumbnail: 12rem beside the text on a wide screen, full width on a phone. */
   .photo-btn {
     padding: 0;
-    border: 1px solid var(--border);
+    border: 0;
     background: var(--surface-2);
     border-radius: calc(var(--radius) / 2);
     line-height: 0;
@@ -456,12 +527,12 @@
     border-radius: calc(var(--radius) / 2);
     background: var(--surface-2);
   }
-  .item-summary .thumb-empty { border: 1px dashed var(--border); flex-shrink: 0; }
+  .thumb-empty { border: 1px dashed var(--border); flex-shrink: 0; }
 
   .lightbox {
     max-width: min(92vw, 48rem);
     padding: var(--space-3);
-    border: 1px solid var(--border);
+    border: 0;
     border-radius: var(--radius);
     background: var(--surface);
     color: var(--text);
@@ -472,22 +543,22 @@
 
   @media (max-width: 600px) {
     .item-summary { flex-direction: column; align-items: stretch; }
-    .photo-btn, .item-summary .thumb-empty { width: 100%; }
+    .photo-btn, .thumb-empty { width: 100%; }
     .hero { width: 100%; height: auto; aspect-ratio: 4 / 3; }
     /* 44 px tap targets on phones; the app-wide quiet button is 32 px. */
     .back { min-height: 44px; }
   }
 
-  form.card {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
+  /* The form card stacks its fields, then the submission block, on the density gap. */
+  .fields { display: flex; flex-direction: column; gap: var(--gap); margin-bottom: var(--gap); }
+  /* Focused fields scroll clear of the viewport edge, so the ring isn't clipped at the bottom. */
+  .fields :global(:is(input, select, textarea, button)), .submit-block button { scroll-margin: var(--space-4); }
 
-  .estimate { text-align: center; }
-  .estimate .muted { color: var(--muted); font-size: var(--text-sm); }
+  .submit-block { display: flex; flex-direction: column; gap: var(--space-2); text-align: center; }
+  .submit-block h2 { margin: 0; }
+  .muted { color: var(--muted); font-size: var(--text-sm); margin: 0; }
   .shipping-note { margin: 0; }
-  .estimate .price {
+  .price {
     font-size: var(--text-xl);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
@@ -497,13 +568,10 @@
    * dominant. */
   .per-unit { font-weight: 400; font-size: var(--text-base); color: var(--muted); }
 
-  .qty-error { font-size: var(--text-sm); margin: 0.3rem 0 0; }
-  .not-you { align-self: flex-start; }
-  @media (max-width: 600px) {
-    .not-you { min-height: 44px; }
-  }
-  .error-list { list-style: none; margin: 0; padding: 0; }
-  .error-list li { margin: 0.2rem 0; }
+  .from { font-size: var(--text-base); font-weight: 400; color: var(--muted); }
+  .qty-error { margin: var(--space-1) 0 0; }
+  .error-list { list-style: none; margin: 0; padding: 0; text-align: left; }
+  .error-list li { margin: var(--space-1) 0; }
   /* In flight: aria-disabled keeps focus on the button, so the busy look is visual only. */
   .submit-note { color: var(--muted); font-size: var(--text-sm); margin: 0; }
   button.busy { opacity: 0.6; cursor: progress; }

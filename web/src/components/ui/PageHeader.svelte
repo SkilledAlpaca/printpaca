@@ -1,0 +1,68 @@
+<script lang="ts">
+  import type { Snippet } from "svelte";
+  import { mdiArrowLeft } from "@mdi/js";
+  import Icon from "../Icon.svelte";
+  import { focusOnMount } from "../../lib/a11yFocus";
+  import { recordTitle } from "../../lib/recordTitle";
+
+  // The head of a view: an optional Back action, the view's single h1, an optional status next to it, and an
+  // optional subtitle. Back is a button that calls `onback`, so the caller keeps its own guard (an unsaved-changes
+  // check) and its own focus restoration; it sits before the h1 in the DOM so Shift+Tab from the title reaches it.
+  // `record` marks a record view: the h1 takes focus when it appears (WCAG 2.4.3) and mirrors its text into
+  // document.title (WCAG 2.4.2). Without a title only the Back row renders, which covers a
+  // record that is still loading.
+  let {
+    title,
+    onback,
+    backLabel = "Back to list",
+    record = false,
+    status,
+    subtitle,
+    actions,
+    actionsFill = false,
+  }: {
+    title?: string;
+    onback?: () => void;
+    backLabel?: string;
+    record?: boolean;
+    status?: Snippet;
+    subtitle?: Snippet;
+    /** The view's own buttons (Add item, Save), right-aligned beside the title; they wrap under it at narrow widths. */
+    actions?: Snippet;
+    /** On a phone the actions keep their natural width, left-aligned under the title. Set this when the page has one
+     * main action ("Add shop item") that should stretch to a full-width button there. */
+    actionsFill?: boolean;
+  } = $props();
+</script>
+
+<div class="page-header">
+  {#if onback}
+    <button type="button" class="quiet back" onclick={onback}><Icon path={mdiArrowLeft} /> {backLabel}</button>
+  {/if}
+  {#if title}
+    <div class="title-row">
+      {#if record}
+        <h1 tabindex="-1" use:focusOnMount use:recordTitle>{title}</h1>
+      {:else}
+        <h1 tabindex="-1">{title}</h1>
+      {/if}
+      {#if status}{@render status()}{/if}
+      {#if actions}<div class="page-actions" class:fill={actionsFill}>{@render actions()}</div>{/if}
+    </div>
+    {#if subtitle}{@render subtitle()}{/if}
+  {/if}
+</div>
+
+<style>
+  .page-header { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+  .back { display: inline-flex; align-items: center; gap: var(--space-1); }
+  .title-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); align-self: stretch; }
+  /* Right-aligned beside the title; once the row is too narrow the actions wrap to their own line (still at the
+   * end on a wide-enough line; on a phone, a left-aligned row of natural-width buttons). */
+  .page-actions { margin-inline-start: auto; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  @media (max-width: 600px) {
+    .page-actions { margin-inline-start: 0; width: 100%; }
+    .page-actions.fill > :global(button) { flex: 1 1 auto; }
+  }
+  h1 { margin: 0; font-size: var(--type-title); }
+</style>

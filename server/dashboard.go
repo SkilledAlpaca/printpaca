@@ -41,6 +41,8 @@ type dashboardResponse struct {
 	QuotesSavedThisMonth   int      `json:"quotesSavedThisMonth"`
 	QuotesInvoicedSharePct *float64 `json:"quotesInvoicedSharePct"`
 	QuotesAvgMarginPct     *float64 `json:"quotesAvgMarginPct"`
+	// QuotesAvgMarginPctMonth is the mean achieved margin of quotes whose invoice was created this month (nil if none).
+	QuotesAvgMarginPctMonth *float64 `json:"quotesAvgMarginPctMonth"`
 
 	// NeedsAttention is the dashboard's "Needs attention" list: up to attentionPerKind rows per kind, in the
 	// order overdue invoices, draft invoices, requests needing a print time, new requests, sent quotes awaiting a reply. AttentionCounts
@@ -388,6 +390,23 @@ func (d *dashboard) loadQuoteTiles(resp *dashboardResponse, monthStart, monthEnd
 	if avgMargin.Valid {
 		v := avgMargin.Float64
 		resp.QuotesAvgMarginPct = &v
+	}
+
+	// quotes has no "invoiced at" column (invoiced_as holds only the invoice id), so "invoiced this month" joins
+	// through the invoice's created_at: the moment the conversion made the invoice. issue_date is user-editable
+	// and may be empty, so it isn't a reliable conversion date. Same ".000Z" bounds as above.
+	var avgMonth sql.NullFloat64
+	err = d.db.QueryRow(`
+		SELECT AVG(q.achieved_margin_pct) FROM quotes q
+		JOIN invoices i ON i.id = q.invoiced_as
+		WHERE q.achieved_margin_pct IS NOT NULL AND i.created_at >= ? AND i.created_at < ?`,
+		monthStartStr, monthEndStr).Scan(&avgMonth)
+	if err != nil {
+		return err
+	}
+	if avgMonth.Valid {
+		v := avgMonth.Float64
+		resp.QuotesAvgMarginPctMonth = &v
 	}
 	return nil
 }

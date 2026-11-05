@@ -231,6 +231,54 @@ func TestValidateEnergySchedule(t *testing.T) {
 	}
 }
 
+// A schedule with sameWindowsAllYear set must have identical base names and windows (name, start, end) in
+// every season. Rates may differ, and a schedule without the flag is not constrained.
+func TestValidateSameWindowsAllYear(t *testing.T) {
+	f := loadScheduleVectors(t)
+	raw, _ := json.Marshal(f.Schedules["sce"])
+	var sce EnergySchedule
+	_ = json.Unmarshal(raw, &sce)
+	if sce.SameWindowsAllYear {
+		t.Fatal("the shared sce vector must not set sameWindowsAllYear")
+	}
+	if p := validateEnergySchedule(sce, true); len(p) != 0 {
+		t.Fatalf("differing windows are fine without the flag: %v", p)
+	}
+	flagged := sce
+	flagged.SameWindowsAllYear = true
+	if p := strings.Join(validateEnergySchedule(flagged, true), "\n"); !strings.Contains(p, "seasons[1].weekday.windows: sameWindowsAllYear") {
+		t.Errorf("sce windows differ between seasons, want a sameWindowsAllYear problem, got %q", p)
+	}
+
+	same := func() EnergySchedule {
+		s := EnergySchedule{DefaultStartTime: "22:00", Holidays: []string{}, SameWindowsAllYear: true}
+		day := func(rate float64) TouDay {
+			return TouDay{BaseName: "Off-peak", BaseRate: rate, Windows: []TouWindow{{Name: "Peak", Start: "16:00", End: "21:00", Rate: rate * 2}}}
+		}
+		s.Seasons = []TouSeason{
+			{Name: "Summer", Months: []int{6, 7, 8, 9}, Weekday: day(0.3), Weekend: day(0.3)},
+			{Name: "Winter", Months: []int{1, 2, 3, 4, 5, 10, 11, 12}, Weekday: day(0.2), Weekend: day(0.2)},
+		}
+		return s
+	}
+	if p := validateEnergySchedule(same(), true); len(p) != 0 {
+		t.Fatalf("same windows with different rates should validate: %v", p)
+	}
+	for name, mutate := range map[string]func(s *EnergySchedule){
+		"start":     func(s *EnergySchedule) { s.Seasons[1].Weekday.Windows[0].Start = "17:00" },
+		"end":       func(s *EnergySchedule) { s.Seasons[1].Weekend.Windows[0].End = "22:00" },
+		"name":      func(s *EnergySchedule) { s.Seasons[1].Weekday.Windows[0].Name = "On-peak" },
+		"base name": func(s *EnergySchedule) { s.Seasons[1].Weekend.BaseName = "Standard" },
+		"count":     func(s *EnergySchedule) { s.Seasons[1].Weekday.Windows = nil },
+	} {
+		s := same()
+		mutate(&s)
+		if p := validateEnergySchedule(s, true); len(p) == 0 {
+			t.Errorf("%s differs between seasons but validated", name)
+		}
+	}
+}
+
 func scheduleQuoteInputs(t *testing.T, start string) QuoteInputs {
 	t.Helper()
 	f := loadScheduleVectors(t)

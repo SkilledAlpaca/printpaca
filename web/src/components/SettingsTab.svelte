@@ -1,11 +1,22 @@
 <script lang="ts">
-  import { timezoneOptions as timezoneOptionList } from "../lib/timezones";
+  import { revealInNav } from "../lib/revealInNav";
+  import { tick } from "svelte";
+  import { settingsSectionFromHash } from "../lib/hashRoute";
+  import { TIMEZONES, deviceTimezone, filterTimezones } from "../lib/timezones";
   import { nextKey, type ServerConfig } from "../lib/settings";
   import { settingsWarnings } from "../lib/settingsRules";
   import { presetDisplayName, feeScheduleDisplayName, warnFor } from "../lib/format";
   import { extractConfigUser } from "../lib/permissions";
   import { appConfig } from "../lib/state.svelte";
   import SettingsEditor from "./settings/SettingsEditor.svelte";
+  import StorefrontSettings from "./settings/StorefrontSettings.svelte";
+  import FieldRow from "./settings/FieldRow.svelte";
+  import Card from "./ui/Card.svelte";
+import Combobox from "./ui/Combobox.svelte";
+  import Field from "./ui/Field.svelte";
+  import Fieldset from "./ui/Fieldset.svelte";
+  import FormGrid from "./ui/FormGrid.svelte";
+  import PageHeader from "./ui/PageHeader.svelte";
   import QuoteSettings from "./settings/QuoteSettings.svelte";
   import CustomCssSettings from "./settings/CustomCssSettings.svelte";
   import SmtpSettings from "./settings/SmtpSettings.svelte";
@@ -17,7 +28,6 @@
   import LabeledText from "./LabeledText.svelte";
   import { focusAfterUpdate } from "../lib/a11y.svelte";
   import { MediaQuery } from "svelte/reactivity";
-  import { stickyInset } from "../lib/stickyInset";
   import { focusAfterRowRemoval, keySelector } from "../lib/a11yFocus";
 
   // Server-asserted demoMode from appConfig (as in IntegrationsSettings.svelte), used to disable the
@@ -33,41 +43,74 @@
   // SettingsEditor, which would show a perpetual "couldn't load settings" banner.
   const isAdminView = $derived(currentUser === null || currentUser.isAdmin);
 
-  // Jump nav: id, label and error-key per card, in page order. Buttons use scrollIntoView, not href="#..."
-  // anchors, because location.hash is the tab router in App.svelte. "More settings" and "Data" have no form
-  // section, so their key is "" (hasError never matches it).
-  const JUMP_SECTIONS: { id: string; label: string; key: string }[] = [
-    { id: "section-account", label: "Account", key: "" },
-    { id: "section-currency", label: "Currency", key: "currency" },
-    { id: "section-pricing", label: "Pricing", key: "pricing" },
-    { id: "section-timezone", label: "Time zone", key: "timezone" },
-    { id: "section-fee-schedules", label: "Fee schedules", key: "feeSchedules" },
-    { id: "section-hardware", label: "Hardware", key: "hardware" },
-    { id: "section-defaults", label: "Defaults", key: "defaults" },
-    { id: "section-quote", label: "Business identity", key: "quote" },
-    { id: "section-custom-css", label: "Custom CSS", key: "customCss" },
-    { id: "section-smtp", label: "Email", key: "smtp" },
-    { id: "section-integrationsUrls", label: "Integrations", key: "integrationsUrls" },
-    { id: "section-users", label: "Users", key: "users" },
-    { id: "section-features", label: "Features", key: "ui" },
-    { id: "section-more", label: "More settings", key: "" },
-    { id: "section-data", label: "Data", key: "" },
-    { id: "section-diagnostics", label: "Diagnostics", key: "" },
+  // `#/settings/<section>` names a card. An employee has only the Account card, so any other section answers with
+  // "No access" rather than quietly showing Account (A16).
+  let hashSection = $state(settingsSectionFromHash(location.hash));
+  const forbiddenSection = $derived(!isAdminView && hashSection !== null && hashSection !== "account" ? hashSection : null);
+
+  // Section nav: id, label and the error sections (settings.ts's errorSection) that mark it, in page order.
+  // Buttons use scrollIntoView, not href="#..." anchors, because location.hash is the tab router in App.svelte.
+  // "More settings", "Data" and "Diagnostics" have no form section, so their keys are empty (hasError never
+  // matches it).
+  const JUMP_SECTIONS: { id: string; label: string; keys: string[] }[] = [
+    { id: "section-account", label: "Account", keys: [] },
+    { id: "section-currency", label: "Currency", keys: ["currency"] },
+    { id: "section-pricing", label: "Pricing", keys: ["pricing"] },
+    { id: "section-timezone", label: "Time zone", keys: ["timezone"] },
+    { id: "section-fee-schedules", label: "Fee schedules", keys: ["feeSchedules"] },
+    { id: "section-hardware", label: "Hardware", keys: ["hardware"] },
+    { id: "section-defaults", label: "Defaults", keys: ["defaults"] },
+    { id: "section-quote", label: "Business identity", keys: ["quote"] },
+    { id: "section-storefront", label: "Storefront", keys: ["shop", "site", "publicQuotes"] },
+    { id: "section-custom-css", label: "Custom CSS", keys: ["customCss"] },
+    { id: "section-smtp", label: "Email", keys: ["smtp"] },
+    { id: "section-integrationsUrls", label: "Integrations", keys: ["integrationsUrls"] },
+    { id: "section-users", label: "Users", keys: ["users"] },
+    { id: "section-features", label: "Features", keys: ["ui"] },
+    { id: "section-more", label: "More settings", keys: [] },
+    { id: "section-data", label: "Data", keys: [] },
+    { id: "section-diagnostics", label: "Diagnostics", keys: [] },
   ];
-  // Suggestions for the time zone field; a typed name outside the list is still accepted if Intl knows it.
-  const timezoneOptions = timezoneOptionList();
-  // The jump nav is sticky only at >=600px (see the CSS below); below that it reserves no scroll-padding.
-  const stickyNavQuery = new MediaQuery("min-width: 600px", true);
-  const stickyNav = $derived(stickyNavQuery.current);
+  const deviceZone = deviceTimezone();
+  // At 900px and wider the sections are a rail beside the cards, sticky and scrolling on its own, so it never
+  // costs the cards any height (a sticky bar across the top took a third of a 1366x768 screen). Below that it is a
+  // collapsed "Jump to a section" disclosure above the cards and scrolls away with them.
+  const railQuery = new MediaQuery("min-width: 900px", true);
+  const rail = $derived(railQuery.current);
+  let navOpen = $state(false);
+  // The rail entry for the section the reader is on: set by a jump, or by an address such as
+  // "#/settings/storefront" (a link from another screen, a deep link, or Back). It is scrolled into view inside
+  // the rail only, so the page never jumps because of it.
+  let navEl: HTMLElement | undefined = $state();
+  let currentId = $state<string | null>(null);
+  let scrolledFor: string | null = null;
+  $effect(() => {
+    const id = isAdminView && hashSection ? (JUMP_SECTIONS.find((s) => s.id.slice("section-".length).toLowerCase() === hashSection)?.id ?? null) : null;
+    if (id) currentId = id;
+    if (!id) scrolledFor = null;
+    // Land on the section itself the first time its card exists (the cards render after settings load).
+    if (id && navEl && scrolledFor !== id) {
+      scrolledFor = id;
+      void tick().then(() => document.getElementById(id)?.scrollIntoView({ behavior: "auto", block: "start" }));
+    }
+  });
+  $effect(() => {
+    void currentId;
+    void rail;
+    void navOpen;
+    void tick().then(() => revealInNav(navEl, navEl?.querySelector<HTMLElement>("[aria-current='true']")));
+  });
   function jumpTo(id: string) {
     const section = document.getElementById(id);
     if (!section) return;
+    currentId = id;
     section.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
     const heading = section.querySelector<HTMLElement>("h2");
     if (heading) {
       heading.tabIndex = -1;
       heading.focus({ preventScroll: true });
     }
+    navOpen = false;
   }
 
   // Features: which nav tabs App.svelte shows, in nav order (NAV_SECTIONS). "quote" and "settings" are never
@@ -132,8 +175,17 @@
   }
 </script>
 
+<svelte:window onhashchange={() => (hashSection = settingsSectionFromHash(location.hash))} />
+
 <div class="page">
-  <h1>Settings</h1>
+  <PageHeader title="Settings" />
+
+  {#if forbiddenSection}
+    <div class="card banner-warn" role="alert">
+      <h2>No access</h2>
+      <p>You don't have access to the {forbiddenSection} settings. Ask an admin to change them.</p>
+    </div>
+  {/if}
 
   {#if !isAdminView}
     <!-- Employee view: GET /api/settings is hard admin-only, so SettingsEditor and its cards would only
@@ -142,304 +194,342 @@
     <AccountCard user={currentUser} />
   {:else}
   <SettingsEditor>
-    {#snippet children({ form, builtin, original, hasError })}
+    {#snippet children({ form, builtin, original, hasError, sync })}
       {@const builtinFeeScheduleKeys = new Set(Object.keys(builtin.feeSchedules))}
       {@const warnings = settingsWarnings(form)}
 
-      <nav class="jump-nav" aria-label="Settings sections" use:stickyInset={{ edge: "top", active: stickyNav }}>
-        {#each JUMP_SECTIONS as s (s.id)}
-          <button
-            type="button"
-            class="quiet jump-link"
-            class:has-error={hasError(s.key)}
-            onclick={() => jumpTo(s.id)}
-          >{`${s.label}${hasError(s.key) ? " (error)" : ""}`}</button>
-        {/each}
-      </nav>
-
-      <AccountCard user={currentUser} />
-
-      <div id="section-currency" class="card roomy" class:danger-border={hasError("currency")}>
-        <h2>Currency</h2>
-        <p class="hint">Symbol and decimal precision used everywhere money is displayed.</p>
-        <div class="field-rows">
-          <label class="field field-narrow">
-            <span>Symbol</span>
-            <input bind:value={form.currency.symbol} />
-          </label>
-          <LabeledText
-            label="Currency code"
-            maxlength={3}
-            bind:value={form.currency.code}
-            warn={warnFor(warnings, "currency.code")}
-            hint="Optional three-letter code for your currency, such as USD or EUR. Only used to put the amount in the PayPal.me link."
-          />
-          <LabeledNumber
-            label="Decimals"
-            min={0}
-            max={4}
-            step={1}
-            bind:value={form.currency.decimals}
-            warn={warnFor(warnings, "currency.decimals")}
-          />
-        </div>
-      </div>
-
-      <div id="section-pricing" class="card roomy" class:danger-border={hasError("pricing")}>
-        <h2>Pricing</h2>
-        <p class="hint">Default sale-price strategy, tax, shipping, and the fee schedule new quotes start with.</p>
-        <div class="field-rows">
-          <label class="field">
-            <span>Strategy</span>
-            <select bind:value={form.pricing.strategy}>
-              <option value="margin">Margin on price</option>
-              <option value="markup">Markup on cost</option>
-            </select>
-          </label>
-          {#if form.pricing.strategy === "margin"}
-            <LabeledNumber
-              label="Margin (%)"
-              help="The share of the pre-tax price that is profit before marketplace fees. Tax is added on top, and fees come out of what remains, so net profit can be lower."
-              step="any"
-              bind:value={form.pricing.marginPct}
-              warn={warnFor(warnings, "pricing.marginPct")}
-            />
-          {:else}
-            <LabeledNumber
-              label="Markup (×)"
-              help="Multiplier applied to your cost. A markup of 2 doubles the cost."
-              step={0.1}
-              bind:value={form.pricing.markupMultiplier}
-              warn={warnFor(warnings, "pricing.markupMultiplier")}
-            />
+      <div class="settings-layout">
+        <nav class="jump-nav" aria-label="Settings sections" bind:this={navEl}>
+          {#if !rail}
+            <button type="button" class="jump-toggle" aria-expanded={navOpen} aria-controls="jump-list" onclick={() => (navOpen = !navOpen)}>
+              Jump to a section
+            </button>
           {/if}
-          <LabeledNumber
-            label="Tax included in quoted prices (%)"
-            help="Use when your quoted prices already include sales tax or VAT."
-            step="any"
-            bind:value={form.pricing.taxRatePct}
-            hint="Converting a quote that included tax creates the invoice with no added sales tax."
-            warn={warnFor(warnings, "pricing.taxRatePct")}
-          />
-          <LabeledNumber
-            label={`Default shipping charge (${form.currency.symbol})`}
-            help="What you bill the customer for shipping. The public quote page shows it beside the price, and new quotes start with it. Set 0 to hide shipping."
-            step="any"
-            hint={form.pricing.defaultShippingCost > 0 && !(form.pricing.defaultShippingCharge > 0)
-              ? "A shipping cost is set but the charge is 0, so the public quote page shows no shipping. Set the charge to show it."
-              : undefined}
-            warn={warnFor(warnings, "pricing.defaultShippingCharge")}
-            bind:value={form.pricing.defaultShippingCharge}
-          />
-          <LabeledNumber
-            label={`Default shipping cost (${form.currency.symbol})`}
-            help="What you pay for postage and packaging per order. It lowers your profit and is never shown to customers."
-            step="any"
-            bind:value={form.pricing.defaultShippingCost}
-          />
-          <label class="field">
-            <span>Default fee schedule</span>
-            <select bind:value={form.pricing.defaultFeeSchedule}>
-              <option value="none">None (direct sale)</option>
-              {#each Object.keys(form.feeSchedules) as key (key)}<option value={key}>{feeScheduleDisplayName(key)}</option>{/each}
-            </select>
-          </label>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" bind:checked={form.pricing.laborPerUnit} />
-          <span>Charge labor per unit instead of once per batch</span>
-        </label>
-      </div>
+          {#if rail || navOpen}
+            <ul class="jump-list" id="jump-list">
+              {#each JUMP_SECTIONS as s (s.id)}
+                {@const bad = s.keys.some((k) => hasError(k))}
+                <li>
+                  <button type="button" class="quiet jump-link" class:has-error={bad} aria-current={s.id === currentId ? "true" : undefined} onclick={() => jumpTo(s.id)}>{`${s.label}${bad ? " (error)" : ""}`}</button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </nav>
 
-      <div id="section-timezone" class="card roomy" class:danger-border={hasError("timezone")}>
-        <h2>Time zone</h2>
-        <p class="hint">Decides which month a payment, a quote, and "today" belong to on the Dashboard, when an invoice is overdue, and the date a marked-paid payment gets. Stored timestamps stay UTC.</p>
-        <div class="field-rows">
-          <div class="field">
-            <label for="timezone-input">Time zone</label>
-            <input
-              id="timezone-input"
-              list="timezone-options"
-              bind:value={form.timezone}
-              placeholder="UTC"
-              autocomplete="off"
-              aria-invalid={warnFor(warnings, "timezone") !== ""}
-              aria-describedby={warnFor(warnings, "timezone") ? "timezone-hint timezone-warn" : "timezone-hint"}
-            />
-            <datalist id="timezone-options">
-              {#each timezoneOptions as tz (tz)}<option value={tz}></option>{/each}
-            </datalist>
-            <small id="timezone-hint" class="field-hint">Type the name of a city or region, such as America/New_York or Europe/London. UTC means no offset. Times in printpaca are shown in this time zone.</small>
-            {#if warnFor(warnings, "timezone")}<small id="timezone-warn" class="warn-text">{warnFor(warnings, "timezone")}</small>{/if}
-          </div>
-        </div>
-      </div>
+        <div class="settings-cards">
+          <AccountCard user={currentUser} />
 
-      <div id="section-fee-schedules" class="card roomy" class:danger-border={hasError("feeSchedules")}>
-        <h2>Fee schedules</h2>
-        <p class="hint">Marketplace fee breakdowns: fixed charges plus percent-of-revenue charges. Built-in schedules can't be removed.</p>
-        {#each Object.entries(form.feeSchedules) as [key, fs] (key)}
-          <div class="subcard">
-            <div class="subhead">
-              <h3>{feeScheduleDisplayName(key)}</h3>
-              {#if builtinFeeScheduleKeys.has(key)}
-                <span class="pill">built-in</span>
-              {:else}
-                <button type="button" aria-label={`Remove fee schedule ${key}`} onclick={() => removeFeeSchedule(form, key)}>Remove</button>
-              {/if}
-            </div>
-            <label class="field">
-              <span>Source</span>
-              <input aria-label={`${key} source`} bind:value={fs.source} placeholder="For example, the Etsy fee page and the date you checked it" />
-            </label>
-
-            <h4 class="section-label">Fixed charges</h4>
-            {#each fs.fixed as charge, i (i)}
-              <div class="charge-row">
-                <label class="field field-inline">
-                  <span>Amount ({form.currency.symbol})</span>
-                  <input type="number" step="0.01" aria-label={`${key} fixed charge ${i + 1} amount`} bind:value={charge.amount} />
-                </label>
-                <label class="field field-inline">
-                  <span>Label</span>
-                  <input aria-label={`${key} fixed charge ${i + 1} label`} bind:value={charge.label} />
-                </label>
-                <button type="button" aria-label={`Remove ${key} fixed charge ${i + 1}`} data-focus-key={`remove-fixed-${key}-${i}`} onclick={() => removeFixedCharge(form, key, i)}>Remove</button>
-              </div>
-            {/each}
-            <button type="button" data-focus-key={`add-fixed-${key}`} onclick={() => addFixedCharge(form, key)}>Add fixed charge</button>
-
-            <h4 class="section-label">Percent charges</h4>
-            {#each fs.percent as charge, i (i)}
-              <div class="charge-row">
-                <label class="field field-inline">
-                  <span>Percent</span>
-                  <span class="percent-input">
-                    <input type="number" step="any" aria-label={`${key} percent charge ${i + 1} percent of revenue`} bind:value={charge.pct} />
-                    <span class="suffix">% of revenue</span>
-                  </span>
-                </label>
-                <label class="field field-inline">
-                  <span>Label</span>
-                  <input aria-label={`${key} percent charge ${i + 1} label`} bind:value={charge.label} />
-                </label>
-                <button type="button" aria-label={`Remove ${key} percent charge ${i + 1}`} data-focus-key={`remove-percent-${key}-${i}`} onclick={() => removePercentCharge(form, key, i)}>Remove</button>
-              </div>
-            {/each}
-            <button type="button" data-focus-key={`add-percent-${key}`} onclick={() => addPercentCharge(form, key)}>Add percent charge</button>
-          </div>
-        {/each}
-        <button type="button" data-focus-key="add-fee-schedule" onclick={() => addFeeSchedule(form)}>Add fee schedule</button>
-      </div>
-
-      <HardwareSettings {form} {hasError} />
-
-      <div id="section-defaults" class="card roomy" class:danger-border={hasError("defaults")}>
-        <h2>Defaults</h2>
-        <p class="hint">What a fresh quote starts with.</p>
-        <div class="field-rows">
-          <label class="field">
-            <span>Preset</span>
-            <select bind:value={form.defaults.preset}>
-              {#each Object.keys(form.presets) as key (key)}<option value={key}>{presetDisplayName(key)}</option>{/each}
-            </select>
-          </label>
-          <label class="field">
-            <span>Printer</span>
-            <select bind:value={form.defaults.printer}>
-              {#each form.printers as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-            </select>
-          </label>
-          <label class="field">
-            <span>Material</span>
-            <select bind:value={form.defaults.material}>
-              {#each form.materials as m (m.id)}<option value={m.id}>{m.name}</option>{/each}
-            </select>
-          </label>
-          <label class="field">
-            <span>Failure rate (%)</span>
-            <input type="number" step="any" min="0" max="90" bind:value={form.defaults.failureRatePct} />
-          </label>
-          <LabeledNumber
-            label="Quantity"
-            min={1}
-            step={1}
-            bind:value={form.defaults.quantity}
-            warn={warnFor(warnings, "defaults.quantity")}
-          />
-        </div>
-      </div>
-
-      <QuoteSettings {form} {hasError} />
-
-      <CustomCssSettings {form} {hasError} />
-
-      <SmtpSettings {form} {hasError} />
-
-      <IntegrationsSettings {form} {original} {hasError} />
-
-      <UsersSettings {form} {original} {hasError} />
-
-      <div id="section-features" class="card roomy" class:danger-border={hasError("ui")}>
-        <h2>Features</h2>
-        <p class="hint">Hide tabs you don't use from navigation. Data is kept and comes back when you re-enable a tab.</p>
-        <fieldset class="feature-grid">
-          <legend>Show these tabs</legend>
-          {#each FEATURE_TABS as t (t.id)}
-            <label class="toggle">
-              <input
-                type="checkbox"
-                checked={isTabEnabled(form, t.id)}
-                onchange={(e) => setTabEnabled(form, t.id, e.currentTarget.checked)}
+          <Card id="section-currency" tone={hasError("currency") ? "danger" : "default"} heading="Currency">
+            <p class="hint">Symbol and decimal precision used everywhere money is displayed.</p>
+            <FormGrid align="controls">
+              <Field id="currency-symbol" label="Symbol" size="xs">
+                {#snippet children(a)}
+                  <input id={a.id} aria-describedby={a.describedby} bind:value={form.currency.symbol} />
+                {/snippet}
+              </Field>
+              <LabeledText
+                label="Currency code"
+                size="xs"
+                maxlength={3}
+                bind:value={form.currency.code}
+                warn={warnFor(warnings, "currency.code")}
+                help="Optional three-letter code, such as USD or EUR. Only used to put the amount in the PayPal.me link."
               />
-              <span>{t.label}</span>
+              <LabeledNumber
+                label="Decimals"
+                size="xs"
+                min={0}
+                max={4}
+                step={1}
+                bind:value={form.currency.decimals}
+                warn={warnFor(warnings, "currency.decimals")}
+              />
+            </FormGrid>
+          </Card>
+
+          <Card id="section-pricing" tone={hasError("pricing") ? "danger" : "default"} heading="Pricing">
+            <p class="hint">Default sale-price strategy, tax, shipping, and the fee schedule new quotes start with.</p>
+            <FormGrid align="controls">
+              <Field id="pricing-strategy" label="Strategy" size="m">
+                {#snippet children(a)}
+                  <select id={a.id} aria-describedby={a.describedby} bind:value={form.pricing.strategy}>
+                    <option value="margin">Margin on price</option>
+                    <option value="markup">Markup on cost</option>
+                  </select>
+                {/snippet}
+              </Field>
+              {#if form.pricing.strategy === "margin"}
+                <LabeledNumber
+                  label="Margin (%)"
+                  help="The share of the pre-tax price that is profit before marketplace fees. Tax is added on top, and fees come out of what remains, so net profit can be lower."
+                  step="any"
+                  bind:value={form.pricing.marginPct}
+                  warn={warnFor(warnings, "pricing.marginPct")}
+                />
+              {:else}
+                <LabeledNumber
+                  label="Markup (×)"
+                  help="Multiplier applied to your cost. A markup of 2 doubles the cost."
+                  step={0.1}
+                  bind:value={form.pricing.markupMultiplier}
+                  warn={warnFor(warnings, "pricing.markupMultiplier")}
+                />
+              {/if}
+              <LabeledNumber
+                label="Tax included in quoted prices (%)"
+                help="Use when your quoted prices already include sales tax or VAT."
+                step="any"
+                bind:value={form.pricing.taxRatePct}
+                hint="Converting a quote that included tax creates the invoice with no added sales tax."
+                warn={warnFor(warnings, "pricing.taxRatePct")}
+              />
+              <LabeledNumber
+                label={`Default shipping charge (${form.currency.symbol})`}
+                help="What you bill the customer for shipping. The public quote page shows it beside the price, and new quotes start with it. Set 0 to hide shipping."
+                step="any"
+                note={form.pricing.defaultShippingCost > 0 && !(form.pricing.defaultShippingCharge > 0)
+                  ? "A shipping cost is set but the charge is 0, so the public quote page shows no shipping. Set the charge to show it."
+                  : undefined}
+                warn={warnFor(warnings, "pricing.defaultShippingCharge")}
+                bind:value={form.pricing.defaultShippingCharge}
+              />
+              <LabeledNumber
+                label={`Default shipping cost (${form.currency.symbol})`}
+                help="What you pay for postage and packaging per order. It lowers your profit and is never shown to customers."
+                step="any"
+                bind:value={form.pricing.defaultShippingCost}
+              />
+              <Field id="pricing-fee-schedule" label="Default fee schedule" size="m">
+                {#snippet children(a)}
+                  <select id={a.id} aria-describedby={a.describedby} bind:value={form.pricing.defaultFeeSchedule}>
+                    <option value="none">None (direct sale)</option>
+                    {#each Object.keys(form.feeSchedules) as key (key)}<option value={key}>{feeScheduleDisplayName(key)}</option>{/each}
+                  </select>
+                {/snippet}
+              </Field>
+            </FormGrid>
+            <label class="toggle">
+              <input type="checkbox" bind:checked={form.pricing.laborPerUnit} />
+              <span>Charge labor per unit instead of once per batch</span>
             </label>
-          {/each}
-        </fieldset>
-        {#if !isTabEnabled(form, "requests") && form.materials.some((m) => m.public)}
-          <p class="banner-warn" role="alert">
-            If you use the public estimate page, submissions keep arriving unseen until you turn Requests back on.
-          </p>
-        {/if}
-      </div>
+          </Card>
 
-      <div id="section-more" class="card roomy">
-        <h2>More settings</h2>
-        <p class="hint">These settings live on the pages they affect.</p>
-        <ul class="plain-list">
-          <li><a href="#/invoices">Invoicing</a> · on Invoices</li>
-          <li><a href="#/requests">Public estimates</a> · on Requests</li>
-          <li><a href="#/filament">Materials</a> · on Filament</li>
-          <li><a href="#/printers">Printers and presets</a> · on Printers</li>
-          <li><a href="#/electricity">Energy</a> · on Electricity</li>
-        </ul>
-      </div>
+          <Card id="section-timezone" tone={hasError("timezone") ? "danger" : "default"} heading="Time zone">
+            <p class="hint">Decides which month a payment, a quote, and "today" belong to on the Dashboard, when an invoice is overdue, and the date a marked-paid payment gets. Stored timestamps stay UTC.</p>
+            <FormGrid>
+              <Field
+                id="timezone-input"
+                label="Time zone"
+                size="l"
+                hint="Search by city or region, such as Los or America/, and pick from the list. UTC means no offset. Times in printpaca are shown in this time zone."
+                error={warnFor(warnings, "timezone") || undefined}
+              >
+                {#snippet children(a)}
+                  <Combobox
+                    id={a.id}
+                    label="Zone suggestions"
+                    bind:value={form.timezone}
+                    options={TIMEZONES}
+                    filter={filterTimezones}
+                    placeholder="UTC"
+                    describedby={a.describedby}
+                    invalid={a.invalid}
+                  />
+                {/snippet}
+              </Field>
+            </FormGrid>
+            {#if deviceZone}
+              <div class="tz-device">
+                <button type="button" onclick={() => (form.timezone = deviceZone)}>Use this device's time zone</button>
+                <span class="hint">{deviceZone}</span>
+              </div>
+            {/if}
+          </Card>
 
-      <div id="section-data" class="card roomy">
-        <h2>Data</h2>
-        <p class="hint">
-          Everything in one JSON file: clients, invoices, payments, quotes, requests (without uploaded G-code), and
-          your settings. The export is one-way: printpaca can't import it. For a restorable backup, copy the
-          <code>config</code> directory on the server instead. See "Where your data lives" in the Getting started
-          guide (docs/getting-started.md).
-        </p>
-        <a class="button-link" href="api/export" download>Download data export</a>
-      </div>
+          <Card id="section-fee-schedules" tone={hasError("feeSchedules") ? "danger" : "default"} heading="Fee schedules">
+            <p class="hint">Marketplace fee breakdowns: fixed charges plus percent-of-revenue charges. Built-in schedules can't be removed.</p>
+            <div class="stack spaced">
+              {#each Object.entries(form.feeSchedules) as [key, fs] (key)}
+                <Card tone="inset">
+                  <Fieldset legend={feeScheduleDisplayName(key)}>
+                    <div class="schedule-actions">
+                      {#if builtinFeeScheduleKeys.has(key)}
+                        <span class="pill">built-in</span>
+                      {:else}
+                        <button type="button" aria-label={`Remove fee schedule ${key}`} onclick={() => removeFeeSchedule(form, key)}>Remove schedule</button>
+                      {/if}
+                    </div>
+                    <FormGrid>
+                      <Field id={`fee-${key}-source`} label="Source" size="l">
+                        {#snippet children(a)}
+                          <input id={a.id} aria-describedby={a.describedby} bind:value={fs.source} placeholder="For example, the Etsy fee page and the date you checked it" />
+                        {/snippet}
+                      </Field>
+                    </FormGrid>
 
-      <div id="section-diagnostics" class="card roomy">
-        <h2>Diagnostics</h2>
-        {#if demoMode}
-          <p class="banner-warn" role="status">
-            This is a read-only demo: recent errors aren't available to export.
-          </p>
-        {/if}
-        <p class="hint">
-          Downloads recent error lines from this server's memory. IP addresses and emails are pseudonymized; secrets
-          are redacted.
-        </p>
-        <button type="button" disabled={demoMode} onclick={() => (window.location.href = "api/logs/errors")}>
-          Export recent errors
-        </button>
+                    <h3 class="section-label">Fixed charges</h3>
+                    {#each fs.fixed as charge, i (i)}
+                      <FieldRow removeLabel={`Remove ${key} fixed charge ${i + 1}`} focusKey={`remove-fixed-${key}-${i}`} onremove={() => removeFixedCharge(form, key, i)}>
+                        <FormGrid>
+                          <Field id={`fee-${key}-fixed-${i}-amount`} label={`Fixed charge ${i + 1} amount (${form.currency.symbol})`} size="s">
+                            {#snippet children(a)}
+                              <input id={a.id} aria-describedby={a.describedby} type="number" step="0.01" bind:value={charge.amount} />
+                            {/snippet}
+                          </Field>
+                          <Field id={`fee-${key}-fixed-${i}-label`} label={`Fixed charge ${i + 1} label`} size="m">
+                            {#snippet children(a)}
+                              <input id={a.id} aria-describedby={a.describedby} bind:value={charge.label} />
+                            {/snippet}
+                          </Field>
+                        </FormGrid>
+                      </FieldRow>
+                    {/each}
+                    <div class="row-actions">
+                      <button type="button" data-focus-key={`add-fixed-${key}`} onclick={() => addFixedCharge(form, key)}>Add fixed charge</button>
+                    </div>
+
+                    <h3 class="section-label">Percent charges</h3>
+                    {#each fs.percent as charge, i (i)}
+                      <FieldRow removeLabel={`Remove ${key} percent charge ${i + 1}`} focusKey={`remove-percent-${key}-${i}`} onremove={() => removePercentCharge(form, key, i)}>
+                        <FormGrid>
+                          <Field id={`fee-${key}-percent-${i}-pct`} label={`Percent charge ${i + 1}: percent of revenue (%)`} size="s">
+                            {#snippet children(a)}
+                              <input id={a.id} aria-describedby={a.describedby} type="number" step="any" bind:value={charge.pct} />
+                            {/snippet}
+                          </Field>
+                          <Field id={`fee-${key}-percent-${i}-label`} label={`Percent charge ${i + 1} label`} size="m">
+                            {#snippet children(a)}
+                              <input id={a.id} aria-describedby={a.describedby} bind:value={charge.label} />
+                            {/snippet}
+                          </Field>
+                        </FormGrid>
+                      </FieldRow>
+                    {/each}
+                    <div class="row-actions">
+                      <button type="button" data-focus-key={`add-percent-${key}`} onclick={() => addPercentCharge(form, key)}>Add percent charge</button>
+                    </div>
+                  </Fieldset>
+                </Card>
+              {/each}
+            </div>
+            <div class="row-actions">
+              <button type="button" data-focus-key="add-fee-schedule" onclick={() => addFeeSchedule(form)}>Add fee schedule</button>
+            </div>
+          </Card>
+
+          <HardwareSettings {form} {hasError} />
+
+          <Card id="section-defaults" tone={hasError("defaults") ? "danger" : "default"} heading="Defaults">
+            <p class="hint">What a fresh quote starts with.</p>
+            <FormGrid align="controls">
+              <Field id="defaults-preset" label="Preset" size="m">
+                {#snippet children(a)}
+                  <select id={a.id} aria-describedby={a.describedby} bind:value={form.defaults.preset}>
+                    {#each Object.keys(form.presets) as key (key)}<option value={key}>{presetDisplayName(key)}</option>{/each}
+                  </select>
+                {/snippet}
+              </Field>
+              <Field id="defaults-printer" label="Printer" size="m">
+                {#snippet children(a)}
+                  <select id={a.id} aria-describedby={a.describedby} bind:value={form.defaults.printer}>
+                    {#each form.printers as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+                  </select>
+                {/snippet}
+              </Field>
+              <Field id="defaults-material" label="Material" size="m">
+                {#snippet children(a)}
+                  <select id={a.id} aria-describedby={a.describedby} bind:value={form.defaults.material}>
+                    {#each form.materials as m (m.id)}<option value={m.id}>{m.name}</option>{/each}
+                  </select>
+                {/snippet}
+              </Field>
+              <Field id="defaults-failure-rate" label="Failure rate (%)" size="s">
+                {#snippet children(a)}
+                  <input id={a.id} aria-describedby={a.describedby} type="number" step="any" min="0" max="90" bind:value={form.defaults.failureRatePct} />
+                {/snippet}
+              </Field>
+              <LabeledNumber
+                label="Quantity"
+                min={1}
+                step={1}
+                bind:value={form.defaults.quantity}
+                warn={warnFor(warnings, "defaults.quantity")}
+              />
+            </FormGrid>
+          </Card>
+
+          <QuoteSettings {form} {hasError} />
+
+          <StorefrontSettings {form} {hasError} {sync} />
+
+          <CustomCssSettings {form} {hasError} />
+
+          <SmtpSettings {form} {hasError} />
+
+          <IntegrationsSettings {form} {original} {hasError} />
+
+          <UsersSettings {form} {original} {hasError} />
+
+          <Card id="section-features" tone={hasError("ui") ? "danger" : "default"} heading="Features">
+            <p class="hint">Hide tabs you don't use from navigation. Data is kept and comes back when you re-enable a tab.</p>
+            <Fieldset legend="Show these tabs">
+              <div class="feature-grid">
+                {#each FEATURE_TABS as t (t.id)}
+                  <label class="toggle">
+                    <input
+                      type="checkbox"
+                      checked={isTabEnabled(form, t.id)}
+                      onchange={(e) => setTabEnabled(form, t.id, e.currentTarget.checked)}
+                    />
+                    <span>{t.label}</span>
+                  </label>
+                {/each}
+              </div>
+            </Fieldset>
+            {#if !isTabEnabled(form, "requests") && form.materials.some((m) => m.public)}
+              <p class="banner-warn" role="alert">
+                If you use the public estimate page, submissions keep arriving unseen until you turn Requests back on.
+              </p>
+            {/if}
+          </Card>
+
+          <Card id="section-more" heading="More settings">
+            <p class="hint">These settings live on the pages they affect.</p>
+            <ul class="plain-list">
+              <li><a href="#/invoices">Invoicing</a> · on Invoices</li>
+              <li><a href="#/requests">Public estimate pricing</a> · on Requests</li>
+              <li><a href="#/filament">Materials</a> · on Filament</li>
+              <li><a href="#/printers">Printers and presets</a> · on Printers</li>
+              <li><a href="#/electricity">Energy</a> · on Electricity</li>
+            </ul>
+          </Card>
+
+          <Card id="section-data" heading="Data">
+            <p class="hint">
+              Everything in one JSON file: clients, invoices, payments, quotes, requests (without uploaded G-code), and
+              your settings. The export is one-way: printpaca can't import it. For a restorable backup, copy the
+              <code>config</code> directory on the server instead. See "Where your data lives" in the Getting started
+              guide (docs/getting-started.md).
+            </p>
+            <a class="button-link" href="api/export" download>Download data export</a>
+          </Card>
+
+          <Card id="section-diagnostics" heading="Diagnostics">
+            {#if demoMode}
+              <p class="banner-warn" role="status">
+                This is a read-only demo: recent errors aren't available to export.
+              </p>
+            {/if}
+            <p class="hint">
+              Downloads recent error lines from this server's memory. IP addresses and emails are pseudonymized; secrets
+              are redacted.
+            </p>
+            <button type="button" disabled={demoMode} onclick={() => (window.location.href = "api/logs/errors")}>
+              Export recent errors
+            </button>
+          </Card>
+        </div>
       </div>
     {/snippet}
   </SettingsEditor>
@@ -447,43 +537,43 @@
 </div>
 
 <style>
-  /* Sticky jump nav: buttons, not href="#..." anchors, because location.hash is the tab router. At >=600px it
-   * sticks to the top of the scroll container (<main> at >=900px, the window below that) and the pills wrap
-   * onto as many lines as the content column needs, so it never scrolls sideways. <main> has no padding, so
-   * top: 0 is flush with the scrollport edge; below 900px --demo-banner-h clears the sticky demo banner.
-   * Below 600px the wrapped nav would cover a large share of the screen, so it scrolls with the page and
-   * stickyInset reserves no height. */
-  .jump-nav {
-    z-index: 2;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 0.4rem 0;
-  }
-  @media (min-width: 600px) {
+  .tz-device { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
+  .tz-device .hint { margin: 0; }
+  /* The section nav and the cards. At >=900px the nav is a rail in its own column, a field-s plus 2rem wide, which
+   * fits "Business identity" on one line; below that the grid is one column and the nav a disclosure. */
+  .settings-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap-section); align-items: start; }
+  .settings-cards { display: flex; flex-direction: column; gap: var(--gap-section); min-width: 0; }
+  @media (min-width: 900px) {
+    .settings-layout { grid-template-columns: calc(var(--field-s) + var(--space-8)) minmax(0, 1fr); }
+    /* Sticky to the scroll container (<main> at >=900px). It scrolls on its own when the list is taller than the
+     * screen (a short laptop), and stops above the save bar, whose measured height stickyInset publishes. */
     .jump-nav {
       position: sticky;
-      top: var(--demo-banner-h, 0px);
+      top: var(--space-2);
+      max-height: calc(100dvh - var(--sticky-bottom-h, 0px) - var(--space-4));
+      overflow-y: auto;
     }
   }
-  /* button.quiet (theme.css) supplies tap sizing and hover fill; here only the jump-link look (transparent
-   * pill, muted, no wrap) and the error state. */
+  .jump-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+  @media (max-width: 899.98px) {
+    .jump-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--field-s)), 1fr)); margin-block-start: var(--space-2); }
+  }
+  .jump-toggle { width: 100%; text-align: left; }
+  /* button.quiet (theme.css) supplies tap sizing and hover fill; here only the jump-link look and the error state. */
   .jump-link {
-    flex: 0 0 auto;
+    width: 100%;
+    text-align: left;
     color: var(--muted);
     background: none;
     border: 1px solid transparent;
     border-radius: var(--radius);
-    white-space: nowrap;
   }
   .jump-link.has-error { color: var(--danger); }
+  .jump-link[aria-current="true"] { background: var(--surface-2); color: var(--text); font-weight: 600; }
 
-  /* Anchor jumps: the scroll container's scroll-padding-top (App.svelte) already reserves the sticky nav's
-   * measured height, so a card's heading lands fully visible below the nav; scroll-margin-top only adds a
-   * little air. :global() by id because several cards (account, quote, custom-css, smtp, hardware, users)
-   * are separate components; targets are exactly the ids in JUMP_SECTIONS. */
+  /* Anchor jumps: the scroll container's scroll-padding-top (App.svelte) reserves any sticky bar above the cards,
+   * and scroll-margin-top adds a little air. :global() by id because several cards (account, quote, storefront,
+   * custom-css, smtp, hardware, users) are separate components; targets are exactly the ids in JUMP_SECTIONS. */
   :global(:is(
     #section-account,
     #section-currency,
@@ -493,6 +583,7 @@
     #section-hardware,
     #section-defaults,
     #section-quote,
+    #section-storefront,
     #section-custom-css,
     #section-smtp,
     #section-integrationsUrls,
@@ -502,35 +593,19 @@
     #section-data,
     #section-diagnostics
   )) {
-    scroll-margin-top: 0.25rem;
+    scroll-margin-top: var(--space-1);
   }
 
-  .section-label { margin: 0.6rem 0 0.3rem; }
+  .section-label { margin: var(--space-3) 0 var(--space-1); }
+  .schedule-actions { display: flex; align-items: center; gap: var(--space-2); }
+  .row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 
-  /* Checkbox grid for Features: field-rows assumes label+input pairs and has no row-gap, which left these
-   * flush. A narrower column floor than field-rows' 24rem, since nine short labels fit at half that. */
+  /* Checkbox grid for Features: a narrower column floor, since ten short labels fit at half a field width. */
   .feature-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
-    gap: 0.3rem 0.8rem;
-    border: 0;
-    padding: 0;
-    margin: 0;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--field-s)), 1fr));
+    gap: var(--space-1) var(--gap);
   }
-  .feature-grid legend { grid-column: 1 / -1; padding: 0; font-weight: 600; margin-bottom: 0.2rem; }
-
-  /* theme .toggle has no margin of its own; this one follows a .field-rows block and needs the same gap as
-   * other stacked blocks in a card. */
-  .toggle { margin-top: 0.6rem; }
-
-  .charge-row { display: flex; align-items: end; gap: 0.5rem; margin-bottom: 0.4rem; flex-wrap: wrap; }
-  .charge-row .field { flex: 1 1 100px; min-width: 90px; }
-  /* The percent field's nowrap "% of revenue" suffix needs more than the generic 90px floor: below it the
-   * cell can shrink under the suffix's min-content width while the row never wraps, painting the suffix
-   * over the next field. */
-  .charge-row .field:has(.percent-input) { flex-basis: 160px; min-width: 150px; }
-  .percent-input { display: flex; align-items: center; gap: 0.3rem; width: 100%; }
-  .percent-input input { width: auto; flex: 1 1 auto; min-width: 4rem; }
 
   /* theme.css's box and tap-target styling covers input/select/button/textarea, not <a>; mirrors the
    * default (non-.primary) button look (e.g. SettingsEditor's "Discard changes"). */
@@ -540,7 +615,7 @@
     justify-content: center;
     width: fit-content;
     min-height: 44px;
-    padding: 0.4rem 0.6rem;
+    padding: var(--space-2) var(--space-3);
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: calc(var(--radius) / 2);

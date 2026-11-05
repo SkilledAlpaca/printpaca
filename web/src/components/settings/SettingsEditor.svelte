@@ -14,6 +14,7 @@
   import { announce } from "../../lib/a11y.svelte";
   import { stickyInset } from "../../lib/stickyInset";
   import ErrorSummary from "../ErrorSummary.svelte";
+  import Card from "../ui/Card.svelte";
   import { findFieldByLabel, errorLabel, type ErrorTarget } from "../../lib/fieldErrors";
   import { fieldLabel, hasFieldLabel } from "../../lib/format";
   import { refocusIfLost } from "../../lib/a11yFocus";
@@ -38,6 +39,10 @@
           // possibly dirty `form`.
           original: ServerConfig;
           hasError: (section: string) => boolean;
+          // For state the server changed outside the Save button (the shop's hero image has its own
+          // endpoints): applies the same edit to the draft and to the saved baseline, so it never reads as an
+          // unsaved change and a later discard keeps it.
+          sync: (mutate: (config: ServerConfig) => void) => void;
         },
       ]
     >;
@@ -123,7 +128,9 @@
       errors = [];
       savedNotice = split > 0 ? `Settings saved. ${split === 1 ? "A window that ran past midnight was" : `${split} windows that ran past midnight were`} split at midnight.` : "Settings saved.";
       // The save bar unmounts now that the form is clean; keep focus on the saved notice (WCAG 2.4.3).
-      void refocusIfLost("[data-settings-status]");
+      // preventScroll: the notice sits at the end of the page, and a plain focus() jumped there from the card the
+      // user had just edited (A5). Focus still lands on the notice, a role=status region, so it is announced.
+      void refocusIfLost("[data-settings-status]", { preventScroll: true });
       // Refresh appConfig so every mounted tab sees what /api/config now serves (the server applies a saved
       // config immediately). Deliberately not applyConfig(fresh): that seeds QuoteTab's form once, on first
       // load (the `seeded` guard in state.svelte.ts), and would clobber what the user has mid-typed. A failed
@@ -137,6 +144,12 @@
     }
   }
 
+  function sync(mutate: (config: ServerConfig) => void) {
+    if (!form || !original) return;
+    mutate(form);
+    mutate(original);
+  }
+
   function discard() {
     if (!original) return;
     // Same proxy caveat as save(): snapshot first; it is already detached from `original`.
@@ -144,14 +157,15 @@
     errors = [];
     savedNotice = "";
     announce("Changes discarded.");
-    void refocusIfLost("[data-settings-status]");
+    void refocusIfLost("[data-settings-status]", { preventScroll: true });
   }
 
   // A save error names a config path ("pricing.marginPct: ..."). Link it to its field when the path has a field
   // label, else to the first control of the card that holds it (errorSection), so the summary always leads somewhere.
   function resolveSettingsError(message: string): ErrorTarget | null {
     const path = errorLabel(message);
-    const named = path && hasFieldLabel(path) ? findFieldByLabel(fieldLabel(path)) : null;
+    // A path ("pricing.marginPct") maps to its label; a message that already leads with a label ("Accent color") is looked up as is.
+    const named = path ? findFieldByLabel(hasFieldLabel(path) ? fieldLabel(path) : path) : null;
     if (named) return { el: named, field: true };
     const card = document.getElementById(`section-${errorSection(message)}`);
     const first = card?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea, button");
@@ -163,18 +177,18 @@
   {#if loading}
     <p role="status">Loading…</p>
   {:else if loadFailed}
-    <div class="card banner-error">
+    <Card class="banner-error">
       <p>Couldn't load settings from the server. Check that printpaca's backend is running.</p>
       <button type="button" onclick={refresh}>Retry</button>
-    </div>
+    </Card>
   {:else if form && original && builtin}
     {#if loadErrorMsg}
-      <div class="card banner-warn">
+      <Card class="banner-warn">
         <p>config.yaml on disk is invalid, so this page ignores it: {loadErrorMsg}. Saving overwrites it.</p>
-      </div>
+      </Card>
     {/if}
 
-    {@render children({ form, builtin, original, hasError })}
+    {@render children({ form, builtin, original, hasError, sync })}
 
     <p class="hint" role="status" tabindex="-1" data-settings-status>{dirty ? "" : savedNotice}</p>
 
@@ -194,24 +208,24 @@
 </div>
 
 <style>
-  .settings-editor { display: flex; flex-direction: column; gap: 1.5rem; }
+  .settings-editor { display: flex; flex-direction: column; gap: var(--gap-section); }
 
   /* Sticky to the bottom of the scroll container (<main> at >=900px, the window below that), flush with its
-   * edge because <main> has no padding. It spans the same content column as the tab's jump nav. This component
-   * doesn't own the page layout (each embedding tab does), so it is self-contained with its own top border and
-   * padding, no negative margins. */
+   * edge because <main> has no padding. It spans the same content column as the tab's cards. This component
+   * doesn't own the page layout (each embedding tab does), so it is self-contained: a card tint instead of an
+   * outline, and its own padding. */
   .save-bar {
     position: sticky;
     bottom: 0;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
+    z-index: 2;
+    background: var(--card-bg);
     border-radius: var(--radius) var(--radius) 0 0;
-    padding: 0.75rem 1rem;
+    padding: var(--space-3) var(--space-4);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
-  .save-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+  .save-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
   /* The save bar's flex gap already spaces the error list; theme's .errors bottom margin would double it. */
   .save-bar :global(.errors) { margin-bottom: 0; }
 </style>

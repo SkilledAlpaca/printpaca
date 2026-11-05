@@ -5,6 +5,10 @@
   import { warnFor } from "../../lib/format";
   import { describeLogoDataUrl, logoToDataUrl, LOGO_ACCEPT } from "../../lib/logoUpload";
   import { announce } from "../../lib/a11y.svelte";
+  import Card from "../ui/Card.svelte";
+  import Field from "../ui/Field.svelte";
+  import Fieldset from "../ui/Fieldset.svelte";
+  import FormGrid from "../ui/FormGrid.svelte";
 
   let { form, hasError }: { form: ServerConfig; hasError: (section: string) => boolean } = $props();
 
@@ -61,112 +65,131 @@
   });
 </script>
 
-<div id="section-quote" class="card roomy" class:danger-border={hasError("quote")}>
-  <h2>Business identity</h2>
+<Card id="section-quote" tone={hasError("quote") ? "danger" : "default"} heading="Business identity">
   <p class="hint">Shown on printed quotes and invoices, in the admin header, and on the customer shop.</p>
-  <div class="field-rows">
-    <label class="field">
-      <span>Business name</span>
-      <input bind:value={form.quote.businessName} autocomplete="organization" />
-    </label>
-    <div class="field">
+  <div class="sections">
+    <FormGrid align="controls">
+      <Field id="quote-business-name" label="Business name" size="l">
+        {#snippet children(a)}
+          <input id={a.id} aria-describedby={a.describedby} bind:value={form.quote.businessName} autocomplete="organization" />
+        {/snippet}
+      </Field>
+      <Field id="quote-email" label="Email" size="l">
+        {#snippet children(a)}
+          <input id={a.id} aria-describedby={a.describedby} type="email" bind:value={form.quote.email} autocomplete="email" />
+        {/snippet}
+      </Field>
+      <Field id="quote-phone" label="Phone" size="m">
+        {#snippet children(a)}
+          <input id={a.id} aria-describedby={a.describedby} type="tel" bind:value={form.quote.phone} autocomplete="tel" />
+        {/snippet}
+      </Field>
+      <Field id="quote-tax-id" label="Tax ID" size="m">
+        {#snippet children(a)}
+          <input id={a.id} aria-describedby={a.describedby} bind:value={form.quote.taxId} />
+        {/snippet}
+      </Field>
+      <Field id="quote-valid-days" label="Quote valid for (days)" size="xs">
+        {#snippet children(a)}
+          <input id={a.id} aria-describedby={a.describedby} type="number" min="0" step="1" bind:value={form.quote.validDays} />
+        {/snippet}
+      </Field>
+      <Field
+        id="quote-reference-prefix"
+        label="Order reference prefix"
+        size="xs"
+        hint="Starts the short reference customers see on their order, such as HL-1001. Leave blank to use your business initials."
+      >
+        {#snippet children(a)}
+          <input id={a.id} aria-describedby={a.describedby} bind:value={form.quote.referencePrefix} maxlength="10" autocomplete="off" />
+        {/snippet}
+      </Field>
+    </FormGrid>
+
+    <Fieldset legend="Logo">
       {#if uploadedLogo}
-        <span id="quote-logo-label">Logo</span>
-        <div class="logo-row" role="group" aria-labelledby="quote-logo-label">
+        <div class="logo-row">
           <span>{uploadedLogo}</span>
           <button type="button" onclick={removeLogo}>Remove logo</button>
         </div>
       {:else}
-        <label for="quote-logo-url">Logo URL</label>
-        <input id="quote-logo-url" bind:value={form.quote.logoUrl} aria-describedby={logoLoadFailed ? "quote-logo-hint" : undefined} />
+        <FormGrid>
+          <Field id="quote-logo-url" label="Logo URL" size="l" describedby={logoLoadFailed ? "quote-logo-hint" : undefined}>
+            {#snippet children(a)}
+              <input id={a.id} bind:value={form.quote.logoUrl} aria-describedby={a.describedby} />
+            {/snippet}
+          </Field>
+        </FormGrid>
       {/if}
       {#if logoLoadFailed}
-        <p id="quote-logo-hint" class="advisory-text logo-hint">
+        <p id="quote-logo-hint" class="advisory-text">
           This logo URL couldn't be loaded, so it won't appear on printed quotes or invoices. Use a direct link to a
           PNG, JPG, or SVG image.
         </p>
       {/if}
-    </div>
-    <div class="field">
-      <label for="quote-logo-file">Upload logo</label>
-      <div class="upload-row">
-        <input id="quote-logo-file" type="file" accept={LOGO_ACCEPT} aria-describedby="quote-logo-file-help" onchange={onLogoFile} />
-        {#if form.quote.logoUrl.trim() !== "" && !logoLoadFailed}
-          <img class="logo-preview" src={form.quote.logoUrl} alt={uploadedLogo ? "Your logo" : "Logo preview"} />
-        {/if}
-      </div>
-      <small id="quote-logo-file-help" class="field-hint">PNG, JPG, WebP, or SVG, up to 64 KB. Larger pictures are shrunk to fit. An uploaded logo shows in the app and on printouts; emails show your business name instead. Use a public https:// URL to show a logo in emails.</small>
-      {#if logoUploadError}<p class="warn-text" role="alert">{logoUploadError}</p>{/if}
-    </div>
-    <label class="field">
-      <span>Email</span>
-      <input type="email" bind:value={form.quote.email} autocomplete="email" />
-    </label>
-    <label class="field">
-      <span>Phone</span>
-      <input type="tel" bind:value={form.quote.phone} autocomplete="tel" />
-    </label>
-    <label class="field">
-      <span>Tax ID</span>
-      <input bind:value={form.quote.taxId} />
-    </label>
-    <label class="field">
-      <span>Quote valid for (days)</span>
-      <input type="number" min="0" step="1" bind:value={form.quote.validDays} />
-    </label>
-    <div class="field">
-      <label for="quote-reference-prefix">Order reference prefix</label>
-      <input id="quote-reference-prefix" bind:value={form.quote.referencePrefix} maxlength="10" autocomplete="off" aria-describedby="quote-reference-prefix-hint" />
-      <small class="field-hint" id="quote-reference-prefix-hint">Starts the short reference customers see on their order, such as HL-1001. Leave blank to use your business initials.</small>
-    </div>
-  </div>
-  <label class="field field-textarea">
-    <span>Address</span>
-    <textarea rows="3" bind:value={form.quote.address} autocomplete="street-address"></textarea>
-  </label>
-  <div class="field field-textarea">
-    <label for="quote-payment-instructions">Payment instructions</label>
-    <!-- Byte cap mirroring server/config.go's quotePaymentInstructionsMaxBytes (bytes, not characters;
-         see PublicQuotesSettings.svelte). -->
-    <textarea
+      <FormGrid>
+        <Field
+          id="quote-logo-file"
+          label="Upload logo"
+          size="l"
+          hint="PNG, JPG, WebP, or SVG, up to 64 KB. Larger pictures are shrunk to fit. An uploaded logo shows in the app and on printouts; emails show your business name instead. Use a public https:// URL to show a logo in emails."
+          error={logoUploadError || undefined}
+        >
+          {#snippet children(a)}
+            <input id={a.id} type="file" accept={LOGO_ACCEPT} aria-describedby={a.describedby} aria-invalid={a.invalid ?? "false"} onchange={onLogoFile} />
+          {/snippet}
+        </Field>
+      </FormGrid>
+      {#if form.quote.logoUrl.trim() !== "" && !logoLoadFailed}
+        <img class="logo-preview" src={form.quote.logoUrl} alt={uploadedLogo ? "Your logo" : "Logo preview"} />
+      {/if}
+    </Fieldset>
+
+    <Field id="quote-address" label="Address">
+      {#snippet children(a)}
+        <textarea id={a.id} aria-describedby={a.describedby} rows="3" bind:value={form.quote.address} autocomplete="street-address"></textarea>
+      {/snippet}
+    </Field>
+    <Field
       id="quote-payment-instructions"
-      rows="5"
-      bind:value={form.quote.paymentInstructions}
-      class:warn={warnFor(warnings, "quote.paymentInstructions") !== ""}
-      aria-invalid={warnFor(warnings, "quote.paymentInstructions") !== ""}
-      aria-describedby={warnFor(warnings, "quote.paymentInstructions") !== "" ? "quote-payment-count quote-payment-warn" : "quote-payment-count"}
-    ></textarea>
-    <small id="quote-payment-count" class="field-hint">{characterCountText(form.quote.paymentInstructions, QUOTE_PAYMENT_INSTRUCTIONS_MAX_BYTES)}</small>
-    {#if warnFor(warnings, "quote.paymentInstructions") !== ""}
-      <small id="quote-payment-warn" class="warn-text">{warnFor(warnings, "quote.paymentInstructions")}</small>
-    {/if}
+      label="Payment instructions"
+      error={warnFor(warnings, "quote.paymentInstructions") || undefined}
+      describedby="quote-payment-count"
+    >
+      {#snippet children(a)}
+        <!-- Byte cap mirroring server/config.go's quotePaymentInstructionsMaxBytes (bytes, not characters;
+             see StorefrontSettings.svelte). -->
+        <textarea
+          id={a.id}
+          rows="5"
+          bind:value={form.quote.paymentInstructions}
+          class:warn={warnFor(warnings, "quote.paymentInstructions") !== ""}
+          aria-invalid={a.invalid ?? "false"}
+          aria-describedby={a.describedby}
+        ></textarea>
+        <small id="quote-payment-count" class="count">{characterCountText(form.quote.paymentInstructions, QUOTE_PAYMENT_INSTRUCTIONS_MAX_BYTES)}</small>
+      {/snippet}
+    </Field>
+    <Field id="quote-terms-text" label="Terms text" error={warnFor(warnings, "quote.termsText") || undefined} describedby="quote-terms-count">
+      {#snippet children(a)}
+        <!-- Byte cap mirroring server/config.go's quoteTermsTextMaxBytes. -->
+        <textarea
+          id={a.id}
+          rows="5"
+          bind:value={form.quote.termsText}
+          class:warn={warnFor(warnings, "quote.termsText") !== ""}
+          aria-invalid={a.invalid ?? "false"}
+          aria-describedby={a.describedby}
+        ></textarea>
+        <small id="quote-terms-count" class="count">{characterCountText(form.quote.termsText, QUOTE_TERMS_TEXT_MAX_BYTES)}</small>
+      {/snippet}
+    </Field>
   </div>
-  <div class="field field-textarea">
-    <label for="quote-terms-text">Terms text</label>
-    <!-- Byte cap mirroring server/config.go's quoteTermsTextMaxBytes. -->
-    <textarea
-      id="quote-terms-text"
-      rows="5"
-      bind:value={form.quote.termsText}
-      class:warn={warnFor(warnings, "quote.termsText") !== ""}
-      aria-invalid={warnFor(warnings, "quote.termsText") !== ""}
-      aria-describedby={warnFor(warnings, "quote.termsText") !== "" ? "quote-terms-count quote-terms-warn" : "quote-terms-count"}
-    ></textarea>
-    <small id="quote-terms-count" class="field-hint">{characterCountText(form.quote.termsText, QUOTE_TERMS_TEXT_MAX_BYTES)}</small>
-    {#if warnFor(warnings, "quote.termsText") !== ""}
-      <small id="quote-terms-warn" class="warn-text">{warnFor(warnings, "quote.termsText")}</small>
-    {/if}
-  </div>
-</div>
+</Card>
 
 <style>
-  /* Mirrors theme.css's .app-main .field-hint/.warn-text: lands in the control column under the Logo URL
-   * input. .advisory-text supplies the --warn color and size; this adds only the grid placement. */
-  .logo-hint { grid-column: 2; margin: 0; }
-  .logo-preview { max-height: 48px; max-width: 160px; width: auto; object-fit: contain; background: var(--surface-2); border-radius: var(--radius); }
-  .upload-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-  .logo-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-  @media (max-width: 600px) {
-    .logo-hint { grid-column: auto; }
-  }
+  .sections { display: flex; flex-direction: column; gap: var(--gap-section); }
+  .count { color: var(--muted); font-size: var(--type-secondary); }
+  .logo-preview { max-height: 3rem; max-width: var(--field-m); width: auto; object-fit: contain; background: var(--surface-2); border-radius: var(--radius); }
+  .logo-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 </style>

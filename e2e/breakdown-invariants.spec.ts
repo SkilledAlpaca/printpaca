@@ -94,9 +94,9 @@ test("the tax row renders the price-inclusive figure, not price x tax%, under it
 
   // Pin the margin so the expected tax figure doesn't depend on what an earlier spec left in config.
   await page.getByLabel("Margin (%)").fill("30");
-  // LabeledNumber renders `${label} (${suffix})`, so the accessible name is "Tax (included in price) (%)".
+  // LabeledNumber renders `${label} (${suffix})`, so the accessible name is "Tax (%)".
   await openMorePricing(page);
-  await page.getByLabel(/^Tax \(included in price\)/).fill("20");
+  await page.getByLabel("Tax (%)", { exact: true }).fill("20");
 
   // Cost $2.24 at 30% margin: the pre-tax price is 224c / 0.7 = 320c, grossed up by 20% tax to 384c.
   // Inclusive tax = 384 x 20 / 120 = 64c (the pre-tax price x 20%), not the exclusive 384c x 0.20 = 76.8c -> 77c.

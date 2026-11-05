@@ -333,7 +333,7 @@ test.describe("sidebar and quote page", () => {
     const more = page.locator("details.more-pricing");
     await expect(more).not.toHaveAttribute("open", /.*/);
     await more.locator("summary").click();
-    await page.getByLabel(/^Tax \(included in price\)/).fill("7");
+    await page.getByLabel("Tax (%)", { exact: true }).fill("7");
     await expect(more).toHaveAttribute("open", "");
   });
 

@@ -49,7 +49,7 @@ test("a three-part order: drop, price, save, restore, print, convert", async ({ 
 
   await page.getByLabel("Set a selling price").check();
   await openMorePricing(page);
-  await page.getByLabel(/^Tax \(included in price\)/).fill("10");
+  await page.getByLabel("Tax (%)", { exact: true }).fill("10");
   await page.getByLabel(/Shipping charged/).fill("5");
 
   await page.getByLabel(/^Quantity/).fill("20");

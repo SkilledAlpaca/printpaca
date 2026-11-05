@@ -208,15 +208,9 @@ async function invoiceTopic(s: Shooter, env: Env): Promise<void> {
   await create.click();
   const save = page.getByRole("button", { name: "Save", exact: true });
   await save.waitFor();
-  // Dates default to the day you run the script; show fixed ones.
-  await page.getByLabel("Issue date").fill("2026-11-04");
-  await page.getByLabel("Due date").fill("2026-12-04");
   await s.shot({ key: "inv-draft", targets: [{ loc: fieldOf(page.getByLabel("Issue date")), n: 3 }, { loc: fieldOf(page.getByLabel("Due date")), n: 3 }, { loc: save, n: 3 }], region: [page.getByRole("heading", { name: /^Invoice / }), save] });
-  await save.click();
-  await page.getByText(/saved/i).first().waitFor({ timeout: 10_000 }).catch(() => {});
   const sendBtns = [page.getByRole("button", { name: "Mark sent" }), page.getByRole("button", { name: "Email to client" }), page.getByRole("button", { name: "Print", exact: true })];
   await s.shot({ key: "inv-send", targets: sendBtns.map((loc) => ({ loc, n: 4 })), region: sendBtns });
-  await page.getByLabel("Date", { exact: true }).fill("2026-11-04");
   await page.getByLabel("Amount ($)").fill("2.00");
   await page.getByLabel("Method").selectOption({ label: "Bank transfer" });
   await page.getByLabel("Note", { exact: true }).fill("Deposit");
@@ -316,7 +310,7 @@ async function storefrontTopic(s: Shooter, env: Env): Promise<void> {
   await s.shot({ key: "shop-hero", targets: [{ loc: fieldOf(alt), n: 5 }], region: [card.getByText("Hero image", { exact: true }).first(), card.getByRole("button", { name: "Remove hero image" })] });
   const accent = card.getByLabel("Accent color", { exact: true });
   await accent.fill("#0f746c");
-  await s.shot({ key: "shop-accent", targets: [{ loc: fieldOf(accent), n: 6 }], region: [card.getByText("Accent color", { exact: true }).first(), card.getByLabel("Accent color preview")] });
+  await s.shot({ key: "shop-accent", targets: [{ loc: fieldOf(accent), n: 6 }], region: [card.getByText("Accent color", { exact: true }).first(), card.getByLabel("Accent color preview"), card.getByText(/^Both variants pass/)] });
   await page.getByRole("button", { name: "Save changes" }).click();
   await page.getByText(/saved/i).first().waitFor({ timeout: 10_000 }).catch(() => {});
   const pub = await env.browser.newContext({ viewport: { width: 1440, height: 1500 }, reducedMotion: "reduce", colorScheme: "light" });

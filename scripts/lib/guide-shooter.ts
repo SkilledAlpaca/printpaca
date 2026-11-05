@@ -42,6 +42,18 @@ export async function freezeDates(page: Page): Promise<void> {
     // A node already rewritten (and not changed by the app since) keeps its fixed text: running twice must not shift it again.
     const w = window as unknown as { __guideFrozen?: WeakMap<Text, string> };
     const done = (w.__guideFrozen ??= new WeakMap());
+    // Date inputs show a fixed day the same way. Only the displayed value changes (no input event), so the app still
+    // believes it is the real day: "Record $2.00 bank transfer, today" stays true.
+    const inputs = (w as unknown as { __guideInputs?: WeakMap<HTMLInputElement, string> });
+    const seen = (inputs.__guideInputs ??= new WeakMap());
+    for (const el of Array.from(document.querySelectorAll<HTMLInputElement>('input[type="date"]'))) {
+      if (!el.value || seen.get(el) === el.value) continue;
+      const [y, m, d] = el.value.split("-").map(Number);
+      const diffDays = Math.round((realToday - Date.UTC(y!, m! - 1, d!)) / 86_400_000);
+      const f = new Date(FIXED_TODAY - diffDays * 86_400_000);
+      el.value = `${f.getUTCFullYear()}-${String(f.getUTCMonth() + 1).padStart(2, "0")}-${String(f.getUTCDate()).padStart(2, "0")}`;
+      seen.set(el, el.value);
+    }
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     const nodes: Text[] = [];
     while (walker.nextNode()) nodes.push(walker.currentNode as Text);

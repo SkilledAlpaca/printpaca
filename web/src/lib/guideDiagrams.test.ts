@@ -1,18 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { ENV_ONLY_ROWS, OTHER_PAGE_ROWS, RECORD_FLOW, SAVE_BRANCHES, SAVE_MAIN, SETTINGS_PAGE_ROWS } from "./guideDiagrams";
 
 const ROOT = path.resolve(__dirname, "../../..");
-const configGo = readFileSync(path.join(ROOT, "server", "config.go"), "utf8");
-const configDocs = readFileSync(path.join(ROOT, "docs", "configuration.md"), "utf8");
+// The Docker build's test stage copies only web/, so the checks against server/ and docs/ run everywhere else.
+const haveRepo = existsSync(path.join(ROOT, "server", "config.go")) && existsSync(path.join(ROOT, "docs", "configuration.md"));
+const read = (...p: string[]) => (existsSync(path.join(ROOT, ...p)) ? readFileSync(path.join(ROOT, ...p), "utf8") : "");
+const configGo = read("server", "config.go");
+const configDocs = read("docs", "configuration.md");
 const settingsTab = readFileSync(path.join(ROOT, "web", "src", "components", "SettingsTab.svelte"), "utf8");
 
 // The top-level keys of the Config struct, as written in config.yaml.
-const topLevel = new Set([...configGo.slice(configGo.indexOf("type Config struct")).split("\n}\n")[0]!.matchAll(/yaml:"([A-Za-z]+)"/g)].map((m) => m[1]!));
+const topLevel = new Set([...configGo.slice(Math.max(0, configGo.indexOf("type Config struct"))).split("\n}\n")[0]!.matchAll(/yaml:"([A-Za-z]+)"/g)].map((m) => m[1]!));
 
 describe("Where settings live", () => {
-  it("maps only to real top-level config.yaml keys", () => {
+  it.skipIf(!haveRepo)("maps only to real top-level config.yaml keys", () => {
     for (const row of [...SETTINGS_PAGE_ROWS, ...OTHER_PAGE_ROWS]) for (const k of row.keys) expect(topLevel.has(k), `${row.where}: ${k}`).toBe(true);
   });
   it("lists the same sections and keys as the Settings page's section list", () => {
@@ -21,7 +24,7 @@ describe("Where settings live", () => {
       for (const k of row.keys) expect(settingsTab, `${row.where}: ${k}`).toContain(`"${k}"`);
     }
   });
-  it("names only environment variables that docs/configuration.md documents", () => {
+  it.skipIf(!haveRepo)("names only environment variables that docs/configuration.md documents", () => {
     for (const env of ENV_ONLY_ROWS) expect(configDocs, env.name).toContain(`\`${env.name}\``);
   });
   it("does not repeat a config.yaml key", () => {
@@ -36,7 +39,7 @@ describe("What happens when you save", () => {
     expect(new Set(ids).size).toBe(ids.length);
     for (const b of SAVE_BRANCHES) expect(SAVE_MAIN.map((m) => m.id)).toContain(b.from);
   });
-  it("quotes the messages the app shows", () => {
+  it.skipIf(!haveRepo)("quotes the messages the app shows", () => {
     const editor = readFileSync(path.join(ROOT, "web", "src", "components", "settings", "SettingsEditor.svelte"), "utf8");
     const settingsLib = readFileSync(path.join(ROOT, "web", "src", "lib", "settings.ts"), "utf8");
     expect(editor).toContain("Settings saved.");

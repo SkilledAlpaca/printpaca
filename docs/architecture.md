@@ -115,7 +115,7 @@ printpaca is secure by default: a generated admin password on first start, a `Ho
 
 ## Build, test, deploy
 
-The two-entry Vite build is embedded into a multi-stage, multi-arch `scratch` Docker image (about 17 MiB uncompressed). GitHub Actions (`.github/workflows/ci.yml`) is the pipeline.
+The two-entry Vite build is embedded into a multi-stage, multi-arch `scratch` Docker image (about 18 MiB uncompressed). GitHub Actions (`.github/workflows/ci.yml`) is the pipeline.
 
 Test layers, fastest to slowest:
 

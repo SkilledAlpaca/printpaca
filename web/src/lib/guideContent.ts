@@ -586,7 +586,7 @@ export interface TopicSection {
   blocks: TopicBlock[];
 }
 
-/** A reference topic (D63): a short intro, then sections with headings, lists, tables, and diagrams. */
+/** A reference topic: a short intro, then sections with headings, lists, tables, and diagrams. */
 export interface GuideTopic {
   id: string;
   title: string;

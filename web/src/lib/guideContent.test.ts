@@ -34,7 +34,7 @@ describe("guide coverage", () => {
       expect(ids).toContain(id);
     }
   });
-  it("keeps the topics the removed card help explained (D33)", () => {
+  it("keeps the topics the removed card help explained", () => {
     const ids = GUIDE_TOPICS.map((t) => t.id);
     for (const id of ["model-files", "material-and-printer", "cost-breakdown", "margin-vs-markup", "marketplace-fees", "saving-quotes", "waste-and-failure-buffers"]) {
       expect(ids).toContain(id);
@@ -53,7 +53,7 @@ describe("GUIDE_TASKS", () => {
     expect(new Set(allIds).size).toBe(allIds.length);
   });
 
-  it("covers every D56 topic", () => {
+  it("covers every topic", () => {
     const ids = GUIDE_TASKS.map((t) => t.id);
     for (const id of [
       "first-time-setup", "quote-a-print", "quote-several-parts", "save-and-reopen-quote", "handle-a-shop-request",
@@ -115,7 +115,7 @@ describe("guide images", () => {
     }
   });
 
-  it("stays under the 700 KB budget (D62)", () => {
+  it("stays under the 700 KB budget", () => {
     const total = files.reduce((sum, f) => sum + statSync(path.join(IMAGE_DIR, f)).size, 0);
     expect(total).toBeLessThan(700_000);
   });
@@ -133,7 +133,7 @@ describe("resolveGuideTopic", () => {
   });
 });
 
-describe("sub-step numbering (D60)", () => {
+describe("sub-step numbering", () => {
   it("labels a single highlight with the plain step number and several as N.1, N.2, ...", () => {
     expect(badgeLabels(3, { text: "x" })).toEqual(["3"]);
     expect(badgeLabels(2, { text: "x", subs: ["a", "b", "c"] })).toEqual(["2.1", "2.2", "2.3"]);
@@ -170,7 +170,7 @@ describe("sub-step numbering (D60)", () => {
   });
 });
 
-describe("reference topics (D63)", () => {
+describe("reference topics", () => {
   const textOf = (b: GuideTopic["sections"][number]["blocks"][number]): string[] =>
     b.kind === "p" ? [b.text] : b.kind === "list" ? b.items : b.kind === "table" ? [b.caption, ...b.head, ...b.rows.flat()] : [];
   it("breaks every topic with more than a short paragraph into sections, and has no em dashes", () => {

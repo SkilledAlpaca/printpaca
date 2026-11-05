@@ -5,8 +5,8 @@
   import { prefersDark } from "./shopAccent";
   import { setShopTheme } from "./shopTheme";
 
-  // D53/D54: the button names the theme it switches to: a moon and "Dark mode" while light shows, a sun and
-  // "Light mode" while dark shows (the same as the admin toggle, D40). The label carries the state, so there is
+  // The button names the theme it switches to: a moon and "Dark mode" while light shows, a sun and
+  // "Light mode" while dark shows (the same as the admin toggle). The label carries the state, so there is
   // no aria-pressed. With no saved choice the device setting decides which one shows first.
   // <html data-theme> is the source of truth (the server set it from the cookie); a MutationObserver keeps the
   // label right when something else changes it.

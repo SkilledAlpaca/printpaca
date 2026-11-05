@@ -1,52 +1,16 @@
 import { test, expect } from "@playwright/test";
 import type { APIRequestContext, Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { deflateSync, crc32 } from "node:zlib";
-import { gotoSettings } from "./helpers";
+import { gotoSettings, getConfig, putConfig, tinyPng } from "./helpers";
+import type { Json } from "./helpers";
 
-// v1.2 Settings > Storefront: the card that replaced the temporary storefront inputs under Requests. These specs
+// v1.2 Settings > Storefront: the storefront settings card. These specs
 // drive the card in the browser and check the result through the public API. All specs share one server and
 // database, so every test puts the shop back the way it found it.
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
-type Json = Record<string, any>;
-
-/** A valid 1x1 PNG of one color. */
-function tinyPng(r: number, g: number, b: number): Buffer {
-  const chunk = (type: string, data: Buffer): Buffer => {
-    const len = Buffer.alloc(4);
-    len.writeUInt32BE(data.length);
-    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-    const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(crc32(body));
-    return Buffer.concat([len, body, crc]);
-  };
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(1, 0);
-  ihdr.writeUInt32BE(1, 4);
-  ihdr[8] = 8;
-  ihdr[9] = 2;
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", ihdr),
-    chunk("IDAT", deflateSync(Buffer.from([0, r, g, b]))),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
-}
-
 let original: Json;
-
-async function getConfig(request: APIRequestContext): Promise<Json> {
-  const res = await request.get("/admin/api/settings");
-  expect(res.ok()).toBeTruthy();
-  return (await res.json()).config as Json;
-}
-
-async function putConfig(request: APIRequestContext, config: Json): Promise<void> {
-  const res = await request.put("/admin/api/settings", { data: { config } });
-  expect(res.ok(), await res.text()).toBeTruthy();
-}
 
 async function publicConfig(request: APIRequestContext): Promise<Json> {
   return (await (await request.get("/api/public/config")).json()) as Json;
@@ -309,7 +273,7 @@ for (const scheme of ["light", "dark"] as const) {
   });
 }
 
-// D30: the Browser tab title reaches /api/public/config and the server-rendered <title> of the shop's HTML.
+// The Browser tab title reaches /api/public/config and the server-rendered <title> of the shop's HTML.
 test("the Browser tab title saves and reaches the public config and the served HTML", async ({ page, request }) => {
   const title = "Zephyr Tab Title";
   const businessName = "Zephyr Prints";

@@ -3,11 +3,11 @@ import type { Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { loginAsAdmin, resetServerState } from "./helpers";
 
-/** D54: the theme button names the theme it switches to. */
+/** The theme button names the theme it switches to. */
 const THEME_BTN = /^(Dark|Light) mode$/;
 
-// Release candidate shell changes: D39 sidebar footer text, D40 theme toggle, D41 Sign out confirmation,
-// and D57 (no integration badges).
+// Release candidate shell changes: sidebar footer text, theme toggle, Sign out confirmation,
+// and no integration badges.
 // The 8099 server has no integrations or sign-in; 9099 has a password (Sign out); 9199 has Spoolman and Moonraker.
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
@@ -30,14 +30,14 @@ async function pickTheme(page: Page, theme: "light" | "dark"): Promise<void> {
   await expect(btn).toHaveAccessibleName(theme === "dark" ? "Light mode" : "Dark mode");
 }
 
-test.describe("D39 sidebar footer text", () => {
+test.describe("Sidebar footer text", () => {
   test("the line and the version sit in the sidebar; there is no page footer", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/admin/");
     await expect(page.locator("main footer, #app > footer")).toHaveCount(0);
     await expect(page.getByText("printpaca, an open-source 3D print cost and quote calculator.")).toHaveCount(0);
     const about = sidebar(page).locator(".about");
-    // D57: one line, "printpaca <version> · open source".
+    // One line, "printpaca <version> · open source".
     await expect(about).toHaveText(/^printpaca \S+ · open source$/);
     const oneLine = await about.evaluate((el) => el.getBoundingClientRect().height < parseFloat(getComputedStyle(el).fontSize) * 2);
     expect(oneLine).toBe(true);
@@ -64,7 +64,7 @@ test.describe("D39 sidebar footer text", () => {
   });
 });
 
-test.describe("D40 theme toggle", () => {
+test.describe("Theme toggle", () => {
   test("starts from the device setting, then remembers the choice per browser", async ({ page }) => {
     await page.emulateMedia({ colorScheme: "dark" });
     await page.goto("/admin/");
@@ -173,7 +173,7 @@ test.describe("D40 theme toggle", () => {
   });
 });
 
-test.describe("D41 Sign out confirmation", () => {
+test.describe("Sign out confirmation", () => {
   test.beforeEach(async () => { await resetServerState(); });
   test.afterAll(async () => { await resetServerState(); });
 
@@ -276,7 +276,7 @@ test.describe("D41 Sign out confirmation", () => {
   });
 });
 
-test.describe("D57 no integration badges in the sidebar", () => {
+test.describe("No integration badges in the sidebar", () => {
   test("neither Spoolman nor Moonraker shows a status pill, even when both are configured", async ({ page }) => {
     for (const url of ["/admin/", INTEGRATIONS_URL]) {
       await page.goto(url);

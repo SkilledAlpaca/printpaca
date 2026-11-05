@@ -11,7 +11,7 @@
 
 <script lang="ts">
   // A description list of read-only facts: a fixed label column with the value beside it in tabular figures so
-  // amounts line up (D28). Dividers sit between rows, the one place D6 allows them. On a phone the label
+  // amounts line up. Dividers sit between rows, the one place they appear. On a phone the label
   // stacks above its value and reading order is unchanged.
   let { rows, label }: { rows: KeyValueRow[]; label?: string } = $props();
 </script>
@@ -24,7 +24,7 @@
 </dl>
 
 <style>
-  /* Spans the full card width (D28): the label column is a fixed field-size token wide and values sit beside
+  /* Spans the full card width: the label column is a fixed field-size token wide and values sit beside
    * it, so every table of facts lines up the same way. The block bleeds out to the card's edge by the card's
    * own padding (--card-pad, which theme.css lowers to --space-4 on a phone) so the row dividers run edge to
    * edge, and the cells put that padding back. Place it directly in a Card. */

@@ -213,7 +213,7 @@
   /* Sticky to the bottom of the scroll container (<main> at >=900px, the window below that), flush with its
    * edge because <main> has no padding. It spans the same content column as the tab's cards. This component
    * doesn't own the page layout (each embedding tab does), so it is self-contained: a card tint instead of an
-   * outline (D6), and its own padding. */
+   * outline, and its own padding. */
   .save-bar {
     position: sticky;
     bottom: 0;

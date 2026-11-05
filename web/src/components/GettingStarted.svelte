@@ -65,7 +65,7 @@
     return `${image.alt} ${highlightNote(labels)}`;
   }
 
-  // Search (D61). The query lives here, so opening a result keeps it. Results replace the grouped topic list.
+  // Search. The query lives here, so opening a result keeps it. Results replace the grouped topic list.
   let query = $state("");
   const results = $derived(searchGuide(GUIDE_SEARCH_ENTRIES, query));
   const countText = $derived(results === null ? "" : resultCountText(results.length));
@@ -270,7 +270,7 @@
   .topic-title:focus { outline: none; }
   .topic-title:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .summary { color: var(--muted); margin-top: 0; }
-  /* Reference topics use the full content width (D63): no prose cap, tables and diagrams span the card. */
+  /* Reference topics use the full content width: no prose cap, tables and diagrams span the card. */
   .intro { margin: 0 0 var(--space-4); }
   .topic-section { margin-block-start: var(--space-5); }
   .topic-section h3 { margin: 0 0 var(--space-2); }

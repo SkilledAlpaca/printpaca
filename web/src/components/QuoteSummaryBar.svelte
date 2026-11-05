@@ -59,7 +59,7 @@
 
   // Turns selling on, scrolls to the Price section, and focuses its price target (the Margin or Markup value,
   // whichever the strategy uses): the section can be several tiles down, so a click that only flipped the
-  // switch would leave the summary visibly unchanged (D35).
+  // switch would leave the summary visibly unchanged.
   async function setPrice() {
     quote.order.sellingEnabled = true;
     await tick();

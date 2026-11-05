@@ -67,7 +67,7 @@
    * swap and if the file ever fails to load. */
   --font-sans: "Figtree Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
 
-  /* Density (D5). Comfortable is the default: 40px controls, 16px gaps. The admin app switches to the compact
+  /* Density. Comfortable is the default: 40px controls, 16px gaps. The admin app switches to the compact
    * set with data-density="compact" on <html> (lib/density.svelte.ts); the public pages never set the
    * attribute, so they stay comfortable. Controls grow to 44px on phones for touch (see the max-width block
    * after the control rules). */
@@ -83,7 +83,7 @@
   --sidebar-w-collapsed: 64px;
   --drawer-w: min(280px, 85vw);
 
-  /* Content widths. --content-max is the admin content cap (D10): it holds the wide column of lists and
+  /* Content widths. --content-max is the admin content cap: it holds the wide column of lists and
    * tables. The narrow reading column of the public pages is set by the public page itself. */
   --content-max: 90rem;
   /* Preferred field widths (plan: XS, S, M, L), capped by the space available. Currency and quantities sit
@@ -101,7 +101,7 @@
   --type-body: 1rem;
   --type-secondary: 0.875rem;
   --type-caption: 0.75rem;
-  --type-micro: 0.6875rem; /* D57: the sidebar footer line */
+  --type-micro: 0.6875rem; /* The sidebar footer line */
 
   /* Type scale: page title, section heading, body, small/meta. */
   --text-xs: var(--type-caption);
@@ -112,17 +112,16 @@
   --text-2xl: 2rem;
   /* Long-form prose measure (Guide page), in ch rather than rem: ch tracks the font's
    * own average character width, so the reading-width target stays right even if the type scale above
-   * changes later. Separate from .measure-cap's 44rem below, which caps tabular/list content instead of
-   * prose. */
+   * changes later. */
   --measure-prose: 68ch;
 
-  /* Cards are a soft tint (D6): --surface on the --bg page, lighter than the page in both themes, with no
+  /* Cards are a soft tint: --surface on the --bg page, lighter than the page in both themes, with no
    * outline and no shadow. Dividers appear only inside tables and lists. --inset is the page tint again, for
    * a block nested inside a card (an order total, a summary). Text contrast on it is the same as on --bg. */
   --card-bg: var(--surface);
   --inset-bg: var(--bg);
 }
-/* Compact density (D5): 32px controls and 8-12px gaps. Admin only. */
+/* Compact density: 32px controls and 8-12px gaps. Admin only. */
 :root[data-density="compact"] {
   --control-h: 2rem;
   --gap: var(--space-2);
@@ -451,8 +450,7 @@ input.warn, textarea.warn { border-color: var(--danger); }
 
 /* Form-grid wrapper standardized across components (SettingsTab, ClientsTab, InvoicesTab's editor grids,
  * ElectricityTab, FilamentTab, QuoteTab's tile grids, PricingPanel): always a multi-column grid, the same
- * layout the dashboard already used unconditionally. Readonly display grids (.readonly-grid) and tables are
- * a separate class and unaffected by this rule. */
+ * layout the dashboard already used unconditionally. */
 .app-main .field-rows {
   display: grid;
   /* min(100%, ...) keeps the 24rem floor from overflowing narrow phone viewports (the row can never ask for
@@ -480,7 +478,7 @@ input.warn, textarea.warn { border-color: var(--danger); }
 .card {
   background: var(--card-bg);
   border-radius: var(--radius);
-  /* Soft tint, no outline and no shadow (D6). Compact density tightens the padding. */
+  /* Soft tint, no outline and no shadow. Compact density tightens the padding. */
   padding: var(--card-pad);
 }
 /* Roomier padding for wide settings-page cards: the base .card padding (tuned for compact tiles/rows) reads
@@ -496,12 +494,6 @@ input.warn, textarea.warn { border-color: var(--danger); }
   letter-spacing: 0.06em;
   color: var(--muted);
 }
-
-/* Measure cap: long-form tabular/list content (breakdown table, pricing output) capped to a comfortable
- * reading width even inside a wide card, instead of stretching to fill whatever multi-column track it
- * landed in. */
-.measure-cap { max-width: 44rem; }
-.measure-cap-prose { max-width: var(--measure-prose); }
 
 /* Shared table baseline: header row, row hover, right-aligned money columns. Components still own their own
  * column widths/wrapping; this only normalizes the parts that should look identical everywhere a table
@@ -638,12 +630,6 @@ tbody tr:hover { background: var(--surface-2); }
   border: 0;
 }
 
-.readonly-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.6rem; margin-bottom: 0.6rem; }
-/* min-width: 0 lets a cell shrink below its value's intrinsic (unbroken) width instead of overflowing into
- * the next column; overflow-wrap wraps that value (a long email is the common case) onto a second line once
- * it no longer fits, scoped to readonly-grid's own value span so .lbl and other grids are unaffected. */
-.readonly-grid div { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
-.readonly-grid div span:last-child { overflow-wrap: anywhere; }
 .lbl { font-size: var(--text-sm); color: var(--muted); }
 
 .status-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--border); }

@@ -475,7 +475,7 @@
 
 <svelte:window onhashchange={onHashChange} />
 
-<!-- The sticky summary (D23): the numbers and breakdown from QuoteTab, then the save fields. Below 1100px the
+<!-- The sticky summary: the numbers and breakdown from QuoteTab, then the save fields. Below 1100px the
      same content opens from a compact bar pinned to the bottom (price, profit and Save). This component owns the
      saved-quote state, so it renders the summary and places it, and the recent saves, in QuoteTab's layout
      (grid areas below). -->

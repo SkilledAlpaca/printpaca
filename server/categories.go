@@ -14,7 +14,7 @@ import (
 	"unicode/utf8"
 )
 
-// Shop categories (v1.2.0, spec D17). An item has zero or one category. A category has a name, a URL slug
+// Shop categories (v1.2.0). An item has zero or one category. A category has a name, a URL slug
 // (#/category/<slug>), a manual order, and a hidden flag. Managed with the "items" permission.
 
 const (

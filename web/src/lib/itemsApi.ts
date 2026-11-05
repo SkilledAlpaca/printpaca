@@ -42,7 +42,7 @@ export interface Item {
    * global max. Stored as given for "ready_to_print" but inert there. */
   allowBackorder: boolean;
   sortOrder: number;
-  /** The item's category id, "" for none (D17). Managed in Shop items, listed by /api/categories. */
+  /** The item's category id, "" for none. Managed in Shop items, listed by /api/categories. */
   categoryId: string;
   /** Featured items come first within the selected shop view. */
   featured: boolean;

@@ -1,43 +1,18 @@
 import { test, expect } from "@playwright/test";
 import type { APIRequestContext, Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { deflateSync, crc32 } from "node:zlib";
-import { navButton, requestIdByReference } from "./helpers";
+import { navButton, requestIdByReference, getConfig, tinyPng } from "./helpers";
+import type { Json } from "./helpers";
 
 // v1.2 storefront core: the shop.* server rules (custom estimates, gallery, accepting orders), categories, the
-// featured flag, the hero image and the accent-color check, with the minimal temporary shop markup. The styled
-// storefront and the Settings > Storefront card arrive in phase 2; these specs pin the behavior underneath.
+// featured flag, the hero image and the accent-color check. These specs pin the behavior under the styled
+// storefront; the Settings > Storefront card is covered in settings-storefront.spec.ts.
 //
 // All specs share one server and database, so every test restores the shop block and removes what it created.
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 const ITEM_NAME = "Core Widget";
 const PAUSED = "Closed until January 5";
-
-type Json = Record<string, any>;
-
-/** A valid 1x1 PNG of one color: distinct colors give distinct bytes, so distinct content-addressed files. */
-function tinyPng(r: number, g: number, b: number): Buffer {
-  const chunk = (type: string, data: Buffer): Buffer => {
-    const len = Buffer.alloc(4);
-    len.writeUInt32BE(data.length);
-    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-    const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(crc32(body));
-    return Buffer.concat([len, body, crc]);
-  };
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(1, 0);
-  ihdr.writeUInt32BE(1, 4);
-  ihdr[8] = 8;
-  ihdr[9] = 2;
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", ihdr),
-    chunk("IDAT", deflateSync(Buffer.from([0, r, g, b]))),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
-}
 
 let originalConfig: Json;
 let itemId = "";
@@ -46,12 +21,6 @@ const createdItems: string[] = [];
 const createdCategories: string[] = [];
 let xffCounter = 0;
 const xff = () => ({ "X-Forwarded-For": `198.51.100.${10 + (xffCounter++ % 200)}` });
-
-async function getConfig(request: APIRequestContext): Promise<Json> {
-  const res = await request.get("/admin/api/settings");
-  expect(res.ok()).toBeTruthy();
-  return (await res.json()).config as Json;
-}
 
 /** PUT the current config with `patch` merged into shop (and `top` into the top level). */
 async function setShop(request: APIRequestContext, patch: Json, top: Json = {}): Promise<void> {
@@ -139,7 +108,7 @@ test("defaults keep the v1.1 shop: both flows, the toggle, the custom card, orde
   await expect(page.getByRole("button", { name: new RegExp(ITEM_NAME) })).toBeVisible();
 });
 
-test("custom estimates off: no estimate UI, D13 redirect with the note and contact details, API 404, items still orderable", async ({ page, request }) => {
+test("custom estimates off: no estimate UI, redirect with the note and contact details, API 404, items still orderable", async ({ page, request }) => {
   await setShop(request, { customEstimates: false }, { quote: { ...originalConfig.quote, email: "shop@example.com", phone: "555-0100" } });
   try {
     // Server: preview and submit are refused with a bare 404 that names no setting.
@@ -238,7 +207,7 @@ test("accepting orders off: the message replaces every submit, the server refuse
     // The owner still sees and can work the request that came in before the pause.
     expect((await request.get(`/admin/api/requests/${existingId}`)).status()).toBe(200);
 
-    // UI (D27): every public route shows the Closed page with the owner's message, and no order or estimate UI.
+    // UI: every public route shows the Closed page with the owner's message, and no order or estimate UI.
     for (const route of ["/", `/#/item/${itemId}`, "/#/estimate", "/#/category/anything", "/#/order/received"]) {
       await page.goto(route);
       await page.reload();

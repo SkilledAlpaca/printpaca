@@ -460,7 +460,7 @@ mdiWhiteBalanceSunny,
     else void logout();
   }
 
-  // D41: Sign out confirms in place. The first click swaps the button for a split control (cancel, confirm).
+  // Sign out confirms in place. The first click swaps the button for a split control (cancel, confirm).
   // It reverts on Escape, a click elsewhere, or 5 seconds without activity; the timer restarts whenever focus or
   // a key press lands inside the control, so a keyboard user is not rushed. Focus goes to the confirm button on
   // the first click and back to Sign out on a revert.
@@ -525,9 +525,9 @@ mdiWhiteBalanceSunny,
     });
   });
 
-  // D40: the sidebar Theme toggle. In the demo the banner's Theme select persists its own copy, so the toggle
+  // The sidebar Theme toggle. In the demo the banner's Theme select persists its own copy, so the toggle
   // writes through to it and the sidebar re-reads <html> when the select changes.
-  // D54: the button names the theme it switches to.
+  // The button names the theme it switches to.
   const themeLabel = $derived(theme.current === "dark" ? "Light mode" : "Dark mode");
   function onToggleTheme() {
     const next = toggleTheme();
@@ -773,7 +773,7 @@ mdiWhiteBalanceSunny,
   let failedLogoUrl = $state("");
   const brandLogoSrc = $derived(brandSource?.logoUrl && brandSource.logoUrl !== failedLogoUrl ? brandSource.logoUrl : logoUrl);
 
-  // The brand link goes to the Dashboard (D22) for anyone whose nav has it, else to the first tab in their nav
+  // The brand link goes to the Dashboard for anyone whose nav has it, else to the first tab in their nav
   // (New quote for most people), like the Home link on a site.
   const homeTab = $derived(brandTab(navSections, "dashboard") ?? "quote");
   // Moves focus to the view's h1 (tabindex -1 so it can take script focus), the same landing spot a screen
@@ -1050,7 +1050,7 @@ mdiWhiteBalanceSunny,
         {#if !sidebarCollapsed}<span>Collapse sidebar</span>{/if}
       </button>
     {/if}
-    <!-- D39: the page footer's line lives here, next to the version. The rail hides the line and keeps the
+    <!-- The page footer's line lives here, next to the version. The rail hides the line and keeps the
          version as a tooltip. -->
     {#if !navCollapsed}
       <div class="about">
@@ -1124,7 +1124,7 @@ mdiWhiteBalanceSunny,
 
   <!-- Lists only the shortcuts that work on the current page: {shortcutMod}+S where an editor registered a
        save, {shortcutMod}+K where the page has a filter input (see FILTER_IDS). The admin has no page footer
-       (D39); the hint is a line at the end of the content. -->
+      ; the hint is a line at the end of the content. -->
   {#if shortcutHints.length > 0}
     <p class="shortcuts-line">Shortcuts: {shortcutHints.join(", ")}</p>
   {/if}
@@ -1202,7 +1202,7 @@ mdiWhiteBalanceSunny,
     font-size: var(--text-xs);
   }
 
-  /* The phone top bar and the sidebar share one tint (D6, D11): --surface on the --bg page, no outline. */
+  /* The phone top bar and the sidebar share one tint: --surface on the --bg page, no outline. */
   header {
     display: flex; align-items: center; gap: var(--space-3);
     padding: var(--space-2) var(--space-4);
@@ -1319,7 +1319,7 @@ mdiWhiteBalanceSunny,
   }
   .nav-section-label:first-child { padding-top: 0; }
 
-  /* --content-max (1440px, D10), not the viewport: past roughly this width a card becomes a band with its contents stranded at
+  /* --content-max (1440px), not the viewport: past roughly this width a card becomes a band with its contents stranded at
    * one end (summary stats, list names, a drop zone's one line). The Guide already capped its measure for
    * this reason; this applies the cap to every tab. Below ~1500px viewports nothing changes. */
   /* Sticky bars can cover a focused field in the scroll container (WCAG 2.4.11). The Settings jump nav (top),
@@ -1347,7 +1347,7 @@ mdiWhiteBalanceSunny,
    * :focus-visible for them when the trigger was the keyboard, which framed the whole content area in a ring.
    * They take no ring; real controls (and Guide's tabindex="0" scroll region) keep theme.css's. */
   #main[tabindex="-1"]:focus-visible { outline: none; }
-  /* The shortcut hint is the last line of <main>'s content (the admin has no page footer, D39). */
+  /* The shortcut hint is the last line of <main>'s content (the admin has no page footer). */
   .shortcuts-line {
     margin: var(--space-6) 0 0;
     padding: var(--space-4) 0;
@@ -1400,7 +1400,7 @@ mdiWhiteBalanceSunny,
   .footer-actions, .footer-prefs { display: flex; flex-direction: column; gap: var(--space-1); }
   .footer-prefs { flex-direction: row; }
   .footer-prefs.rail { flex-direction: column; }
-  /* Content-sized then shared, and never wrapping: "Light mode" is wider than "Compact" (D54). */
+  /* Content-sized then shared, and never wrapping: "Light mode" is wider than "Compact". */
   .footer-prefs > .footer-btn { flex: 1 1 auto; min-width: 0; white-space: nowrap; padding-inline: var(--space-2); }
   .footer-btn {
     display: inline-flex;
@@ -1424,18 +1424,18 @@ mdiWhiteBalanceSunny,
   }
   .footer-actions.rail .footer-btn,
   .footer-prefs.rail .footer-btn { justify-content: center; padding: 0; width: 100%; }
-  /* Sign out confirmation (D41). Status colors are the --danger and --ok tokens, which pass contrast as text on
+  /* Sign out confirmation. Status colors are the --danger and --ok tokens, which pass contrast as text on
    * --surface-2 in both themes (axe checks both); the icon and the word carry the meaning as well as the color. */
   .signout-split { display: flex; gap: var(--space-1); }
   .signout-split.rail { flex-direction: column; }
   .signout-split .footer-btn { flex: 1 1 0; min-width: 0; justify-content: center; font-weight: 600; border: 1px solid currentColor; }
   .signout-split .cancel { color: var(--danger); }
   .signout-split .confirm { color: var(--ok); }
-  /* D57: one muted line below caption size, never wrapping. */
+  /* One muted line below caption size, never wrapping. */
   .about { color: var(--muted); font-size: var(--type-micro); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .version-rail { align-self: center; color: var(--muted); display: inline-flex; padding: var(--space-1); }
   .version-line { font-variant-numeric: tabular-nums; }
-  /* Phone drawer: every footer control is a 44px touch target (D26). */
+  /* Phone drawer: every footer control is a 44px touch target. */
   @media (max-width: 600px) {
     .footer-btn { min-height: 44px; }
     .collapse-toggle { min-height: 44px; }

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
 
-  // Lays fields out in as many columns as fit, one column on a phone. Labels stay above their controls (D9), and
+  // Lays fields out in as many columns as fit, one column on a phone. Labels stay above their controls, and
   // the gap follows the density tokens.
   //
   // `align="controls"` makes the Fields that share a row share their rows too: each Field becomes a subgrid of

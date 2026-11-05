@@ -8,7 +8,7 @@ import (
 	"testing/fstest"
 )
 
-// D53: the shop HTML sets data-theme on <html> from the pp_theme cookie, so the first paint matches the visitor's
+// The shop HTML sets data-theme on <html> from the pp_theme cookie, so the first paint matches the visitor's
 // choice without an inline script. Only "light" and "dark" count; anything else is the same as no cookie.
 func TestShopHTMLThemeFromCookie(t *testing.T) {
 	sub := fstest.MapFS{

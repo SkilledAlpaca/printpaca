@@ -47,7 +47,7 @@ export function applyShopAccent(accent: ShopAccent | null, root: HTMLElement = d
   };
   apply();
   mq.addEventListener("change", apply);
-  // The shop's theme toggle (D53) changes data-theme on <html>; re-apply so the matching variant follows at once.
+  // The shop's theme toggle changes data-theme on <html>; re-apply so the matching variant follows at once.
   const mo = new MutationObserver(apply);
   mo.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
   return () => {

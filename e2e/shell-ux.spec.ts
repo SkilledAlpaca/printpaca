@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { navButton, gotoSettings } from "./helpers";
 import { geometryOnly3mf } from "./geometry3mf";
 
-/** D54: the theme button names the theme it switches to. */
+/** The theme button names the theme it switches to. */
 const THEME_BTN = /^(Dark|Light) mode$/;
 
 test("a wheel over the right gutter scrolls main at 1920 px", async ({ page }) => {
@@ -162,7 +162,7 @@ test("the admin brand shows the business name and logo, links home, and updates 
   await expect(page).toHaveTitle("Settings · Alpaca Prints");
   await expect.poll(() => brand.locator("img.logo").getAttribute("src")).not.toContain("no-such-logo");
 
-  // Activating it opens the Dashboard (D22) and focuses that view's h1.
+  // Activating it opens the Dashboard and focuses that view's h1.
   await brand.click();
   await expect(page).toHaveURL(/#\/dashboard$/);
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeFocused();

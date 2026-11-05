@@ -74,7 +74,7 @@ func handleSettingsGet(configDir string, store *ConfigStore) http.HandlerFunc {
 			resp.Config = pending
 		}
 		if !identityFor(r).isAdmin {
-			resp.Config = redactConfigForEmployee(resp.Config) // D31
+			resp.Config = redactConfigForEmployee(resp.Config)
 		}
 
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
@@ -180,7 +180,7 @@ func handleSettingsPut(configDir string, store *ConfigStore, auth *authState) ht
 		}
 		id := identityFor(r)
 		if !id.isAdmin {
-			// D31: an employee's GET /api/settings omits the SMTP block and the integration URLs, so an editor
+			// An employee's GET /api/settings omits the SMTP block and the integration URLs, so an editor
 			// that sends the whole config back sends them (and users.accessAdminEmail) blank. A blank block reads as "not sent": keep the
 			// stored one. Any other value still reaches the scoped check below and is refused.
 			if desired.Smtp == (Smtp{}) {

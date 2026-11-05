@@ -188,7 +188,7 @@
 </div>
 
 <style>
-  /* An inset card inside the invoice card (D6: tint, no separator line); the space above it and the h3's top
+  /* An inset card inside the invoice card (tint, no separator line); the space above it and the h3's top
    * margin stay local. */
   .payments-card { margin-top: var(--space-5); }
   .payments-card h3 { margin-top: 0; }

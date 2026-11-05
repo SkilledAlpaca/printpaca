@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Light markdown (D46) for the shop intro and announcement. The browser renders it from a token tree
+// Light markdown for the shop intro and announcement. The browser renders it from a token tree
 // (web/src/lib/lightMarkdown.ts); this file is a port of the same parser that produces the plain text for
 // <meta name="description">. testdata/light-markdown-vectors.json keeps the two in step: change both together.
 

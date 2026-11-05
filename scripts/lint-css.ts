@@ -1,5 +1,5 @@
 #!/usr/bin/env -S node --experimental-strip-types
-// CSS spacing and width lint (v1.2 D18). Flags raw spacing and width literals (margin, padding, gap, width,
+// CSS spacing and width lint. Flags raw spacing and width literals (margin, padding, gap, width,
 // min-width, max-width written as 12px, 0.75rem, 20ch ...) so layout code reaches for the tokens in
 // web/src/theme.css (--space-*, --gap, --field-*, --content-max, ...) instead of inventing values.
 //

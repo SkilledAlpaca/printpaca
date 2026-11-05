@@ -247,14 +247,14 @@ test.describe("image lightbox", () => {
   });
 });
 
-// D59: the secondary nav follows the reader.
+// The secondary nav follows the reader.
 async function fullyVisibleIn(container: Locator, entry: Locator): Promise<boolean> {
   const [c, e] = await Promise.all([container.boundingBox(), entry.boundingBox()]);
   if (!c || !e) return false;
   return e.y >= c.y - 0.5 && e.y + e.height <= c.y + c.height + 0.5;
 }
 
-test.describe("secondary nav follows the reader (D59)", () => {
+test.describe("secondary nav follows the reader", () => {
   test.use({ viewport: { width: 1366, height: 768 } });
 
   test("Guide: a text link to a far topic, a deep link, and Back keep the entry visible", async ({ page }) => {
@@ -310,7 +310,7 @@ test.describe("secondary nav follows the reader (D59)", () => {
   });
 });
 
-test.describe("guide search (D61)", () => {
+test.describe("guide search", () => {
   test.use({ viewport: { width: 1366, height: 768 } });
   const search = (page: Page) => page.getByRole("searchbox", { name: "Search the Guide" });
   const nav = (page: Page) => page.getByRole("navigation", { name: "Guide topics" });
@@ -337,7 +337,7 @@ test.describe("guide search (D61)", () => {
     await expect(nav(page).getByRole("link", { name: "Quote a print" })).toBeVisible();
   });
 
-  test("opening a result keeps the search text, and the rail keeps the current topic in view (D59)", async ({ page }) => {
+  test("opening a result keeps the search text, and the rail keeps the current topic in view", async ({ page }) => {
     await page.goto("/admin/#/guide");
     await search(page).fill("dashboard");
     await nav(page).getByRole("link", { name: /^Read the Dashboard/ }).click();
@@ -388,7 +388,7 @@ test.describe("guide search (D61)", () => {
   });
 });
 
-test.describe("reference topics (D63)", () => {
+test.describe("reference topics", () => {
   const TOPIC = "/admin/#/guide#configuring-printpaca";
 
   test("Configuring printpaca has sections and both diagrams, full width", async ({ page }) => {

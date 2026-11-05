@@ -4,13 +4,13 @@
   import { getHintMode } from "./hintMode";
   import HintTip from "./HintTip.svelte";
 
-  // A label above one control (D9), at every width. The label is a native <label for>, the hint and the error
+  // A label above one control, at every width. The label is a native <label for>, the hint and the error
   // are separate elements whose ids combine in aria-describedby with any extra ids the caller supplies (a live
   // notice, say), and the control itself stays the caller's: it receives { id, describedby, invalid } to spread
   // onto an input, select or textarea. `size` is a preferred width (XS, S, M, L) capped by the space available,
   // so currency and quantities don't stretch across a wide card; "full" fills its column.
   //
-  // The hint (D32) is descriptive help. In the admin app it becomes a "?" button beside the label that opens a
+  // The hint is descriptive help. In the admin app it becomes a "?" button beside the label that opens a
   // tooltip (ui/HintTip); the text stays in the DOM and in aria-describedby either way. The customer shop sets
   // the hint mode "visible" once at its entry (ui/hintMode), and a single admin hint that must stay visible, such
   // as a status or a warning, passes `hintVisible`. Errors always render under the control.

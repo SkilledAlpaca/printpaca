@@ -146,7 +146,7 @@
 
   // Config load
 
-  // D30: the server embeds the public config in the HTML, so a hard refresh renders the owner's shop on the
+  // The server embeds the public config in the HTML, so a hard refresh renders the owner's shop on the
   // first paint. Without it (an older server, an unparseable block) the page shows a neutral loading state,
   // never built-in defaults, until the fetch returns. Either way the fetch below refreshes the config.
   const embeddedConfig = readEmbeddedConfig();
@@ -239,7 +239,7 @@
     if (route.name === "gallery" && location.hash === "" && shop.defaultView === "estimate") return "quote";
     return "gallery";
   });
-  // D13: an old #/estimate link opens the gallery with this note and the business contact details when custom
+  // An old #/estimate link opens the gallery with this note and the business contact details when custom
   // estimates are off.
   const ESTIMATES_OFF_NOTE = "Custom estimates aren't offered right now.";
 
@@ -328,7 +328,7 @@
       navigate({ name: "gallery" }, { replace: true });
     }
   }
-  // D45: the header logo and name link to the storefront home. Followed from an item or a confirmation it acts
+  // The header logo and name link to the storefront home. Followed from an item or a confirmation it acts
   // like Back to gallery, with focus on the gallery heading (the estimate form's heading when the gallery is
   // off). An order form holding choices, a quantity or a note asks first, so a click never discards it silently.
   let itemDirty = $state(false);
@@ -1003,7 +1003,7 @@
 
   // Page title (WCAG 2.4.2): tracks the state the visitor is in, so a title list or history entry says whether
   // this is the form or the confirmation.
-  // D30: the shop title alone on the gallery, "<page> · <shop title>" on every inner page. null (nothing
+  // The shop title alone on the gallery, "<page> · <shop title>" on every inner page. null (nothing
   // loaded yet) leaves the title the server rendered.
   const pageTitle = $derived.by(() => {
     if (!cfg) return null;
@@ -1070,7 +1070,7 @@
 </svelte:head>
 
 {#snippet pausedNote()}
-  <!-- D27 exemption: a saved confirmation outlives a pause, with the closure said plainly above it. -->
+  <!-- Exemption: a saved confirmation outlives a pause, with the closure said plainly above it. -->
   <div class="paused-note" role="status">
     <p><strong>We're closed right now. We still have your request.</strong></p>
     {#if shop.pausedMessage}<p>{shop.pausedMessage}</p>{/if}
@@ -1118,7 +1118,7 @@
     <p class="muted center">Estimates are temporarily unavailable.</p>
     <p class="center"><button type="button" onclick={() => location.reload()}>Try again</button></p>
   {:else if cfg && closedPageShown}
-    <!-- D27: while the shop isn't accepting orders, every route (gallery, item, category, estimate, a saved
+    <!-- While the shop isn't accepting orders, every route (gallery, item, category, estimate, a saved
          confirmation) shows the Closed page. The footer keeps Staff sign-in and the owner's links. -->
     <ClosedPage
       businessName={cfg.branding.businessName}
@@ -1636,7 +1636,7 @@
 <style>
   .copy-ref { align-self: center; }
   .page {
-    /* The narrow reading column (D10): the record measure plus the card padding, so a card's text keeps the
+    /* The narrow reading column: the record measure plus the card padding, so a card's text keeps the
      * same line length as a record view. Narrower than the viewport on a phone, where the padding constrains it. */
     max-width: calc(var(--measure-record) + 2 * var(--card-pad));
     margin: 0 auto;
@@ -1655,7 +1655,7 @@
   }
   .brand .logo { height: 2.5rem; width: auto; }
   .brand h1 { margin: 0; overflow-wrap: anywhere; min-width: 0; }
-  /* D45: logo and name are one link; the look is unchanged apart from a hover underline and a focus ring. */
+  /* Logo and name are one link; the look is unchanged apart from a hover underline and a focus ring. */
   .brand-link { display: inline-flex; align-items: center; gap: var(--space-3); color: inherit; text-decoration: none; min-height: 44px; border-radius: var(--radius); }
   .brand-link:hover .brand-name { text-decoration: underline; text-underline-offset: 0.15em; }
   .brand-link:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 3px; }

@@ -3,8 +3,8 @@ import type { Locator, Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { seedQuoteBody } from "./helpers";
 
-// Release candidate tidy: D57 sidebar footer line (the integration badges are gone), D49 the Quotes email
-// notice never overlaps content, D50 fixed-slot Quotes row actions.
+// Release candidate tidy: the sidebar footer line (the integration badges are gone), the Quotes email
+// notice never overlaps content, fixed-slot Quotes row actions.
 // 8099 has no SMTP, so the email notice shows.
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
@@ -37,7 +37,7 @@ async function microPx(page: Page): Promise<number> {
   });
 }
 
-test.describe("D57 sidebar footer text", () => {
+test.describe("Sidebar footer text", () => {
   test("the footer line uses the micro size, muted, on one line, expanded and in the drawer", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/admin/");
@@ -92,7 +92,7 @@ async function seedStatuses(request: import("@playwright/test").APIRequestContex
 
 const quoteRow = (page: Page, label: string): Locator => page.locator("tr.quote-row", { hasText: label });
 
-test.describe("D49 Quotes email notice", () => {
+test.describe("Quotes email notice", () => {
   for (const [width, density] of [[1440, "comfortable"], [1440, "compact"], [390, "comfortable"], [390, "compact"]] as const) {
     test(`with email unconfigured the notice overlaps no sibling at ${width} px, ${density}`, async ({ page, request }) => {
       await seedStatuses(request, `d49-${width}-${density}`);
@@ -125,7 +125,7 @@ test.describe("D49 Quotes email notice", () => {
   }
 });
 
-test.describe("D50 Quotes row actions", () => {
+test.describe("Quotes row actions", () => {
   test("every row has the same action slots, equal widths, equal x positions", async ({ page, request }) => {
     const labels = await seedStatuses(request, "d50");
     for (const density of ["comfortable", "compact"] as const) {
@@ -213,7 +213,7 @@ test.describe("D50 Quotes row actions", () => {
 });
 
 test.describe("axe on the sidebar and Quotes", () => {
-  test("pass in both themes", async ({ page, request }) => {
+  test("pass in both themes", async ({ page }) => {
     await seedStatuses(page.request, "axe", "http://127.0.0.1:9199");
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(INTEGRATIONS_URL + "#/quotes");
@@ -234,7 +234,7 @@ test.describe("axe on the sidebar and Quotes", () => {
   });
 });
 
-test.describe("D51 time zone picker", () => {
+test.describe("Time zone picker", () => {
   const field = (page: Page) => page.getByRole("combobox", { name: "Time zone" });
   const openSettings = async (page: Page) => {
     await page.goto("/admin/#/settings");

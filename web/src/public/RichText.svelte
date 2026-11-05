@@ -1,7 +1,7 @@
 <script lang="ts">
   import { parseLightMarkdown, type Inline } from "../lib/lightMarkdown";
 
-  // The owner's light-markdown text (D46) as Svelte markup. The parser returns a token tree and this component
+  // The owner's light-markdown text as Svelte markup. The parser returns a token tree and this component
   // builds elements from it: user text only ever reaches the DOM as a text node, never through {@html}, and a
   // link exists only for an https: or mailto: address (the parser drops every other URL to literal text).
   let { text }: { text: string } = $props();

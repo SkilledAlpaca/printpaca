@@ -1,4 +1,4 @@
-// Pure logic for the Shop items categories manager (spec D17). The server owns the rules (server/categories.go);
+// Pure logic for the Shop items categories manager. The server owns the rules (server/categories.go);
 // this mirrors only what the form needs to preview and to keep rows in order.
 
 import type { Category } from "./categoriesApi";

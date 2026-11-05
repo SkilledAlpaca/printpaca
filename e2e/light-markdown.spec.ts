@@ -1,11 +1,10 @@
 import { test, expect } from "@playwright/test";
 import type { APIRequestContext } from "@playwright/test";
-import { gotoSettings } from "./helpers";
+import { gotoSettings, getConfig } from "./helpers";
+import type { Json } from "./helpers";
 
-// D46: the shop intro and announcement accept light markdown. The Settings preview and the shop render the same
+// The shop intro and announcement accept light markdown. The Settings preview and the shop render the same
 // token tree as markup (never as HTML), and the server-rendered <meta name="description"> carries plain text.
-
-type Json = Record<string, any>;
 
 const INTRO = [
   "Welcome to **our shop** with *careful* prints, see [our policy](https://example.com/policy) or [mail us](mailto:hi@example.com).",
@@ -19,12 +18,6 @@ const INTRO = [
 const ANNOUNCEMENT = "Closed **Dec 24** to *Jan 2*. [Details](https://example.com/hours)";
 
 let original: Json;
-
-async function getConfig(request: APIRequestContext): Promise<Json> {
-  const res = await request.get("/admin/api/settings");
-  expect(res.ok()).toBeTruthy();
-  return (await res.json()).config as Json;
-}
 
 test.describe.configure({ mode: "serial" });
 

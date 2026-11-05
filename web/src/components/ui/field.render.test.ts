@@ -4,7 +4,7 @@ import { render } from "svelte/server";
 import Field from "./Field.svelte";
 import { HINT_MODE_KEY } from "./hintMode";
 
-// Server-render Field to check which of the two hint presentations it picks (D32).
+// Server-render Field to check which of the two hint presentations it picks.
 const control = createRawSnippet(() => ({ render: () => "<input />" }));
 
 function html(props: Record<string, unknown>, mode?: "visible" | "tooltip"): string {

@@ -66,7 +66,7 @@
     loading = false;
   }
 
-  // Categories (D17): the item editor's Category select and the manager card share this list. `categoriesLoaded`
+  // Categories: the item editor's Category select and the manager card share this list. `categoriesLoaded`
   // is false until the first answer; a failed load leaves the select with None only and the manager disabled.
   let categories = $state<Category[]>([]);
   let categoriesUnavailable = $state(false);

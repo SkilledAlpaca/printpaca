@@ -1,4 +1,4 @@
-// Light markdown for the shop's intro and announcement (D46). One small parser, no dependency, and no HTML:
+// Light markdown for the shop's intro and announcement. One small parser, no dependency, and no HTML:
 // it returns a token tree that RichText.svelte renders as Svelte markup, so owner text is never parsed as HTML.
 // server/lightmarkdown.go is a line-for-line port that produces the plain text for <meta name="description">;
 // testdata/light-markdown-vectors.json keeps the two in step.

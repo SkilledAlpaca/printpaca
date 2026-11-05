@@ -6,14 +6,13 @@
   // `step` is opt-in, for a numbered section of a long form: the legend then reads as a heading with its number in
   // a small circle in front. The number is part of the legend's name ("Step 1: ...") for assistive technology.
   // Without `step` nothing changes.
-  let { legend, hint, hintId, step, children }: { legend: string; hint?: string; hintId?: string; step?: number; children: Snippet } = $props();
+  let { legend, step, children }: { legend: string; step?: number; children: Snippet } = $props();
 </script>
 
-<fieldset aria-describedby={hint ? hintId : undefined}>
+<fieldset>
   <legend class:step={step !== undefined}>
     {#if step !== undefined}<span class="step-num" aria-hidden="true">{step}</span><span class="visually-hidden">Step {step}: </span>{/if}{legend}
   </legend>
-  {#if hint}<p class="fieldset-hint" id={hintId}>{hint}</p>{/if}
   {@render children()}
 </fieldset>
 
@@ -34,5 +33,4 @@
     font-size: var(--type-secondary);
     font-weight: 700;
   }
-  .fieldset-hint { margin: 0; color: var(--muted); font-size: var(--type-secondary); }
 </style>

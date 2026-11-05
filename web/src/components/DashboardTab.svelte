@@ -123,7 +123,7 @@
         return `Sent ${formatDate(item.date)}${item.amountCents > 0 ? ` · ${money(item.amountCents, cfg)}` : ""}`;
     }
   }
-  // The five action tiles, in the order D25 names them. `tab` is the page the tile's records live on: a tile
+  // The five action tiles, in a fixed order. `tab` is the page the tile's records live on: a tile
   // for a page this user can't open (or that Settings turned off) isn't shown, and the server leaves those
   // rows out of the response anyway.
   const configUser = $derived(extractConfigUser(cfg));
@@ -483,7 +483,7 @@
   }
   @media (min-width: 900px) {
     .cards { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: stretch; }
-    /* D43: the Revenue by month card sets the row height; the Recent invoices card matches it and scrolls its
+    /* The Revenue by month card sets the row height; the Recent invoices card matches it and scrolls its
      * list inside. contain: size keeps the list's own height out of the row's sizing. The min-height keeps a
      * usable list when the chart card is short (no revenue yet). */
   }

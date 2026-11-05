@@ -417,7 +417,7 @@ async function usersTopic(s: Shooter, env: Env): Promise<void> {
 
 async function dashboardTopic(s: Shooter, env: Env): Promise<void> {
   const { page } = s;
-  // A narrower window keeps the five tiles within the 1200 px crop cap (D62).
+  // A narrower window keeps the five tiles within the 1200 px crop cap.
   await page.setViewportSize({ width: 1200, height: 1500 });
   await go(page, env, "dashboard");
   const tile = page.getByText("New requests", { exact: true }).first();

@@ -95,13 +95,13 @@
     text-align: left;
     width: 100%;
     min-height: 0;
-    /* Soft tint, no outline (D6): the global button border doesn't apply to a card. */
+    /* Soft tint, no outline: the global button border doesn't apply to a card. */
     border: 0;
     /* A focused card scrolls clear of the viewport edge, so its ring isn't clipped. */
     scroll-margin: var(--space-4);
   }
 
-  /* The cards have no outline (D6), so the ring sits clear of the tint to stay obvious. */
+  /* The cards have no outline, so the ring sits clear of the tint to stay obvious. */
   .item-card:focus-visible {
     outline: 3px solid var(--focus-ring);
     outline-offset: 3px;

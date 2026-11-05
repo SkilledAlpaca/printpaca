@@ -93,7 +93,7 @@ async function main(): Promise<void> {
       for (const f of readdirSync(outDir)) {
         if (f.endsWith(".webp") && !shooter.written.includes(f.slice(0, -5))) rmSync(path.join(outDir, f));
       }
-      // D62: the folder stays under 700 KB. Fail rather than commit images that blow the image-size budget.
+      // The folder stays under 700 KB. Fail rather than commit images that blow the image-size budget.
       const total = readdirSync(outDir).filter((f) => f.endsWith(".webp")).reduce((n, f) => n + statSync(path.join(outDir, f)).size, 0);
       console.log(`[guide-shots] total ${total} bytes (budget ${GUIDE_IMAGE_BUDGET_BYTES})`);
       if (total > GUIDE_IMAGE_BUDGET_BYTES) throw new Error(`guide images total ${total} bytes, over the ${GUIDE_IMAGE_BUDGET_BYTES} byte budget`);

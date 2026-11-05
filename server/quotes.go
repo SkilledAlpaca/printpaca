@@ -181,7 +181,7 @@ func handleQuoteSend(db *sql.DB, store *ConfigStore, dial smtpDialer) http.Handl
 		subject, textBody, htmlBody := renderQuoteEmail(cfg, in.Quote, lineAmountCents, totalCents, validUntil)
 		if err := sendMailWith(cfg, dial, in.To, subject, textBody, htmlBody); err != nil {
 			log.Printf("quotes send: %v", err)
-			writeAPIError(w, http.StatusBadGateway, err.Error())
+			writeAPIError(w, http.StatusBadGateway, sendFailureMessage(r, err))
 			return
 		}
 

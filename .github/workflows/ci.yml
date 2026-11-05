@@ -34,6 +34,8 @@ jobs:
       - run: npm run build -w web
       # -race shares this step: it adds under a minute to a job dominated by npm ci,
       # vitest, and Playwright.
+      # Fails when a linked Go module's version differs from THIRD_PARTY_NOTICES.md.
+      - run: bash scripts/check-notices.sh
       - run: cd server && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race -count=1
       # Pinned, so bumping the gate is deliberate; runs without touching go.mod.
       - run: cd server && go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...

@@ -8,7 +8,7 @@ This list covers only what actually ships at runtime: the Go module graph reacha
 
 ## Go modules (statically linked into the server binary)
 
-### modernc.org/sqlite v1.60.1: BSD-3-Clause (Go port) + bundles SQLite (public domain)
+### modernc.org/sqlite v1.61.0: BSD-3-Clause (Go port) + bundles SQLite (public domain)
 
 modernc.org/sqlite is a CGo-free, transpiled port of SQLite; it ships two notices: the Go port's own BSD-3-Clause license, and SQLite's own public domain dedication for the transpiled C source it's derived from.
 
@@ -54,7 +54,7 @@ SQLite itself (the transpiled deliverable code):
 
 modernc.org/sqlite also bundles the source for an optional `sqlite-vec` extension (MIT, Copyright (c) 2024 Alex Garcia); printpaca never loads it (no `vec0`/extension-loading calls anywhere in `server/`), but it is included here defensively since its source ships in the same module tree.
 
-### modernc.org/libc v1.77.1, modernc.org/mathutil v1.7.1, modernc.org/memory v1.12.1: BSD-3-Clause
+### modernc.org/libc v1.79.0, modernc.org/mathutil v1.7.1, modernc.org/memory v1.12.1: BSD-3-Clause
 
 Transitive dependencies of modernc.org/sqlite (the runtime support library the transpiled C code needs, big-integer math, and a memory allocator). Same license text as modernc.org/sqlite above, with the copyright holder changed per module:
 
@@ -92,7 +92,7 @@ Same BSD-3-Clause text as modernc.org/sqlite above, with "Neither the name of Go
 
 Same BSD-3-Clause text as modernc.org/sqlite above, with "Neither the name of Google Inc." in the non-endorsement clause.
 
-### github.com/dustin/go-humanize v1.0.1: MIT
+### github.com/dustin/go-humanize v1.1.0: MIT
 
 > Copyright (c) 2005-2008 Dustin Sallings <dustin@spy.net>
 >
@@ -155,7 +155,7 @@ The compiled binary also statically links the Go runtime and standard library. S
 
 ## npm packages (bundled into the embedded web assets)
 
-### svelte v5.57.2: MIT
+### svelte v5.57.3: MIT
 
 The compiled Svelte component output includes Svelte's runtime helper functions, even though `svelte` itself is a devDependency (it's the compiler; part of what it emits is this runtime).
 

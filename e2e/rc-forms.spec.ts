@@ -19,12 +19,20 @@ test("New quote has no Explain this page, card help buttons, or slicer box", asy
 });
 
 test("the Guide covers what the removed card help explained", async ({ page }) => {
-  await page.goto("/admin/");
-  await page.getByRole("button", { name: "Guide", exact: true }).click();
-  for (const topic of ["Model files and print time", "Material, printer, and print start", "Cost breakdown", "Saving quotes", "Margin versus markup", "Marketplace fees"]) {
-    await expect(page.getByRole("heading", { name: topic })).toBeVisible();
+  // Each concept is its own Guide topic now, opened by its deep link.
+  for (const [id, title] of [
+    ["model-files", "Model files and print time"],
+    ["material-and-printer", "Material, printer, and print start"],
+    ["cost-breakdown", "Cost breakdown"],
+    ["saving-quotes", "Saving quotes"],
+    ["margin-vs-markup", "Margin versus markup"],
+    ["marketplace-fees", "Marketplace fees"],
+  ] as const) {
+    await page.goto(`/admin/#/guide#${id}`);
+    await expect(page.getByRole("heading", { name: title, level: 2 })).toBeVisible();
   }
   await expect(page.getByText(/press the \? next to any card heading/)).toHaveCount(0);
+  await page.goto("/admin/#/guide#model-files");
   await expect(page.getByText(/A slicer is the program that turns a 3D model/)).toBeVisible();
 });
 

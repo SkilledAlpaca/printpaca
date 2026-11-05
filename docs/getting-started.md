@@ -174,15 +174,47 @@ admin listener: rejected request for disallowed Host "printpaca.example.com"; se
 
 Each rejected request also appears as a `403` in the access log (`access admin "GET" "/" 403 ...`).
 
+## Quote a print
+
+The in-app **Guide** (link at the bottom of the sidebar) walks through every task with the same screenshots. This is the shortest path from a model to a price.
+
+1. Select **New quote**. Enter 48 in **Model weight (g)**, and 2 hours 30 minutes under **Print time**. A sliced .gcode or .3mf file dropped on the file box fills both in.
+
+   ![Model weight (g) highlighted in section 1, Model and print time](../web/src/assets/guide/quote-weight.webp)
+
+2. In section 2, check **Material** (PLA is selected by default) and **Printer**.
+
+   ![The Material selector in section 2, Material and printer](../web/src/assets/guide/quote-material.webp)
+
+3. Read **Your cost** in the summary. For this example it is $2.37.
+
+   ![Your cost in the summary](../web/src/assets/guide/quote-cost.webp)
+
+4. Press **Set a client price**. At the default 30% margin the summary shows a client price of $3.39, a profit of $1.02, and a margin of 30.1%.
+
+   ![Client price, cost, profit, and margin in the summary](../web/src/assets/guide/quote-client-price.webp)
+
 ## Quote a walk-in customer
 
-On the New quote page, turn on **Set a selling price**, then type the client's name in **Client for this quote**, in the Saved quotes card next to the label. There is only this one client field. The same name prints on the client quote and is saved with the quote. When you save, a name that matches no client creates one, so repeat clients are linked automatically.
+On the New quote page, press **Set a client price**, then type the client's name in **Client for this quote** under **Save this quote** in the summary. There is only this one client field. The same name prints on the client quote and is saved with the quote. When you save, a name that matches no client creates one, so repeat clients are linked automatically.
+
+![The Client for this quote field in the summary](../web/src/assets/guide/save-client.webp)
+
+Enter a label in **Label for this quote**, then press **Save quote**.
+
+![The Save quote button](../web/src/assets/guide/save-button.webp)
 
 To email the quote, open the quote's row menu on the Quotes page and choose **Email quote**. If the quote has no client, or its client has no email on file, printpaca asks for an address, creates the client (or fills in the linked client's email), and sends the quote after you confirm. printpaca also asks you to confirm before it changes a quote's status (Mark sent, Mark accepted, or Mark declined), emails an invoice, or marks an invoice sent. This needs the Clients permission; without it the menu explains that you need Clients access to add an email. Converting the quote to an invoice keeps the client's name.
 
+![A quote row on the Quotes page with its status badge and actions](../web/src/assets/guide/save-quotes-row.webp)
+
 ## Edit a saved quote
 
-Saving a quote keeps the form tied to it. The page title changes to **Edit quote: <label>**, the sidebar highlights **Quotes**, and the address becomes `#/quote/<id>`, so you can bookmark the quote or open it in another tab. **Update quote** and **Save as new** sit at the top of the page. Pressing Ctrl+S (⌘S on macOS) again updates the same quote instead of creating another.
+Saving a quote keeps the form tied to it. The page title changes to **Edit quote: <label>**, the sidebar highlights **Quotes**, and the address becomes `#/quote/<id>`, so you can bookmark the quote or open it in another tab. **Update quote** and **Save as new** sit in the summary under **Save this quote**.
+
+![Update quote and Save as new after saving](../web/src/assets/guide/save-update.webp)
+
+ Pressing Ctrl+S (⌘S on macOS) again updates the same quote instead of creating another.
 
 - **New quote always starts blank.** The sidebar **New quote** and the **New quote** button on the Quotes page clear the weight, print time, label, client, and the rest. If the form has unsaved edits, printpaca asks first. To start from an existing quote, use **Duplicate** on the Quotes page.
 - **A reopened quote keeps its saved price.** The quote opens with the electricity rates it was saved with, so the total matches the Quotes list. If the shop's electricity settings have changed since, a note says so. Press **Use current rates** to reprice at today's rates, or change a rate or the print start yourself.
@@ -194,9 +226,17 @@ Saving a quote keeps the form tied to it. The page title changes to **Edit quote
 An order can hold 1 to 20 parts, for example a bracket, its lid, and a bag of spacers for one customer. Each part has its own weight, print time, printer, material, quantity, and hardware. Fees, tax, shipping, and the customer are set once for the whole order.
 
 1. On the New quote page, drop several sliced files onto the Model file box at once, or press **Add part**. Dropping several files makes one part per file, named after the file. Dropping a single file fills the part you are editing.
-2. Select a part in the **Parts** list to edit it. You can rename, duplicate, or remove a part there.
+
+   ![The Add part button](../web/src/assets/guide/multi-add-part.webp)
+
+2. Select a part's tab (**Part 1**, **Part 2**, and so on) to edit it. Under the tabs you can rename, duplicate, or remove the part.
+
+   ![The part tabs and the Part name field](../web/src/assets/guide/multi-part-fields.webp)
+
 3. Turn on **Set a selling price**. Margin or markup is applied to each part, and **Sale price override** sets a fixed per-unit price for the selected part only.
-4. Fees and tax are calculated once on the whole order (tax is included in the price, as for a single part), and shipping is charged once. The summary bar and the **Order by part** table show each part and the order total.
+4. Fees and tax are calculated once on the whole order (tax is included in the price, as for a single part), and shipping is charged once. The summary shows one cost and one price for the order.
+
+   ![The summary for an order of two parts](../web/src/assets/guide/multi-summary.webp)
 
 A saved multi-part quote shows "N parts" in the Quotes list. **Print client quote** lists one line per part, then shipping and the total, and **Print cost audit** shows one breakdown per part. **Convert to invoice** creates one invoice line per part (named "quote label - part label") plus the Shipping line. **Email quote** sends the same lines. A quote with one part works as before. **Open in new quote** on a request starts a new one-part quote.
 
@@ -309,6 +349,6 @@ sudo rm -rf ./config
 
 ## Next steps
 
-Open **Guide** from the link at the bottom of the sidebar for a walkthrough of quoting, invoicing, and getting paid. To change currency, pricing, business details, or optional features, see [Configuration](configuration.md). To expose printpaca over HTTPS, see [Running behind a reverse proxy](configuration.md#running-behind-a-reverse-proxy-https). To put printpaca on a real hostname without forwarding a port, see [Cloudflare Tunnel](cloudflare-tunnel.md).
+Open **Guide** from the link at the bottom of the sidebar for task-by-task help with screenshots: first-time setup, quoting, saving and sending quotes, shop requests, invoices and payments, the storefront, shop items, electricity schedules, filament and Spoolman, printers and Moonraker, staff accounts, and the Dashboard. The topic list is on the left (a **Choose a topic** button on a phone). To change currency, pricing, business details, or optional features, see [Configuration](configuration.md). To expose printpaca over HTTPS, see [Running behind a reverse proxy](configuration.md#running-behind-a-reverse-proxy-https). To put printpaca on a real hostname without forwarding a port, see [Cloudflare Tunnel](cloudflare-tunnel.md).
 
 ![The Dashboard tab: revenue this month/year, outstanding balance, overdue count, and recent invoices](screenshots/dashboard.png)

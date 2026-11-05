@@ -199,8 +199,11 @@ func TestShopHTMLEscapesHostileValues(t *testing.T) {
 func TestShopHTMLHeadersNoCacheAndCSPUnchanged(t *testing.T) {
 	cfg := newPublicTestConfig(t, t.TempDir())
 	rec := getShopHTML(t, shopHTMLHandler(t, cfg), "/")
-	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
-		t.Errorf("Cache-Control = %q, want no-cache", got)
+	if got := rec.Header().Get("Cache-Control"); got != "private, no-cache" {
+		t.Errorf("Cache-Control = %q, want private, no-cache", got)
+	}
+	if got := rec.Header().Get("Vary"); !strings.Contains(got, "Cookie") {
+		t.Errorf("Vary = %q, want it to include Cookie", got)
 	}
 	if got := rec.Header().Get("Content-Security-Policy"); got != publicContentSecurityPolicy {
 		t.Errorf("CSP = %q, want the unchanged public policy", got)

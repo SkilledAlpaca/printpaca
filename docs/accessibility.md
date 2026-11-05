@@ -146,7 +146,7 @@ Accessibility is a release gate: `npm run e2e` fails if `e2e/a11y.spec.ts` finds
 - **`confirmFocus`** in `web/src/lib/a11yFocus.ts` is a Svelte action for the confirm button of a two-step confirm. It takes focus on mount, handles Escape, ignores key auto-repeat, and returns focus to the trigger (pass `restore` with a `data-focus-key` selector).
 - **`refocusIfLost(selector)`** in the same file refocuses a control only if focus fell to the page body. Use it after an action that replaces the control you pressed. The same file has `focusRowOrHeading` for lists, `focusAfterRowRemoval` for editable rows, and `focusOnMount`.
 - **`ErrorSummary`** (`web/src/components/ErrorSummary.svelte`) renders a form's error list as an alert with a button per error, and sets `aria-invalid` and `aria-describedby` on the matching control. Use it instead of a hand-written error list.
-- **`DetailTitle`** (`web/src/components/DetailTitle.svelte`) is the one `h1` of a record's detail view. It takes focus on mount and sets the record segment of the page title. Every view has exactly one `h1`.
+- **`PageHeader`** (`web/src/components/ui/PageHeader.svelte`) renders the one `h1` of every view. With the `record` prop set, which a record's detail view does, the `h1` takes focus on mount (`focusOnMount`) and mirrors its text into the page title (`recordTitle`). Every view has exactly one `h1`.
 - **`ScrollRegion`** (`web/src/components/ScrollRegion.svelte`) wraps a horizontally scrolling table that has no focusable content, so keyboard users can scroll it.
 
 ### In-flight actions

@@ -51,8 +51,8 @@ func TestShopHTMLThemeFromCookie(t *testing.T) {
 			if strings.Contains(body, "alert(1)") {
 				t.Error("cookie value leaked into the page")
 			}
-			if cc := rec.Header().Get("Cache-Control"); cc != "no-cache" {
-				t.Errorf("Cache-Control = %q, want no-cache", cc)
+			if cc := rec.Header().Get("Cache-Control"); cc != "private, no-cache" {
+				t.Errorf("Cache-Control = %q, want private, no-cache", cc)
 			}
 		})
 	}

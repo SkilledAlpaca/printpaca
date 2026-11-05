@@ -272,7 +272,7 @@ func TestCompressMiddlewareSkipsProxyPrefixes(t *testing.T) {
 }
 
 // Drives GET /api/public/items through publicListenerHandler, the production chain, proving compressMiddleware
-// works end-to-end with accessLogMiddleware, securityHeadersMiddleware, and noStoreAPIMiddleware.
+// works end-to-end with accessLogMiddleware, securityHeadersTLSMiddleware, and noStoreAPIMiddleware.
 func TestPublicListenerCompressesRealEndpoint(t *testing.T) {
 	dir := t.TempDir()
 	adminMux, publicMux, _, _ := newRequestsTestSetup(t, dir)

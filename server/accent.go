@@ -5,6 +5,8 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 )
 
 // Accent color check for shop.accentColor. The same algorithm lives in web/src/lib/accent.ts; both read
@@ -250,6 +252,34 @@ func checkAccentColor(input string) AccentCheck {
 	}
 	res.Dark = evalAccentScheme(darkAccent, accentDarkBackgrounds)
 	res.OK = res.Dark.Pass
+	return res
+}
+
+// accentCacheMax bounds the memo. Only an admin can set the accent, so a handful of entries is the norm;
+// the cap just stops a long-lived process from growing it without limit.
+const accentCacheMax = 32
+
+var (
+	accentCache       sync.Map // lowercased-or-raw input string -> AccentCheck
+	accentCacheLen    atomic.Int64
+	accentCacheMisses atomic.Int64 // test hook: how many times the check actually ran
+)
+
+// checkAccentColorCached is checkAccentColor memoized by input. The check is a pure function of the
+// accent value, so the shop render path pays for it once per distinct accent, not once per request.
+func checkAccentColorCached(input string) AccentCheck {
+	if v, ok := accentCache.Load(input); ok {
+		return v.(AccentCheck)
+	}
+	accentCacheMisses.Add(1)
+	res := checkAccentColor(input)
+	if accentCacheLen.Load() >= accentCacheMax {
+		accentCache.Clear()
+		accentCacheLen.Store(0)
+	}
+	if _, loaded := accentCache.LoadOrStore(input, res); !loaded {
+		accentCacheLen.Add(1)
+	}
 	return res
 }
 

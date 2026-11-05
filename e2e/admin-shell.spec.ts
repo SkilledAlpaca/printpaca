@@ -278,9 +278,15 @@ test("business identity: upload a logo, see the preview, save, and remove it", a
 });
 
 test("the Guide covers requests, shop items, Spoolman, users, and shortcuts", async ({ page }) => {
-  await page.goto("/admin/#/guide");
-  for (const name of ["Requests: Finalize or Convert", "Shop items and options", "Spoolman", "Users and permissions", "Keyboard shortcuts"]) {
-    await expect(page.getByRole("heading", { name })).toBeVisible();
+  for (const [id, name] of [
+    ["requests-finalize-vs-convert", "Requests: Finalize or Convert"],
+    ["shop-items-and-options", "Shop items and options"],
+    ["spoolman", "Spoolman"],
+    ["users-and-permissions", "Users and permissions"],
+    ["keyboard-shortcuts", "Keyboard shortcuts"],
+  ] as const) {
+    await page.goto(`/admin/#/guide#${id}`);
+    await expect(page.getByRole("heading", { name, level: 2 })).toBeVisible();
   }
   await expect(page.getByRole("table")).toContainText("Ctrl+S");
 });

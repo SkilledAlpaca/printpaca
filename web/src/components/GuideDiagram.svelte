@@ -91,7 +91,7 @@
       </table>
     </div>
   {:else}
-    <svg class="diagram-svg" viewBox="0 0 960 520" aria-hidden="true" focusable="false">
+    <svg class="diagram-svg" viewBox="0 0 960 560" aria-hidden="true" focusable="false">
       <defs>
         <marker id="guide-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
           <path d="M0 0 L10 5 L0 10 z" class="arrow-head" />
@@ -101,7 +101,7 @@
       {#each SAVE_MAIN as b, i (b.id)}
         <rect class={toneClass(b)} x={boxX(i)} y={MAIN_Y} width={BW} height={BH} rx="8" />
         <text class="title" x={boxX(i) + 12} y={MAIN_Y + 24}>{b.title}</text>
-        {#each wrap(b.detail, 24) as line, k (k)}
+        {#each wrap(b.detail, 22) as line, k (k)}
           <text class="detail" x={boxX(i) + 12} y={MAIN_Y + 44 + k * 16}>{line}</text>
         {/each}
         {#if i < SAVE_MAIN.length - 1}

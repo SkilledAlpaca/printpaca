@@ -9,7 +9,7 @@
   // optional subtitle. Back is a button that calls `onback`, so the caller keeps its own guard (an unsaved-changes
   // check) and its own focus restoration; it sits before the h1 in the DOM so Shift+Tab from the title reaches it.
   // `record` marks a record view: the h1 takes focus when it appears (WCAG 2.4.3) and mirrors its text into
-  // document.title (WCAG 2.4.2), as DetailTitle does. Without a title only the Back row renders, which covers a
+  // document.title (WCAG 2.4.2). Without a title only the Back row renders, which covers a
   // record that is still loading.
   let {
     title,

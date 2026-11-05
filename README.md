@@ -175,4 +175,4 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the house rules, [Accessibility](do
 
 ## License
 
-[AGPL-3.0-or-later](LICENSE). Copyright (c) 2026 printpaca contributors. If you modify printpaca and let others interact with it over a network, including running a hosted or modified version for your own customers, you must offer those users the corresponding modified source. The shipped image also bundles third-party code (Go modules statically linked into the server binary, npm packages bundled into the web build); see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the attribution list.
+[AGPL-3.0-or-later](LICENSE). Copyright (c) 2026 Trenton (SkilledAlpaca) and printpaca contributors. If you modify printpaca and let others interact with it over a network, including running a hosted or modified version for your own customers, you must offer those users the corresponding modified source. The shipped image also bundles third-party code (Go modules statically linked into the server binary, npm packages bundled into the web build); see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the attribution list.

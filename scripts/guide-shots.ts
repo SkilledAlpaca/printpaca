@@ -50,10 +50,10 @@ interface DemoSpool {
 /** Reads the DEMO_MODE server's fake Spoolman spools and shapes them as the stub's fixture: vendors and
  * filaments get ids (the demo data has none), and each spool links its filament. */
 async function demoSpoolmanFixture(adminUrl: string): Promise<{ vendors: unknown[]; filaments: unknown[]; spools: unknown[] }> {
-  const login = await fetch(`${adminUrl}/api/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: "", password: "demo" }) });
+  const login = await fetch(`${adminUrl}/admin/api/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: "", password: "demo" }) });
   if (!login.ok) throw new Error(`demo login failed: ${login.status}`);
   const cookie = (login.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
-  const res = await fetch(`${adminUrl}/api/spoolman/api/v1/spool`, { headers: { Cookie: cookie } });
+  const res = await fetch(`${adminUrl}/admin/api/spoolman/api/v1/spool`, { headers: { Cookie: cookie } });
   if (!res.ok) throw new Error(`demo spools: ${res.status}`);
   const demo = (await res.json()) as DemoSpool[];
   const vendors: { id: number; name: string }[] = [];

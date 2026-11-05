@@ -202,7 +202,7 @@ func TestShopHTMLHeadersNoCacheAndCSPUnchanged(t *testing.T) {
 	if got := rec.Header().Get("Cache-Control"); got != "private, no-cache" {
 		t.Errorf("Cache-Control = %q, want private, no-cache", got)
 	}
-	if got := rec.Header().Get("Vary"); !strings.Contains(got, "Cookie") {
+	if got := strings.Join(rec.Header().Values("Vary"), ", "); !strings.Contains(got, "Cookie") {
 		t.Errorf("Vary = %q, want it to include Cookie", got)
 	}
 	if got := rec.Header().Get("Content-Security-Policy"); got != publicContentSecurityPolicy {

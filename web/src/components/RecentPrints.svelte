@@ -10,7 +10,8 @@
 
 <script lang="ts">
   import { formatDateTime } from "../lib/format";
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy } from "svelte";
+  import { useLiveLoad } from "../lib/liveLoad.svelte";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
   import Field from "./ui/Field.svelte";
   import { resolveGcode, type EffectiveConfig } from "../lib/engine/index";
@@ -58,8 +59,9 @@
   // earlier response can't land after a later one.
   let controller: AbortController | null = null;
 
-  async function fetchPage(start: number) {
-    const res = await fetch(moonrakerHistoryUrl(HISTORY_PAGE_SIZE, start), { signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS) });
+  async function fetchPage(start: number, outer?: AbortSignal) {
+    const timeout = AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS);
+    const res = await fetch(moonrakerHistoryUrl(HISTORY_PAGE_SIZE, start), { signal: outer ? AbortSignal.any([outer, timeout]) : timeout });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data: unknown = await res.json();
     return parseHistoryPage(data);
@@ -71,17 +73,18 @@
     return page.total === null || fetchedTotal < page.total;
   }
 
-  async function load() {
+  async function load(outer?: AbortSignal) {
     status = "loading";
     errorDetail = "";
     applyMessage = null;
     try {
-      const page = await fetchPage(0);
+      const page = await fetchPage(0, outer);
       jobs = page.jobs;
       fetchedRaw = page.rawCount;
       hasMore = moreAfter(page, fetchedRaw);
       status = jobs.length > 0 || hasMore ? "ok" : "empty";
     } catch (e) {
+      if (outer?.aborted) return; // superseded by a newer load (URL changed)
       jobs = [];
       fetchedRaw = 0;
       hasMore = false;
@@ -108,7 +111,8 @@
     }
   }
 
-  onMount(load);
+  // Reloads after a Settings save too (see useLiveLoad), so a changed Moonraker URL needs no page reload.
+  useLiveLoad(() => cfg.moonraker === true, (signal) => load(signal));
   onDestroy(() => controller?.abort());
 
   function whenFinished(j: MoonrakerJob): string {
@@ -252,7 +256,7 @@
   >{statusText}</p>
 
   {#if status === "error"}
-    <button class="quiet" onclick={load}>Retry</button>
+    <button class="quiet" onclick={() => load()}>Retry</button>
   {/if}
 
   {#if status === "ok"}

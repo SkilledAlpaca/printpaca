@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { tick } from "svelte";
+  import { useLiveLoad } from "../lib/liveLoad.svelte";
   import type { EffectiveConfig } from "../lib/engine/index";
   import { DEFAULT_FETCH_TIMEOUT_MS } from "../lib/fetchTimeouts";
   import { announce, focusAfterUpdate } from "../lib/a11y.svelte";
@@ -40,26 +41,38 @@
   let filter = $state("");
   let showArchived = $state(false);
 
-  async function load(announceDone = false) {
+  function deadline(outer?: AbortSignal): AbortSignal {
+    const timeout = AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS);
+    return outer ? AbortSignal.any([outer, timeout]) : timeout;
+  }
+
+  async function load(announceDone = false, outer?: AbortSignal) {
     status = "loading";
     errorDetail = "";
     try {
-      const res = await fetch(SPOOLMAN_INVENTORY_URL, { signal: AbortSignal.timeout(DEFAULT_FETCH_TIMEOUT_MS) });
+      const res = await fetch(SPOOLMAN_INVENTORY_URL, { signal: deadline(outer) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: unknown = await res.json();
       spools = Array.isArray(data) ? data.filter(isValidSpool) : [];
       status = "ok";
       if (announceDone) announce(`Spoolman inventory refreshed. ${spools.length} spools.`);
     } catch (e) {
+      if (outer?.aborted) return; // superseded by a newer load (URL changed); that run owns the state
       spools = [];
       errorDetail = e instanceof Error ? e.message : "unknown error";
       status = "error";
     }
   }
 
-  onMount(() => {
-    if (cfg.integrations.spoolman) void load();
-  });
+  // Reloads after a Settings save too (see useLiveLoad), so a new Spoolman URL needs no page reload.
+  useLiveLoad(
+    () => cfg.integrations.spoolman,
+    (signal) => load(false, signal),
+    () => {
+      spools = [];
+      status = "loading";
+    },
+  );
 
   const visible = $derived(filterSpools(spools, filter, showArchived));
   const archivedCount = $derived(spools.filter((s) => s.archived === true).length);

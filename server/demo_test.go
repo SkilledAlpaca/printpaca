@@ -419,8 +419,8 @@ func TestDemoFakeSpoolmanHandlerShape(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &spools); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(spools) < 3 || len(spools) > 5 {
-		t.Fatalf("got %d spools, want 3-5 (spec: 3-5 spools)", len(spools))
+	if len(spools) < 3 || len(spools) > 6 {
+		t.Fatalf("got %d spools, want 3-6 (a spool per demo material plus a second PLA and PETG)", len(spools))
 	}
 	materials := map[string]bool{}
 	for _, s := range spools {

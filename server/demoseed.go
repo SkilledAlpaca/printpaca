@@ -15,6 +15,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -108,7 +109,15 @@ func seedDemoData(db *sql.DB, store *ConfigStore, configDir string) error {
 		return nil
 	}
 
-	cfg := store.Get()
+	// The seed runs before config.yaml is reloaded, so store.Get() still holds the built-in materials. Price
+	// the quotes and requests from the demo filament instead (a copy; the store is untouched).
+	demoMaterials, err := demoSeedMaterials()
+	if err != nil {
+		return fmt.Errorf("demo seed: materials: %w", err)
+	}
+	seedCfg := *store.Get()
+	seedCfg.Materials = demoMaterials
+	cfg := &seedCfg
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("demo seed: begin: %w", err)
@@ -134,7 +143,7 @@ func seedDemoData(db *sql.DB, store *ConfigStore, configDir string) error {
 		return fmt.Errorf("demo seed: invoices: %w", err)
 	}
 
-	nRequests, err := seedDemoRequests(tx)
+	nRequests, err := seedDemoRequests(tx, cfg)
 	if err != nil {
 		return fmt.Errorf("demo seed: requests: %w", err)
 	}
@@ -196,20 +205,39 @@ var demoHardwareCatalog = []Hardware{
 // so the intro-text feature would otherwise show nothing.
 const demoIntroText = "Upload your 3D model for a price estimate, or order from the gallery below — we print and ship within 5 business days."
 
-// demoSeedMaterials returns defaultConfig()'s materials verbatim except "pla" and "petg" are Public, so
-// the public page has materials to offer. Built from defaultConfig(), not a literal: config.yaml's
-// materials array replaces the built-in list wholesale, so it must be complete.
+// demoPublicMaterialIDs are the materials the demo shop offers on the public page.
+var demoPublicMaterialIDs = []string{"pla", "petg"}
+
+// demoSeedMaterials derives the demo Filament list from demoSpools (server/demo.go): one material per spool
+// material, priced and weighted like its primary spool, so the Filament page, the quotes and the requests all
+// tell one story. The material name and waste come from the built-in defaults for the same id (waste is 0
+// there); a spool material the defaults don't know gets its spool name and no waste. The result replaces the
+// built-in list wholesale (config.yaml's materials array does), so it is complete.
 func demoSeedMaterials() ([]Material, error) {
 	defaults, err := defaultConfig()
 	if err != nil {
 		return nil, fmt.Errorf("load built-in defaults: %w", err)
 	}
-	materials := make([]Material, len(defaults.Materials))
-	copy(materials, defaults.Materials)
-	for i := range materials {
-		if materials[i].ID == "pla" || materials[i].ID == "petg" {
-			materials[i].Public = true
+	var materials []Material
+	seen := map[string]bool{}
+	for _, sp := range demoSpools {
+		id := strings.ToLower(sp.Filament.Material)
+		if seen[id] {
+			continue
 		}
+		seen[id] = true
+		primary, _ := demoPrimarySpool(id)
+		m := Material{
+			ID: id, Name: primary.Filament.Material,
+			Density: primary.Filament.Density, PricePerKg: demoSpoolPricePerKg(primary),
+			Public: slices.Contains(demoPublicMaterialIDs, id),
+		}
+		for _, d := range defaults.Materials {
+			if d.ID == id {
+				m.Name, m.WastePct = d.Name, d.WastePct
+			}
+		}
+		materials = append(materials, m)
 	}
 	return materials, nil
 }
@@ -242,11 +270,12 @@ type demoSeedConfigDoc struct {
 const demoSeedConfigHeader = `# printpaca demo seed data
 # Written once by the demo's first-boot seed (server/demoseed.go).
 #
-# materials: mirrors the built-in defaults (server/defaults.yaml) exactly,
-# except "pla" and "petg" are marked public: true, so the public customer
-# page's custom-estimate/upload flow has something to offer -- materials
-# default to public: false (opt-in), and the demo would otherwise expose
-# none of them, hiding that flow entirely.
+# materials: one per demo spool material (server/demo.go), priced per kg and
+# weighted like that material's first spool, so the Filament page, the
+# seeded quotes and the seeded requests agree. "pla" and "petg" are marked
+# public: true, so the public customer page's custom-estimate/upload flow
+# has something to offer -- materials default to public: false (opt-in), and
+# the demo would otherwise expose none of them, hiding that flow entirely.
 #
 # hardware: a small catalog so the hardware picker (QuoteTab's Costs card)
 # and the Settings Hardware card have something to show -- both hide when
@@ -318,7 +347,7 @@ func seedDemoConfig(configDir string) error {
 	if err := os.Rename(tmpName, path); err != nil {
 		return fmt.Errorf("rename config.yaml into place: %w", err)
 	}
-	log.Print("demo seed: wrote config.yaml with a demo hardware catalog, two public materials (pla, petg), a public intro text, and users.multiUser: true")
+	log.Print("demo seed: wrote config.yaml with a demo hardware catalog, a demo filament list (public: pla, petg), a public intro text, and users.multiUser: true")
 	return nil
 }
 
@@ -446,6 +475,28 @@ func seedDemoClients(tx *sql.Tx) ([]demoClientRow, error) {
 // seed can't drift from what the server decodes. formState is the editor snapshot the web client restores;
 // these structs mirror web/src/lib/state.svelte.ts's PartFormState, OrderForm, and FormState (same JSON
 // keys, no per-part id).
+
+// demoSpoolOverride mirrors state.svelte.ts's SpoolOverrideState, what the Spoolman picker writes to a part.
+type demoSpoolOverride struct {
+	Label      string  `json:"label"`
+	PricePerKg float64 `json:"pricePerKg"`
+	Density    float64 `json:"density"`
+	RemainingG float64 `json:"remainingG"`
+	SpoolID    int     `json:"spoolId"`
+}
+
+// demoSpoolOverrideFor is what spoolman.ts's spoolOverrideFrom writes when a Spoolman user picks the
+// material's primary demo spool, or nil if the demo has no spool of that material.
+func demoSpoolOverrideFor(materialID string) *demoSpoolOverride {
+	sp, ok := demoPrimarySpool(materialID)
+	if !ok {
+		return nil
+	}
+	return &demoSpoolOverride{
+		Label: demoSpoolLabel(sp), PricePerKg: demoSpoolPricePerKg(sp), Density: sp.Filament.Density,
+		RemainingG: sp.RemainingWeight, SpoolID: sp.ID,
+	}
+}
 
 // demoPartForm mirrors PartFormState.
 type demoPartForm struct {
@@ -586,10 +637,10 @@ func demoTplPhoneCasePrototype() demoQuoteInstance {
 	}
 }
 
-func demoTplResinMinis() demoQuoteInstance {
+func demoTplMinis() demoQuoteInstance {
 	return demoQuoteInstance{
-		label: "Resin miniature commission (x25)", project: "Tabletop commission",
-		materialID: "resin", weightG: 18, timeHours: 2, timeMinutes: 30,
+		label: "PLA miniature commission (x25)", project: "Tabletop commission",
+		materialID: "pla", weightG: 18, timeHours: 2, timeMinutes: 30,
 		presetName: "small-shop", quantity: 25, sellingEnabled: true,
 		strategy: "markup", marginPct: 30, markupMultiplier: 3.0,
 		shippingCharge: 6, shippingCost: 4, feeScheduleName: "etsy-us",
@@ -628,7 +679,7 @@ func demoQuoteInstances(clients []demoClientRow) []demoQuoteInstance {
 		mk(demoTplPhoneCasePrototype(), 2, []demoStatusStep{
 			{"draft", 55, ""}, {"sent", 50, sentTo(2)}, {"accepted", 45, ""},
 		}),
-		mk(demoTplResinMinis(), 3, []demoStatusStep{
+		mk(demoTplMinis(), 3, []demoStatusStep{
 			{"draft", 50, ""}, {"sent", 45, sentTo(3)},
 		}),
 		mk(demoTplCableClips(), 4, []demoStatusStep{
@@ -646,7 +697,7 @@ func demoQuoteInstances(clients []demoClientRow) []demoQuoteInstance {
 		mk(demoTplPhoneCasePrototype(), -1, []demoStatusStep{
 			{"draft", 25, ""},
 		}),
-		mk(demoTplResinMinis(), 7, []demoStatusStep{
+		mk(demoTplMinis(), 7, []demoStatusStep{
 			{"draft", 22, ""}, {"sent", 20, sentTo(7)}, {"accepted", 16, ""},
 		}),
 		mk(demoTplCableClips(), 0, []demoStatusStep{
@@ -664,7 +715,7 @@ func demoQuoteInstances(clients []demoClientRow) []demoQuoteInstance {
 		mk(demoTplPhoneCasePrototype(), 6, []demoStatusStep{
 			{"draft", 8, ""}, {"sent", 6, sentTo(6)},
 		}),
-		mk(demoTplResinMinis(), -1, []demoStatusStep{
+		mk(demoTplMinis(), -1, []demoStatusStep{
 			{"draft", 6, ""},
 		}),
 		mk(demoTplBracketSet(), 1, []demoStatusStep{
@@ -749,6 +800,13 @@ func buildDemoOrder(cfg *Config, materials map[string]Material, printer Printer,
 			part.SalePriceOverride = OptF{Value: *sp.override, Present: true}
 		}
 		in.Parts = append(in.Parts, part)
+		// A Spoolman user picks a spool per part; the picker also sets pricePerKg to the spool's. Every demo
+		// material is a spool's material, so each part records that spool. A nil pointer must become a nil
+		// interface, or the field would marshal as {} instead of null.
+		var spoolOverride any
+		if so := demoSpoolOverrideFor(mat.ID); so != nil {
+			spoolOverride = so
+		}
 		form.Parts = append(form.Parts, demoPartForm{
 			Label: sp.label, WeightG: sp.weightG, TimeHours: sp.timeHours, TimeMinutes: sp.timeM,
 			PricePerKg: mat.PricePerKg, WastePct: mat.WastePct,
@@ -759,7 +817,7 @@ func buildDemoOrder(cfg *Config, materials map[string]Material, printer Printer,
 			MonthlyFixed: preset.MonthlyFixed, MonthlyHours: preset.MonthlyHours,
 			Quantity: sp.quantity, Hardware: []any{},
 			PresetName: sp.preset, PresetModified: false,
-			SalePriceOverride: sp.override, SpoolOverride: nil,
+			SalePriceOverride: sp.override, SpoolOverride: spoolOverride,
 		})
 	}
 	form.Order = demoOrderForm{
@@ -1039,7 +1097,7 @@ func seedDemoInvoices(tx *sql.Tx, cfg *Config, clients []demoClientRow, quotes [
 		{quoteIdx: -1, clientIdx: -1, walkinName: "Jamie Ostrowski", status: "draft", issueDaysAgo: 5,
 			lines: []invoiceLineInput{{Description: "Custom nameplate", Quantity: 5, UnitPriceCents: 900}}},
 		{quoteIdx: -1, clientIdx: 6, status: "paid", issueDaysAgo: 48,
-			lines:    []invoiceLineInput{{Description: "Resin minis (10)", Quantity: 10, UnitPriceCents: 650}},
+			lines:    []invoiceLineInput{{Description: "PLA minis (10)", Quantity: 10, UnitPriceCents: 650}},
 			payments: []demoPayment{{daysAgo: 40, method: "other", note: "Venmo"}}},
 		{quoteIdx: -1, clientIdx: 7, status: "draft", issueDaysAgo: 9,
 			lines: []invoiceLineInput{{Description: "TPU gasket set", Quantity: 6, UnitPriceCents: 425}}},
@@ -1054,7 +1112,7 @@ func seedDemoInvoices(tx *sql.Tx, cfg *Config, clients []demoClientRow, quotes [
 			lines:    []invoiceLineInput{{Description: "PLA display stands", Quantity: 6, UnitPriceCents: 2200}},
 			payments: []demoPayment{{daysAgo: paidInMonthDaysAgo(5, 14), method: "bank transfer", reference: "Bank transfer"}}},
 		{quoteIdx: -1, clientIdx: 2, status: "paid", issueDaysAgo: paidInMonthDaysAgo(4, 9) + 5,
-			lines:    []invoiceLineInput{{Description: "Resin figurine set", Quantity: 4, UnitPriceCents: 3400}},
+			lines:    []invoiceLineInput{{Description: "PLA figurine set", Quantity: 4, UnitPriceCents: 3400}},
 			payments: []demoPayment{{daysAgo: paidInMonthDaysAgo(4, 9), method: "PayPal", reference: "PayPal 7710"}}},
 		{quoteIdx: -1, clientIdx: 3, status: "paid", issueDaysAgo: paidInMonthDaysAgo(4, 24) + 7,
 			lines:    []invoiceLineInput{{Description: "ABS bracket kit", Quantity: 6, UnitPriceCents: 1450}},
@@ -1066,7 +1124,7 @@ func seedDemoInvoices(tx *sql.Tx, cfg *Config, clients []demoClientRow, quotes [
 			lines:    []invoiceLineInput{{Description: "PLA signage letters", Quantity: 18, UnitPriceCents: 1350}},
 			payments: []demoPayment{{daysAgo: paidInMonthDaysAgo(3, 27), method: "bank transfer", reference: "Bank transfer"}}},
 		{quoteIdx: -1, clientIdx: 2, status: "paid", issueDaysAgo: paidInMonthDaysAgo(2, 8) + 4,
-			lines:    []invoiceLineInput{{Description: "Resin miniatures (12)", Quantity: 12, UnitPriceCents: 1500}},
+			lines:    []invoiceLineInput{{Description: "PLA miniatures (12)", Quantity: 12, UnitPriceCents: 1500}},
 			payments: []demoPayment{{daysAgo: paidInMonthDaysAgo(2, 8), method: "PayPal"}}},
 		{quoteIdx: -1, clientIdx: 4, status: "paid", issueDaysAgo: paidInMonthDaysAgo(1, 11) + 6,
 			lines:    []invoiceLineInput{{Description: "PLA retail display pieces", Quantity: 16, UnitPriceCents: 3600}},
@@ -1205,28 +1263,44 @@ type demoRequestSpec struct {
 	quantity                    int
 	weightG                     float64
 	timeSeconds                 int
-	priceCents                  int
 	status                      string
 	daysAgo                     int
 }
 
+// demoRequestSpecs name a material by its public name ("PLA"), as the public submit path stores it. Each
+// material must be one the demo shop offers (public); seedDemoRequests computes the price from it.
 var demoRequestSpecs = []demoRequestSpec{
 	{"Harper Quinlan", "harper.quinlan@example.com", "Need this by next weekend if possible!",
-		"pla", 2, 54, 2600, 1899, "new", 3},
+		"PLA", 2, 54, 2600, "new", 3},
 	{"Nate Ferreira", "nate.ferreira@example.net", "",
-		"petg", 1, 180, 9800, 3899, "new", 1},
+		"PETG", 1, 180, 9800, "new", 1},
 	{"Ola Svensson", "ola.svensson@example.org", "Can you do this in matte black?",
-		"abs", 3, 310, 14400, 6299, "viewed", 6},
+		"PETG", 3, 310, 14400, "viewed", 6},
 	{"Priya Anand", "priya.anand@example.com", "For a small business gift order",
-		"resin", 10, 20, 7200, 8999, "viewed", 9},
+		"PLA", 10, 20, 7200, "viewed", 9},
 	{"Deja Whitcombe", "deja.whitcombe@example.com", "Approved, please proceed",
-		"pla", 5, 95, 3200, 4499, "finalized", 12},
+		"PLA", 5, 95, 3200, "finalized", 12},
+}
+
+// demoRequestPriceCents prices a seeded request exactly as the public estimate does (publicEstimateCents),
+// from the request's public material, so a seeded price can never drift from what a visitor would be quoted.
+func demoRequestPriceCents(cfg *Config, s demoRequestSpec) (int, error) {
+	for _, m := range cfg.Materials {
+		if m.Public && m.Name == s.material {
+			cents, ok := publicEstimateCents(cfg, m, s.quantity, s.weightG, s.timeSeconds)
+			if !ok {
+				return 0, fmt.Errorf("no valid price for %s", s.material)
+			}
+			return cents, nil
+		}
+	}
+	return 0, fmt.Errorf("material %q is not a public demo material", s.material)
 }
 
 // seedDemoRequests inserts demoRequestSpecs, matching public.go's INSERT INTO quote_requests columns
 // minus the G-code upload fields (no seeded request has a file), plus finalized_at for the one finalized
-// request. price_cents is the row's own authoritative price.
-func seedDemoRequests(tx *sql.Tx) (int, error) {
+// request. price_cents is computed by the public estimate, not hard-coded.
+func seedDemoRequests(tx *sql.Tx, cfg *Config) (int, error) {
 	n := 0
 	for i, s := range demoRequestSpecs {
 		created := daysAgoAt(s.daysAgo, 13, 30)
@@ -1240,10 +1314,14 @@ func seedDemoRequests(tx *sql.Tx) (int, error) {
 		if s.status != "new" {
 			updatedBy = demoAttributionAt(i)
 		}
-		_, err := tx.Exec(`
+		priceCents, err := demoRequestPriceCents(cfg, s)
+		if err != nil {
+			return n, fmt.Errorf("demo request %q: %w", s.name, err)
+		}
+		_, err = tx.Exec(`
 			INSERT INTO quote_requests (id, status, name, email, note, material, quantity, weight_g, time_seconds, price_cents, gcode_filename, gcode_path, gcode_bytes, created_at, finalized_at, updated_by, tax_inclusive)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', 0, ?, ?, ?, 0)`,
-			newID(), s.status, s.name, s.email, s.note, s.material, s.quantity, s.weightG, s.timeSeconds, s.priceCents,
+			newID(), s.status, s.name, s.email, s.note, s.material, s.quantity, s.weightG, s.timeSeconds, priceCents,
 			rfc3339(created), finalizedAt, updatedBy,
 		)
 		if err != nil {

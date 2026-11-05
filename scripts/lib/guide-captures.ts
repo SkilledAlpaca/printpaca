@@ -101,8 +101,12 @@ async function setupTopic(s: Shooter, env: Env): Promise<void> {
   await page.getByRole("button", { name: "Edit PLA" }).click();
   await page.getByLabel("Material 1 price per kg").fill("21.5");
   await s.shot({ key: "setup-material-price", targets: [page.getByLabel("Material 1 price per kg")], region: page.getByRole("table").first() });
+  // The image shows the example edit; put the demo price back so later images keep the demo filament's PLA price.
+  await page.getByLabel("Material 1 price per kg").fill("22.99");
   await page.getByRole("button", { name: "Done editing PLA" }).click();
-  await page.getByRole("button", { name: "Save changes" }).click();
+  // Back at the demo price nothing is unsaved, so Save changes may not be offered.
+  const savePrice = page.getByRole("button", { name: "Save changes" });
+  if (await savePrice.isVisible()) await savePrice.click();
   await go(page, env, "printers");
   await page.getByLabel("Printer 1 name").fill("Workshop printer");
   await page.getByLabel("Printer 1 watts").fill("120");

@@ -41,6 +41,33 @@ function arg(name: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
+interface DemoSpool {
+  id: number;
+  filament: { name: string; material: string; density: number; weight: number; price: number; vendor: { name: string } };
+  [k: string]: unknown;
+}
+
+/** Reads the DEMO_MODE server's fake Spoolman spools and shapes them as the stub's fixture: vendors and
+ * filaments get ids (the demo data has none), and each spool links its filament. */
+async function demoSpoolmanFixture(adminUrl: string): Promise<{ vendors: unknown[]; filaments: unknown[]; spools: unknown[] }> {
+  const login = await fetch(`${adminUrl}/admin/api/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: "", password: "demo" }) });
+  if (!login.ok) throw new Error(`demo login failed: ${login.status}`);
+  const cookie = (login.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
+  const res = await fetch(`${adminUrl}/admin/api/spoolman/api/v1/spool`, { headers: { Cookie: cookie } });
+  if (!res.ok) throw new Error(`demo spools: ${res.status}`);
+  const demo = (await res.json()) as DemoSpool[];
+  const vendors: { id: number; name: string }[] = [];
+  const filaments: Record<string, unknown>[] = [];
+  const spools = demo.map((s) => {
+    let vendor = vendors.find((v) => v.name === s.filament.vendor.name);
+    if (!vendor) vendors.push((vendor = { id: vendors.length + 1, name: s.filament.vendor.name }));
+    const filament = { ...s.filament, id: filaments.length + 1, diameter: 1.75, vendor };
+    filaments.push(filament);
+    return { ...s, filament, location: "", archived: false };
+  });
+  return { vendors, filaments, spools };
+}
+
 async function main(): Promise<void> {
   const outDir = path.resolve(arg("out") ?? path.join(REPO_ROOT, "web", "src", "assets", "guide"));
   const only = arg("only");
@@ -67,9 +94,13 @@ async function main(): Promise<void> {
     const env = { PORT: String(ADMIN_PORT), PUBLIC_PORT: String(PUBLIC_PORT), CONFIG_DIR: configDir, ADMIN_PASSWORD: "demo" };
     // First start seeds the fictional data (DEMO_MODE), the second runs with writes enabled on the same data.
     server = await startServer(bin, { ...env, DEMO_MODE: "1" }, ADMIN_PORT);
+    // The Spoolman stub serves the demo's own fake spools, read from the DEMO_MODE server before it stops, so
+    // the Filament list, the quotes and the Spoolman images all show one set of filament and prices.
+    const spoolFixture = path.join(scratch, "spoolman-fixture.json");
+    writeFileSync(spoolFixture, JSON.stringify(await demoSpoolmanFixture(ADMIN_URL)));
     await stopServer(server);
     server = await startServer(bin, { ...env, ADMIN_PASSWORD: SEED_PASSWORD }, ADMIN_PORT);
-    stubs.push(spawn("node", [path.join(REPO_ROOT, "scripts", "e2e-spoolman-stub.mjs")], { env: { ...process.env, PORT: String(SPOOLMAN_PORT) }, stdio: "inherit" }));
+    stubs.push(spawn("node", [path.join(REPO_ROOT, "scripts", "e2e-spoolman-stub.mjs")], { env: { ...process.env, PORT: String(SPOOLMAN_PORT), SPOOLMAN_FIXTURE: spoolFixture }, stdio: "inherit" }));
     stubs.push(spawn("node", [path.join(REPO_ROOT, "scripts", "e2e-moonraker-stub.mjs")], { env: { ...process.env, PORT: String(MOONRAKER_PORT) }, stdio: "inherit" }));
 
     const browser = await chromium.launch();

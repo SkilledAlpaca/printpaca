@@ -10,6 +10,7 @@ Don't use demo mode for your own deployment. It waives the admin password length
 
 - Read-only admin: every change is blocked with a friendly message. Sign in with the password `demo` (shown on the sign-in screen).
 - Seeded history: on first start, about six months of fake clients, quotes, invoices, payments, and requests, plus three gallery items with generated images and one item order.
+- One demo filament: the Filament tab lists PLA at $22.99 per kg, PETG at $24.99, ABS at $27.99, and TPU at $31.99. These come from the sample Spoolman spools (the first spool of each material), so the seeded quotes, which each record one of those spools, and the seeded requests, which the shop prices as PLA or PETG, use the same prices. Only PLA and PETG are offered on the customer pages.
 - Option groups on the shop: the Cable Clip 8-Pack item has a required Color group and an optional Mounting group, and both groups show option photos. The Desk Organizer Tray has a required Size group.
 - Customer pages (the shop at `/`, also served at `/order`): the real customer flow, but nothing is stored.
 - Spoolman and Moonraker pages render fake sample data. The Spoolman inventory card on the Filament tab lists the sample spools but can't change them.

@@ -201,7 +201,7 @@
   },
   "setup-material-price": {
     "width": 1164,
-    "height": 372
+    "height": 311
   },
   "setup-printer": {
     "width": 1050,
@@ -241,11 +241,11 @@
   },
   "spool-inventory": {
     "width": 1200,
-    "height": 400
+    "height": 609
   },
   "spool-materials": {
     "width": 1164,
-    "height": 480
+    "height": 419
   },
   "spool-picker": {
     "width": 794,

@@ -14,7 +14,15 @@ export interface GuideImage {
 }
 
 export interface GuideStep {
+  /** The step's lead-in. With `subs`, it introduces them and reads on its own. */
   text: string;
+  /**
+   * Sub-steps, one per highlighted control, in reading order. Rendered as "2.1", "2.2", ... under the step, and the
+   * image's badges carry the same labels. Needs at least two. A step with one highlight has no `subs`.
+   */
+  subs?: string[];
+  /** Text after the sub-steps. */
+  after?: string;
   image?: GuideImage;
 }
 
@@ -38,23 +46,32 @@ export const GUIDE_TASKS: GuideTask[] = [
     steps: [
       {
         text: "Select **Settings** in the sidebar, then select **Business identity** in the section list. On a phone, open **Jump to a section** first.",
-        image: img("setup-business-card", "The Business identity card in Settings, with its heading highlighted as step 1."),
+        image: img("setup-business-card", "The Business identity card in Settings, with its heading."),
       },
       {
-        text: "In **Business name**, enter \"Lantern Print Works\". In **Email**, enter \"hello@lantern.example\". Printed quotes and invoices show these details, and so does your shop.",
-        image: img("setup-business-fields", "The Business name and Email fields, both highlighted as step 2."),
+        text: "Enter your business details. Printed quotes and invoices show these details, and so does your shop.",
+        subs: [
+          "In **Business name**, enter \"Lantern Print Works\".",
+          "In **Email**, enter \"hello@lantern.example\".",
+        ],
+        image: img("setup-business-fields", "The Business name and Email fields."),
       },
       {
         text: "Press **Save changes** in the bar at the bottom of the page. The bar appears with its buttons enabled as soon as you change a field.",
-        image: img("setup-save-bar", "The Discard changes and Save changes buttons in the bar at the bottom of the page, highlighted as step 3."),
+        image: img("setup-save-bar", "The Save changes button in the bar at the bottom of the page."),
       },
       {
         text: "Select **Filament**, press **Edit** on the PLA row, and enter 21.50 in the price per kilogram. Press **Done**, then press **Save changes**. New quotes use this price whenever you pick PLA.",
-        image: img("setup-material-price", "The PLA row of the materials table in edit mode, with the price per kilogram highlighted as step 4."),
+        image: img("setup-material-price", "The PLA row of the materials table in edit mode, with the price per kilogram."),
       },
       {
-        text: "Select **Printers**. In the first row, enter \"Workshop printer\" in **Name** and 120 in **Power (W)**. Press **Save changes**. The power draw sets your electricity cost for every print on that printer.",
-        image: img("setup-printer", "The first row of the printer list, with the Name and Power (W) fields highlighted as step 5."),
+        text: "Select **Printers**. In the first row, set the printer's name and power draw.",
+        subs: [
+          "In **Name**, enter \"Workshop printer\".",
+          "In **Power (W)**, enter 120.",
+        ],
+        after: "Press **Save changes**. The power draw sets your electricity cost for every print on that printer.",
+        image: img("setup-printer", "The first row of the printer list, with the Name and Power (W) fields."),
       },
     ],
     next: "You're ready to price a print. Continue with [Quote a print](#/guide#quote-a-print).",
@@ -66,27 +83,37 @@ export const GUIDE_TASKS: GuideTask[] = [
     steps: [
       {
         text: "Select **New quote** in the sidebar. The page has three numbered sections: **Model and print time**, **Material and printer**, and **Price**. A summary on the right (below the form on a phone) updates as you type.",
-        image: img("quote-overview", "The New quote page with the first section, Model and print time, highlighted as step 1."),
+        image: img("quote-overview", "The New quote page with the first section, Model and print time."),
       },
       {
         text: "In **Model weight (g)**, enter 48. This is the weight your slicer reports, without waste. If you have a sliced .gcode or .3mf file, drop it on the file box instead and printpaca fills in the weight and time for you.",
-        image: img("quote-weight", "The Model weight (g) field in section 1, highlighted as step 2."),
+        image: img("quote-weight", "The Model weight (g) field in section 1."),
       },
       {
-        text: "Under **Print time**, enter 2 in the hours box and 30 in the minutes box.",
-        image: img("quote-time", "The hours and minutes boxes under Print time, highlighted as step 3."),
+        text: "Under **Print time**, enter the time your slicer reports.",
+        subs: [
+          "In the hours box, enter 2.",
+          "In the minutes box, enter 30.",
+        ],
+        image: img("quote-time", "The hours and minutes boxes under Print time."),
       },
       {
         text: "In section 2, check **Material**. **PLA** is selected by default, and **Filament price** fills in from your materials list. Check that **Printer** names the machine that prints this job.",
-        image: img("quote-material", "The Material selector in section 2, highlighted as step 4."),
+        image: img("quote-material", "The Material selector in section 2."),
       },
       {
         text: "Read **Your cost** in the summary. For 48 g of PLA printed for 2 hours 30 minutes on the default printer, it shows $2.37. Press **Breakdown** to see where each part of the cost comes from.",
-        image: img("quote-cost", "The Your cost figure in the summary, highlighted as step 5."),
+        image: img("quote-cost", "The Your cost figure in the summary."),
       },
       {
-        text: "Press **Set a client price**. The summary now shows a client price of $3.39, a profit of $1.02, and a margin of 30.1%. To change the margin, edit **Margin (%)** in section 3.",
-        image: img("quote-client-price", "The client price, cost, profit, and margin in the summary, highlighted as step 6."),
+        text: "Press **Set a client price**. The summary now shows three figures.",
+        subs: [
+          "**Client price**: $3.39.",
+          "**Profit**: $1.02.",
+          "**Margin**: 30.1%.",
+        ],
+        after: "To change the margin, edit **Margin (%)** in section 3.",
+        image: img("quote-client-price", "The client price, cost, profit, and margin in the summary."),
       },
     ],
     next: "Keep the quote: [Save, send, and reopen a quote](#/guide#save-and-reopen-quote). For a job with several different parts, see [Quote several parts together](#/guide#quote-several-parts).",
@@ -101,19 +128,26 @@ export const GUIDE_TASKS: GuideTask[] = [
       },
       {
         text: "Press **Add part**. The page now shows a tab for each part (**Part 1** and **Part 2**) and a **+ Add part** button after them.",
-        image: img("multi-add-part", "The Add part button at the top of the New quote page, highlighted as step 2."),
+        image: img("multi-add-part", "The Add part button at the top of the New quote page."),
       },
       {
-        text: "On the **Part 2** tab, enter \"Lid\" in **Part name**. Enter 22 in **Model weight (g)**, then 1 hour and 15 minutes under **Print time**. Material, printer, and quantity belong to each part, so you can print the lid in a different material.",
-        image: img("multi-part-fields", "The Part name and Model weight (g) fields on the Part 2 tab, highlighted as step 3."),
+        text: "On the **Part 2** tab, fill in the part.",
+        subs: [
+          "In **Part name**, enter \"Lid\".",
+          "In **Model weight (g)**, enter 22.",
+          "Under **Print time**, enter 1 in the hours box.",
+          "Enter 15 in the minutes box.",
+        ],
+        after: "Material, printer, and quantity belong to each part, so you can print the lid in a different material.",
+        image: img("multi-part-fields", "The Part name and Model weight (g) fields on the Part 2 tab."),
       },
       {
         text: "Select the **Part 1** tab to go back. Each tab keeps its own values, and a part you haven't finished shows a message under its field.",
-        image: img("multi-tabs", "The Part 1 and Lid tabs above the form, highlighted as step 4."),
+        image: img("multi-tabs", "The Part 1 tab above the form."),
       },
       {
         text: "Read the summary. It shows one cost and one price for the whole order, labelled **Order of 2 parts**. To change one part's price, set it in section 3 on that part's tab.",
-        image: img("multi-summary", "The summary for the order of two parts, highlighted as step 5."),
+        image: img("multi-summary", "The Order of 2 parts label under Your cost in the summary."),
       },
     ],
     next: "Keep the order: [Save, send, and reopen a quote](#/guide#save-and-reopen-quote). To remove a part you don't need, select its tab and press **Remove**; printpaca asks you to confirm.",
@@ -125,31 +159,45 @@ export const GUIDE_TASKS: GuideTask[] = [
     steps: [
       {
         text: "With the quote from [Quote a print](#/guide#quote-a-print) on screen and its client price set, find **Save this quote** in the summary. In **Client for this quote**, enter \"Alex Merriweather\". Start typing to pick a client you already have. A new name shows **New client. Saving adds them to your clients.**",
-        image: img("save-client", "The Client for this quote field in the summary, highlighted as step 1."),
+        image: img("save-client", "The Client for this quote field in the summary."),
       },
       {
         text: "In **Label for this quote**, enter \"Cable clip, 48 g\". The label is what you search for later.",
-        image: img("save-label", "The Label for this quote field, highlighted as step 2."),
+        image: img("save-label", "The Label for this quote field."),
       },
       {
         text: "Press **Save quote**. The page title changes to **Edit quote: Cable clip, 48 g**, and a message confirms that the quote is saved.",
-        image: img("save-button", "The Save quote button in the summary, highlighted as step 3."),
+        image: img("save-button", "The Save quote button in the summary."),
       },
       {
-        text: "To change the quote, edit anything and press **Update quote**. Press **Save as new** to keep the edited version as a separate quote and leave the original as it was.",
-        image: img("save-update", "The Update quote and Save as new buttons after saving, highlighted as step 4."),
+        text: "To change the quote, edit anything, then choose how to keep it.",
+        subs: [
+          "Press **Update quote** to replace the saved quote.",
+          "Press **Save as new** to keep the edited version as a separate quote and leave the original as it was.",
+        ],
+        image: img("save-update", "The Update quote and Save as new buttons after saving."),
       },
       {
         text: "To open a saved quote later, press **Open** next to it under **Saved quotes** at the bottom of **New quote**, or select **Quotes** in the sidebar to see every quote.",
-        image: img("save-recent", "The Saved quotes list with the Open button of the newest quote highlighted as step 5."),
+        image: img("save-recent", "The Saved quotes list with the Open button of the newest quote."),
       },
       {
-        text: "On **Quotes**, each row has a status badge and the most likely next move, such as **Mark sent** or **Convert to invoice**. The **⋯** menu on the row has the other moves, including **Email quote** (when email is set up in Settings), **Duplicate**, and **Delete**.",
-        image: img("save-quotes-row", "A row on the Quotes page with its status badge and action buttons, highlighted as step 6."),
+        text: "On **Quotes**, each row shows where the quote stands and what to do next.",
+        subs: [
+          "The status badge shows the quote's status.",
+          "The next-move button, such as **Mark sent** or **Convert to invoice**, does the most likely next step.",
+          "The **⋯** menu has the other moves, including **Email quote** (when email is set up in Settings), **Duplicate**, and **Delete**.",
+        ],
+        image: img("save-quotes-row", "A row on the Quotes page: its status badge, its next-move button, and its more-actions menu."),
       },
       {
-        text: "To give the client a paper or PDF copy, press **Print client quote** under **Print the quote** in section 3. Use your browser's print dialog to print or save as PDF.",
-        image: img("save-print", "The Print client quote and Print cost audit buttons, highlighted as step 7."),
+        text: "To give the client a paper or PDF copy, use the buttons under **Print the quote** in section 3.",
+        subs: [
+          "Press **Print client quote** for the copy the client sees.",
+          "Press **Print cost audit** for a copy of the cost breakdown.",
+        ],
+        after: "Use your browser's print dialog to print or save as PDF.",
+        image: img("save-print", "The Print client quote and Print cost audit buttons."),
       },
     ],
     next: "When the client accepts, continue with [Turn a quote into an invoice and record a payment](#/guide#invoice-and-payment).",
@@ -161,23 +209,23 @@ export const GUIDE_TASKS: GuideTask[] = [
     steps: [
       {
         text: "Select **Requests** in the sidebar. A number beside the name counts requests you haven't opened. New ones carry a **NEW** badge. A request is either a custom estimate or an order for a shop item.",
-        image: img("req-list", "The Requests list with the newest request, from Nate Ferreira, highlighted as step 1."),
+        image: img("req-list", "The NEW badge on the newest request, from Nate Ferreira, in the Requests list."),
       },
       {
         text: "Select the row for Nate Ferreira. The request opens with the customer's name and email, the material (PETG), the quantity (1), the weight (180 g), the print time, and the price the shop showed them ($38.99). The badge changes to **VIEWED**.",
-        image: img("req-detail", "The details of an estimate request, highlighted as step 2."),
+        image: img("req-detail", "The VIEWED badge beside the request heading, above the request details."),
       },
       {
         text: "Press **Reply by email** to answer the customer. Finalizing a request never emails them, so reply yourself.",
-        image: img("req-reply", "The Reply by email button, highlighted as step 3."),
+        image: img("req-reply", "The Reply by email button."),
       },
       {
         text: "If you filled the request without billing it, press **Finalize**. The request leaves your to-do list, and a finalized shop item order counts toward **Top items** and takes its units out of stock.",
-        image: img("req-finalize", "The Finalize button, highlighted as step 4."),
+        image: img("req-finalize", "The Finalize button below the request details."),
       },
       {
         text: "To bill the customer instead, press **Convert to invoice**. printpaca makes a draft invoice, adds the customer to **Clients** if their email isn't on file, and marks the request **INVOICED**. To price it first in the editor, press **Open in new quote**.",
-        image: img("req-convert", "The Convert to invoice button, highlighted as step 5."),
+        image: img("req-convert", "The Convert to invoice button."),
       },
     ],
     next: "Continue with [Turn a quote into an invoice and record a payment](#/guide#invoice-and-payment). For the difference between Finalize and Convert, see [Requests: Finalize or Convert](#/guide#requests-finalize-vs-convert).",
@@ -189,27 +237,50 @@ export const GUIDE_TASKS: GuideTask[] = [
     steps: [
       {
         text: "Select **Quotes** in the sidebar. On the row for \"Cable clip, 48 g\", press **Convert to invoice**. This works on any quote that has a client price.",
-        image: img("inv-convert", "The Convert to invoice button on a quote row, highlighted as step 1."),
+        image: img("inv-convert", "The Convert to invoice button on a quote row."),
       },
       {
-        text: "In **Client for this invoice**, check that \"Alex Merriweather\" is selected, then press **Create invoice**. The button shows the amount, $3.39.",
-        image: img("inv-client", "The client choice and the Create invoice button, highlighted as step 2."),
+        text: "Create the invoice from the quote.",
+        subs: [
+          "In **Client for this invoice**, check that \"Alex Merriweather\" is selected.",
+          "Press **Create invoice**. The button shows the amount, $3.39.",
+        ],
+        image: img("inv-client", "The client choice and the Create invoice button."),
       },
       {
-        text: "The invoice opens as a draft with the quote's price as one line. Check **Issue date**, **Due date**, and **Sales tax (%)**, then press **Save**. To add a line, press **Add line**.",
-        image: img("inv-draft", "The draft invoice's dates, tax, and line, highlighted as step 3."),
+        text: "The invoice opens as a draft with the quote's price as one line. Check the dates and the tax, then save.",
+        subs: [
+          "Check **Issue date**.",
+          "Check **Due date**.",
+          "Check **Sales tax (%)**.",
+          "Press **Save**.",
+        ],
+        after: "To add a line, press **Add line**.",
+        image: img("inv-draft", "The Issue date, Due date, and Sales tax fields and the Save button of a draft invoice."),
       },
       {
-        text: "Send the invoice. Press **Email to client** when email is set up in Settings, or press **Print** for a paper or PDF copy. Press **Mark sent** to record that you sent it.",
-        image: img("inv-send", "The Mark sent, Email to client, and Print buttons, highlighted as step 4."),
+        text: "Send the invoice.",
+        subs: [
+          "Press **Mark sent** to record that you sent it.",
+          "Press **Email to client** when email is set up in Settings.",
+          "Press **Print** for a paper or PDF copy.",
+        ],
+        image: img("inv-send", "The Mark sent, Email to client, and Print buttons."),
       },
       {
-        text: "When the client pays, find **Payments**. Enter 2.00 in **Amount ($)**, choose **Bank transfer** in **Method**, and enter \"Deposit\" in **Note**. Press **Record $2.00 bank transfer, today**. Recording a payment on a draft also marks it sent.",
-        image: img("inv-payment", "The payment fields and Record button under Payments, highlighted as step 5."),
+        text: "When the client pays, find **Payments**.",
+        subs: [
+          "In **Amount ($)**, enter 2.00.",
+          "In **Method**, choose **Bank transfer**.",
+          "In **Note**, enter \"Deposit\".",
+          "Press **Record $2.00 bank transfer, today**.",
+        ],
+        after: "Recording a payment on a draft also marks it sent.",
+        image: img("inv-payment", "The payment fields and Record button under Payments."),
       },
       {
         text: "Read the line under **Payments**. After the $2.00 deposit it reads \"Paid $2.00 of $3.39, balance $1.39.\" When the full amount is in, the invoice becomes **PAID**. If the client pays everything at once, press **Mark paid** instead.",
-        image: img("inv-paid", "The payment summary line under Payments, highlighted as step 6."),
+        image: img("inv-paid", "The payment summary line under Payments."),
       },
     ],
     next: "To see how the money adds up, continue with [Read the Dashboard](#/guide#read-the-dashboard).",
@@ -220,32 +291,58 @@ export const GUIDE_TASKS: GuideTask[] = [
     summary: "Put a product in your shop, with a category, a stock count, and a Color option customers choose from.",
     steps: [
       {
-        text: "Select **Shop items** in the sidebar. In the **Categories** card, enter \"Desk and organizers\" in **Name** and press **Add category**. The shop shows one chip for each category that has items.",
-        image: img("item-category", "The Categories card with the Name field and Add category button, highlighted as step 1."),
+        text: "Select **Shop items** in the sidebar. In the **Categories** card, add a category. The shop shows one chip for each category that has items.",
+        subs: [
+          "In **Name**, enter \"Desk and organizers\".",
+          "Press **Add category**.",
+        ],
+        image: img("item-category", "The Categories card with the Name field and Add category button."),
       },
       {
         text: "Press **Add shop item** at the top of the page.",
-        image: img("item-add", "The Add shop item button, highlighted as step 2."),
+        image: img("item-add", "The Add shop item button."),
       },
       {
-        text: "Under **Details**, enter \"Hex Desk Tray\" in **Name** and 18.50 in **Price ($)**. Choose \"Desk and organizers\" in **Category**, and describe the item in **Description**.",
-        image: img("item-details", "The Name, Price ($), and Category fields, highlighted as step 3."),
+        text: "Under **Details**, describe the item.",
+        subs: [
+          "In **Name**, enter \"Hex Desk Tray\".",
+          "In **Price ($)**, enter 18.50.",
+          "In **Category**, choose \"Desk and organizers\".",
+          "In **Description**, describe the item, for example \"A stackable hexagonal tray for pens, clips, and small parts.\"",
+        ],
+        image: img("item-details", "The Name, Price ($), and Category fields."),
       },
       {
-        text: "Under **Availability**, choose **In stock (fixed quantity)** in **Stock** and enter 12 as the quantity. Each finalized order takes its units off the count. Leave **Ready to print (made to order)** selected for an item you print when someone orders it.",
-        image: img("item-stock", "The Stock selector set to In stock, highlighted as step 4."),
+        text: "Under **Availability**, set the stock.",
+        subs: [
+          "In **Stock**, choose **In stock (fixed quantity)**.",
+          "In **Quantity in stock**, enter 12.",
+        ],
+        after: "Each finalized order takes its units off the count. Leave **Ready to print (made to order)** selected for an item you print when someone orders it.",
+        image: img("item-stock", "The Stock selector set to In stock."),
       },
       {
-        text: "Under **In the shop**, turn on **Public (visible in the shop)** so customers can see the item. Turn on **Featured (shown first in its category and in All)** to list it first.",
-        image: img("item-visibility", "The Public and Featured checkboxes, highlighted as step 5."),
+        text: "Under **In the shop**, choose who sees the item.",
+        subs: [
+          "Turn on **Public (visible in the shop)** so customers can see the item.",
+          "Turn on **Featured (shown first in its category and in All)** to list it first.",
+        ],
+        image: img("item-visibility", "The Public and Featured checkboxes."),
       },
       {
-        text: "Under **Options**, press **Add group** and enter \"Color\" in **Group name**. Leave **Customer must choose one** on. Enter \"Black\" in **Choice** with 0 in **Price adjustment ($)**. Press **Add choice**, enter \"Gold\", and enter 2.50 as its price adjustment.",
-        image: img("item-options", "The Color option group with its two choices, highlighted as step 6."),
+        text: "Under **Options**, press **Add group**. Leave **Customer must choose one** on.",
+        subs: [
+          "In **Group name**, enter \"Color\".",
+          "In **Choice**, enter \"Black\".",
+          "In **Price adjustment ($)**, enter 0.",
+          "Press **Add choice**, then enter \"Gold\" in the new **Choice** box.",
+          "In the new **Price adjustment ($)** box, enter 2.50.",
+        ],
+        image: img("item-options", "The Color option group with its two choices."),
       },
       {
         text: "Press **Save**. To add a photo, open the saved item and use **Photo**; a new item has to be saved first.",
-        image: img("item-save", "The Save button at the bottom of the item form, highlighted as step 7."),
+        image: img("item-save", "The Save button at the bottom of the item form."),
       },
     ],
     next: "Customers find the item in your shop. To style the shop, see [Set up your storefront](#/guide#set-up-storefront). To learn what happens to orders, see [Handle a shop request](#/guide#handle-a-shop-request).",
@@ -256,32 +353,50 @@ export const GUIDE_TASKS: GuideTask[] = [
     summary: "Choose what your shop offers, give it your wording, a hero image, and an accent color, and pause it when you're away.",
     steps: [
       {
-        text: "Select **Settings**, then **Storefront**. Under **What the shop offers**, turn **Item gallery** and **Custom estimates** on or off. You can turn one off, but not both. To stop taking orders, pause the shop instead.",
-        image: img("shop-offers", "The Item gallery and Custom estimates checkboxes under What the shop offers, highlighted as step 1."),
+        text: "Select **Settings**, then **Storefront**. Under **What the shop offers**, choose what to turn on. You can turn one off, but not both. To stop taking orders, pause the shop instead.",
+        subs: [
+          "Turn **Item gallery** on or off.",
+          "Turn **Custom estimates** on or off.",
+        ],
+        image: img("shop-offers", "The Item gallery and Custom estimates checkboxes under What the shop offers."),
       },
       {
-        text: "To go on vacation, turn on **Pause the shop (vacation mode)** and enter \"Back on Monday, December 1.\" in **Message on the Closed page**. While paused, every page of the shop shows a Closed page with your message, and new orders and estimates are refused. The preview below shows what customers see.",
-        image: img("shop-pause", "The Pause the shop checkbox and the Closed page message field, highlighted as step 2."),
+        text: "To go on vacation, pause the shop.",
+        subs: [
+          "Turn on **Pause the shop (vacation mode)**.",
+          "In **Message on the Closed page**, enter \"Back on Monday, December 1.\"",
+        ],
+        after: "While paused, every page of the shop shows a Closed page with your message, and new orders and estimates are refused. The preview below shows what customers see.",
+        image: img("shop-pause", "The Pause the shop checkbox and the Closed page message field."),
       },
       {
-        text: "Under **Wording**, enter \"Lantern Print Works | 3D prints\" in **Browser tab title** and \"Lantern Print Works shop\" in **Shop heading**.",
-        image: img("shop-wording", "The Browser tab title and Shop heading fields, highlighted as step 3."),
+        text: "Under **Wording**, name your shop.",
+        subs: [
+          "In **Browser tab title**, enter \"Lantern Print Works | 3D prints\".",
+          "In **Shop heading**, enter \"Lantern Print Works shop\".",
+        ],
+        image: img("shop-wording", "The Browser tab title and Shop heading fields."),
       },
       {
         text: "In **Announcement**, enter `**Holiday cutoff:** order by *December 15*.` The announcement, the intro, and the notes accept `**bold**`, `*italic*`, and `[link](https://example.com)`. A preview shows how customers see them.",
-        image: img("shop-announcement", "The Announcement field with a short notice, highlighted as step 4."),
+        image: img("shop-announcement", "The Announcement field with a short notice."),
       },
       {
-        text: "Under **Hero image**, press **Upload image** and choose a JPEG, PNG, or WebP banner. Enter a short description in **Image description (alt text)**, such as \"Colorful banner reading Made to order\". The description is required. The image saves as soon as you upload it.",
-        image: img("shop-hero", "The Image description (alt text) field under Hero image, highlighted as step 5."),
+        text: "Under **Hero image**, add a banner.",
+        subs: [
+          "In **Image description (alt text)**, enter a short description, such as \"Colorful banner reading Made to order\". The description is required.",
+          "Press **Upload image** and choose a JPEG, PNG, or WebP banner.",
+        ],
+        after: "The image saves as soon as you upload it.",
+        image: img("shop-hero", "The Image description (alt text) field and the Upload image button under Hero image."),
       },
       {
         text: "Under **Accent color**, enter \"#0f746c\". The preview shows the color on light and dark backgrounds, and printpaca rejects a color that isn't readable. Leave the field empty to use the theme accent.",
-        image: img("shop-accent", "The Accent color field and its light and dark preview, highlighted as step 6."),
+        image: img("shop-accent", "The Accent color field and its light and dark preview."),
       },
       {
         text: "Press **Save changes**, then press **View shop** at the top of the card. Your heading, announcement, and hero image appear at the top of the shop.",
-        image: img("shop-result", "The top of the public shop with the heading highlighted as step 7."),
+        image: img("shop-result", "The top of the public shop with the heading."),
       },
     ],
     next: "To add products, see [Add a shop item](#/guide#add-a-shop-item).",
@@ -292,24 +407,29 @@ export const GUIDE_TASKS: GuideTask[] = [
     summary: "Check what a print costs in electricity, then price prints by the hour with a time-of-use schedule.",
     steps: [
       {
-        text: "Select **Electricity**. In the calculator, enter 120 in **Printer power (W)** and 2.5 in **Print time (h)**. **This print** shows what that print costs at your saved rate.",
-        image: img("power-calc", "The electricity calculator with power and print time filled in, highlighted as step 1."),
+        text: "Select **Electricity**. In the calculator, enter your printer's power and a print time.",
+        subs: [
+          "In **Printer power (W)**, enter 120.",
+          "In **Print time (h)**, enter 2.5.",
+        ],
+        after: "**This print** shows what that print costs at your saved rate.",
+        image: img("power-calc", "The electricity calculator with power and print time filled in."),
       },
       {
         text: "Under **Saved energy settings**, choose **Time-of-use schedule** in **Mode**. Use **Flat rate** when one rate applies all day, or **Time-of-use (simple)** for a peak and off-peak split.",
-        image: img("power-mode", "The Mode selector in Saved energy settings, highlighted as step 2."),
+        image: img("power-mode", "The Mode selector in Saved energy settings."),
       },
       {
         text: "Press **Load SCE TOU-D-4-9PM example** to start from a worked schedule with summer and winter seasons, weekday and weekend hours, and peak windows. The rates are examples. Replace each window's rate with the rates on your power bill.",
-        image: img("power-example", "The Load SCE TOU-D-4-9PM example button, highlighted as step 3."),
+        image: img("power-example", "The Load SCE TOU-D-4-9PM example button."),
       },
       {
         text: "In **Default print start (24-hour time, such as 22:00)**, enter 22:00. Public quotes and new orders start at the next time that clock time comes round, because the start decides which rates a print pays.",
-        image: img("power-start", "The Default print start field, highlighted as step 4."),
+        image: img("power-start", "The Default print start field."),
       },
       {
         text: "Press **Save changes**. On **New quote**, a **Print start** field now appears, and the electricity cost depends on when the print starts.",
-        image: img("power-quote", "The Print start field on New quote, highlighted as step 5."),
+        image: img("power-quote", "The Print start field on New quote."),
       },
     ],
     next: "Set the printer's power draw in [Set up your shop details](#/guide#first-time-setup).",
@@ -321,26 +441,26 @@ export const GUIDE_TASKS: GuideTask[] = [
     steps: [
       {
         text: "Select **Filament**. The materials list holds the price per kilogram and waste percentage for each material. Press **Edit** on a row to change it, then press **Done**. **Public** controls whether customers can choose the material on the shop's estimate form.",
-        image: img("spool-materials", "The materials table on the Filament page, with the Edit button of the first row highlighted as step 1."),
+        image: img("spool-materials", "The materials table on the Filament page, with the Edit button of the first row."),
       },
       {
         text: "To connect Spoolman, select **Settings**, then **Integrations**. In **Spoolman URL**, enter the address of your Spoolman server, such as \"http://192.168.1.50:7912\".",
-        image: img("spool-url", "The Spoolman URL field under Integrations, highlighted as step 2."),
+        image: img("spool-url", "The Spoolman URL field under Integrations."),
       },
       {
         text: "Press **Test** next to the field. printpaca checks the address and reports what it found, such as the number of spools. Fix the address if the test fails.",
-        image: img("spool-test", "The Test button and its result under Spoolman, highlighted as step 3."),
+        image: img("spool-test", "The Test button and its result under Spoolman."),
       },
       {
         text: "Press **Save changes**. The change applies right away, with no restart.",
       },
       {
         text: "Select **Filament**. The **Spoolman inventory** card now lists your spools with their remaining weight.",
-        image: img("spool-inventory", "The Spoolman inventory card on the Filament page, highlighted as step 5."),
+        image: img("spool-inventory", "The Spoolman inventory heading above the list of spools."),
       },
       {
         text: "On **New quote**, pick a spool in section 2 to fill the material price. Pick the matching material as well, because the material sets the density.",
-        image: img("spool-picker", "The spool picker in section 2 of New quote, highlighted as step 6."),
+        image: img("spool-picker", "The spool picker in section 2 of New quote."),
       },
     ],
     next: "For more on how Spoolman fits in, see [Spoolman](#/guide#spoolman).",
@@ -351,22 +471,30 @@ export const GUIDE_TASKS: GuideTask[] = [
     summary: "List your printers with their power draw and cost, then connect Moonraker to fill quotes from real print history.",
     steps: [
       {
-        text: "Select **Printers**, then press **Add printer**. Enter \"Corner printer\" in **Name**, 200 in **Power (W)**, 450 in **Purchase cost**, and 5000 in **Lifespan (h)**. printpaca spreads the purchase cost over the lifespan to price printer wear.",
-        image: img("printer-add", "The new printer row with its name, power, cost, and lifespan fields, highlighted as step 1."),
+        text: "Select **Printers**, then press **Add printer**. Fill in the new row.",
+        subs: [
+          "In **Name**, enter \"Corner printer\".",
+          "In **Power (W)**, enter 200.",
+          "In **Purchase cost**, enter 450.",
+          "In **Lifespan (h)**, enter 5000.",
+        ],
+        after: "printpaca spreads the purchase cost over the lifespan to price printer wear.",
+        image: img("printer-add", "The new printer row with its name, power, cost, and lifespan fields."),
       },
       {
-        text: "Press **Save changes**. The printer now appears in **Printer** on New quote.",
-      },
-      {
-        text: "Select **Settings**, then **Integrations**. In **Moonraker URL**, enter the address of your printer's Moonraker, such as \"http://192.168.1.60:7125\", and press **Test**.",
-        image: img("printer-moonraker", "The Moonraker URL field and Test button, highlighted as step 3."),
+        text: "Select **Settings**, then **Integrations**. Connect Moonraker.",
+        subs: [
+          "In **Moonraker URL**, enter the address of your printer's Moonraker, such as \"http://192.168.1.60:7125\".",
+          "Press **Test**.",
+        ],
+        image: img("printer-moonraker", "The Moonraker URL field and Test button."),
       },
       {
         text: "If printpaca finds a printer you haven't listed, it offers to add it. Press **Add printer** in the prompt, or press **Not now**.",
       },
       {
         text: "Press **Save changes**. On **New quote**, section 1 now has a **Recent print (from Moonraker)** list of completed prints. Select one to fill in its weight and print time.",
-        image: img("printer-recent", "The Recent print (from Moonraker) list in section 1 of New quote, highlighted as step 5."),
+        image: img("printer-recent", "The Recent print (from Moonraker) list in section 1 of New quote."),
       },
     ],
     next: "Return to [Quote a print](#/guide#quote-a-print).",
@@ -378,19 +506,28 @@ export const GUIDE_TASKS: GuideTask[] = [
     steps: [
       {
         text: "Select **Settings**, then **Users**. Turn on **Multi-user mode**. This needs the `ADMIN_PASSWORD` environment variable on the server.",
-        image: img("users-toggle", "The Multi-user mode checkbox under Users, highlighted as step 1."),
+        image: img("users-toggle", "The Multi-user mode checkbox under Users."),
       },
       {
-        text: "Under **Add employee**, enter \"jules\" in **Username** and a password of at least 8 characters in **Password**. Use only lowercase letters, digits, periods, underscores, and hyphens in the username.",
-        image: img("users-add", "The Username and Password fields under Add employee, highlighted as step 2."),
+        text: "Under **Add employee**, create the account.",
+        subs: [
+          "In **Username**, enter \"jules\". Use only lowercase letters, digits, periods, underscores, and hyphens.",
+          "In **Password**, enter a password of at least 8 characters.",
+        ],
+        image: img("users-add", "The Username and Password fields under Add employee."),
       },
       {
-        text: "Under **Tabs this employee can open**, tick **New quote** and **Quotes**. Each grant is a whole page. An employee with only **Quotes** can read the list but not open a quote in the editor.",
-        image: img("users-tabs", "The Tabs this employee can open checkboxes, highlighted as step 3."),
+        text: "Under **Tabs this employee can open**, tick the pages the employee needs.",
+        subs: [
+          "Tick **New quote**.",
+          "Tick **Quotes**.",
+        ],
+        after: "Each grant is a whole page. An employee with only **Quotes** can read the list but not open a quote in the editor.",
+        image: img("users-tabs", "The Tabs this employee can open checkboxes."),
       },
       {
         text: "Press **Add employee**. The employee appears in the table. Change their permissions later with the checkboxes in their row, or press **Reset password** if they forget it.",
-        image: img("users-table", "The employee table with permission checkboxes and the Reset password button, highlighted as step 4."),
+        image: img("users-table", "The Reset password button on the new employee's row in the table."),
       },
     ],
     next: "For the full rules, see [Users and permissions](#/guide#users-and-permissions).",
@@ -401,101 +538,350 @@ export const GUIDE_TASKS: GuideTask[] = [
     summary: "See what needs your attention and how the business is doing this month and this year.",
     steps: [
       {
-        text: "Select **Dashboard**. The row of tiles counts the work waiting for you: **New requests**, **Overdue invoices**, **Draft invoices**, **Needs print time**, and **Quotes awaiting reply**. Press **Show** on a tile to filter the list below it.",
-        image: img("dash-tiles", "The row of action tiles at the top of the Dashboard, highlighted as step 1."),
+        text: "Select **Dashboard**. The row of tiles counts the work waiting for you. Press **Show** on a tile to filter the list below it.",
+        subs: [
+          "**New requests**",
+          "**Overdue invoices**",
+          "**Draft invoices**",
+          "**Needs print time**",
+          "**Quotes awaiting reply**",
+        ],
+        image: img("dash-tiles", "The five action tiles at the top of the Dashboard, one highlight on each."),
       },
       {
         text: "Read **Needs attention**. Each row names the client and what is waiting, such as an overdue invoice or a new request. Select a row to open the record. When all work is done, the list reads \"Nothing needs attention.\"",
-        image: img("dash-todo", "The Needs attention list, highlighted as step 2."),
+        image: img("dash-todo", "The Needs attention heading above the to-do list."),
       },
       {
-        text: "Read **This month**. **Revenue** is what you collected, **Outstanding** is what clients still owe, and **Average margin** is the margin on invoiced quotes.",
-        image: img("dash-month", "The This month tiles for revenue, outstanding, margin, and quotes, highlighted as step 3."),
+        text: "Read **This month**.",
+        subs: [
+          "**Revenue** is what you collected.",
+          "**Outstanding** is what clients still owe.",
+          "**Average margin** is the margin on invoiced quotes.",
+        ],
+        image: img("dash-month", "The Revenue, Outstanding, and Average margin tiles under This month."),
       },
       {
         text: "Read **Revenue by month** to see the last twelve months. Open **Revenue by month as a table** for the same figures as text.",
-        image: img("dash-chart", "The Revenue by month chart, highlighted as step 4."),
+        image: img("dash-chart", "The Revenue by month heading above the chart."),
       },
       {
         text: "Read **Top items** to see which shop items sold best over the last 30, 90, or 365 days. The figures are booked sales, not payments received.",
-        image: img("dash-top", "The Top items table, highlighted as step 5."),
+        image: img("dash-top", "The Top items heading above the table."),
       },
     ],
   },
 ];
 
 // Guide "Concepts" topics, one h3/p pair each; a topic's id is its anchor (#/guide#<id>).
+/** A block inside a reference topic's section. Text uses the inline markup of guideInline.ts. */
+export type TopicBlock =
+  | { kind: "p"; text: string }
+  | { kind: "list"; items: string[] }
+  | { kind: "table"; caption: string; head: string[]; rows: string[][] }
+  | { kind: "diagram"; id: "settings-map" | "save-flow" };
+
+export interface TopicSection {
+  heading: string;
+  blocks: TopicBlock[];
+}
+
+/** A reference topic (D63): a short intro, then sections with headings, lists, tables, and diagrams. */
 export interface GuideTopic {
   id: string;
   title: string;
-  body: string;
+  intro: string;
+  sections: TopicSection[];
 }
+
+const p = (text: string): TopicBlock => ({ kind: "p", text });
+const list = (...items: string[]): TopicBlock => ({ kind: "list", items });
+const table = (caption: string, head: string[], ...rows: string[][]): TopicBlock => ({ kind: "table", caption, head, rows });
 
 export const GUIDE_TOPICS: GuideTopic[] = [
   {
     id: "configuring-printpaca",
     title: "Configuring printpaca",
-    body: "You can edit materials, printers, electricity rates, labor presets, and fee schedules on the Printers, Filament, Electricity, and Settings pages. Edits stay local until you press Save changes in the save bar at the bottom of the page. The config.yaml file on the server seeds the starting values.",
+    intro: "You change printpaca's settings in the app, on the Settings page and on the Filament, Printers, Electricity, and Invoices pages. Edits stay on the page until you press **Save changes**. The server keeps what you save in one file, `config.yaml`.",
+    sections: [
+      {
+        heading: "Where settings live",
+        blocks: [
+          p("Every value you can change in the app maps to a key in `config.yaml`. The Settings page groups its cards by key. Four other pages hold the settings they affect. A few values have no field in the app, because the server reads them once when it starts. Those are environment variables."),
+          { kind: "diagram", id: "settings-map" },
+        ],
+      },
+      {
+        heading: "What happens when you save",
+        blocks: [
+          p("The save bar appears at the bottom of the page as soon as you change a field. **Discard changes** puts every field back to its saved value. **Save changes** sends the whole configuration to the server."),
+          { kind: "diagram", id: "save-flow" },
+          list(
+            "The server checks every value. If one is wrong, it writes nothing and the save bar lists each problem with a link to its field.",
+            "A valid save is written to `config.yaml` and applies at once, with no restart. The previous file is kept as `config.yaml.bak`.",
+            "Settings have no version check, so the last save wins. Quotes, invoices, and shop items do check, and offer **Reload** or **Overwrite** when someone else saved first.",
+            "The one value that needs a restart is the email password, `SMTP_PASSWORD`.",
+          ),
+        ],
+      },
+      {
+        heading: "The file on the server",
+        blocks: [
+          list(
+            "`config.yaml` holds only the values that differ from printpaca's built-in defaults. Delete a key and the default returns.",
+            "You can edit the file by hand, but the app rewrites it on the next save and drops your comments.",
+            "Built-in fee schedules and presets can't be removed, and a save that tries is refused.",
+            "The file lives in the folder named by `CONFIG_DIR`, next to the database and your uploads. Copy that folder to back everything up.",
+          ),
+        ],
+      },
+    ],
   },
   {
     id: "model-files",
     title: "Model files and print time",
-    body: "On New quote, drop a sliced .gcode or .3mf file, or an STL or 3MF model, on the model file box. printpaca reads the weight and print time from a sliced file, or estimates the weight from a model, and fills in the fields below. Several files at once make one part each. Files are read in your browser and never uploaded. A slicer is the program that turns a 3D model into instructions for the printer, for example Bambu Studio, PrusaSlicer, or Cura. It also estimates the print time. If a file has no time, open the model in your slicer, slice it, and type the time it shows.",
+    intro: "On **New quote**, a file fills in the weight and print time for you. Files are read in your browser and never uploaded.",
+    sections: [
+      {
+        heading: "What you can drop",
+        blocks: [
+          table("Files the model file box reads", ["File", "What printpaca reads"],
+            ["Sliced `.gcode` or `.3mf`", "The weight and the print time from the slicer."],
+            ["`.stl` or an unsliced `.3mf` model", "An estimate of the weight. The print time is yours to enter."],
+          ),
+          p("Drop several files at once to make one part each."),
+        ],
+      },
+      {
+        heading: "If a file has no time",
+        blocks: [
+          p("A slicer is the program that turns a 3D model into instructions for the printer, for example Bambu Studio, PrusaSlicer, or Cura. It also estimates the print time. Open the model in your slicer, slice it, and type the time it shows."),
+        ],
+      },
+    ],
   },
   {
     id: "material-and-printer",
     title: "Material, printer, and print start",
-    body: "Section 2 of New quote holds what you print on: the material, its price per kilogram, the waste percentage, the printer, and the quantity. Waste adds a percentage to the model weight to cover purge and supports. With a time-of-use electricity schedule, the section also holds the print start, because the start decides which rates the print pays. The shop rates (electricity, labor, printer wear, and overhead) sit under Costs and Edit rates. They usually stay the same between quotes, so set the defaults on the Electricity and Printers pages.",
+    intro: "Section 2 of **New quote** holds what you print on.",
+    sections: [
+      {
+        heading: "What section 2 holds",
+        blocks: [
+          list(
+            "The material and its price per kilogram.",
+            "The waste percentage, which adds to the model weight to cover purge and supports.",
+            "The printer and the quantity.",
+            "The print start, with a time-of-use electricity schedule. The start decides which rates the print pays.",
+          ),
+        ],
+      },
+      {
+        heading: "Shop rates",
+        blocks: [
+          p("The shop rates (electricity, labor, printer wear, and overhead) sit under **Costs** and **Edit rates**. They usually stay the same between quotes, so set the defaults on the **Electricity** and **Printers** pages."),
+        ],
+      },
+    ],
   },
   {
     id: "cost-breakdown",
     title: "Cost breakdown",
-    body: "The Breakdown in the summary shows your cost live, per unit and per batch. A dash means a required input is missing or invalid, and the summary names the first missing field with a link to it.",
+    intro: "The **Breakdown** in the summary shows your cost live, per unit and per batch. A dash means a required input is missing or invalid, and the summary names the first missing field with a link to it.",
+    sections: [],
   },
   {
     id: "saving-quotes",
     title: "Saving quotes",
-    body: "Save keeps the current quote on the server, and Save as new keeps a copy. The Recent saves list opens any of your five most recent saves. The Quotes page lists every saved quote and lets you filter, export, import, convert a quote to an invoice, or track its status.",
+    intro: "A saved quote stays on the server until you delete it.",
+    sections: [
+      {
+        heading: "Saving",
+        blocks: [
+          list(
+            "**Save** keeps the current quote.",
+            "**Save as new** keeps a copy and leaves the original as it was.",
+            "**Recent saves** opens any of your five most recent saves.",
+          ),
+        ],
+      },
+      {
+        heading: "The Quotes page",
+        blocks: [
+          p("The **Quotes** page lists every saved quote. From there you can:"),
+          list("Filter the list.", "Export or import quotes.", "Convert a quote to an invoice.", "Track a quote's status."),
+        ],
+      },
+    ],
   },
   {
     id: "margin-vs-markup",
     title: "Margin versus markup",
-    body: "Margin sets the price before tax so profit is a share of that price: price = cost divided by one minus margin. Markup multiplies cost directly. A 50% margin and a 2× markup both double the cost, but the same number means different things in each mode. Tax is then added to the price, and marketplace fees are taken out of what remains, so net profit can be lower than the margin you picked. printpaca warns you when net profit goes negative.",
+    intro: "Margin and markup both turn your cost into a price, but the same number means different things in each mode.",
+    sections: [
+      {
+        heading: "The two modes",
+        blocks: [
+          table("How each mode sets the price", ["Mode", "Formula", "What the number means"],
+            ["Margin", "price = cost divided by (1 minus margin)", "Profit is that share of the price."],
+            ["Markup", "price = cost times the multiplier", "The price is that many times the cost."],
+          ),
+          p("A 50% margin and a 2\u00d7 markup both double the cost."),
+        ],
+      },
+      {
+        heading: "Tax and fees",
+        blocks: [
+          list(
+            "Tax is added to the price.",
+            "Marketplace fees are taken out of what remains, so net profit can be lower than the margin you picked.",
+            "printpaca warns you when net profit goes negative.",
+          ),
+        ],
+      },
+    ],
   },
   {
     id: "marketplace-fees",
     title: "Marketplace fees",
-    body: "Named fee schedules (a percent of revenue plus fixed amounts) are defined on the Settings page. Pick one per quote in the Price and profit card to see those fees taken out of profit.",
+    intro: "Named fee schedules (a percent of revenue plus fixed amounts) are defined on the **Settings** page. Pick one per quote in the **Price and profit** card to see those fees taken out of profit.",
+    sections: [],
   },
   {
     id: "waste-and-failure-buffers",
     title: "Waste and failure buffers",
-    body: "Waste percent raises the material used per print to cover purge and supports. The failure rate spreads the cost of failed prints across the successful ones: at a 20% failure rate, you expect 0.25 failed attempts for every good print, so the buffer is 25% of the consumables cost. The maximum is 90%.",
+    intro: "Two buffers raise your cost to cover material you lose.",
+    sections: [
+      {
+        heading: "Waste percent",
+        blocks: [p("Waste percent raises the material used per print to cover purge and supports.")],
+      },
+      {
+        heading: "Failure rate",
+        blocks: [
+          p("The failure rate spreads the cost of failed prints across the successful ones. The maximum is 90%."),
+          table("Failure rate example", ["Failure rate", "Failed attempts per good print", "Buffer"],
+            ["20%", "0.25", "25% of the consumables cost"],
+          ),
+        ],
+      },
+    ],
   },
   {
     id: "batches-and-labor",
     title: "Batches and labor",
-    body: "Quantity spreads prep labor and one-time costs across the batch. You see both the per-unit and batch totals.",
+    intro: "Quantity spreads prep labor and one-time costs across the batch. You see both the per-unit and batch totals.",
+    sections: [],
   },
   {
     id: "requests-finalize-vs-convert",
     title: "Requests: Finalize or Convert",
-    body: "A request is something a customer sent through the shop: a custom estimate or a shop item order. Finalize means you have dealt with it. It takes the request off your to-do list, records the sale of a shop item, and takes the units out of that item's stock. Finalize does not email the customer, so reply to them yourself. Convert to invoice makes an invoice from the request and creates the client if that email is not on file. Converting also finalizes the request, marks it Invoiced, and links the request and the invoice both ways, so you do not bill the same request twice. A shop item sale and its stock are counted when you send the invoice, not when you convert, so a draft invoice you never send does not count as a sale. An estimate that has no print time yet cannot be converted until you enter the time from your slicer. Use Finalize for an order you fulfilled without invoicing, or Convert to bill the customer.",
+    intro: "A request is something a customer sent through the shop: a custom estimate or a shop item order. You close it with **Finalize** or **Convert to invoice**.",
+    sections: [
+      {
+        heading: "The two actions",
+        blocks: [
+          table("What Finalize and Convert to invoice do", ["Compare", "Finalize", "Convert to invoice"],
+            ["Use it to", "Close a request you fulfilled without invoicing.", "Bill the customer."],
+            ["The request", "Leaves your to-do list.", "Is finalized, marked **Invoiced**, and linked both ways with the invoice."],
+            ["The customer", "Is not emailed. Reply yourself.", "Is added to **Clients** if their email isn't on file."],
+            ["A shop item order", "Records the sale and takes the units out of stock.", "Is counted, with its stock, when you send the invoice."],
+          ),
+        ],
+      },
+      {
+        heading: "Good to know",
+        blocks: [
+          list(
+            "A draft invoice you never send does not count as a sale.",
+            "An estimate with no print time yet can't be converted until you enter the time from your slicer.",
+            "The two-way link means you can't bill the same request twice.",
+          ),
+        ],
+      },
+    ],
   },
   {
     id: "shop-items-and-options",
     title: "Shop items and options",
-    body: "Shop items are the products customers can order from your shop page. A new shop item starts hidden: turn on Public, or press Show in shop after you save, to make it visible. An option group is one choice the customer makes, such as Color or Size. Each group has a group name and a list of choices, and each choice can add or subtract money from the price. Leave Customer must choose one on to force an answer before ordering. Turn it off and the group starts on None. A shop item made to order has no fixed stock. An in-stock item counts down each time you finalize an order for it.",
+    intro: "Shop items are the products customers can order from your shop page.",
+    sections: [
+      {
+        heading: "Showing an item",
+        blocks: [p("A new shop item starts hidden. Turn on **Public**, or press **Show in shop** after you save, to make it visible.")],
+      },
+      {
+        heading: "Option groups",
+        blocks: [
+          p("An option group is one choice the customer makes, such as Color or Size."),
+          list(
+            "Each group has a group name and a list of choices.",
+            "Each choice can add or subtract money from the price.",
+            "Leave **Customer must choose one** on to force an answer before ordering. Turn it off and the group starts on **None**.",
+          ),
+        ],
+      },
+      {
+        heading: "Stock",
+        blocks: [
+          list(
+            "A shop item made to order has no fixed stock.",
+            "An in-stock item counts down each time you finalize an order for it.",
+          ),
+        ],
+      },
+    ],
   },
   {
     id: "spoolman",
     title: "Spoolman",
-    body: "Spoolman is a separate program that tracks your filament spools. Once an admin adds its address under Integrations in Settings, the Filament page lists your spools, and New quote lets you pick a spool to fill the material cost. The Test button checks the address before or after you save it, including an address set by an environment variable. The material you choose on a quote still sets the density, so pick the matching material as well as the spool.",
+    intro: "Spoolman is a separate program that tracks your filament spools.",
+    sections: [
+      {
+        heading: "What it adds",
+        blocks: [
+          p("Once an admin adds its address under **Integrations** in **Settings**:"),
+          list(
+            "The **Filament** page lists your spools.",
+            "**New quote** lets you pick a spool to fill the material cost.",
+          ),
+        ],
+      },
+      {
+        heading: "Good to know",
+        blocks: [
+          list(
+            "The **Test** button checks the address before or after you save it, including an address set by an environment variable.",
+            "The material you choose on a quote still sets the density, so pick the matching material as well as the spool.",
+          ),
+        ],
+      },
+    ],
   },
   {
     id: "users-and-permissions",
     title: "Users and permissions",
-    body: "By default, anyone with the admin password has full access. An admin can switch on Multi-user mode in Settings and add staff accounts. Each account is granted whole pages, such as Quotes or Invoices. A staff member sees only the pages they were granted, and Settings shows them only their own password. Editing a quote needs the New quote grant, so a person who has only Quotes can read the list but not open a quote in the editor. If you see a page you can't use, ask an admin to grant it.",
+    intro: "By default, anyone with the admin password has full access.",
+    sections: [
+      {
+        heading: "Multi-user mode",
+        blocks: [
+          p("An admin can switch on **Multi-user mode** in **Settings** and add staff accounts. Each account is granted whole pages, such as **Quotes** or **Invoices**."),
+          list(
+            "A staff member sees only the pages they were granted.",
+            "**Settings** shows them only their own password.",
+            "Editing a quote needs the **New quote** grant, so a person who has only **Quotes** can read the list but not open a quote in the editor.",
+          ),
+        ],
+      },
+      {
+        heading: "Always admin-only",
+        blocks: [
+          list("The Settings page.", "User management.", "The Integrations card and its test buttons.", "The Diagnostics and Data exports."),
+          p("If you see a page you can't use, ask an admin to grant it."),
+        ],
+      },
+    ],
   },
 ];
 
@@ -503,9 +889,27 @@ export const GUIDE_TOPICS: GuideTopic[] = [
  * the ones that work on the page you are on. */
 export const SHORTCUTS: { keys: string; action: string; where: string }[] = [
   { keys: "Ctrl+S (Cmd+S on Mac)", action: "Save", where: "New quote, invoice drafts, client details, Shop items (item editor), Settings, Filament materials, Electricity, Printers" },
-  { keys: "Ctrl+K (Cmd+K on Mac)", action: "Jump to the page's filter box", where: "Quotes, Invoices, Clients, Requests, Shop items, Filament spools, Recent prints on New quote" },
+  { keys: "Ctrl+K (Cmd+K on Mac)", action: "Jump to the page's filter box", where: "Quotes, Invoices, Clients, Requests, Shop items, Filament spools, Recent prints on New quote, the Guide" },
   { keys: "Esc", action: "Close the open menu or the sidebar drawer", where: "Everywhere" },
 ];
+
+/** The badge labels of a step's image: "2" for one highlight, "2.1", "2.2", ... for several. `stepNumber` is 1-based. */
+export function badgeLabels(stepNumber: number, step: GuideStep): string[] {
+  const n = step.subs?.length ?? 1;
+  return n > 1 ? Array.from({ length: n }, (_, i) => `${stepNumber}.${i + 1}`) : [String(stepNumber)];
+}
+
+/** The sentence added to an image's alt text, naming its badges: "Highlighted as step 2." or "... steps 2.1 to 2.3." */
+export function highlightNote(labels: string[]): string {
+  return labels.length === 1 ? `Highlighted as step ${labels[0]}.` : `Highlighted as steps ${labels[0]} to ${labels[labels.length - 1]}.`;
+}
+
+/** Where each image sits: its task, step number, and badge labels. scripts/guide-shots.ts draws exactly these. */
+export const GUIDE_IMAGE_PLAN: Record<string, { task: string; step: number; labels: string[] }> = Object.fromEntries(
+  GUIDE_TASKS.flatMap((t) =>
+    t.steps.flatMap((st, i) => (st.image ? [[st.image.key, { task: t.id, step: i + 1, labels: badgeLabels(i + 1, st) }] as const] : [])),
+  ),
+);
 
 /** Every image key the task topics reference, in reading order. scripts/guide-shots.ts captures exactly these. */
 export const GUIDE_IMAGE_KEYS: string[] = GUIDE_TASKS.flatMap((t) => t.steps.flatMap((s) => (s.image ? [s.image.key] : [])));

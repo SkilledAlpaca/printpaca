@@ -1,11 +1,16 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
-  import { GUIDE_NAV, GUIDE_TASKS, GUIDE_TOPICS, SHORTCUTS, resolveGuideTopic } from "../lib/guideContent";
+  import { GUIDE_NAV, GUIDE_TASKS, GUIDE_TOPICS, SHORTCUTS, badgeLabels, highlightNote, resolveGuideTopic } from "../lib/guideContent";
   import type { GuideImage } from "../lib/guideContent";
+  import { GUIDE_SEARCH_ENTRIES, resultCountText, searchGuide } from "../lib/guideSearch";
+  import Field from "./ui/Field.svelte";
   import { parseInline } from "../lib/guideInline";
+  import { revealInNav } from "../lib/revealInNav";
   import { splitHash } from "../lib/hashRoute";
   import Card from "./ui/Card.svelte";
+  import GuideDiagram from "./GuideDiagram.svelte";
+  import ImageLightbox from "./ui/ImageLightbox.svelte";
   import PageHeader from "./ui/PageHeader.svelte";
   import dimensions from "../assets/guide/dimensions.json";
 
@@ -41,11 +46,35 @@
   const rail = $derived(railQuery.current);
   let navOpen = $state(false);
 
+  // Keep the current topic visible in the rail (or in the opened phone list). Runs after a link, a deep link, or
+  // Back changes the topic, and when the list first renders.
+  let navEl: HTMLElement | undefined = $state();
+  $effect(() => {
+    void current;
+    void rail;
+    void navOpen;
+    void query;
+    void tick().then(() => revealInNav(navEl, navEl?.querySelector<HTMLElement>("[aria-current='page']")));
+  });
+
   const task = $derived(GUIDE_TASKS.find((t) => t.id === current));
   const concept = $derived(GUIDE_TOPICS.find((t) => t.id === current));
   const currentTitle = $derived(task?.title ?? concept?.title ?? "Keyboard shortcuts");
-  function altFor(image: GuideImage): string {
-    return image.alt;
+  // The alt text names the badges, so it stays true whatever the step number: "Highlighted as steps 2.1 to 2.3."
+  function altFor(image: GuideImage, labels: string[]): string {
+    return `${image.alt} ${highlightNote(labels)}`;
+  }
+
+  // Search (D61). The query lives here, so opening a result keeps it. Results replace the grouped topic list.
+  let query = $state("");
+  const results = $derived(searchGuide(GUIDE_SEARCH_ENTRIES, query));
+  const countText = $derived(results === null ? "" : resultCountText(results.length));
+  function onSearchKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && query) {
+      e.preventDefault();
+      e.stopPropagation();
+      query = "";
+    }
   }
 </script>
 
@@ -61,13 +90,42 @@
   <PageHeader title="Guide" />
 
   <div class="guide-layout">
-    <nav class="topic-nav" aria-label="Guide topics">
+    <nav class="topic-nav" aria-label="Guide topics" bind:this={navEl}>
       {#if !rail}
         <button type="button" class="topic-toggle" aria-expanded={navOpen} aria-controls="topic-list" onclick={() => (navOpen = !navOpen)}>
           Choose a topic: {currentTitle}
         </button>
       {/if}
       {#if rail || navOpen}
+        <div class="guide-search">
+          <Field id="guide-search" label="Search the Guide">
+            {#snippet children({ id })}
+              <input {id} type="search" autocomplete="off" bind:value={query} onkeydown={onSearchKeydown} />
+            {/snippet}
+          </Field>
+          <p class="visually-hidden" role="status">{countText}</p>
+        </div>
+        {#if results !== null}
+          {#if results.length === 0}
+            <div class="no-results">
+              <p>No topics match "{query}".</p>
+              <button type="button" onclick={() => { query = ""; document.getElementById("guide-search")?.focus(); }}>Clear search</button>
+            </div>
+          {:else}
+            <ul id="topic-list" class="topic-list result-list" aria-label="Search results">
+              {#each results as r (r.id)}
+                <li>
+                  <a class="topic-link" href={`#/guide#${r.id}`} aria-current={r.id === current ? "page" : undefined}>
+                    <span class="topic-name">{r.title}</span>
+                    {#if r.snippet.length}
+                      <span class="snippet">{#each r.snippet as part, i (i)}{#if part.mark}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
+                    {/if}
+                  </a>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        {:else}
         <div id="topic-list" class="topic-groups">
           {#each GUIDE_NAV as group (group.group)}
             <h2 class="topic-group">{group.group}</h2>
@@ -80,6 +138,7 @@
             </ul>
           {/each}
         </div>
+        {/if}
       {/if}
     </nav>
 
@@ -92,16 +151,22 @@
             {#each task.steps as step, i (i)}
               <li>
                 <p class="step-text">{@render inline(step.text)}</p>
+                {#if step.subs}
+                  <ul class="substeps">
+                    {#each step.subs as sub, k (k)}
+                      <li><span class="sub-num">{i + 1}.{k + 1}</span> {@render inline(sub)}</li>
+                    {/each}
+                  </ul>
+                  {#if step.after}<p class="step-text">{@render inline(step.after)}</p>{/if}
+                {/if}
                 {#if step.image}
                   {@const dims = sizes[step.image.key]}
-                  <img
-                    class="shot"
+                  <ImageLightbox
                     src={imageSrc(step.image.key)}
-                    alt={altFor(step.image)}
+                    alt={altFor(step.image, badgeLabels(i + 1, step))}
                     width={dims?.width}
                     height={dims?.height}
-                    loading="lazy"
-                    decoding="async"
+                    imgClass="shot"
                   />
                 {/if}
               </li>
@@ -112,7 +177,37 @@
       {:else if concept}
         <Card as="article" aria-labelledby="guide-heading">
           <h2 id="guide-heading" class="topic-title" tabindex="-1" bind:this={heading}>{concept.title}</h2>
-          <p class="concept">{concept.body}</p>
+          <p class="intro">{@render inline(concept.intro)}</p>
+          {#each concept.sections as section, si (si)}
+            <section class="topic-section" aria-labelledby={`sec-${concept.id}-${si}`}>
+              <h3 id={`sec-${concept.id}-${si}`}>{section.heading}</h3>
+              {#each section.blocks as block, bi (bi)}
+                {#if block.kind === "p"}
+                  <p>{@render inline(block.text)}</p>
+                {:else if block.kind === "list"}
+                  <ul class="topic-bullets">
+                    {#each block.items as item, ii (ii)}<li>{@render inline(item)}</li>{/each}
+                  </ul>
+                {:else if block.kind === "table"}
+                  <!-- A scrollable region must be keyboard focusable so arrow keys can scroll it. -->
+                  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                  <div class="table-scroll" role="region" aria-label={block.caption} tabindex="0">
+                    <table>
+                      <caption>{block.caption}</caption>
+                      <thead><tr>{#each block.head as h, hi (hi)}<th scope="col">{h}</th>{/each}</tr></thead>
+                      <tbody>
+                        {#each block.rows as row, ri (ri)}
+                          <tr>{#each row as cell, ci (ci)}{#if ci === 0}<th scope="row">{@render inline(cell)}</th>{:else}<td>{@render inline(cell)}</td>{/if}{/each}</tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  </div>
+                {:else}
+                  <GuideDiagram id={block.id} />
+                {/if}
+              {/each}
+            </section>
+          {/each}
         </Card>
       {:else}
         <Card as="article" aria-labelledby="guide-heading">
@@ -139,7 +234,7 @@
    * the grid is one column and the list a disclosure. */
   .guide-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap-section); align-items: start; }
   .topic-body { display: flex; flex-direction: column; gap: var(--gap-section); min-width: 0; }
-  .summary, .step-text, .next, .concept, .footnote { max-width: var(--measure-prose); }
+  .summary, .step-text, .next, .footnote { max-width: var(--measure-prose); }
   @media (min-width: 900px) {
     .guide-layout { grid-template-columns: calc(var(--field-s) + var(--space-8)) minmax(0, 1fr); }
     .topic-nav {
@@ -175,7 +270,14 @@
   .topic-title:focus { outline: none; }
   .topic-title:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .summary { color: var(--muted); margin-top: 0; }
-  .concept { margin: 0; }
+  /* Reference topics use the full content width (D63): no prose cap, tables and diagrams span the card. */
+  .intro { margin: 0 0 var(--space-4); }
+  .topic-section { margin-block-start: var(--space-5); }
+  .topic-section h3 { margin: 0 0 var(--space-2); }
+  .topic-section p { margin: 0 0 var(--space-2); }
+  .topic-bullets { margin: 0 0 var(--space-2); padding-left: var(--space-5); display: flex; flex-direction: column; gap: var(--space-1); }
+  .table-scroll { overflow-x: auto; margin-block: var(--space-2); }
+  .table-scroll table { width: 100%; }
 
   .guide-steps {
     display: flex;
@@ -186,18 +288,22 @@
   }
   .guide-steps li::marker { font-weight: 700; color: var(--accent-text); }
   .step-text { margin: 0 0 var(--space-2); }
-  .shot {
-    display: block;
-    max-width: 100%;
-    height: auto;
-    border-radius: var(--radius);
-  }
+  .substeps { list-style: none; margin: 0 0 var(--space-2); padding: 0; display: flex; flex-direction: column; gap: var(--space-1); max-width: var(--measure-prose); }
+  .sub-num { font-weight: 700; color: var(--accent-text); margin-inline-end: var(--space-1); }
+  .guide-search { margin-block-end: var(--space-2); }
+  .no-results { margin-block-start: var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); align-items: flex-start; }
+  .no-results p { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+  .topic-name { display: block; }
+  .snippet { display: block; font-size: var(--type-caption); color: var(--muted); font-weight: 400; margin-block-start: var(--space-1); }
+  .snippet mark { background: var(--surface-2); color: var(--text); font-weight: 700; border-radius: 2px; text-decoration: underline; }
+  /* The img lives in ui/ImageLightbox, so its class is global here. */
+  :global(.shot) { border-radius: var(--radius); }
   /* In dark mode the screenshots are light-theme images, so a subtle border keeps their edge from bleeding into
    * the page. Same dark-theme selectors as theme.css. */
   @media (prefers-color-scheme: dark) {
-    :global(:root:not([data-theme="light"])) .shot { border: 1px solid var(--border); }
+    :global(:root:not([data-theme="light"])) .guide-page :global(.shot) { border: 1px solid var(--border); }
   }
-  :global(:root[data-theme="dark"]) .shot { border: 1px solid var(--border); }
+  :global(:root[data-theme="dark"]) .guide-page :global(.shot) { border: 1px solid var(--border); }
 
   .next { margin: var(--space-4) 0 0; }
   code { font-size: 0.95em; }

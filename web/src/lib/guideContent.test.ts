@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import { GUIDE_IMAGE_KEYS, GUIDE_NAV, GUIDE_TASKS, GUIDE_TOPICS, SHORTCUTS, resolveGuideTopic } from "./guideContent";
+import { GUIDE_IMAGE_KEYS, GUIDE_IMAGE_PLAN, GUIDE_NAV, badgeLabels, highlightNote, GUIDE_TASKS, GUIDE_TOPICS, SHORTCUTS, resolveGuideTopic } from "./guideContent";
+import type { GuideTopic } from "./guideContent";
 import { parseInline } from "./guideInline";
 import dimensions from "../assets/guide/dimensions.json";
 
@@ -14,9 +15,9 @@ describe("GUIDE_TOPICS", () => {
   it("has a non-empty title and body for every topic, and no em dashes", () => {
     for (const topic of GUIDE_TOPICS) {
       expect(topic.title.length).toBeGreaterThan(0);
-      expect(topic.body.length).toBeGreaterThan(0);
+      expect(topic.intro.length).toBeGreaterThan(0);
       expect(topic.title).not.toContain(EM_DASH);
-      expect(topic.body).not.toContain(EM_DASH);
+      expect(topic.intro).not.toContain(EM_DASH);
     }
   });
 
@@ -114,9 +115,9 @@ describe("guide images", () => {
     }
   });
 
-  it("stays under the 1.5 MB budget", () => {
+  it("stays under the 700 KB budget (D62)", () => {
     const total = files.reduce((sum, f) => sum + statSync(path.join(IMAGE_DIR, f)).size, 0);
-    expect(total).toBeLessThan(1.5 * 1024 * 1024);
+    expect(total).toBeLessThan(700_000);
   });
 });
 
@@ -129,5 +130,73 @@ describe("resolveGuideTopic", () => {
   });
   it("keeps every v1.1 deep-link anchor", () => {
     for (const t of GUIDE_TOPICS) expect(resolveGuideTopic(t.id)).toBe(t.id);
+  });
+});
+
+describe("sub-step numbering (D60)", () => {
+  it("labels a single highlight with the plain step number and several as N.1, N.2, ...", () => {
+    expect(badgeLabels(3, { text: "x" })).toEqual(["3"]);
+    expect(badgeLabels(2, { text: "x", subs: ["a", "b", "c"] })).toEqual(["2.1", "2.2", "2.3"]);
+  });
+  it("describes the badges in the alt note", () => {
+    expect(highlightNote(["4"])).toBe("Highlighted as step 4.");
+    expect(highlightNote(["2.1", "2.2", "2.3"])).toBe("Highlighted as steps 2.1 to 2.3.");
+  });
+  it("gives every sub-stepped step at least two sub-steps and an image, and never uses subs without one", () => {
+    for (const t of GUIDE_TASKS) {
+      for (const [i, s] of t.steps.entries()) {
+        if (!s.subs) continue;
+        expect(s.subs.length, `${t.id} step ${i + 1}`).toBeGreaterThanOrEqual(2);
+        expect(s.image, `${t.id} step ${i + 1}`).toBeDefined();
+        for (const sub of s.subs) expect(sub.trim().length, `${t.id} step ${i + 1}`).toBeGreaterThan(3);
+      }
+    }
+  });
+  it("plans a badge label for every image, matching the step's position and sub-step count", () => {
+    for (const t of GUIDE_TASKS) {
+      t.steps.forEach((s, i) => {
+        if (!s.image) return;
+        const plan = GUIDE_IMAGE_PLAN[s.image.key]!;
+        expect(plan.task).toBe(t.id);
+        expect(plan.step).toBe(i + 1);
+        expect(plan.labels).toHaveLength(s.subs?.length ?? 1);
+        expect(plan.labels[0]).toBe(s.subs ? `${i + 1}.1` : String(i + 1));
+      });
+    }
+    expect(Object.keys(GUIDE_IMAGE_PLAN).sort()).toEqual([...GUIDE_IMAGE_KEYS].sort());
+  });
+  it("does not number sub-steps inside the text (the page adds the labels)", () => {
+    for (const t of GUIDE_TASKS) for (const s of t.steps) for (const sub of s.subs ?? []) expect(sub).not.toMatch(/^\d+\.\d+\b/);
+  });
+});
+
+describe("reference topics (D63)", () => {
+  const textOf = (b: GuideTopic["sections"][number]["blocks"][number]): string[] =>
+    b.kind === "p" ? [b.text] : b.kind === "list" ? b.items : b.kind === "table" ? [b.caption, ...b.head, ...b.rows.flat()] : [];
+  it("breaks every topic with more than a short paragraph into sections, and has no em dashes", () => {
+    for (const t of GUIDE_TOPICS) {
+      if (t.intro.length > 260) expect(t.sections.length, t.id).toBeGreaterThan(0);
+      for (const sec of t.sections) {
+        expect(sec.heading.length, t.id).toBeGreaterThan(0);
+        expect(sec.blocks.length, `${t.id}: ${sec.heading}`).toBeGreaterThan(0);
+        for (const b of sec.blocks) for (const x of textOf(b)) expect(x, t.id).not.toContain(EM_DASH);
+      }
+    }
+  });
+  it("gives every table a caption and rows as wide as its head", () => {
+    for (const t of GUIDE_TOPICS) {
+      for (const sec of t.sections) {
+        for (const b of sec.blocks) {
+          if (b.kind !== "table") continue;
+          expect(b.caption.length, t.id).toBeGreaterThan(0);
+          for (const r of b.rows) expect(r.length, `${t.id}: ${b.caption}`).toBe(b.head.length);
+        }
+      }
+    }
+  });
+  it("gives Configuring printpaca both diagrams, in that order", () => {
+    const t = GUIDE_TOPICS.find((x) => x.id === "configuring-printpaca")!;
+    const diagrams = t.sections.flatMap((s) => s.blocks.flatMap((b) => (b.kind === "diagram" ? [b.id] : [])));
+    expect(diagrams).toEqual(["settings-map", "save-flow"]);
   });
 });

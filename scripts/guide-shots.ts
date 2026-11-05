@@ -12,14 +12,14 @@
 // DEMO_MODE seed, then a restart with DEMO_MODE off so the script can also write), starts the Spoolman and
 // Moonraker stubs, drives the admin app in light theme at a fixed 1280x1500 viewport with reduced motion, and for
 // each image draws a 3 px accent ring and a numbered badge around the target, crops to the region plus 24 px of
-// context, and saves WebP (quality 80). Every image the Guide references (web/src/lib/guideContent.ts) must be
+// context, and saves WebP (quality 45, crops at most 1200 px wide). Every image the Guide references (web/src/lib/guideContent.ts) must be
 // captured, and every captured key must be referenced: the script fails otherwise.
 //
 // The overlay is drawn with DOM nodes plus page.screenshot({ style }) because the app's CSP rejects injected
 // <style> tags. Fonts come from the app (Figtree, bundled) and the e2e image's Noto fallbacks. Text that carries a
 // date (the seed is relative to the day you run it) is kept out of the crops where possible.
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium } from "@playwright/test";
@@ -28,6 +28,7 @@ import { Shooter, VIEWPORT } from "./lib/guide-shooter.ts";
 import { REPO_ROOT, buildServer, restoreEmbeddedDist, startServer, stopServer } from "./lib/demo-server.ts";
 import { captureAll } from "./lib/guide-captures.ts";
 
+const GUIDE_IMAGE_BUDGET_BYTES = 700_000;
 const ADMIN_PORT = 8197;
 const PUBLIC_PORT = 8196;
 const SPOOLMAN_PORT = 9327;
@@ -92,6 +93,10 @@ async function main(): Promise<void> {
       for (const f of readdirSync(outDir)) {
         if (f.endsWith(".webp") && !shooter.written.includes(f.slice(0, -5))) rmSync(path.join(outDir, f));
       }
+      // D62: the folder stays under 700 KB. Fail rather than commit images that blow the image-size budget.
+      const total = readdirSync(outDir).filter((f) => f.endsWith(".webp")).reduce((n, f) => n + statSync(path.join(outDir, f)).size, 0);
+      console.log(`[guide-shots] total ${total} bytes (budget ${GUIDE_IMAGE_BUDGET_BYTES})`);
+      if (total > GUIDE_IMAGE_BUDGET_BYTES) throw new Error(`guide images total ${total} bytes, over the ${GUIDE_IMAGE_BUDGET_BYTES} byte budget`);
       const sorted = Object.fromEntries(Object.entries(shooter.dims).sort(([a], [b]) => a.localeCompare(b)));
       writeFileSync(path.join(outDir, "dimensions.json"), JSON.stringify(sorted, null, 2) + "\n");
     }

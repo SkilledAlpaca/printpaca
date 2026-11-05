@@ -309,3 +309,136 @@ test.describe("secondary nav follows the reader (D59)", () => {
     await expect(page.getByRole("button", { name: "Diagnostics" })).toHaveAttribute("aria-current", "true");
   });
 });
+
+test.describe("guide search (D61)", () => {
+  test.use({ viewport: { width: 1366, height: 768 } });
+  const search = (page: Page) => page.getByRole("searchbox", { name: "Search the Guide" });
+  const nav = (page: Page) => page.getByRole("navigation", { name: "Guide topics" });
+
+  test("typing filters the topics, announces the count, and marks the matched words", async ({ page }) => {
+    await page.goto("/admin/#/guide");
+    await search(page).fill("SPOOLMAN url");
+    const results = nav(page).getByRole("list", { name: "Search results" }).getByRole("link");
+    await expect(results.first()).toBeVisible();
+    const n = await results.count();
+    expect(n).toBeGreaterThan(0);
+    expect(n).toBeLessThan(10);
+    await expect(nav(page).getByRole("status")).toHaveText(n === 1 ? "1 topic matches" : `${n} topics match`);
+    await expect(nav(page).locator("mark").first()).toBeVisible();
+    // Words match in any order, every word required.
+    await search(page).fill("url spoolman");
+    await expect(results).toHaveCount(n);
+    await search(page).fill("spoolman zzzzqq");
+    await expect(nav(page).getByText('No topics match "spoolman zzzzqq".')).toBeVisible();
+    await expect(nav(page).getByRole("status")).toHaveText("No topics match");
+    await nav(page).getByRole("button", { name: "Clear search" }).click();
+    await expect(search(page)).toHaveValue("");
+    await expect(search(page)).toBeFocused();
+    await expect(nav(page).getByRole("link", { name: "Quote a print" })).toBeVisible();
+  });
+
+  test("opening a result keeps the search text, and the rail keeps the current topic in view (D59)", async ({ page }) => {
+    await page.goto("/admin/#/guide");
+    await search(page).fill("dashboard");
+    await nav(page).getByRole("link", { name: /^Read the Dashboard/ }).click();
+    await expect(page).toHaveURL(/#\/guide#read-the-dashboard$/);
+    await expect(page.getByRole("heading", { name: "Read the Dashboard", level: 2 })).toBeVisible();
+    await expect(search(page)).toHaveValue("dashboard");
+    await expect(nav(page).getByRole("link", { name: /^Read the Dashboard/ })).toHaveAttribute("aria-current", "page");
+    // Clearing brings back the full list with the current topic still visible.
+    await search(page).press("Escape");
+    await expect(search(page)).toHaveValue("");
+    const entry = nav(page).getByRole("link", { name: "Read the Dashboard" });
+    await expect(entry).toHaveAttribute("aria-current", "page");
+    await expect.poll(() => fullyVisibleIn(nav(page), entry)).toBe(true);
+  });
+
+  test("Ctrl+K focuses the search while the Guide is open", async ({ page }) => {
+    await page.goto("/admin/#/guide");
+    await page.getByRole("heading", { name: "Guide", level: 1 }).click();
+    await page.keyboard.press("Control+k");
+    await expect(search(page)).toBeFocused();
+  });
+
+  test("phone: the search is inside the Choose a topic disclosure", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/admin/#/guide");
+    await expect(search(page)).toHaveCount(0);
+    await page.getByRole("button", { name: /^Choose a topic/ }).click();
+    await search(page).fill("moonraker");
+    const first = page.getByRole("list", { name: "Search results" }).getByRole("link").first();
+    await expect(first).toBeVisible();
+    await first.click();
+    await expect(page.getByRole("button", { name: /^Choose a topic/ })).toHaveAttribute("aria-expanded", "false");
+    await page.getByRole("button", { name: /^Choose a topic/ }).click();
+    await expect(search(page)).toHaveValue("moonraker");
+  });
+
+  test("axe: passes with results and with the empty state, in both themes", async ({ page }) => {
+    const problems: string[] = [];
+    for (const [q, label] of [["spoolman", "results"], ["zzzzqq", "empty"]] as const) {
+      await page.goto("/admin/#/guide");
+      await search(page).fill(q);
+      for (const scheme of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        problems.push(...(await axe(page, `search ${label} [${scheme}]`)));
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+});
+
+test.describe("reference topics (D63)", () => {
+  const TOPIC = "/admin/#/guide#configuring-printpaca";
+
+  test("Configuring printpaca has sections and both diagrams, full width", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(TOPIC);
+    await expect(page.getByRole("heading", { name: "Configuring printpaca", level: 2 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Where settings live", level: 3 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "What happens when you save", level: 3 })).toBeVisible();
+    const svgs = page.locator("svg.diagram-svg");
+    await expect(svgs).toHaveCount(2);
+    for (let i = 0; i < 2; i++) await expect(svgs.nth(i)).toBeVisible();
+    // The text alternative is still in the page for screen readers.
+    await expect(page.getByRole("table", { name: "Where each setting lives" })).toBeAttached();
+    const [card, svg] = await Promise.all([page.locator("article").first().boundingBox(), svgs.first().boundingBox()]);
+    expect(svg!.width).toBeGreaterThan(card!.width * 0.85);
+    // The prose is not capped at the reading measure.
+    const para = await page.locator(".topic-section p").first().boundingBox();
+    expect(para!.width).toBeGreaterThan(card!.width * 0.85);
+  });
+
+  test("on a phone the diagrams give way to their text alternatives", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(TOPIC);
+    await expect(page.locator("svg.diagram-svg").first()).toBeHidden();
+    await expect(page.getByRole("table", { name: "Where each setting lives" })).toBeVisible();
+    await expect(page.getByRole("table", { name: /environment variables only/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Saving Settings", level: 4 })).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+
+  test("axe: Configuring printpaca passes in both themes at 1440 and 390 px", async ({ page }) => {
+    test.setTimeout(120_000);
+    const problems: string[] = [];
+    for (const vp of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(vp);
+      await page.goto(TOPIC);
+      await expect(page.locator("#guide-heading")).toBeVisible();
+      for (const scheme of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        problems.push(...(await axe(page, `configuring [${scheme}, ${vp.width}]`)));
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test("every reference topic opens with a heading per section", async ({ page }) => {
+    for (const [id, h] of [["margin-vs-markup", "The two modes"], ["requests-finalize-vs-convert", "The two actions"], ["users-and-permissions", "Multi-user mode"]] as const) {
+      await page.goto(`/admin/#/guide#${id}`);
+      await expect(page.getByRole("heading", { name: h, level: 3 })).toBeVisible();
+    }
+  });
+});

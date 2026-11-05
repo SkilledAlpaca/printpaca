@@ -575,6 +575,7 @@ mdiWhiteBalanceSunny,
     requests: "requests-filter",
     items: "items-filter",
     filament: "spool-filter",
+    guide: "guide-search",
   };
   let filterPresent = $state(false);
   $effect(() => {

@@ -6,35 +6,35 @@ printpaca was developed with AI assistance.
 
 **Live demo:** try the [admin app](https://demo.printpaca.com/admin/) (password `demo`) and the [customer shop](https://demo-cust.printpaca.com/). It's read-only and seeded with fake data. You can also [run the demo yourself](docs/demo.md).
 
-[![The New quote tab for a batch of three prints, with your cost, the client price, profit, and margin at the top](docs/screenshot.png)](docs/screenshot.png)
+[![The New quote tab for a batch of three prints: the form in numbered steps on the left, and on the right a summary with the client price, your cost, profit, and margin](docs/screenshot.png)](docs/screenshot.png)
 
 ## Documentation
 
 - [Getting started](docs/getting-started.md): install Docker, start printpaca, back up, update. Written for people new to Docker.
-- [Configuration](docs/configuration.md): the Settings tab, `config.yaml`, every environment variable, authentication, the public quote page, and running behind a reverse proxy.
+- [Configuration](docs/configuration.md): the Settings tab, `config.yaml`, every environment variable, authentication, the [storefront settings](docs/configuration.md#storefront), the public quote page, and running behind a reverse proxy.
 - [Cloudflare Tunnel](docs/cloudflare-tunnel.md): put printpaca on one real hostname, and protect the admin app with Cloudflare Access. Optional, and recommended for remote access.
 - [Formulas](docs/formulas.md): every cost and pricing formula, with units and assumptions.
-- [Accessibility](docs/accessibility.md): the WCAG 2.2 AA target, how it's tested, keyboard and screen-reader behavior, known limitations, and how to report a problem.
+- [Accessibility](docs/accessibility.md): the WCAG 2.2 AA target, how it's tested (automated checks and a simulated review, with no human or screen-reader testing), keyboard and screen-reader behavior, known limitations, and how to report a problem.
 - [Architecture](docs/architecture.md), [CONTRIBUTING.md](CONTRIBUTING.md), and [SECURITY.md](SECURITY.md) for contributors.
 
 ## Features
 
 | Area | Capabilities |
 |---|---|
-| Quoting | Print-cost quote calculator: material, electricity, machine depreciation, failure buffer, prep labor, and overhead, with per-material waste, flat, simple time-of-use, or full time-of-use schedule electricity (seasons, windows, holidays, and a print start), and batch math that spreads prep labor across the batch. Multi-part quotes: one order of up to 20 parts, each with its own weight, time, material, and quantity, with fees, tax, and shipping applied once and one line per part when printed, emailed, and invoiced. A reusable hardware add-on catalog (unit cost and a lost-on-failure flag per entry) attaches to admin quotes only, never to public quotes (see [Hardware scope](docs/formulas.md#hardware-scope)). |
-| Pricing | Margin or markup pricing, plus named marketplace fee schedules (fixed plus percentage of revenue, each with a provenance note). Shipping charged to the customer (revenue) and shipping you pay (expense) are tracked separately, so under-charged shipping shows up as a real loss. |
-| Files and integrations | A G-code drop zone reads slicer-reported weight, length, and time from the file (Cura, PrusaSlicer, OrcaSlicer/Bambu, Snapmaker Orca), and estimates weight from STL and 3MF files. Optional Spoolman integration (spool picker, low-material warnings, and an inventory card on the Filament tab where an admin can add, adjust, and archive spools). Optional Moonraker integration (prefill a quote from a completed print's filament use and duration, and add the printer it reports) and a Fluidd sidebar link. Every integration URL is settable from the Settings page or by environment variable, with a Test button. Saved URLs apply without a restart. |
-| Business records | Quote history (save, restore, filter, delete, JSON export and import). Printable and exportable quotes with your branding. Client records with a searchable list. Invoices: numbered, status-tracked (draft, sent, paid, canceled), with line items, discounts, and US sales tax, convertible from a saved quote, with lines that can link to gallery items (sending takes in-stock items off the shelf; canceling a sent invoice puts them back), with a printable document and an optional PayPal.me link and QR code. A per-invoice payment register that marks an invoice paid when its balance reaches zero, and a dashboard (revenue this month and year, outstanding balance, overdue count, revenue over time) with a Top items panel (gallery and in-person units, orders, and booked revenue per gallery item over 30, 90, or 365 days, kept when a request is deleted). |
-| Public shop | A public quote page and item gallery: list ready-to-print or fixed-quantity products with images and options, optionally accepting orders beyond stock. Orders land in Requests for review, and stock decrements when you finalize an order. |
-| Interface | A built-in getting-started guide, help text on cost and pricing fields, keyboard and screen-reader support, a dark theme that follows the system preference, mobile navigation, and an installable Progressive Web App (needs HTTPS or `localhost`; it silently no-ops on plain-HTTP LAN deployments). |
-| Accessibility | A WCAG 2.2 Level AA target for the admin app, the sign-in screen, and the customer pages: visible focus, keyboard shortcuts and a skip link, screen-reader announcements and labeled errors, light and dark themes with checked contrast, reduced-motion support, and an axe-core check in CI. See [Accessibility](docs/accessibility.md) for coverage and known limitations. |
-| Operations | Edit the full configuration in the browser; printpaca validates it like `config.yaml` and applies it with no restart. One scratch-based container of about 16 MiB uncompressed rootfs (CI fails the build above 20 MiB; see `scripts/check-image-size.sh`). The compose files cap memory at 128 MiB. |
+| Quoting | A print-cost calculator: material, electricity, machine depreciation, failure buffer, prep labor, and overhead. Electricity can be per-material waste, flat, simple time-of-use, or a full time-of-use schedule with seasons, windows, holidays, and a print start. Multi-part quotes hold up to 20 parts, each with its own weight, time, material, and quantity, and apply fees, tax, and shipping once. A hardware add-on catalog attaches to admin quotes only (see [Hardware scope](docs/formulas.md#hardware-scope)). |
+| Pricing | Margin or markup pricing, and named marketplace fee schedules with a provenance note. Shipping you charge (revenue) and shipping you pay (expense) are tracked separately, so under-charged shipping shows up as a real loss. |
+| Files and integrations | A G-code drop zone reads slicer-reported weight, length, and time (Cura, PrusaSlicer, OrcaSlicer/Bambu, Snapmaker Orca), and estimates weight from STL and 3MF files. Optional Spoolman integration (spool picker, low-material warnings, and an inventory card on the Filament tab). Optional Moonraker integration (prefill a quote from a completed print) and a Fluidd sidebar link. Integration URLs are settable in Settings or by environment variable, with a Test button, and apply without a restart. |
+| Business records | Quote history with JSON export and import. Printable and emailable quotes with your branding. Client records. Numbered invoices with line items, discounts, US sales tax, a payment register, and an optional PayPal.me link and QR code, convertible from a saved quote. Invoice lines can link to shop items, so sending takes stock off the shelf. A Dashboard with five action tiles (new requests, overdue and draft invoices, requests that need a print time, and quotes awaiting a reply), a to-do list, this month's revenue and margin, a revenue chart, and a Top items panel. |
+| Public shop | A shop at `/` with an item gallery and a custom estimate form. Items have images, option groups, stock modes, categories, and a featured flag. Customers see "from" prices until they pick options. Orders and estimates land in Requests for your review, and stock decrements when you finalize an order. The Storefront settings control what the shop offers, a hero image, an accent color checked for contrast, the heading, the intro and announcement (with light markdown), footer links, and a pause switch that shows a Closed page. See [Storefront](docs/configuration.md#storefront). |
+| Interface | One layout system across every screen. The New quote page has the form on the left and a summary that stays in view on the right. Lists scroll inside a window with a fixed header. Comfortable or Compact density, light or dark theme, and a built-in Guide with screenshots. Mobile navigation, and an installable Progressive Web App (needs HTTPS or `localhost`; it silently no-ops on plain-HTTP LAN deployments). |
+| Accessibility | A WCAG 2.2 Level AA target for the admin app, the sign-in screen, and the shop. An axe-core check in CI scans both themes. A simulated persona review covered v1.2. **No human participants or screen-reader users have tested printpaca.** See [Accessibility](docs/accessibility.md) for coverage and known limitations. |
+| Operations | Edit the full configuration in the browser; printpaca validates it like `config.yaml` and applies it with no restart. One scratch-based container of about 17 MiB uncompressed rootfs (CI fails the build above 20 MiB; see `scripts/check-image-size.sh`). The compose files cap memory at 128 MiB. |
 
 <table>
 <tr>
 <!-- Each thumbnail links to its full-size capture: at width="400" the text in these 1680px screenshots is unreadable, so the link is the preview mechanism, not decoration. -->
 <td>
-<a href="docs/screenshots/dashboard.png"><img src="docs/screenshots/dashboard.png" alt="The Dashboard tab: revenue, outstanding, and overdue tiles, a six-month revenue chart, recent invoices, and the Top items table" width="400"></a>
+<a href="docs/screenshots/dashboard.png"><img src="docs/screenshots/dashboard.png" alt="The Dashboard tab: five action tiles, the Needs attention list, and the This month tiles for revenue, outstanding, average margin, and quotes saved" width="400"></a>
 </td>
 <td>
 <a href="docs/screenshots/invoices.png"><img src="docs/screenshots/invoices.png" alt="The Invoices tab: a filterable list of numbered invoices with issue and due dates, status badges, and amounts" width="400"></a>
@@ -124,11 +124,7 @@ Every setting has a built-in default, so you can start quoting immediately. Edit
 
 The admin app (`/admin/` on `PORT`) requires a login by default, with a generated or chosen `ADMIN_PASSWORD`. Every request on `PORT` also passes a `Host` allowlist (`ALLOWED_HOSTS`, a DNS-rebinding defense), and `/admin/` adds a CSRF origin check and login rate limits. Setting `ADMIN_PASSWORD=` (empty) is the only way to disable authentication.
 
-Through a Cloudflare Tunnel, `/admin/` follows these rules:
-
-- With Cloudflare Access configured (`CF_ACCESS_TEAM` and `CF_ACCESS_AUD`), a request needs a valid Access token.
-- Without Access and with a password set, the request is allowed, and the printpaca password and its login rate limits are the only lock. Cloudflare Access is the better choice; see [Cloudflare Tunnel](docs/cloudflare-tunnel.md).
-- Without Access and with authentication disabled (`ADMIN_PASSWORD=`), the request gets `403`.
+Behind a Cloudflare Tunnel, protect `/admin/` with Cloudflare Access (`CF_ACCESS_TEAM` and `CF_ACCESS_AUD`). Without Access, the printpaca password is the only lock, and with authentication disabled, `/admin/` answers `403`. See [Cloudflare Tunnel](docs/cloudflare-tunnel.md).
 
 The shop and `/api/public/*` are anonymous and carry no admin capability. See [Authentication](docs/configuration.md#authentication) for the full list, and [Multi-user mode](docs/configuration.md#users) for employee accounts.
 
@@ -146,6 +142,7 @@ You need Node 26 (pinned in `.nvmrc` and `package.json`) and Go 1.26.10 or later
 npm install                 # installs the web workspace
 npm test                    # web unit suite (vitest)
 npm run check -w web        # svelte-check
+npm run lint:css            # raw spacing and width literals: blocks in migrated files, warns elsewhere
 (cd server && go test ./... -race)   # Go unit suite
 npx playwright install --with-deps chromium  # one-time: browser for npm run e2e
 npm run e2e                  # Playwright end-to-end (builds a real binary, starts servers with the main port on :8099, :9099, and :9199 and a customer-only listener beside each on :8098, :9098, and :9198, and runs the axe accessibility gate)

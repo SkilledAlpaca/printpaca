@@ -61,7 +61,7 @@ test.describe("served HTML, JavaScript disabled", () => {
       for (const path of ["/", "/order"]) {
         const res = await page.goto(path);
         expect(res?.status()).toBe(200);
-        expect(res?.headers()["cache-control"]).toBe("no-cache");
+        expect(res?.headers()["cache-control"]).toBe("private, no-cache");
         expect(await page.title()).toBe(PAGE_TITLE);
         const html = await page.content();
         expect(html).toContain('id="shop-config"');

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { revealInNav } from "../lib/revealInNav";
+  import { tick } from "svelte";
   import { settingsSectionFromHash } from "../lib/hashRoute";
   import { TIMEZONES, deviceTimezone, filterTimezones } from "../lib/timezones";
   import { nextKey, type ServerConfig } from "../lib/settings";
@@ -76,9 +78,32 @@ import Combobox from "./ui/Combobox.svelte";
   const railQuery = new MediaQuery("min-width: 900px", true);
   const rail = $derived(railQuery.current);
   let navOpen = $state(false);
+  // The rail entry for the section the reader is on: set by a jump, or by an address such as
+  // "#/settings/storefront" (a link from another screen, a deep link, or Back). It is scrolled into view inside
+  // the rail only, so the page never jumps because of it.
+  let navEl: HTMLElement | undefined = $state();
+  let currentId = $state<string | null>(null);
+  let scrolledFor: string | null = null;
+  $effect(() => {
+    const id = isAdminView && hashSection ? (JUMP_SECTIONS.find((s) => s.id.slice("section-".length).toLowerCase() === hashSection)?.id ?? null) : null;
+    if (id) currentId = id;
+    if (!id) scrolledFor = null;
+    // Land on the section itself the first time its card exists (the cards render after settings load).
+    if (id && navEl && scrolledFor !== id) {
+      scrolledFor = id;
+      void tick().then(() => document.getElementById(id)?.scrollIntoView({ behavior: "auto", block: "start" }));
+    }
+  });
+  $effect(() => {
+    void currentId;
+    void rail;
+    void navOpen;
+    void tick().then(() => revealInNav(navEl, navEl?.querySelector<HTMLElement>("[aria-current='true']")));
+  });
   function jumpTo(id: string) {
     const section = document.getElementById(id);
     if (!section) return;
+    currentId = id;
     section.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
     const heading = section.querySelector<HTMLElement>("h2");
     if (heading) {
@@ -174,7 +199,7 @@ import Combobox from "./ui/Combobox.svelte";
       {@const warnings = settingsWarnings(form)}
 
       <div class="settings-layout">
-        <nav class="jump-nav" aria-label="Settings sections">
+        <nav class="jump-nav" aria-label="Settings sections" bind:this={navEl}>
           {#if !rail}
             <button type="button" class="jump-toggle" aria-expanded={navOpen} aria-controls="jump-list" onclick={() => (navOpen = !navOpen)}>
               Jump to a section
@@ -185,7 +210,7 @@ import Combobox from "./ui/Combobox.svelte";
               {#each JUMP_SECTIONS as s (s.id)}
                 {@const bad = s.keys.some((k) => hasError(k))}
                 <li>
-                  <button type="button" class="quiet jump-link" class:has-error={bad} onclick={() => jumpTo(s.id)}>{`${s.label}${bad ? " (error)" : ""}`}</button>
+                  <button type="button" class="quiet jump-link" class:has-error={bad} aria-current={s.id === currentId ? "true" : undefined} onclick={() => jumpTo(s.id)}>{`${s.label}${bad ? " (error)" : ""}`}</button>
                 </li>
               {/each}
             </ul>
@@ -544,6 +569,7 @@ import Combobox from "./ui/Combobox.svelte";
     border-radius: var(--radius);
   }
   .jump-link.has-error { color: var(--danger); }
+  .jump-link[aria-current="true"] { background: var(--surface-2); color: var(--text); font-weight: 600; }
 
   /* Anchor jumps: the scroll container's scroll-padding-top (App.svelte) reserves any sticky bar above the cards,
    * and scroll-margin-top adds a little air. :global() by id because several cards (account, quote, storefront,

@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { GUIDE_NAV, GUIDE_TASKS } from "../web/src/lib/guideContent";
 import { plainInline } from "../web/src/lib/guideInline";
 
@@ -158,4 +158,154 @@ test("the public shop never loads a Guide image", async ({ page, request }) => {
     const res = await request.get(url);
     expect(await res.text(), url).not.toContain(".webp");
   }
+});
+
+test.describe("image lightbox", () => {
+  const TOPIC = "/admin/#/guide#quote-a-print";
+  const enlargeButtons = (page: Page) => page.getByRole("button", { name: /^Enlarge: / });
+
+  test("every image is an Enlarge button named after its alt text", async ({ page }) => {
+    await page.goto(TOPIC);
+    const imgs = page.locator("img.shot");
+    const n = await imgs.count();
+    expect(n).toBeGreaterThan(0);
+    await expect(enlargeButtons(page)).toHaveCount(n);
+    for (let i = 0; i < n; i++) {
+      const alt = (await imgs.nth(i).getAttribute("alt"))!;
+      await expect(page.getByRole("button", { name: `Enlarge: ${alt}`, exact: true })).toHaveCount(1);
+    }
+  });
+
+  for (const how of ["click", "Enter"] as const) {
+    test(`${how} opens the full-size image, Escape closes it, and focus returns`, async ({ page }) => {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto(TOPIC);
+      const btn = enlargeButtons(page).first();
+      const inline = await btn.locator("img").evaluate((el) => el.getBoundingClientRect().width);
+      if (how === "click") await btn.click();
+      else {
+        await btn.focus();
+        await page.keyboard.press("Enter");
+      }
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Close" })).toBeFocused();
+      const img = dialog.locator("img");
+      await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
+      const w = await img.evaluate((el: HTMLImageElement) => ({ nat: el.naturalWidth, shown: el.getBoundingClientRect().width }));
+      expect(w.nat).toBeGreaterThan(inline);
+      expect(w.shown).toBe(w.nat);
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await expect(btn).toBeFocused();
+    });
+  }
+
+  test("the focus trap holds and a backdrop click closes", async ({ page }) => {
+    await page.goto(TOPIC);
+    const btn = enlargeButtons(page).first();
+    await btn.click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    for (let i = 0; i < 6; i++) {
+      await page.keyboard.press(i % 2 ? "Shift+Tab" : "Tab");
+      expect(await page.evaluate(() => !!document.activeElement?.closest("dialog"))).toBe(true);
+    }
+    await page.mouse.click(2, 2);
+    await expect(dialog).toHaveCount(0);
+    await expect(btn).toBeFocused();
+  });
+
+  test("at 390 px the dialog fits the viewport and the image scrolls", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(TOPIC);
+    await enlargeButtons(page).first().click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    const box = (await dialog.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+    expect(box.y + box.height).toBeLessThanOrEqual(844);
+    const region = dialog.getByRole("region");
+    await expect.poll(() => region.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    await region.evaluate((el) => el.scrollTo(50, 0));
+    expect(await region.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+
+  test("axe: passes in both themes with the dialog open", async ({ page }) => {
+    await page.goto(TOPIC);
+    await enlargeButtons(page).first().click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    const problems: string[] = [];
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      problems.push(...(await axe(page, `lightbox [${scheme}]`)));
+    }
+    expect(problems).toEqual([]);
+  });
+});
+
+// D59: the secondary nav follows the reader.
+async function fullyVisibleIn(container: Locator, entry: Locator): Promise<boolean> {
+  const [c, e] = await Promise.all([container.boundingBox(), entry.boundingBox()]);
+  if (!c || !e) return false;
+  return e.y >= c.y - 0.5 && e.y + e.height <= c.y + c.height + 0.5;
+}
+
+test.describe("secondary nav follows the reader (D59)", () => {
+  test.use({ viewport: { width: 1366, height: 768 } });
+
+  test("Guide: a text link to a far topic, a deep link, and Back keep the entry visible", async ({ page }) => {
+    await page.goto("/admin/#/guide#invoice-and-payment");
+    const nav = page.getByRole("navigation", { name: "Guide topics" });
+    await expect(nav.getByRole("link", { name: "Turn a quote into an invoice and record a payment" })).toHaveAttribute("aria-current", "page");
+    await page.locator(".next a", { hasText: "Read the Dashboard" }).click();
+    const dash = nav.getByRole("link", { name: "Read the Dashboard" });
+    await expect(dash).toHaveAttribute("aria-current", "page");
+    await expect.poll(() => fullyVisibleIn(nav, dash)).toBe(true);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+
+    await page.goto("/admin/#/guide#keyboard-shortcuts");
+    await page.reload();
+    const keys = nav.getByRole("link", { name: "Keyboard shortcuts" });
+    await expect(keys).toHaveAttribute("aria-current", "page");
+    await expect.poll(() => fullyVisibleIn(nav, keys)).toBe(true);
+
+    await page.goBack();
+    const prev = nav.getByRole("link", { name: "Read the Dashboard" });
+    await expect(prev).toHaveAttribute("aria-current", "page");
+    await expect.poll(() => fullyVisibleIn(nav, prev)).toBe(true);
+  });
+
+  test("Settings: the last section and Back keep the rail entry visible", async ({ page }) => {
+    await page.goto("/admin/#/settings");
+    const nav = page.getByRole("navigation", { name: "Settings sections" });
+    await expect(nav).toBeVisible();
+    await page.evaluate(() => (location.hash = "#/settings/diagnostics"));
+    const last = nav.getByRole("button", { name: "Diagnostics" });
+    await expect(last).toHaveAttribute("aria-current", "true");
+    await expect.poll(() => fullyVisibleIn(nav, last)).toBe(true);
+    await page.evaluate(() => (location.hash = "#/settings/currency"));
+    const cur = nav.getByRole("button", { name: "Currency" });
+    await expect(cur).toHaveAttribute("aria-current", "true");
+    await page.goBack();
+    await expect(last).toHaveAttribute("aria-current", "true");
+    await expect.poll(() => fullyVisibleIn(nav, last)).toBe(true);
+    // Clicking a jump button marks it too.
+    await nav.getByRole("button", { name: "Hardware" }).click();
+    await expect(nav.getByRole("button", { name: "Hardware" })).toHaveAttribute("aria-current", "true");
+  });
+
+  test("phone: the opened disclosures show the current entry", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/admin/#/guide#read-the-dashboard");
+    await page.getByRole("button", { name: /^Choose a topic/ }).click();
+    await expect(page.getByRole("link", { name: "Read the Dashboard" })).toHaveAttribute("aria-current", "page");
+    await page.goto("/admin/#/settings/diagnostics");
+    await page.reload();
+    await page.getByRole("button", { name: "Jump to a section" }).click();
+    await expect(page.getByRole("button", { name: "Diagnostics" })).toHaveAttribute("aria-current", "true");
+  });
 });

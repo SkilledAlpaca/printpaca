@@ -4,8 +4,10 @@
   import { GUIDE_NAV, GUIDE_TASKS, GUIDE_TOPICS, SHORTCUTS, resolveGuideTopic } from "../lib/guideContent";
   import type { GuideImage } from "../lib/guideContent";
   import { parseInline } from "../lib/guideInline";
+  import { revealInNav } from "../lib/revealInNav";
   import { splitHash } from "../lib/hashRoute";
   import Card from "./ui/Card.svelte";
+  import ImageLightbox from "./ui/ImageLightbox.svelte";
   import PageHeader from "./ui/PageHeader.svelte";
   import dimensions from "../assets/guide/dimensions.json";
 
@@ -41,6 +43,16 @@
   const rail = $derived(railQuery.current);
   let navOpen = $state(false);
 
+  // Keep the current topic visible in the rail (or in the opened phone list). Runs after a link, a deep link, or
+  // Back changes the topic, and when the list first renders.
+  let navEl: HTMLElement | undefined = $state();
+  $effect(() => {
+    void current;
+    void rail;
+    void navOpen;
+    void tick().then(() => revealInNav(navEl, navEl?.querySelector<HTMLElement>("[aria-current='page']")));
+  });
+
   const task = $derived(GUIDE_TASKS.find((t) => t.id === current));
   const concept = $derived(GUIDE_TOPICS.find((t) => t.id === current));
   const currentTitle = $derived(task?.title ?? concept?.title ?? "Keyboard shortcuts");
@@ -61,7 +73,7 @@
   <PageHeader title="Guide" />
 
   <div class="guide-layout">
-    <nav class="topic-nav" aria-label="Guide topics">
+    <nav class="topic-nav" aria-label="Guide topics" bind:this={navEl}>
       {#if !rail}
         <button type="button" class="topic-toggle" aria-expanded={navOpen} aria-controls="topic-list" onclick={() => (navOpen = !navOpen)}>
           Choose a topic: {currentTitle}
@@ -94,14 +106,12 @@
                 <p class="step-text">{@render inline(step.text)}</p>
                 {#if step.image}
                   {@const dims = sizes[step.image.key]}
-                  <img
-                    class="shot"
+                  <ImageLightbox
                     src={imageSrc(step.image.key)}
                     alt={altFor(step.image)}
                     width={dims?.width}
                     height={dims?.height}
-                    loading="lazy"
-                    decoding="async"
+                    imgClass="shot"
                   />
                 {/if}
               </li>
@@ -186,18 +196,14 @@
   }
   .guide-steps li::marker { font-weight: 700; color: var(--accent-text); }
   .step-text { margin: 0 0 var(--space-2); }
-  .shot {
-    display: block;
-    max-width: 100%;
-    height: auto;
-    border-radius: var(--radius);
-  }
+  /* The img lives in ui/ImageLightbox, so its class is global here. */
+  :global(.shot) { border-radius: var(--radius); }
   /* In dark mode the screenshots are light-theme images, so a subtle border keeps their edge from bleeding into
    * the page. Same dark-theme selectors as theme.css. */
   @media (prefers-color-scheme: dark) {
-    :global(:root:not([data-theme="light"])) .shot { border: 1px solid var(--border); }
+    :global(:root:not([data-theme="light"])) .guide-page :global(.shot) { border: 1px solid var(--border); }
   }
-  :global(:root[data-theme="dark"]) .shot { border: 1px solid var(--border); }
+  :global(:root[data-theme="dark"]) .guide-page :global(.shot) { border: 1px solid var(--border); }
 
   .next { margin: var(--space-4) 0 0; }
   code { font-size: 0.95em; }

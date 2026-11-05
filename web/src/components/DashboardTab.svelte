@@ -374,7 +374,7 @@
                 <a class="row-link inv-row" href={invoiceHash(inv.id)}>
                   <span class="inv-number">{inv.number}</span>
                   <span class="inv-total">{money(inv.totalCents, cfg)}</span>
-                  <span class="inv-client">{inv.clientName}</span>
+                  <span class="inv-client">{inv.clientName}{#if inv.issueDate || inv.createdAt} · <time datetime={inv.issueDate || inv.createdAt}>{formatDate(inv.issueDate || inv.createdAt)}</time>{/if}</span>
                   <span class="inv-status"><StatusBadge status={inv.status} dueDate={inv.dueDate} /></span>
                 </a>
               </li>

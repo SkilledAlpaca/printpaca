@@ -38,6 +38,9 @@ test.describe("D43 Dashboard recent invoices", () => {
     await expect(recent.getByRole("heading", { name: "Recent invoices" })).toBeVisible();
     const region = recent.getByRole("region", { name: "Recent invoices" });
     await expect(region).toBeVisible();
+    // Each row shows its invoice date.
+    const invRows = region.locator("a.inv-row");
+    expect(await invRows.locator("time[datetime]").count()).toBe(await invRows.count());
     const [cb, rb] = [(await chart.boundingBox())!, (await recent.boundingBox())!];
     expect(Math.abs(cb.height - rb.height)).toBeLessThanOrEqual(1);
     const scroll = await region.evaluate((el) => ({ sh: el.scrollHeight, ch: el.clientHeight, ov: getComputedStyle(el).overflowY }));

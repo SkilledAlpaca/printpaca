@@ -108,6 +108,50 @@ After step 4, check the following.
 
 If the container isn't `Up`, or `/healthz` doesn't respond, start with [Reading the logs](#reading-the-logs).
 
+## Find your way around
+
+### The sidebar
+
+The sidebar groups the tabs by job:
+
+| Group | Tabs |
+|---|---|
+| **Sell** | New quote, Dashboard, Quotes, Requests, Invoices, Shop items, Clients |
+| **Costs** | Filament, Electricity, Printers |
+| (no heading) | Settings |
+
+The **Requests** tab shows a count of new requests. If you set a Fluidd URL, a **Fluidd** link opens it in a new tab. Select the logo and business name to open the Dashboard. If you hide the Dashboard, or an employee account doesn't have it, the logo opens the first tab in the sidebar instead.
+
+The footer of the sidebar holds these controls:
+
+- **Guide** opens the in-app help.
+- **Sign out** ends your session. Behind Cloudflare Access, it reads **Sign out of Cloudflare Access**. When authentication is off, the button doesn't appear.
+- **Compact** switches between Comfortable and Compact density. Compact uses smaller controls and tighter spacing.
+- **Dark** or **Light** switches the theme. Until you choose, the theme follows your device setting.
+- **Collapse sidebar** shrinks the sidebar to icons on a wide screen.
+
+printpaca saves the density, theme, and collapsed state in your browser, so they apply to that browser only. On a phone, the **Menu** button opens the sidebar as a drawer.
+
+### The New quote page
+
+On a screen at least 1100 pixels wide, the page has two columns. The left column holds the form in three numbered steps: **1 Model and print time**, **2 Material and printer**, and **3 Price**, followed by the print buttons. When a quote has several parts, each part is a tab at the top of the form. The right column is the summary. It stays in view while you scroll and shows your cost, or the client price once you set one, with profit, margin, and a **Breakdown**. Below it, **Save this quote** holds the client and label fields.
+
+On a narrower screen, the summary becomes a bar pinned to the bottom of the screen with the price, the profit, and **Save** (**Update** for a saved quote). Select **Expand** to open the full summary above the bar. When a required value is missing, the summary names it and links to the field.
+
+### The Dashboard
+
+The Dashboard opens by default once you have a quote, request, or invoice. A new install opens on New quote.
+
+- **Five tiles at the top** count what needs you: **New requests**, **Overdue invoices**, **Draft invoices**, **Needs print time**, and **Quotes awaiting reply**. Select a tile to filter the **Needs attention** list to that kind, and select it again to show everything. A tile for a tab you can't open doesn't appear.
+- **This month** shows **Revenue**, **Outstanding**, **Average margin**, and **Quotes saved**. Each links to its list.
+- **Revenue by month** is a 12-month chart with a table of the same figures, and the revenue for the year. **Recent invoices** and **Top items** follow.
+
+See [Dashboard in formulas.md](formulas.md#dashboard) for what each figure counts.
+
+### Lists
+
+Quotes, Requests, Invoices, Clients, and Shop items scroll inside a window of about twelve rows, so the page doesn't grow with the list. The column header stays in place while you scroll. Select the window and use the arrow keys or Page Down to scroll it from the keyboard. Use **Load more** below the window to fetch older records.
+
 ## Reading the logs
 
 Every problem printpaca can't recover from, such as a bad `config.yaml`, a permissions problem, or a port conflict, writes one clear line to the container log and then stops. Read it with:
@@ -351,4 +395,4 @@ sudo rm -rf ./config
 
 Open **Guide** from the link at the bottom of the sidebar for task-by-task help with screenshots: first-time setup, quoting, saving and sending quotes, shop requests, invoices and payments, the storefront, shop items, electricity schedules, filament and Spoolman, printers and Moonraker, staff accounts, and the Dashboard. The topic list is on the left (a **Choose a topic** button on a phone). To change currency, pricing, business details, or optional features, see [Configuration](configuration.md). To expose printpaca over HTTPS, see [Running behind a reverse proxy](configuration.md#running-behind-a-reverse-proxy-https). To put printpaca on a real hostname without forwarding a port, see [Cloudflare Tunnel](cloudflare-tunnel.md).
 
-![The Dashboard tab: revenue this month/year, outstanding balance, overdue count, and recent invoices](screenshots/dashboard.png)
+![The Dashboard tab: five action tiles, the Needs attention list, and the This month tiles](screenshots/dashboard.png)

@@ -102,7 +102,7 @@ test.describe("on a phone", () => {
 test("a tooltip near the right edge stays inside the viewport", async ({ page }) => {
   await openQuote(page, 1100);
   // The summary column's price fields are the rightmost help buttons.
-  const help = helpFor(page, "Shipping charged (customer pays)");
+  const help = helpFor(page, "Shipping charged");
   await page.getByLabel("Set a selling price").check();
   await openMorePricing(page);
   await help.hover();

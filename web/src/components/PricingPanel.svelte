@@ -111,7 +111,7 @@
       <details class="more-pricing" bind:open={moreOpen}>
         <summary>More pricing options</summary>
         <p class="hint">Fees, tax, and shipping. Leave tax and shipping at zero if you don't charge them.</p>
-        <FormGrid>
+        <FormGrid align="controls">
           <Field id={feeId} label="Fee schedule" hint="Marketplace or payment fees, taken out of what the customer pays." size="m">
             {#snippet children(a)}
               <select id={a.id} bind:value={form.feeScheduleName} aria-describedby={a.describedby}>
@@ -120,9 +120,9 @@
               </select>
             {/snippet}
           </Field>
-          <LabeledNumber label="Tax (included in price)" suffix="%" bind:value={form.taxRatePct} warn={warnFor(pw, "taxRatePct")} help="Sales tax added to the price. It is set aside, not counted as profit." />
-          <LabeledNumber label="Shipping charged" suffix="customer pays" bind:value={form.shippingCharge} warn={warnFor(pw, "shippingCharge")} help="What you charge the customer for shipping." />
-          <LabeledNumber label="Shipping cost" suffix="you pay" bind:value={form.shippingCost} warn={warnFor(pw, "shippingCost")} help="What the carrier charges you. The difference from the charge comes out of profit." />
+          <LabeledNumber label="Tax" suffix="%" bind:value={form.taxRatePct} warn={warnFor(pw, "taxRatePct")} help="Sales tax, included in the price. It is set aside, not counted as profit." />
+          <LabeledNumber label="Shipping charged" bind:value={form.shippingCharge} warn={warnFor(pw, "shippingCharge")} help="What you charge the customer for shipping." />
+          <LabeledNumber label="Shipping cost" bind:value={form.shippingCost} warn={warnFor(pw, "shippingCost")} help="What you pay the carrier. The difference from the charge comes out of profit." />
         </FormGrid>
       </details>
 

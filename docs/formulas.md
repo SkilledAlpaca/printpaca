@@ -94,7 +94,7 @@ Tax is **price-inclusive** (VAT-style): the quoted price already contains the ta
 
 That is why the divisor is `100 + tax%`, not `100`. At 20% on a $120 gross sale the seller remits **$20** (`120 × 20 ÷ 120`), not $24 (`120 × 20 ÷ 100`). The exclusive method overstates the tax line and understates net profit and achieved margin on every priced quote with a non-zero rate.
 
-Two other places must stay consistent: the Quote tab labels the field "Tax (included in price)", and both conversion paths to an invoice (saved quote to invoice in `web/src/lib/convertQuote.ts`, public request to invoice in `web/src/lib/convertRequest.ts`) set the invoice's `taxBp` to 0 when the quote's price already includes tax, because adding sales tax again would double-charge. When the price includes no tax (`pricing.taxRatePct` is 0), the invoice takes the `invoicing.salesTaxPct` default. See [Request to invoice](#request-to-invoice) for the request path.
+Two other places must stay consistent: the Quote tab labels the field "Tax (%)" and its help says the tax is included in the price, and both conversion paths to an invoice (saved quote to invoice in `web/src/lib/convertQuote.ts`, public request to invoice in `web/src/lib/convertRequest.ts`) set the invoice's `taxBp` to 0 when the quote's price already includes tax, because adding sales tax again would double-charge. When the price includes no tax (`pricing.taxRatePct` is 0), the invoice takes the `invoicing.salesTaxPct` default. See [Request to invoice](#request-to-invoice) for the request path.
 
 ### Margin ceiling
 

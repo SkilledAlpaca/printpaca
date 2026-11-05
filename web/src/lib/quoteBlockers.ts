@@ -25,7 +25,7 @@ export interface QuoteBlocker {
 const ORDER_FIELD_LABELS: Record<string, string> = {
   marginPct: "Margin",
   markupMultiplier: "Markup",
-  taxRatePct: "Tax (included in price)",
+  taxRatePct: "Tax",
   shippingCharge: "Shipping charged",
   shippingCost: "Shipping cost",
 };

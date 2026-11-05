@@ -152,14 +152,14 @@ test("a missing-field link inside More pricing options opens it and focuses the 
   await page.getByLabel("Set a selling price").check();
   const more = page.locator("details.more-pricing");
   await more.locator("summary").click();
-  await page.getByLabel(/^Tax \(included in price\)/).fill("150");
+  await page.getByLabel("Tax (%)", { exact: true }).fill("150");
   await more.locator("summary").click();
   await expect(more).not.toHaveAttribute("open", "");
   const link = page.locator("#pricing-card .blockers").getByRole("link", { name: /Tax/ });
   await expect(link).toBeVisible();
   await link.click();
   await expect(more).toHaveAttribute("open", "");
-  await expect(page.getByLabel(/^Tax \(included in price\)/)).toBeFocused();
+  await expect(page.getByLabel("Tax (%)", { exact: true })).toBeFocused();
 });
 
 test("the client price is the headline, and the drop zone is compact", async ({ page }) => {

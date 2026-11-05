@@ -69,7 +69,12 @@ func handleSettingsGet(configDir string, store *ConfigStore) http.HandlerFunc {
 		pending, err := pendingConfig(configDir)
 		if err != nil {
 			resp.Config = store.Get()
-			resp.LoadError = err.Error()
+			log.Printf("settings: pending config invalid: %v", err)
+			if identityFor(r).isAdmin {
+				resp.LoadError = err.Error()
+			} else {
+				resp.LoadError = "The saved settings file is invalid. Ask an admin to fix it."
+			}
 		} else {
 			resp.Config = pending
 		}

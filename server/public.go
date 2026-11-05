@@ -341,7 +341,7 @@ func publicShopFromConfig(cfg *Config) publicShop {
 		out.HeroImage = &publicHeroImage{URL: "/item-images/" + s.HeroImage.File, Alt: s.HeroImage.Alt}
 	}
 	if s.AccentColor != "" {
-		if res := checkAccentColor(s.AccentColor); res.OK {
+		if res := checkAccentColorCached(s.AccentColor); res.OK {
 			out.Accent = &publicAccent{
 				Light: publicAccentScheme{Accent: res.Light.Accent, ButtonText: res.Light.ButtonText},
 				Dark:  publicAccentScheme{Accent: res.Dark.Accent, ButtonText: res.Dark.ButtonText},
@@ -527,7 +527,7 @@ func renderShopHTML(tmpl string, cfg publicConfigResponse, theme string) ([]byte
 // body, since both pages link it unconditionally and a 404 is console noise.
 //
 // Cache-Control is "no-cache" (always revalidate), like publicIndexHandler for "/", not no-store: no
-// per-visitor state or PII. nosniff is not set here; securityHeadersMiddleware already sets it.
+// per-visitor state or PII. nosniff is not set here; securityHeadersTLSMiddleware already sets it.
 func handlePublicCustomCss(store *ConfigStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := store.Get() // one snapshot for this request
@@ -1818,7 +1818,9 @@ func publicIndexHandler(sub fs.FS, config publicConfigFunc) http.Handler {
 			assets.ServeHTTP(w, r)
 			return
 		}
-		w.Header().Set("Cache-Control", "no-cache")
+		// The page varies by the theme cookie, so a shared cache must not reuse one visitor's copy.
+		w.Header().Set("Cache-Control", "private, no-cache")
+		w.Header().Add("Vary", "Cookie")
 		if !hasPublicHTML || buildBroken {
 			serveUnavailable(w)
 			return

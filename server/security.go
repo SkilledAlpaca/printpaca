@@ -14,12 +14,6 @@ import (
 // logo URL may be either. frame-ancestors 'none' backs X-Frame-Options for older browsers.
 const publicContentSecurityPolicy = "default-src 'self'; img-src 'self' data: https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
-// securityHeadersMiddleware sets nosniff (gcode downloads serve uploaded bytes as text/plain),
-// X-Frame-Options, Referrer-Policy and the CSP on every response, including 401/403.
-func securityHeadersMiddleware(next http.Handler) http.Handler {
-	return securityHeadersTLSMiddleware(next, false)
-}
-
 // hstsValue is the Strict-Transport-Security value: one year, no includeSubDomains or preload, since
 // printpaca can't know what else lives on the owner's domain.
 const hstsValue = "max-age=31536000"
@@ -37,8 +31,9 @@ func hstsApplies(r *http.Request, trustProxy bool) bool {
 	return true
 }
 
-// securityHeadersTLSMiddleware is securityHeadersMiddleware plus HSTS on requests hstsApplies accepts;
-// trustProxy is the listener's trusted-proxy setting (ADMIN_TRUST_PROXY or PUBLIC_TRUST_PROXY).
+// securityHeadersTLSMiddleware sets nosniff (gcode downloads serve uploaded bytes as text/plain),
+// X-Frame-Options, Referrer-Policy and the CSP on every response, including 401/403, plus HSTS on requests
+// hstsApplies accepts. adminListenerHandler and publicListenerHandler both wrap their mux in it; trustProxy is the listener's trusted-proxy setting (ADMIN_TRUST_PROXY or PUBLIC_TRUST_PROXY).
 func securityHeadersTLSMiddleware(next http.Handler, trustProxy bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()

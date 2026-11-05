@@ -976,6 +976,30 @@ func TestInvoiceSendNeverDowngradesLaterStatus(t *testing.T) {
 	}
 }
 
+// A non-admin gets the fixed message, not the SMTP server's text.
+func TestInvoiceSendFailureHidesDetailFromNonAdmin(t *testing.T) {
+	fake := &fakeSMTP{noSTARTTLS: true, rejectRcptTo: "beta"}
+	mux := newInvoicesMuxWithDialer(t, t.TempDir(), fake.dialer(t), func(cfg *Config) {
+		cfg.Smtp = Smtp{Host: "localhost", Port: 587, From: "quotes@example.com", To: "owner@example.com"}
+	})
+	postClient(t, mux, `{"name":"Beta Print","email":"beta@example.com"}`)
+	created := mustUnmarshalInvoice(t, postInvoice(t, mux, `{"clientName":"Walk-in","lines":[]}`))
+
+	req := httptest.NewRequest("POST", "/api/invoices/"+created.ID+"/send", strings.NewReader(`{"to":"beta@example.com"}`))
+	req = req.WithContext(withIdentity(req.Context(), identity{username: "flo"}))
+	rec := serveReq(mux, req)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502; body: %s", rec.Code, rec.Body.String())
+	}
+	var body apiErrorBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal error body: %v", err)
+	}
+	if len(body.Errors) != 1 || body.Errors[0] != sendFailureNonAdminMessage {
+		t.Fatalf("errors = %v, want the fixed non-admin message", body.Errors)
+	}
+}
+
 // An SMTP failure surfaces the server's error text and records no send event and no status change.
 func TestInvoiceSendFailureRecordsNothing(t *testing.T) {
 	fake := &fakeSMTP{noSTARTTLS: true, rejectRcptTo: "beta"}

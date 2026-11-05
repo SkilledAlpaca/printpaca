@@ -79,6 +79,26 @@ func TestQuoteSendSuccess(t *testing.T) {
 	}
 }
 
+func TestQuoteSendFailureHidesDetailFromNonAdmin(t *testing.T) {
+	fake := &fakeSMTP{noSTARTTLS: true, rejectRcptTo: "client"}
+	mux := newQuoteSendMux(t, fake.dialer(t), func(cfg *Config) {
+		cfg.Smtp = Smtp{Host: "localhost", Port: 587, From: "quotes@example.com", To: "owner@example.com"}
+	})
+	req := httptest.NewRequest("POST", "/api/quotes/send", strings.NewReader(validQuoteBody))
+	req = req.WithContext(withIdentity(req.Context(), identity{username: "flo"}))
+	rec := serveReq(mux, req)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502; body: %s", rec.Code, rec.Body.String())
+	}
+	var body apiErrorBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Errors) != 1 || body.Errors[0] != sendFailureNonAdminMessage {
+		t.Fatalf("errors = %v, want the fixed non-admin message", body.Errors)
+	}
+}
+
 func TestQuoteSendFailurePropagatesVerbatim(t *testing.T) {
 	fake := &fakeSMTP{noSTARTTLS: true, rejectRcptTo: "client"}
 	mux := newQuoteSendMux(t, fake.dialer(t), func(cfg *Config) {

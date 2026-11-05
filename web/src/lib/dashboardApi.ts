@@ -165,7 +165,7 @@ export function attentionTiles(c: AttentionCounts, canOpen: (tab: string) => boo
     { kind: "new-request", label: "New requests", tab: "requests", value: c.newRequests, caption: "Not counting those that need a print time" },
     { kind: "overdue-invoice", label: "Overdue invoices", tab: "invoices", value: c.overdueInvoices },
     { kind: "draft-invoice", label: "Draft invoices", tab: "invoices", value: c.draftInvoices },
-    { kind: "print-time-request", label: "Needs print time", tab: "requests", value: c.printTimeRequests, caption: "New requests with no print time" },
+    { kind: "print-time-request", label: "Needs print time", tab: "requests", value: c.printTimeRequests, caption: "Open requests with no print time" },
     { kind: "sent-quote", label: "Quotes awaiting reply", tab: "quotes", value: c.sentQuotes },
   ];
   return all.filter((t) => canOpen(t.tab));

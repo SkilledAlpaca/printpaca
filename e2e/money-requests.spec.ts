@@ -390,7 +390,7 @@ test.describe("requests and the dashboard", () => {
     const facts = page.getByRole("list", { name: "Request details" }).or(page.locator("dl[aria-label='Request details']"));
     await expect(facts.getByText("Material", { exact: true })).toBeVisible();
     await expect(facts.getByRole("link", { name: /@example\.com$/ })).toBeVisible();
-    // D28: the table fills its card, labels share one column, and the values start at one x beside them.
+    // The table fills its card, labels share one column, and the values start at one x beside them.
     const card = facts.locator("xpath=..");
     const cardBox = (await card.boundingBox())!;
     const factsBox = (await facts.boundingBox())!;

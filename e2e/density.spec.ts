@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { navButton } from "./helpers";
 
-// v1.2 D5 and D20: the admin app has Comfortable (default) and Compact density, chosen with a toggle in the
+// v1.2 density: the admin app has Comfortable (default) and Compact density, chosen with a toggle in the
 // sidebar footer and kept in this browser's localStorage. The public pages never apply it.
 
 const toggle = (page: import("@playwright/test").Page) => page.getByRole("button", { name: "Compact density" });

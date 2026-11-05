@@ -1,4 +1,4 @@
-// Admin theme preference (v1.2 D40). The choice lives in this browser's localStorage and applies to the admin
+// Admin theme preference. The choice lives in this browser's localStorage and applies to the admin
 // app only (the public shop never imports this). No stored choice means the device setting decides: no
 // data-theme attribute is set and theme.css's prefers-color-scheme block applies. Pure helpers here;
 // theme.svelte.ts holds the reactive state.

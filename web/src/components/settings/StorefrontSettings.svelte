@@ -301,7 +301,7 @@
 
     <Fieldset legend="Wording">
       <FormGrid>
-        <!-- shop.pageTitle (D30) may be absent from the settings response until the server sends it; the field then
+        <!-- shop.pageTitle may be absent from the settings response until the server sends it; the field then
              reads "" and only writes the key once the owner types. -->
         <LabeledText
           label="Browser tab title"

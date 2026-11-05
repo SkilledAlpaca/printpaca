@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { placeTip, tipOpen } from "./hintTip";
 
-  // A small "?" circle that shows a field's hint in a tooltip (D32). It is a real button named "Help: <label>".
+  // A small "?" circle that shows a field's hint in a tooltip. It is a real button named "Help: <label>".
   // The tooltip opens on pointer hover, on keyboard focus, and on click or tap; Escape closes it; it stays open
   // while the pointer is over it (WCAG 1.4.13: dismissible, hoverable, persistent). The text is always in the
   // DOM under `id`, visually hidden until shown, so the control's aria-describedby keeps resolving to it. The

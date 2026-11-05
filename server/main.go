@@ -274,7 +274,7 @@ func handleConfig(store *ConfigStore, extras configExtras, auth *authState) http
 		full := cfg // the derived fields below read the unredacted config
 		fluiddURL := deriveFluiddURL(full)
 		if !identityFor(r).isAdmin {
-			// D31: employees get the pricing data their screens need, never the SMTP block, the integration
+			// Employees get the pricing data their screens need, never the SMTP block, the integration
 			// URLs, or the admin credential. Their screens use the booleans below and the permission-gated
 			// proxies instead of the raw URLs.
 			cfg = redactConfigForEmployee(cfg)
@@ -298,7 +298,7 @@ func handleConfig(store *ConfigStore, extras configExtras, auth *authState) http
 }
 
 // redactConfigForEmployee returns a copy of cfg for a non-admin caller: without the SMTP block, the integration
-// URLs, and the Access admin email (D31). The derived booleans (integrations.spoolman, moonraker) are computed
+// URLs, and the Access admin email. The derived booleans (integrations.spoolman, moonraker) are computed
 // from the full config by the caller and stay available.
 func redactConfigForEmployee(cfg *Config) *Config {
 	redacted := *cfg

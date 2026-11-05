@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// D31: an employee's reads of the effective config omit the SMTP block and the integration URLs; an admin's
+// An employee's reads of the effective config omit the SMTP block and the integration URLs; an admin's
 // reads carry everything.
 
 const redactionYAML = `smtp:

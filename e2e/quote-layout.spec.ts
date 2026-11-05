@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { expandSummary, fillCanonicalQuote } from "./helpers";
 
-// The v1.2 New quote layout (D23): three numbered sections, parts as tabs, a sticky summary beside the form from
+// The v1.2 New quote layout: three numbered sections, parts as tabs, a sticky summary beside the form from
 // 1100px, and a compact summary pinned to the bottom below it.
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];

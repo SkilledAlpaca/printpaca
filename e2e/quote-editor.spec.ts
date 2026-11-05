@@ -47,7 +47,7 @@ test("New quote opens blank after a save and a hand-typed print time doesn't sur
   await expect(need).toBeVisible();
   await need.click();
   await expect(page.getByLabel(/^Print time \(h/)).toBeFocused();
-  // The slicer box is gone (D34); the Guide explains the word.
+  // The slicer box is gone; the Guide explains the word.
   await expect(page.getByText("What is a slicer?")).toHaveCount(0);
 });
 

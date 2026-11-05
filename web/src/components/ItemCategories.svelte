@@ -21,7 +21,7 @@
   import { announce } from "../lib/a11y.svelte";
   import { keySelector } from "../lib/a11yFocus";
 
-  // The categories manager (D17): add, rename, reorder, hide and delete the categories items can belong to. The
+  // The categories manager: add, rename, reorder, hide and delete the categories items can belong to. The
   // list is the parent's (`categories`), so the item editor's Category select and this card never disagree;
   // every successful write asks the parent to reload (`onreload`), which also reloads the items, because deleting
   // a category unlinks the items that used it.

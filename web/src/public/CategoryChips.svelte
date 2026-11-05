@@ -2,7 +2,7 @@
   import type { PublicCategory } from "./api";
   import { routeHash } from "./route";
 
-  // D17: All plus one chip per visible category that has public items, linking to #/category/<slug>. Links, not
+  // All plus one chip per visible category that has public items, linking to #/category/<slug>. Links, not
   // buttons, because the shop routes by location.hash and a chip is a place you can share or reload.
   let { categories, active = null }: { categories: PublicCategory[]; active?: string | null } = $props();
 </script>

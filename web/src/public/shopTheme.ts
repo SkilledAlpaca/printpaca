@@ -1,4 +1,4 @@
-// The customer shop's light/dark choice (D53). The choice lives in a first-party cookie, not localStorage, so the
+// The customer shop's light/dark choice. The choice lives in a first-party cookie, not localStorage, so the
 // server can read it and put data-theme on <html> in the HTML itself (server/public.go): the public CSP has no
 // inline script, so a client-only theme would flash. The admin theme (lib/theme.ts, localStorage) is separate.
 export type ShopTheme = "light" | "dark";

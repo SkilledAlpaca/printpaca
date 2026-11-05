@@ -1,4 +1,4 @@
-// Client-side search over the Guide's content (D61). Pure functions: no DOM, no server. The Guide page renders the
+// Client-side search over the Guide's content. Pure functions: no DOM, no server. The Guide page renders the
 // snippet segments as DOM nodes (a <mark> for each match), never as HTML.
 import { GUIDE_TASKS, GUIDE_TOPICS, SHORTCUTS } from "./guideContent";
 import type { GuideTopic } from "./guideContent";

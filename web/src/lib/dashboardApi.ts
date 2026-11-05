@@ -148,7 +148,7 @@ export function attentionGroups(c: AttentionCounts): { kind: AttentionKind; coun
   ];
 }
 
-/** One Dashboard action tile (D25): the kind it filters the to-do list to, its label, and the tab its records live on. */
+/** One Dashboard action tile: the kind it filters the to-do list to, its label, and the tab its records live on. */
 export interface AttentionTile {
   kind: AttentionKind;
   label: string;
@@ -158,7 +158,7 @@ export interface AttentionTile {
   caption?: string;
 }
 
-/** The five action tiles in D25's order, each with its count. A tile whose tab `canOpen` rejects (disabled in
+/** The five action tiles in a fixed order, each with its count. A tile whose tab `canOpen` rejects (disabled in
  * Settings, or not granted to this user) is left out, so nobody sees a permanent "0" for a page they can't use. */
 export function attentionTiles(c: AttentionCounts, canOpen: (tab: string) => boolean): AttentionTile[] {
   const all: AttentionTile[] = [

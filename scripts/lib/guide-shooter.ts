@@ -6,7 +6,7 @@ import { GUIDE_IMAGE_KEYS, GUIDE_IMAGE_PLAN } from "../../web/src/lib/guideConte
 
 export const VIEWPORT = { width: 1440, height: 1500 };
 const PAD = 16;
-/** D62: WebP quality and the widest crop. With the total budget in guide-shots.ts and the vitest budget test. */
+/** WebP quality and the widest crop. With the total budget in guide-shots.ts and the vitest budget test. */
 export const WEBP_QUALITY = 0.45;
 export const MAX_CROP_WIDTH = 1200;
 
@@ -89,7 +89,7 @@ export type Box = { x: number; y: number; width: number; height: number };
 export type Measured = { ok: true; box: Box } | { ok: false; reason: string };
 
 /**
- * Runs in the page. Returns the box to highlight for a target element and checks it is a specific control (D60):
+ * Runs in the page. Returns the box to highlight for a target element and checks it is a specific control:
  * a control with its label, a button or link, a tab, a heading or a small piece of text. Rejects a row, grid,
  * table, fieldset, form, list, card, the save bar, and anything that holds more than one control. The highlight
  * may not be larger than the control plus its own label, give or take a small margin.

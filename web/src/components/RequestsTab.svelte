@@ -954,7 +954,7 @@
         {/if}
 
         {#if detail.needsPrintTime}
-          <!-- One compact notice (D36): a heading line, one sentence that also says why Finalize and Convert to
+          <!-- One compact notice: a heading line, one sentence that also says why Finalize and Convert to
                invoice are off, and the print time form in one row. -->
           <Card tone="inset" class="time-notice" role="group" aria-labelledby="print-time-heading">
             <h3 id="print-time-heading">This estimate needs a print time</h3>
@@ -1174,13 +1174,13 @@
     font-size: var(--text-sm);
   }
   .invoiced-note .linkish { border: none; background: none; color: var(--accent-text); font-weight: 600; text-decoration: underline; }
-  /* The compact print-time notice (D36): hours, minutes and Save in one row, wrapping on a phone. */
+  /* The compact print-time notice: hours, minutes and Save in one row, wrapping on a phone. */
   .time-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2) var(--gap); }
   :global(.time-notice > .hint) { margin: 0 0 var(--space-2); }
   :global(.time-notice > h3) { margin: 0 0 var(--space-1); }
   h3 { margin-top: 0; }
 
-  /* The record's actions sit under the facts with spacing only (D6: dividers belong to tables and lists). */
+  /* The record's actions sit under the facts with spacing only (dividers belong to tables and lists). */
   .detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--gap); }
 
   /* "Reply by email" is a mailto: link, so it is an <a>; styled like the neighboring buttons. */

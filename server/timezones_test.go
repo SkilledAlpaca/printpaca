@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// testdata/timezones.json feeds the Settings time zone picker (D51); regenerate it with
+// testdata/timezones.json feeds the Settings time zone picker; regenerate it with
 // scripts/gen-timezones.mjs. Every entry must load against the embedded tzdata, so the picker never offers a
 // zone the server rejects.
 func TestTimezoneListLoads(t *testing.T) {

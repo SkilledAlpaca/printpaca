@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
 
-  // One card groups one task (plan: "a simple page doesn't get a decorative wrapper"). Soft tint, no outline
-  // (D6): the look is the global .card rule in theme.css, which unmigrated screens share. `tone="inset"` is a
+  // One card groups one task (plan: "a simple page doesn't get a decorative wrapper"). Soft tint, no outline:
+  // the look is the global .card rule in theme.css, which unmigrated screens share. `tone="inset"` is a
   // block nested inside a card, tinted with the page color. `heading` renders an h2 for the card; use `as`
   // for a form or a labelled section, and pass role/aria-* straight through. `tone="danger"` marks a card that holds
   // a rejected field with a left border. A caller's `class` is added to the card's own.

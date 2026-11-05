@@ -82,7 +82,7 @@ describe("firstNavTab", () => {
   });
 });
 
-describe("brandTab (D22)", () => {
+describe("brandTab", () => {
   const WITH_DASHBOARD: NavSection<Tab>[] = [
     { label: "Sell", items: ["quote", "dashboard", "quotes", "requests"] },
     { label: "Shop", items: ["filament"] },

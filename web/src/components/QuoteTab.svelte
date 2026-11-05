@@ -601,7 +601,7 @@
   :global(.first-run) ol { margin: 0 0 var(--space-3); padding-inline-start: var(--space-5); display: flex; flex-direction: column; gap: var(--space-1); }
 
   /* One column with the summary pinned to the bottom below 1100px; two columns from 1100px, the form on the
-   * left and the sticky summary on the right (D23). The summary and the recent saves place themselves with
+   * left and the sticky summary on the right. The summary and the recent saves place themselves with
    * grid areas declared in HistoryPanel. */
   .layout { display: flex; flex-direction: column; gap: var(--gap-section); min-width: 0; }
   .main-col { display: flex; flex-direction: column; gap: var(--gap-section); min-width: 0; }

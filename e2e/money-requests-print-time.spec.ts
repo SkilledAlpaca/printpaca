@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import type { APIRequestContext } from "@playwright/test";
 import { navButton } from "./helpers";
 
-// D36: a request that needs a print time shows one compact notice.
+// A request that needs a print time shows one compact notice.
 
 // A public estimate needs a public material, so PLA is opted in with a full-document PUT /api/settings (as
 // money-requests.spec.ts does) and the original config is put back afterward.
@@ -33,7 +33,7 @@ async function seedNoTimeRequest(request: APIRequestContext, name: string): Prom
   return ((await res.json()) as { id: string }).id;
 }
 
-test.describe("request that needs a print time (D36)", () => {
+test.describe("request that needs a print time", () => {
   let id = "";
   const name = `Pat Estimate ${Date.now() % 100000}`;
   test.beforeAll(async ({ request }) => {

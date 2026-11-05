@@ -5,7 +5,7 @@
   import Card from "../components/ui/Card.svelte";
   import projectLogoUrl from "../assets/alpaca-logo.svg";
 
-  // D27: what every public route shows while the shop isn't accepting orders. Props only, so Settings can render
+  // What every public route shows while the shop isn't accepting orders. Props only, so Settings can render
   // the same page as a preview of what customers see. The footer (Staff sign-in) belongs to the host page.
   let {
     businessName = "",
@@ -28,9 +28,9 @@
     /** Shown above the heading when a submit was refused because the shop closed mid-form ("Your order wasn't
      * placed."). The host focuses it by id (closed-notice). */
     notice?: string;
-    /** D45: when set, the logo and name are one link to it (a reload of the Closed page on the shop). The Settings preview leaves it empty. */
+    /** When set, the logo and name are one link to it (a reload of the Closed page on the shop). The Settings preview leaves it empty. */
     homeHref?: string;
-    /** Right end of the header row; the shop puts its theme toggle here (D53). The Settings preview leaves it out. */
+    /** Right end of the header row; the shop puts its theme toggle here. The Settings preview leaves it out. */
     actions?: Snippet;
   } = $props();
 </script>

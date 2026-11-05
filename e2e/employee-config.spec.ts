@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import type { Browser, Page } from "@playwright/test";
 import { ADMIN_URL, ADMIN_PASSWORD, navButton, resetServerState } from "./helpers";
 
-// D31: employees' config reads omit the SMTP block and the integration URLs, and their screens still load.
+// Employees' config reads omit the SMTP block and the integration URLs, and their screens still load.
 // Runs on the :9099 server (multi-user mode needs ADMIN_PASSWORD).
 
 const SMTP_HOST = "smtp.d31-secret.example";

@@ -2,9 +2,9 @@ import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
-// v1.2 money lane: the DataTable scroll region (D24) on a long list. Clients is the long list: it needs no
+// v1.2 money lane: the DataTable scroll region on a long list. Clients is the long list: it needs no
 // other fixtures. Every record is deleted again, because clients.spec.ts and others expect an empty list. The
-// full-width KeyValueTable (D28) is asserted in money-requests.spec.ts. Layout is asserted with ratios and
+// full-width KeyValueTable is asserted in money-requests.spec.ts. Layout is asserted with ratios and
 // positions, never raw pixel heights.
 
 const PREFIX = "DT Client";

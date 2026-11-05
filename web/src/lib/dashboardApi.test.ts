@@ -39,10 +39,10 @@ describe("fetchTopItems", () => {
   });
 });
 
-describe("attentionTiles (D25)", () => {
+describe("attentionTiles", () => {
   const counts = { newRequests: 4, printTimeRequests: 2, overdueInvoices: 1, draftInvoices: 3, sentQuotes: 5 };
 
-  it("lists the five tiles in D25's order with their counts", () => {
+  it("lists the five tiles in order with their counts", () => {
     expect(attentionTiles(counts, () => true).map((t) => [t.label, t.value])).toEqual([
       ["New requests", 4],
       ["Overdue invoices", 1],

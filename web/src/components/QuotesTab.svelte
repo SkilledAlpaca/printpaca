@@ -926,7 +926,7 @@ const COLUMNS: DataColumn[] = [
                 <td class="c-actions">
                   <div class="row-actions">
                     <!-- Two fixed slots, the same on every row, so nothing shifts between rows or after a status
-                         change (D50): slot 1 is the status action, slot 2 converts. A slot that does not apply is a
+                         change: slot 1 is the status action, slot 2 converts. A slot that does not apply is a
                          disabled N/A button, never a gap. -->
                     {#if primaryT}
                       <button
@@ -1166,7 +1166,7 @@ const COLUMNS: DataColumn[] = [
    * label/client columns give up the difference. .table-scroll is the escape hatch. */
   .row-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-2); }
   .row-actions > button, .row-actions .menu-toggle { white-space: nowrap; }
-  /* The action slots are one fixed width on every row (D50), sized from the field tokens to fit the longest label, "Convert to
+  /* The action slots are one fixed width on every row, sized from the field tokens to fit the longest label, "Convert to
    * invoice", plus the button padding. Disabled N/A slots keep the same box. */
   .row-actions > .slot { flex: none; inline-size: calc(var(--field-s) + var(--space-4)); box-sizing: border-box; overflow: hidden; text-overflow: clip; }
   .confirm-delete { white-space: nowrap; }

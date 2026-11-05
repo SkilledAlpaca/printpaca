@@ -1,4 +1,4 @@
-// The data behind the Guide's two diagrams (D63). GuideDiagram.svelte draws them as inline SVG from theme tokens and
+// The data behind the Guide's two diagrams. GuideDiagram.svelte draws them as inline SVG from theme tokens and
 // renders the same data as a table or list for small screens and screen readers, so the picture and its text
 // alternative can never disagree. Keys are checked against server/config.go and docs/configuration.md in
 // guideDiagrams.test.ts.

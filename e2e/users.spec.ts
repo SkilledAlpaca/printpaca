@@ -83,7 +83,7 @@ test("employee login sees only granted tabs; the login screen asks for a usernam
   await expect(navButton(page, "Electricity")).not.toBeVisible();
   await expect(navButton(page, "Printers")).not.toBeVisible();
   await expect(navButton(page, "Settings")).toBeVisible();
-  // Without Dashboard access the logo opens the first permitted tab, never the Dashboard (D22).
+  // Without Dashboard access the logo opens the first permitted tab, never the Dashboard.
   const brand = page.getByRole("complementary").getByRole("link", { name: /home$/ });
   await expect(brand).toHaveAttribute("href", "#/quotes");
 });

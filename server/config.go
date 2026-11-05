@@ -264,7 +264,7 @@ type Shop struct {
 	PausedMessage   string `yaml:"pausedMessage" json:"pausedMessage"`
 	// DefaultView is "gallery" or "estimate": which one the shop opens on when both are on.
 	DefaultView string `yaml:"defaultView" json:"defaultView"`
-	// PageTitle is the browser tab title (D30), plain text. Empty falls back to the business name, then "Shop"
+	// PageTitle is the browser tab title, plain text. Empty falls back to the business name, then "Shop"
 	// (shopTitle).
 	PageTitle    string `yaml:"pageTitle" json:"pageTitle"`
 	Heading      string `yaml:"heading" json:"heading"`
@@ -317,7 +317,7 @@ const (
 // defaultShopTitle is the tab title of last resort, when neither shop.pageTitle nor the business name is set.
 const defaultShopTitle = "Shop"
 
-// shopTitle is the shop's tab title (D30): shop.pageTitle, else the business name, else "Shop".
+// shopTitle is the shop's tab title: shop.pageTitle, else the business name, else "Shop".
 func (c Config) shopTitle() string {
 	if t := strings.TrimSpace(c.Shop.PageTitle); t != "" {
 		return t

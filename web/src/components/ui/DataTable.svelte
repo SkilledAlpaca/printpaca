@@ -16,7 +16,7 @@
   import Card from "./Card.svelte";
   import LoadMoreRow from "../LoadMoreRow.svelte";
 
-  // A long list in a scroll region (D24). The card holds, top to bottom: the filter and status-chip slot
+  // A long list in a scroll region. The card holds, top to bottom: the filter and status-chip slot
   // (`filters`), the region (about 12 rows tall, so the page does not grow with the list), and the count and
   // Load more (`more`). The column header is sticky inside the region. The region is a keyboard stop with an
   // accessible name so the list scrolls without a mouse, and focus moving into a row scrolls it clear of the

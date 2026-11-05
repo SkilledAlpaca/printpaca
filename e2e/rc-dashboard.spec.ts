@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import type { APIRequestContext, Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
-// D43: the Dashboard's Recent invoices card matches the Revenue by month card's height and scrolls inside.
+// The Dashboard's Recent invoices card matches the Revenue by month card's height and scrolls inside.
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
@@ -15,7 +15,7 @@ async function axeClean(page: Page, label: string): Promise<void> {
   ).toEqual([]);
 }
 
-test.describe("D43 Dashboard recent invoices", () => {
+test.describe("Dashboard recent invoices", () => {
   const created: string[] = [];
   test.beforeAll(async ({ request }: { request: APIRequestContext }) => {
     for (let i = 0; i < 12; i++) {

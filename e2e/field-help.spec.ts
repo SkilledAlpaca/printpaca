@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 import { openMorePricing } from "./helpers";
 
-// D32: in the admin app a field's hint is a "?" button beside the label that opens a tooltip; the text stays the
+// In the admin app a field's hint is a "?" button beside the label that opens a tooltip; the text stays the
 // control's accessible description. The customer shop keeps its hints visible.
 
 const WASTE_HINT = /Extra filament lost to purging, supports, and skirts/;

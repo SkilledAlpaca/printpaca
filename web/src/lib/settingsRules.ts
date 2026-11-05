@@ -178,7 +178,7 @@ function maxBytesWarning(f: string, value: string, maxBytes: number): FieldWarni
 const SHOP_HEADING_MAX = 120;
 const SHOP_LONG_TEXT_MAX = 300; // announcement, pausedMessage, shippingNote, turnaroundNote
 const SHOP_HERO_ALT_MAX = 200;
-const SHOP_PAGE_TITLE_MAX = 70; // D30
+const SHOP_PAGE_TITLE_MAX = 70;
 const SHOP_FOOTER_LINKS_MAX = 6;
 const SHOP_FOOTER_LABEL_MAX = 40;
 const SHOP_FOOTER_URL_MAX = 500;

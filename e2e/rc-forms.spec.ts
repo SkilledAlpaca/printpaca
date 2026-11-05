@@ -1,8 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { geometryOnly3mf } from "./geometry3mf";
 
-// v1.2 release-candidate form changes: card help and "Explain this page" are gone (D33), so is the slicer box (D34),
-// "Set a client price" turns selling on and lands on the price target (D35) (D36 is in money-requests-print-time.spec.ts). The field-help tooltips (D32) are in field-help.spec.ts.
+// v1.2 release-candidate form changes: card help and "Explain this page" are gone, so is the slicer box,
+// "Set a client price" turns selling on and lands on the price target (the print-time notice is in money-requests-print-time.spec.ts). The field-help tooltips are in field-help.spec.ts.
 
 test("New quote has no Explain this page, card help buttons, or slicer box", async ({ page }) => {
   await page.goto("/admin/");

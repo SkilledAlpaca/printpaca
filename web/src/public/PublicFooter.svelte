@@ -2,11 +2,11 @@
   import type { PublicConfig } from "./api";
   import { telHref } from "./publicPricing";
 
-  // D44: one footer for every view of the shop (gallery, item views, estimate form, confirmations, Closed
+  // One footer for every view of the shop (gallery, item views, estimate form, confirmations, Closed
   // page), in the same place with the same content, so help and navigation are consistent (WCAG 3.2.3, 3.2.6).
   // A full-width band on a tinted surface; its content sits in a container wider than the reading column.
   // Top row: the business (name, logo, address), Contact (email, phone) and Links (the owner's footerLinks);
-  // an empty column collapses. Bottom row: copyright and Staff sign-in, and the D29 credit on the right.
+  // an empty column collapses. Bottom row: copyright and Staff sign-in, and the credit on the right.
   // The shop is a single page, so there is no Home or Shop link; "Staff sign-in" shows only when the server
   // offers one. footerLinks are the owner's shop.footerLinks (https only, validated server-side).
   // showContact is false on the Closed page, which already lists the contact details above, so the Contact
@@ -79,7 +79,7 @@
     padding: var(--space-8) 0 var(--space-4);
     overflow-wrap: anywhere;
   }
-  /* D55: the same box as the shop header's column (.page in PublicQuotePage.svelte): the same width token and the
+  /* The same box as the shop header's column (.page in PublicQuotePage.svelte): the same width token and the
    * same side padding, so the footer's content lines up with the header's. The tinted band itself spans the page. */
   .inner {
     max-width: calc(var(--measure-record) + 2 * var(--card-pad));

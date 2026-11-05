@@ -1,9 +1,9 @@
 import type { PublicConfig } from "./api";
 
-/** The id of the server-rendered `<script type="application/json">` block holding the public config (D30). */
+/** The id of the server-rendered `<script type="application/json">` block holding the public config. */
 export const SHOP_CONFIG_ELEMENT_ID = "shop-config";
 
-/** The tab title of last resort, when neither shop.pageTitle nor the business name is set (D30). */
+/** The tab title of last resort, when neither shop.pageTitle nor the business name is set. */
 export const FALLBACK_SHOP_TITLE = "Shop";
 
 /**
@@ -38,7 +38,7 @@ export function shopTitleOf(cfg: PublicConfig): string {
   return cfg.shop?.pageTitle?.trim() || cfg.branding.businessName.trim() || FALLBACK_SHOP_TITLE;
 }
 
-/** The tab title (D30, WCAG 2.4.2): the shop title alone on the gallery, "<page> · <shop title>" elsewhere. */
+/** The tab title (WCAG 2.4.2): the shop title alone on the gallery, "<page> · <shop title>" elsewhere. */
 export function composeTitle(shopTitle: string, page: string | null): string {
   return page ? `${page} · ${shopTitle}` : shopTitle;
 }

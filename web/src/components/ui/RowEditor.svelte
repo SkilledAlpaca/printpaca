@@ -255,7 +255,7 @@
   .row-below { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
 
   /* button.quiet sets the small tap size; a row's controls follow the density (40 px comfortable, 32 px compact) and
-   * 44 px on a phone in either (D26). */
+   * 44 px on a phone in either. */
   .menu-toggle { min-width: var(--tap-sm); font-weight: 700; letter-spacing: 1px; }
   .menu-toggle, .menu-item, .remove-direct { min-height: var(--control-h); }
   .menu-panel {

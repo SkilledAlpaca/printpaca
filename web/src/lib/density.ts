@@ -1,4 +1,4 @@
-// Admin density preference (v1.2 D5, D20): "comfortable" (40px controls, 16px gaps) or "compact" (32px controls,
+// Admin density preference: "comfortable" (40px controls, 16px gaps) or "compact" (32px controls,
 // 8-12px gaps). It lives in this browser's localStorage and applies to the admin app only; the public pages
 // never set data-density, so they stay comfortable. Pure helpers here; density.svelte.ts holds the reactive state.
 

@@ -101,7 +101,7 @@
   const warnings = $derived([...r.warnings, ...energyWarnings]);
   const hoursText = (h: number) => String(Math.round(h * 100) / 100);
 
-  // The results, as rows of a KeyValueTable (D28): flat and time-of-use modes, then the schedule mode.
+  // The results, as rows of a KeyValueTable: flat and time-of-use modes, then the schedule mode.
   const resultRows = $derived.by<KeyValueRow[]>(() =>
     scheduleMode
       ? [

@@ -23,15 +23,14 @@ type shopEnv struct {
 func newShopEnv(t *testing.T) *shopEnv {
 	t.Helper()
 	dir := t.TempDir()
-	adminMux, publicMux, db, cfg := newRequestsTestSetup(t, dir)
-	_ = db
+	_, _, db, cfg := newRequestsTestSetup(t, dir)
 	// newRequestsTestSetup keeps the store private; rebuild around the same config pointer so tests can
 	// flip cfg.Shop in place, as the other public tests do.
 	store := NewConfigStore(cfg)
-	adminMux = http.NewServeMux()
+	adminMux := http.NewServeMux()
 	registerRoutes(adminMux, db, store, newAuthState("", nil), dir, false)
 	adminMux.HandleFunc("PUT /api/settings", handleSettingsPut(dir, store, newAuthState("", nil)))
-	publicMux, _ = buildPublicMux(store, db, dir, false, false)
+	publicMux, _ := buildPublicMux(store, db, dir, false, false)
 	return &shopEnv{dir: dir, admin: adminMux, public: publicMux, store: store, cfg: cfg}
 }
 

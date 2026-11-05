@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
 import { fillCanonicalQuote, gotoSettings, navButton } from "./helpers";
 
 // Regression tests for the v1.2 usability review's admin findings (A1-A17), in id order. The file name sorts it

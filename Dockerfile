@@ -24,7 +24,7 @@ RUN npx vitest run && npm run build -w web
 # buildx imagetools inspect golang:1.26.10-alpine`, confirm it satisfies go.mod's
 # floor, replace the digest, bump the tag when moving minors, and re-run the
 # full test gate.
-FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS gobuild
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.27.3-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS gobuild
 WORKDIR /src
 # Module and build caches live under /src so they can be chowned to the
 # non-root build UID (golang:alpine defaults them under /root). Chowned once
